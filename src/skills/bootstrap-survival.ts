@@ -114,6 +114,10 @@ const HUNT_OUTWARD_LEG_TIMEOUT_MS = 180_000;
 const TABLE_REACH = 6;
 /** Scan radius when looking for an already-placed crafting table. */
 const TABLE_SCAN_RADIUS = 10;
+/** Planks one crafting-table recipe consumes (2x2). */
+const TABLE_PLANK_COST = 4;
+/** Planks the chest recipe consumes (spec 22 / STORAGE stage). */
+const CHEST_PLANK_COST = 8;
 /** Wool blocks the WOOL stage aims to carry; three make one bed (spec 7.1 items 8-10). */
 const WOOL_TARGET = 3;
 /** Scan radius when looking for an already-placed bed at home. */
@@ -316,7 +320,7 @@ export class BootstrapRunner {
       case BootstrapStage.BED:
         return this.stageBed();
       case BootstrapStage.STORAGE:
-        return this.stageStorage();
+        return this.restoreHomeChest();
       case BootstrapStage.FURNACE:
         return this.stageFurnace();
       case BootstrapStage.FUEL:
@@ -620,10 +624,40 @@ export class BootstrapRunner {
     const existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
     if (existing !== null) return existing;
 
-    const item = findItem(bot, "crafting_table");
+    let item = findItem(bot, "crafting_table");
     if (item === null) {
-      this.opts.logger.warn({ home: correctedHome, pos: bot.entity?.position }, "crafting: no crafting_table in inventory at home");
-      return null;
+      // The base was wiped (chest and table gone — e.g. a chunk rollback or
+      // griefing), so neither a placed table nor a carried one exists.
+      // Rebuild the table with the same craft-and-place mechanics as
+      // organize-storage's ensureTableAtHome; without it the STORAGE
+      // restore (and every table craft) would fail forever.
+      if (countPlanks(bot) < TABLE_PLANK_COST) {
+        const shortfall = TABLE_PLANK_COST - countPlanks(bot);
+        const logsNeeded = Math.max(0, Math.ceil(shortfall / 4) - countLogs(bot));
+        if (logsNeeded > 0) {
+          const logsPrep = await this.ensureLogs(logsNeeded);
+          if (!logsPrep.ok) {
+            this.opts.logger.warn({ home: correctedHome, reason: logsPrep.reason }, "crafting: could not gather logs for a new table");
+            return null;
+          }
+        }
+        const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST);
+        if (!planks.ok) {
+          this.opts.logger.warn({ home: correctedHome, reason: planks.reason }, "crafting: could not craft planks for a new table");
+          return null;
+        }
+      }
+      const crafted = await craftItem(bot, "crafting_table");
+      if (!crafted.ok) {
+        this.opts.logger.warn({ home: correctedHome, reason: crafted.reason }, "crafting: could not craft a new table");
+        return null;
+      }
+      item = findItem(bot, "crafting_table");
+      if (item === null) {
+        this.opts.logger.warn({ home: correctedHome }, "crafting: the crafted table vanished");
+        return null;
+      }
+      this.opts.logger.info({ home: correctedHome }, "crafting: rebuilt the missing crafting table");
     }
     const spot = findPlacementSpot(bot, correctedHome);
     if (spot === null) {
@@ -985,13 +1019,19 @@ export class BootstrapRunner {
   // --- storage / furnace / fuel / torches (Phase 5.5) ---
 
   /**
-   * STORAGE: a chest stands at home and is registered as storage (spec 7.1
-   * item 12, spec 22). An already-placed chest completes the stage (and is
-   * (re)registered); otherwise eight planks craft one at the table, and it is
-   * placed near home and registered so later delivery/organization phases can
-   * find it without re-discovering it.
+   * Re-establish the home chest (spec 7.1 item 12, spec 22): travel home
+   * (claiming the bot's position as home when the configured coordinate is
+   * unreachable), adopt a chest already standing there (re-registering it),
+   * or craft and place a fresh one (eight planks at the home table), then
+   * register it as general storage and drop registered rows whose blocks no
+   * longer stand. The bootstrap state machine runs these mechanics once as
+   * the STORAGE stage; persisting NORMAL_OPERATION means it never re-runs,
+   * so normal operation calls this entry point whenever the deposit or
+   * measurement layer reports the home chest missing — a destroyed or
+   * rolled-back chest self-heals instead of making every stockpile restore
+   * fail forever. Idempotent: a healthy chest is returned as-is.
    */
-  private async stageStorage(): Promise<StageOutcome> {
+  async restoreHomeChest(): Promise<StageOutcome> {
     const bot = this.opts.bot;
     const home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
@@ -1009,16 +1049,32 @@ export class BootstrapRunner {
     const existing = chestBlockNear(bot, CHEST_SCAN_RADIUS);
     if (existing !== null) {
       this.registerChest(existing.position);
+      this.pruneDeadChestRows();
+      this.opts.logger.info({ position: existing.position }, "home chest found; re-registered");
       return { ok: true, message: "Chest already placed at home." };
     }
 
     if (!hasItem(bot, "chest")) {
-      const logsPrep = await this.ensureLogs(2);
-      if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
       const table = await this.ensureTableAtHome();
       if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
-      const planks = await craftPlanks(bot, countPlanks(bot) + 8);
-      if (!planks.ok) return { ok: false, reason: planks.reason };
+
+      // Eight planks make the chest. Verify the outcome instead of trusting
+      // the craft result — a grid-click race can leave fewer planks than
+      // the recipe consumed — and re-gather/retry once before failing.
+      for (let attempt = 0; attempt < 2 && countPlanks(bot) < CHEST_PLANK_COST; attempt++) {
+        const logsNeeded = Math.max(0, Math.ceil((CHEST_PLANK_COST - countPlanks(bot)) / 4) - countLogs(bot));
+        if (logsNeeded > 0) {
+          const logsPrep = await this.ensureLogs(logsNeeded);
+          if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
+        }
+        const planks = await craftPlanks(bot, CHEST_PLANK_COST);
+        if (!planks.ok && countPlanks(bot) < CHEST_PLANK_COST && attempt === 0) {
+          this.opts.logger.warn({ reason: planks.reason, planks: countPlanks(bot) }, "chest planks under-crafted; retrying");
+        }
+      }
+      if (countPlanks(bot) < CHEST_PLANK_COST) {
+        return { ok: false, reason: `only ${countPlanks(bot)}/${CHEST_PLANK_COST} planks for a chest` };
+      }
       const chest = await this.craftAtTable("chest", table);
       if (!chest.ok) return { ok: false, reason: chest.reason };
     }
@@ -1032,7 +1088,34 @@ export class BootstrapRunner {
       return { ok: false, reason: "could not place the chest at home" };
     }
     this.registerChest(placed.position);
+    this.pruneDeadChestRows();
+    this.opts.logger.info({ position: placed.position }, "home chest placed and registered");
     return { ok: true, message: "Chest crafted, placed, and registered at home." };
+  }
+
+  /**
+   * Drop registered rows whose block no longer stands — a destroyed or
+   * rolled-back chest leaves a registration that would otherwise shadow the
+   * live chest in measurements forever. Only chests near the bot are
+   * pruned: a far-away LLM-registered chest can sit in an unloaded chunk,
+   * and `blockAt` returning null there must not read as row deletion.
+   */
+  private pruneDeadChestRows(): void {
+    const bot = this.opts.bot;
+    const worldId = this.worldId;
+    const self = bot.entity;
+    if (worldId === null || self === null) return;
+    for (const location of this.opts.storage.list(worldId)) {
+      if (Math.hypot(location.x - self.position.x, location.z - self.position.z) > CHEST_SCAN_RADIUS) continue;
+      const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
+      if (block === null || !isChestBlock(block)) {
+        this.opts.storage.remove(worldId, location.id);
+        this.opts.logger.info(
+          { id: location.id, position: [location.x, location.y, location.z] },
+          "pruned stale chest registration",
+        );
+      }
+    }
   }
 
   /**

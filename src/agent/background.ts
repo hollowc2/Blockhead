@@ -14,6 +14,8 @@ import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
+import type { StorageRepository } from "../memory/storage.js";
+import { findHomeChest } from "../minecraft/containers.js";
 
 /**
  * Phase 7/13: the background coordinator (spec section 4.3). This is
@@ -44,6 +46,8 @@ export interface BackgroundManagerOptions {
   bootstrap: BootstrapRunner;
   /** Phase 11: storage organization runner, probed every idle tick. */
   organizeStorage: OrganizeStorageRunner;
+  /** Home storage registration; the idle loop re-establishes a missing home chest. */
+  storage: StorageRepository;
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -71,8 +75,11 @@ export class BackgroundManager {
   private ticking = false;
   private timer: NodeJS.Timeout | null = null;
   private settledListeners: Array<() => void> = [];
-  /** Wall clock of the last LLM director call (decision-interval throttle). */
+  /** Wall-clock of the last LLM director call (decision-interval throttle). */
   private lastDecisionAt: number | null = null;
+
+  /** Wall-clock of the last home-chest restore attempt (repair cooldown). */
+  private lastHomeChestRepairAt: number | null = null;
 
   /** Wall-clock of each kind's most recent failed restore attempt. */
   private readonly lastFailedAt = new Map<string, number>();
@@ -160,6 +167,37 @@ export class BackgroundManager {
     // while the brake holds. The death manager surfaced the loop once; the
     // user relocates the bot or the spawn.
     if (this.opts.inDeathLoop?.() === true) return;
+
+    // Phase 8: home storage is load-bearing for every deposit/stockpile
+    // path — a missing chest makes restores deliver nothing and retry
+    // forever ("hunted the food but could not deposit it"). Bootstrap runs
+    // the STORAGE stage once and persists NORMAL_OPERATION, so it never
+    // re-runs; normal operation re-establishes the chest here instead.
+    // Runs before the measurement so a crisis never acts on a chestless
+    // home. Only user-bound work blocks it (an active user task or a
+    // pending interrupt owns the bot); background restores are exactly what
+    // the repair exists to unblock, and a failed repair still falls through
+    // to the regular check below — the cooldown paces retries instead of
+    // starving crises.
+    const userBound =
+      (scheduler.active !== null && scheduler.active.source === "user") ||
+      scheduler.queued.some((task) => task.source === "user") ||
+      scheduler.interruptPending;
+    const repairCooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
+    const tickNow = this.now();
+    if (
+      !userBound &&
+      (this.lastHomeChestRepairAt === null || tickNow - this.lastHomeChestRepairAt >= repairCooldownMs)
+    ) {
+      if (findHomeChest(bot, this.opts.state, this.opts.storage) === null) {
+        this.lastHomeChestRepairAt = tickNow;
+        logger.warn("home chest missing; restoring home storage");
+        const restored = await this.opts.bootstrap.restoreHomeChest();
+        if (!restored.ok) {
+          logger.warn({ reason: restored.reason }, "home chest restore failed; retrying after cooldown");
+        }
+      }
+    }
 
     const snapshot = await this.opts.maintenance.check();
 

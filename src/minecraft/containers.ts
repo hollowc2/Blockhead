@@ -25,8 +25,10 @@ export function isChestBlock(block: Block): boolean {
 /**
  * Locate a home chest: the registered general (delivery) chest first (spec
  * 23 — "locate designated delivery/general chest"), then any registered
- * storage, then a block scan around the bot. Returns null when none is
- * reachable.
+ * storage, then a block scan around the bot. A chest the scan finds near
+ * home is adopted into the registry (upsert), so a destroyed or mispointed
+ * registration self-heals instead of leaving storage read as carried-only.
+ * Returns null when none is reachable.
  */
 export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepository): Block | null {
   const worldId = state.worldId;
@@ -47,7 +49,25 @@ export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepos
   }
   const positions = findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 1);
   const first = positions[0];
-  return first !== undefined ? bot.blockAt(first) : null;
+  if (first === undefined) return null;
+  const block = bot.blockAt(first);
+  if (block === null) return null;
+  // Registry missed but a chest stands near home (e.g. blocks rolled back or
+  // the rows were lost): adopt it so the stockpile measurement and later
+  // lookups go through the registry. Idempotent per position; only home
+  // chests are adopted, never a random chest found elsewhere.
+  const home = state.home;
+  if (worldId !== null && home !== null && Math.hypot(first.x - home.x, first.z - home.z) <= CHEST_SCAN_RADIUS) {
+    storage.register(worldId, {
+      dimension: home.dimension,
+      category: "general",
+      label: "home_main_chest",
+      x: first.x,
+      y: first.y,
+      z: first.z,
+    });
+  }
+  return block;
 }
 
 /**
@@ -124,8 +144,10 @@ export async function deliverCarried(
 
 /**
  * Deposit every carried instance of each of `itemNames` (e.g. every meat
- * type of a food stockpile). The chest is located once per item; a missing
- * chest or a failed open counts zero for that item.
+ * type of a food stockpile) in one container session. The chest is located
+ * once for the whole call — a missing chest warns once and counts zero for
+ * every item instead of repeating the same warning per item. A per-item
+ * deposit failure (full chest, closed window) skips that item only.
  */
 export async function deliverCarriedItems(
   bot: Bot,
@@ -134,10 +156,36 @@ export async function deliverCarriedItems(
   itemNames: readonly string[],
   logger: Logger,
 ): Promise<{ delivered: number }> {
+  const chest = findHomeChest(bot, state, storage);
+  if (chest === null) {
+    logger.warn("no chest at home to deposit into");
+    return { delivered: 0 };
+  }
   let delivered = 0;
-  for (const name of itemNames) {
-    const result = await deliverCarried(bot, state, storage, name, logger);
-    delivered += result.delivered;
+  try {
+    const container = await bot.openContainer(chest);
+    try {
+      for (const name of itemNames) {
+        const before = countItem(bot, name);
+        if (before === 0) continue;
+        const itemId = bot.registry.itemsByName[bareName(name)]?.id;
+        if (itemId === undefined) {
+          logger.warn({ item: name }, "no item id for deposit");
+          continue;
+        }
+        try {
+          await container.deposit(itemId, null, before);
+          delivered += Math.max(0, before - countItem(bot, name));
+        } catch (err) {
+          logger.warn({ err: String(err), item: name }, "chest deposit failed");
+        }
+      }
+    } finally {
+      await container.close();
+    }
+  } catch (err) {
+    logger.warn({ err: String(err) }, "chest deposit failed");
+    return { delivered: 0 };
   }
   return { delivered };
 }

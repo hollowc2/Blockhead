@@ -134,14 +134,15 @@ export class StorageRepository {
     return rows.map((row) => this.toLocation(row));
   }
 
-  /** True when at least one container of the category is registered. */
-  hasCategory(worldId: number, category: string): boolean {
-    const row = this.db.sql
-      .prepare(
-        "SELECT id FROM storage_locations WHERE world_id = ? AND category = ? LIMIT 1",
-      )
-      .get(worldId, category) as { id: number } | undefined;
-    return row !== undefined;
+  /**
+   * Delete a registered container row — used by the home-chest restore path
+   * to drop rows whose block no longer stands (destroyed or rolled back).
+   * Measurement never mutates; only the restore reconciles the registry.
+   */
+  remove(worldId: number, id: number): void {
+    this.db.sql
+      .prepare("DELETE FROM storage_locations WHERE id = ? AND world_id = ?")
+      .run(id, worldId);
   }
 
   private toLocation(row: StorageRow): StorageLocation {

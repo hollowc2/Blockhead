@@ -257,7 +257,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // moment the previous one settles.
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, ensureItem, defense, utility, delivery, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, storage, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33

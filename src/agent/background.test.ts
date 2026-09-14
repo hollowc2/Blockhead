@@ -9,6 +9,7 @@ import type { CollectResourceRunner } from "../skills/collect-resource.js";
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { DecisionMaker } from "../llm/decider.js";
 import type { NextTaskDecision } from "../llm/schemas.js";
+import type { StorageRepository } from "../memory/storage.js";
 import type { AgentState } from "./state.js";
 import type { StockpileDeficit, StockpileManager, StockpileSnapshot } from "./maintenance.js";
 import type { Scheduler } from "./scheduler.js";
@@ -81,7 +82,14 @@ interface Harness {
 
 function newHarness(health: number, food: number): Harness {
   let now = 1_000_000;
-  const bot = { entity: {}, health, food } as unknown as Bot;
+  const bot = {
+    entity: {},
+    health,
+    food,
+    // No chests anywhere: findHomeChest's scan comes up empty, so the idle
+    // loop's storage-repair probe takes its stub restore path every tick.
+    findBlocks: () => [],
+  } as unknown as Bot;
   const bus = new EventBus();
   const warns: Array<Record<string, unknown>> = [];
   const logger = {
@@ -126,7 +134,7 @@ function newHarness(health: number, food: number): Harness {
 
   const options: BackgroundManagerOptions = {
     bot,
-    state: {} as unknown as AgentState,
+    state: { worldId: null, home: null } as unknown as AgentState,
     config,
     bus,
     scheduler: {
@@ -172,7 +180,10 @@ function newHarness(health: number, food: number): Harness {
         return state.directorResult;
       },
     } as unknown as DecisionMaker,
-    bootstrap: { completedStage: BootstrapStage.NORMAL_OPERATION } as unknown as BootstrapRunner,
+    bootstrap: {
+      completedStage: BootstrapStage.NORMAL_OPERATION,
+      restoreHomeChest: async (): Promise<{ ok: true; message: string }> => ({ ok: true, message: "test chest" }),
+    } as unknown as BootstrapRunner,
     organizeStorage: {
       isRunning: false,
       needsAttention: async () => ({
@@ -180,6 +191,7 @@ function newHarness(health: number, food: number): Harness {
         reason: state.organizeNeedsWork ? "chests full" : "none",
       }),
     } as unknown as OrganizeStorageRunner,
+    storage: {} as unknown as StorageRepository,
     logger,
     now: () => now,
     inDeathLoop: () => state.loop,
