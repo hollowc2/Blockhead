@@ -1055,7 +1055,18 @@ export class BootstrapRunner {
 
     const item = findItem(bot, "chest");
     if (item === null) return { ok: false, reason: "chest vanished before placement" };
-    const spot = findPlacementSpot(bot, home);
+    let spot = findPlacementSpot(bot, home);
+    if (spot === null) {
+      // The home column may be blocked (a crater from repeated deaths at
+      // spawn, e.g.) while the bot itself stands on open ground. Mirror the
+      // table rebuild's fallback: try a free cell two steps from the bot's
+      // own feet — its current position is walkable by definition.
+      const fallbackCenter = bot.entity?.position;
+      spot = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
+      if (spot !== null) {
+        this.opts.logger.warn({ home, pos: fallbackCenter }, "no floor space near home for a chest; placing near the bot");
+      }
+    }
     if (spot === null) return { ok: false, reason: "no floor space near home for a chest" };
     const placed = await placeItemAt(bot, item, spot);
     if (placed === null || !isChestBlock(placed)) {

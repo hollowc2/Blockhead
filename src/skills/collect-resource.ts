@@ -9,11 +9,11 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
-import { bareName, countItem, countPlanks, itemsSummary } from "../minecraft/inventory.js";
+import { bareName, countItem, countLogs, countPlanks, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelAndWait } from "../minecraft/movement.js";
-import { findBlockNear, findBlocksNear, findBlocksNearPoint } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, isRawLog } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -762,6 +762,15 @@ export class CollectResourceRunner {
       return { ok: false, reason: "could not reach the crafting table" };
     }
 
+    // A wooden tool needs 3 planks + 2 sticks (another 2 planks); when no
+    // logs or planks survive (a wiped inventory, a tool that broke in the
+    // field), gather logs for them first — otherwise the craft dies here
+    // and the run aborts before its search ever starts.
+    const logsNeeded = Math.max(0, Math.ceil((3 + 2 - countPlanks(bot)) / 4) - countLogs(bot));
+    if (logsNeeded > 0) {
+      const gathered = await this.gatherLogsForTool(logsNeeded);
+      if (!gathered.ok) return { ok: false, reason: gathered.reason };
+    }
     const planks = await craftPlanks(bot, countPlanks(bot) + 3);
     if (!planks.ok) return { ok: false, reason: planks.reason };
     const sticks = await craftSticks(bot, countItem(bot, "stick") + 2);
@@ -769,6 +778,41 @@ export class CollectResourceRunner {
 
     const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table });
     if (!made.ok) return { ok: false, reason: made.reason };
+    return { ok: true };
+  }
+
+  /**
+   * Gather raw logs until at least `targetTotal` are carried — the
+   * tool-craft fallback when the bot reaches the table with no planks or
+   * logs. Same expanding search-and-collect mechanics as the bootstrap WOOD
+   * stage; per-block collection skips sites the pathfinder cannot reach
+   * instead of failing the pass.
+   */
+  private async gatherLogsForTool(targetTotal: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const bot = this.opts.bot;
+    let have = countLogs(bot);
+    for (const radius of SEARCH_RADIUS_SEQUENCE) {
+      this.checkInterrupt();
+      if (this.stopRequested) return { ok: false, reason: "interrupted" };
+      const positions = findBlocksNear(bot, isRawLog, radius, 24);
+      const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
+      if (targets.length === 0) continue;
+
+      const before = have;
+      await collectBlocks(
+        bot,
+        targets,
+        () => countLogs(bot),
+        targetTotal,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable log"),
+      );
+      have = countLogs(bot);
+      if (have <= before) continue;
+    }
+    have = countLogs(bot);
+    if (have < targetTotal) return { ok: false, reason: `only ${have}/${targetTotal} logs found nearby` };
     return { ok: true };
   }
 
