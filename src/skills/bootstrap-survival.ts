@@ -40,9 +40,11 @@ import {
   travelHomeAndWait,
 } from "../minecraft/movement.js";
 import {
+  collectBlocks,
   findBlockNear,
   findBlocksNear,
   findPlacementSpot,
+  hasAirNeighbor,
   isAir,
   isRawLog,
   placeItemAt,
@@ -479,7 +481,15 @@ export class BootstrapRunner {
       }
 
       const before = countLogs(bot);
-      const gained = await this.collectBlocks(bot, ordered, () => countLogs(bot), target, (msg) => this.announce(msg));
+      const gained = await collectBlocks(
+        bot,
+        ordered,
+        () => countLogs(bot),
+        target,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+      );
       have = countLogs(bot);
       this.opts.logger.warn({ radius, gained, skipped: ordered.length - gained, have }, "wood collect pass finished");
       if (have <= before) {
@@ -490,42 +500,6 @@ export class BootstrapRunner {
     have = countLogs(bot);
     if (have < target) return { ok: false, reason: `only ${have}/${target} logs found nearby` };
     return { ok: true, message: `Gathered ${have} logs.` };
-  }
-
-  /**
-   * Collect `ordered` blocks until `countHeld()` reaches `targetTotal`,
-   * trying each block individually and SKIPPING any the pathfinder cannot
-   * reach (a "Took to long to decide path" timeout, e.g. a block on an
-   * unreachable ledge) instead of letting one bad target fail the whole
-   * pass. The caller owns fallbacks (region preference, radius expansion).
-   * Returns how many new units the counter gained.
-   */
-  private async collectBlocks(
-    bot: Bot,
-    ordered: Block[],
-    countHeld: () => number,
-    targetTotal: number,
-    announce: (message: string) => void,
-  ): Promise<number> {
-    const before = countHeld();
-    let skipped = 0;
-    for (const block of ordered) {
-      if (countHeld() >= targetTotal) break;
-      try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(block, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
-        });
-      } catch (err) {
-        skipped++;
-        this.opts.logger.warn({ err: String(err), block: block.position }, "skipping unreachable block");
-        continue;
-      }
-    }
-    const gained = countHeld() - before;
-    if (gained > 0 && skipped > 0) {
-      announce(`Collected blocks but ${skipped} were unreachable.`);
-    }
-    return gained;
   }
 
   /** CRAFTING: planks, sticks, table, placement at home, then wooden tools. */
@@ -1362,7 +1336,15 @@ export class BootstrapRunner {
         .filter((block) => block !== null);
       if (ordered.length === 0) continue;
 
-      await this.collectBlocks(bot, ordered, () => countLogs(bot), targetTotal, () => {});
+      await collectBlocks(
+        bot,
+        ordered,
+        () => countLogs(bot),
+        targetTotal,
+        () => {},
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+      );
       have = countLogs(bot);
     }
 
@@ -1424,7 +1406,15 @@ export class BootstrapRunner {
       }
 
       const before = countFuelItems(bot);
-      await this.collectBlocks(bot, targets, () => countFuelItems(bot), needed, (msg) => this.announce(msg));
+      await collectBlocks(
+        bot,
+        targets,
+        () => countFuelItems(bot),
+        needed,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+      );
       have = countFuelItems(bot);
       if (have <= before) {
         this.announce(`No coal reachable within ${radius} blocks. Expanding search.`);
@@ -1458,7 +1448,15 @@ export class BootstrapRunner {
       }
 
       const before = countItem(bot, "raw_iron");
-      await this.collectBlocks(bot, targets, () => countItem(bot, "raw_iron"), needed, (msg) => this.announce(msg));
+      await collectBlocks(
+        bot,
+        targets,
+        () => countItem(bot, "raw_iron"),
+        needed,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+      );
       have = countItem(bot, "raw_iron");
       if (have <= before) {
         this.announce(`No iron reachable within ${radius} blocks. Expanding search.`);
@@ -1630,7 +1628,15 @@ export class BootstrapRunner {
       }
 
       const before = countItem(bot, "cobblestone");
-      await this.collectBlocks(bot, targets, () => countItem(bot, "cobblestone"), needed, (msg) => this.announce(msg));
+      await collectBlocks(
+        bot,
+        targets,
+        () => countItem(bot, "cobblestone"),
+        needed,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+      );
       have = countItem(bot, "cobblestone");
       if (have <= before) {
         this.announce(`No stone reachable within ${radius} blocks. Expanding search.`);
@@ -1816,22 +1822,6 @@ function isDiggableGround(block: Block | null): boolean {
   if (name === "bedrock" || name === "water" || name === "lava") return false;
   if (/[a-z_]+_log$/.test(name) || name === "leaves") return false;
   return true;
-}
-
-/** True when any orthogonal neighbor of `position` is air (world-facing). */
-function hasAirNeighbor(bot: Bot, position: Vec3): boolean {
-  const offsets: [number, number, number][] = [
-    [0, 1, 0],
-    [0, -1, 0],
-    [1, 0, 0],
-    [-1, 0, 0],
-    [0, 0, 1],
-    [0, 0, -1],
-  ];
-  for (const [dx, dy, dz] of offsets) {
-    if (isAir(bot.blockAt(position.offset(dx, dy, dz)))) return true;
-  }
-  return false;
 }
 
 /** A diagonal cardinal direction whose front corner is diggable. */

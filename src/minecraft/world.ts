@@ -2,6 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
+import { withTimeout } from "../skills/skill-library.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -23,6 +24,22 @@ export function isSolid(block: Block | null): block is Block {
 /** Air cells (also matches liquids' empty bounding boxes implicitly). */
 export function isAir(block: Block | null): boolean {
   return block !== null && block.name === "air";
+}
+
+/** True when any orthogonal neighbor of `position` is air (world-facing). */
+export function hasAirNeighbor(bot: Bot, position: Vec3): boolean {
+  const offsets: [number, number, number][] = [
+    [0, 1, 0],
+    [0, -1, 0],
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  for (const [dx, dy, dz] of offsets) {
+    if (isAir(bot.blockAt(position.offset(dx, dy, dz)))) return true;
+  }
+  return false;
 }
 
 /**
@@ -66,6 +83,48 @@ export function findBlockNear(bot: Bot, name: string, maxDistance: number): Bloc
   const positions = findBlocksNear(bot, (block) => block.name === name, maxDistance, 1);
   const first = positions[0];
   return first !== undefined ? bot.blockAt(first) : null;
+}
+
+/**
+ * Try to collect each block in `ordered` until `countHeld()` reaches
+ * `targetTotal`, one block at a time. A block the pathfinder cannot reach
+ * (a "Took to long to decide path to goal!" timeout or NoPath — e.g. ore on
+ * an unreachable ledge, or buried in an unloaded pocket) is SKIPPED instead
+ * of letting one bad target fail the whole pass: mineflayer-collectblock's
+ * `ignoreNoPath` option does not actually skip (it is a no-op in
+ * collectblock 1.6), so the skip happens here. `logSkip` reports each
+ * skipped block for diagnostics; `announce` reports partial success when
+ * some blocks were collected but others were not. Returns how many new
+ * units `countHeld()` gained. Callers own fallbacks (radius expansion).
+ */
+export async function collectBlocks(
+  bot: Bot,
+  ordered: Block[],
+  countHeld: () => number,
+  targetTotal: number,
+  announce: (message: string) => void,
+  timeoutMs: number,
+  logSkip?: (block: Block, err: unknown) => void,
+): Promise<number> {
+  const before = countHeld();
+  let skipped = 0;
+  for (const block of ordered) {
+    if (countHeld() >= targetTotal) break;
+    try {
+      await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), () => {
+        void bot.collectBlock.cancelTask();
+      });
+    } catch (err) {
+      skipped++;
+      logSkip?.(block, err);
+      continue;
+    }
+  }
+  const gained = countHeld() - before;
+  if (gained > 0 && skipped > 0) {
+    announce(`Collected blocks but ${skipped} were unreachable.`);
+  }
+  return gained;
 }
 
 /** A block-space position to place something near `center` (home). */

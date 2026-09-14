@@ -7,12 +7,12 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
-import { countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
+import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { travelAndWait } from "../minecraft/movement.js";
-import { findBlockNear, findBlocksNear } from "../minecraft/world.js";
-import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
+import { collectBlocks, findBlockNear, findBlocksNear, hasAirNeighbor, isRawLog } from "../minecraft/world.js";
+import { ChatThrottle, gameChatBudgetAllows, type SkillResult } from "./skill-library.js";
 
 /**
  * Phase 7: `ensure_torches` skill (spec 29 — torch stockpile; one
@@ -50,6 +50,14 @@ function isCoalOre(block: Block): boolean {
 /** Total carried fuel items (coal or charcoal) — both burn in the torch recipe. */
 function countFuelItems(bot: Bot): number {
   return countItem(bot, "coal") + countItem(bot, "charcoal");
+}
+
+/** True when any carried item is a pickaxe (coal ore cannot be mined by hand). */
+function hasPickaxe(bot: Bot): boolean {
+  for (const item of bot.inventory.items()) {
+    if (bareName(item.name).endsWith("_pickaxe")) return true;
+  }
+  return false;
 }
 
 export interface EnsureTorchesOptions {
@@ -186,7 +194,7 @@ export class EnsureTorchesRunner {
       if (fuel < crafts) {
         const mined = await this.mineCoalOre(crafts - fuel);
         if (this.stopRequested) return this.interrupted(data);
-        if (!mined.ok) return this.fail(data, "RESOURCE_NOT_FOUND", mined.reason);
+        if (!mined.ok) return this.fail(data, mined.code, mined.reason);
         fuel = countFuelItems(bot);
       }
       if (fuel < crafts) {
@@ -271,33 +279,50 @@ export class EnsureTorchesRunner {
 
   /**
    * Mine exposed coal ore until `needed` fuel items are carried. Mirrors the
-   * bootstrap FUEL machinery: world-facing ore, expanding search, collect
-   * passes; coal ore drops coal, which counts as fuel.
+   * bootstrap FUEL machinery: world-facing ore only (an air-neighbor filter
+   * keeps buried cave veins out of the targets), expanding search, and
+   * per-block collection that skips sites the pathfinder cannot reach
+   * instead of failing the pass on the first one. Coal ore drops coal, which
+   * counts as fuel.
    */
-  private async mineCoalOre(needed: number): Promise<{ ok: true; have: number } | { ok: false; reason: string }> {
+  private async mineCoalOre(needed: number): Promise<{ ok: true; have: number } | { ok: false; code: string; reason: string }> {
     const bot = this.opts.bot;
     const config = this.opts.config.bootstrap;
     const baseRadius = config?.search_radius ?? 48;
 
+    // Coal ore only drops when mined with a pickaxe; without one every
+    // collect attempt must fail. Say so once, cleanly, instead of making the
+    // background loop re-try (and re-mine-scan) until a pickaxe exists.
+    if (!hasPickaxe(bot)) {
+      return { ok: false, code: "TOOL_REQUIRED", reason: "no pickaxe carried; coal ore cannot be mined by hand" };
+    }
+
     let have = countFuelItems(bot);
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < needed; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
       this.checkInterrupt();
-      if (this.stopRequested) return { ok: false, reason: "interrupted" };
+      if (this.stopRequested) return { ok: false, code: "INTERRUPTED", reason: "interrupted" };
       const positions = findBlocksNear(bot, isCoalOre, radius, CANDIDATES_PER_RADIUS);
-      const targets = positions.map((v) => bot.blockAt(v)).filter((block) => block !== null);
+      const exposed = positions.filter((position) => hasAirNeighbor(bot, position));
+      const targets = exposed.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) {
-        this.announce(`No coal ore within ${radius} blocks. Expanding search.`);
+        this.announce(`No exposed coal within ${radius} blocks. Expanding search.`);
         continue;
       }
+      this.opts.logger.info(
+        { radius, candidates: positions.length, exposed: targets.length, need: Math.max(0, needed - have) },
+        "ensure_torches coal search",
+      );
 
       const before = have;
-      try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
-        });
-      } catch (err) {
-        return { ok: false, reason: `could not collect coal: ${String(err)}` };
-      }
+      await collectBlocks(
+        bot,
+        targets,
+        () => countFuelItems(bot),
+        needed,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "ensure_torches skipping unreachable coal"),
+      );
       have = countFuelItems(bot);
       if (have <= before) {
         this.announce(`No coal reachable within ${radius} blocks. Expanding search.`);
@@ -305,14 +330,15 @@ export class EnsureTorchesRunner {
     }
 
     have = countFuelItems(bot);
-    if (have < needed) return { ok: false, reason: `only ${have}/${needed} coal found nearby` };
+    if (have < needed) return { ok: false, code: "RESOURCE_NOT_FOUND", reason: `only ${have}/${needed} coal found nearby` };
     return { ok: true, have };
   }
 
   /**
    * Gather raw logs until at least `targetTotal` are carried — the sticks
    * fallback when no planks/logs are carried. Same search-and-collect
-   * mechanics as the bootstrap WOOD stage.
+   * mechanics as the bootstrap WOOD stage: per-block collection skips
+   * unreachable sites instead of failing the pass.
    */
   private async gatherLogs(targetTotal: number): Promise<{ ok: true; have: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
@@ -323,18 +349,20 @@ export class EnsureTorchesRunner {
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < targetTotal; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
       this.checkInterrupt();
       if (this.stopRequested) return { ok: false, reason: "interrupted" };
-      const positions = findBlocksNear(bot, isRawLogBlock, radius, CANDIDATES_PER_RADIUS);
-      const targets = positions.map((v) => bot.blockAt(v)).filter((block) => block !== null);
+      const positions = findBlocksNear(bot, isRawLog, radius, CANDIDATES_PER_RADIUS);
+      const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) continue;
 
       const before = have;
-      try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
-        });
-      } catch (err) {
-        return { ok: false, reason: `could not collect logs: ${String(err)}` };
-      }
+      await collectBlocks(
+        bot,
+        targets,
+        () => countLogs(bot),
+        targetTotal,
+        (msg) => this.announce(msg),
+        COLLECT_TIMEOUT_MS,
+        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "ensure_torches skipping unreachable log"),
+      );
       have = countLogs(bot);
       if (have <= before) continue;
     }
@@ -399,10 +427,4 @@ export class EnsureTorchesRunner {
       this.opts.logger.warn({ err: String(err) }, "ensure_torches chat failed");
     }
   }
-}
-
-/** True when a block is a raw (non-stripped) log the gather may harvest. */
-function isRawLogBlock(block: Block): boolean {
-  const name = block.name.replace(/^minecraft:/, "");
-  return !name.startsWith("stripped_") && /^[a-z_]+_log$/.test(name);
 }
