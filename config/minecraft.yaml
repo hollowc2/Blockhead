@@ -1,16 +1,36 @@
-server:
-  host: eros
-  port: 25565
-  username: CobbleBob
+# =============================================================================
+# Blockhead (CobbleBob) configuration — single-file layout
+# =============================================================================
+# Section map (spec §30):
+#   server/home/navigation   -> spec 30.2 minecraft.yaml
+#   agent/behavior/llm       -> spec 30.1 agent.yaml
+#   bootstrap/background     -> maintenance.yaml (bootstrap + stockpile tuning)
+#   items                    -> item-policy.yaml (spec 24.5)
+#   policy                   -> safety/policy constraints (spec 34)
+#   storage/tui              -> misc
+# All keys are Zod-validated against src/config/schema.ts at startup.
 
+# --- 30.1 agent.yaml: identity, behavior, LLM -------------------------------
 agent:
   name: CobbleBob
   owner: Corey
+
+behavior:
+  concise_chat: true       # short task-oriented replies (spec 3)
+  auto_sleep: true         # sleep in the home bed at night when idle (spec 9)
+  auto_upgrade_tools: true # wood -> stone -> iron when resources allow (spec 10.2)
+  allow_pvp: false         # hard combat veto: human players never attacked (spec 25)
 
 llm:
   base_url: http://127.0.0.1:8080
   timeout_ms: 30000
   max_retries: 2
+
+# --- 30.2 minecraft.yaml: server / world / home -----------------------------
+server:
+  host: eros
+  port: 25565
+  username: CobbleBob
 
 home:
   dimension: overworld
@@ -20,17 +40,6 @@ home:
   protected_size_x: 100
   protected_size_z: 100
 
-bootstrap:
-  wood_logs: 8
-  search_radius: 48
-  cobblestone: 12
-  stone_sword: true
-  food_items: 8
-  wool_blocks: 3
-  fuel_items: 4
-  torches: 16
-  iron_ore: 6
-
 # Phase 9 (spec 12): beyond this distance from home, in blocks, the gather
 # skills run the expedition supply check (food, tools, inventory space,
 # health, return plan) before expanding the search, then operate under the
@@ -39,16 +48,45 @@ bootstrap:
 navigation:
   expedition_threshold: 256
 
-# Phase 10 (spec 24.5): item value overrides consulted by the ItemPolicy
-# before its built-in rules. These drive the death-recovery pickup order
-# (spec 26.1) — critical -> valuable -> useful -> everything else.
+# --- maintenance.yaml: bootstrap tuning -------------------------------------
+bootstrap:
+  wood_logs: 8
+  search_radius: 48
+  # Furthest radius gather_food expands to (and patrols to) before giving
+  # up. Bigger than the default 256 so far-away animals, villages, and
+  # crop fields are reachable; the expedition threshold still gates other
+  # gather skills.
+  hunt_max_radius: 1024
+  cobblestone: 12
+  stone_sword: true
+  food_items: 8
+  wool_blocks: 3
+  fuel_items: 4
+  torches: 16
+  iron_ore: 6
+
+# --- item-policy.yaml (spec 24.5): value overrides ---------------------------
+# Consulted by the ItemPolicy before its built-in rules. These drive the
+# death-recovery pickup order (spec 26.1) — critical -> valuable -> useful ->
+# everything else.
 items:
   dirt: expendable
   cobblestone: common
   diamond_pickaxe: critical
 
-# Phase 7: background stockpile maintenance (spec 29) + idle goal proposal
-# (spec 4.3.1). Omitted keys fall back to the schema defaults below.
+# --- policy (spec 34): deterministic safety hard constraints -----------------
+policy:
+  # Dangerous work (hunting hostiles, defending, exploring) retreats at or
+  # below this health floor.
+  health_retreat_threshold: 8
+  # Dimensions the agent may enter; anything else is refused with
+  # DIMENSION_FORBIDDEN. Nether/End need explicit opt-in here.
+  allowed_dimensions: [overworld]
+  # Standoff radius kept from known lava while choosing work sites.
+  lava_avoidance_radius: 4
+
+# --- maintenance.yaml: background stockpiles + idle loop (spec 29, 4.3) -----
+# Omitted keys fall back to the schema defaults below.
 background:
   stockpiles:
     wood: 64
@@ -78,6 +116,10 @@ background:
   # the whole window; survival floors still preempt immediately).
   llm_decisions: true
   llm_decision_interval_seconds: 60
+
+# --- misc --------------------------------------------------------------------
+storage:
+  db_path: data/blockhead.db
 
 # Phase 12 (spec 33): development dashboard. Enabled by default on a TTY;
 # the TUI owns the terminal while pino keeps writing logs/blockhead.log.

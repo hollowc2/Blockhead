@@ -33,6 +33,12 @@ export type SkillErrorCode =
   | "STORAGE_NOT_FOUND"
   | "STORAGE_UNREACHABLE"
   | "WRONG_DIMENSION"
+  /** Phase 13 (spec 14.3): a production chain ran out of materials. */
+  | "INSUFFICIENT_MATERIALS"
+  /** Phase 13 (spec 25): the combat policy refused a human target. */
+  | "PVP_FORBIDDEN"
+  /** Phase 13 (spec 34): an unapproved dimension entry was refused. */
+  | "DIMENSION_FORBIDDEN"
   /** Phase 9: the pre-expedition supply check refused travel beyond the threshold. */
   | "EXPEDITION_BLOCKED"
   /** Phase 10: the death-recovery sweep ran out of wall-clock budget. */

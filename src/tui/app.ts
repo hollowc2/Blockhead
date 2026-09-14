@@ -63,6 +63,26 @@ const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
 const ANSI_SGR = /\x1b\[[0-9;]*m/g;
 
+/** Total units carried at death (what the corpse dropped). */
+function inventoryTotal(inventory: Record<string, number>): number {
+  let total = 0;
+  for (const count of Object.values(inventory)) total += count;
+  return total;
+}
+
+/**
+ * Compact corpse contents for the event feed: "oak_log x2, iron_ingot".
+ * Capped at `limit` item kinds so a full inventory does not flood the ring.
+ */
+function corpseSummary(inventory: Record<string, number>, limit = 6): string {
+  const parts = Object.entries(inventory).map(([name, count]) => {
+    const bare = name.replace(/^minecraft:/, "");
+    return count > 1 ? `${bare} x${count}` : bare;
+  });
+  if (parts.length <= limit) return parts.join(", ");
+  return `${parts.slice(0, limit).join(", ")} +${parts.length - limit} more`;
+}
+
 /** True when the dashboard should take the terminal: stdout is a TTY and the config allows it. */
 export function shouldEnableTui(config: MinecraftConfig, stdoutIsTty: boolean): boolean {
   if (!stdoutIsTty) return false;
@@ -140,10 +160,26 @@ export class TuiApp {
       bus.on("task.failed", (p) => push(`Task failed: ${p.task.objective} (${p.task.lastError ?? "unknown"})`)),
       bus.on("task.cancelled", (p) => push(`Task cancelled: ${p.task.objective}`)),
       bus.on("task.paused", (p) => push(`Task paused: ${p.task.objective}`)),
-      bus.on("death", (p) =>
-        push(`Died${p.position === null ? "" : ` at ${round1(p.position.x)}, ${round1(p.position.y)}, ${round1(p.position.z)}`}`),
-      ),
+      bus.on("death", (p) => {
+        const total = inventoryTotal(p.inventory);
+        const carried = total === 0 ? "carrying nothing" : `carrying ${total} item${total === 1 ? "" : "s"}`;
+        push(`Died${p.position === null ? "" : ` at ${round1(p.position.x)}, ${round1(p.position.y)}, ${round1(p.position.z)}`} — ${carried}`);
+      }),
       bus.on("respawn", () => push("Respawned")),
+      bus.on("death.recorded", (p) => {
+        if (p.worthRecovering) {
+          push(`Corpse worth recovering: ${corpseSummary(p.inventory)}`);
+        } else {
+          const why =
+            p.skipReason === "nothing_carried"
+              ? "nothing carried"
+              : p.skipReason === "only_expendable_items"
+                ? "only discard junk dropped"
+                : "nothing to recover";
+          const contents = corpseSummary(p.inventory);
+          push(`Recovery skipped — ${why}${contents === "" ? "" : ` (${contents})`}`);
+        }
+      }),
       bus.on("death.recovery.completed", (p) =>
         push(p.recovered ? `Death recovery complete (${p.durationMs}ms)` : `Death recovery failed: ${p.failureReason ?? "unknown"}`),
       ),

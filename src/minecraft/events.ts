@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import { readState } from "./bot.js";
+import { itemsSummary } from "./inventory.js";
 import { logger } from "../logger.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { AgentState } from "../agent/state.js";
@@ -150,7 +151,10 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
   bot.on("death", () => {
     // The player entity still exists during the death animation, so its
     // position is the death site; fall back to the last observed self
-    // position when it is already gone.
+    // position when it is already gone. The client inventory cache is still
+    // pre-death here (the server drops items as world entities; the empty
+    // inventory arrives only with the respawn), so `itemsSummary` is the
+    // death-site corpse contents the recovery gate decides on.
     const pos = bot.entity?.position ?? ctx.state.self.position;
     pruneAttackers();
     const killer = recentAttackers.length > 0 ? recentAttackers[0]! : null;
@@ -158,6 +162,7 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
       dimension: bot.game.dimension,
       position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
       killer: killer === null ? null : { name: killer.name, x: killer.x, y: killer.y, z: killer.z },
+      inventory: itemsSummary(bot),
     });
     recentAttackers.length = 0;
   });

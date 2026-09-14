@@ -308,9 +308,15 @@ export class DeathRecoveryRunner {
       data.recovered = failure === null;
 
       // Only first write wins: a newer death may have superseded this record
-      // while the attempt was in flight.
+      // while the attempt was in flight. A skipped death (nothing worth
+      // carrying) is also terminal — a stray run must not overwrite it.
       const record = this.opts.deaths.get(params.deathId);
-      if (record !== null && !record.recovered && record.recoveryFailedReason === null) {
+      if (
+        record !== null &&
+        !record.recovered &&
+        record.recoveryFailedReason === null &&
+        record.recoverySkippedReason === null
+      ) {
         if (data.recovered) this.opts.deaths.markRecovered(params.deathId);
         else this.opts.deaths.markFailed(params.deathId, failure ?? "interrupted");
       }

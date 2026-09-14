@@ -29,6 +29,9 @@ import { BootstrapStage } from "./bootstrap.js";
 /** A one-shot deferred re-check, so the loop continues right after a task settles. */
 const RE_CHECK_DELAY_MS = 1_000;
 
+/** Horizontal standoff from home at which the bot counts as "home". */
+const AUTO_SLEEP_HOME_RADIUS = 12;
+
 export interface BackgroundManagerOptions {
   bot: Bot;
   state: AgentState;
@@ -75,8 +78,8 @@ export class BackgroundManager {
   private readonly lastFailedAt = new Map<string, number>();
   /** Failure reason of the most recent failed restore attempt, per kind. */
   private readonly lastFailReason = new Map<string, string>();
-  /** Last block code warn issued per kind; one notice per block state entry. */
-  private readonly lastBlockNotice = new Map<StockpileKind, string>();
+  /** Last block code warn issued per key; one notice per block state entry. */
+  private readonly lastBlockNotice = new Map<string, string>();
 
   constructor(options: BackgroundManagerOptions) {
     this.opts = options;
@@ -185,6 +188,24 @@ export class BackgroundManager {
     if (scheduler.active !== null) return;
     if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND)) return;
 
+    // Phase 13 (spec 9): automatic night sleep is code-owned. When the bot is
+    // idle, home, and it is night, it sleeps instead of starting new work.
+    if (this.opts.config.behavior?.auto_sleep !== false && this.opts.state.timePhase === "night") {
+      const home = this.opts.state.home;
+      const self = this.opts.bot.entity?.position;
+      if (home !== null && self !== null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS) {
+        scheduler.enqueue({
+          type: "sleep",
+          priority: TaskPriority.BACKGROUND,
+          source: "background",
+          objective: "Sleep until morning.",
+          parameters: {},
+        });
+        scheduler.claim();
+        return;
+      }
+    }
+
     if (!(this.opts.config.background?.llm_decisions ?? true)) {
       await this.deterministicFallback(snapshot);
       return;
@@ -230,6 +251,8 @@ export class BackgroundManager {
     } else if (task.type === "collect_resource") {
       const resource = String(task.parameters.resource ?? "");
       if (resource !== "") key = `resource:${resource}`;
+    } else if (task.type === "upgrade_equipment") {
+      key = "upgrade";
     }
     if (key === null) return;
     this.lastFailedAt.set(key, this.now());
@@ -246,15 +269,15 @@ export class BackgroundManager {
    * after cooldown is how the bot notices the world changed. Nothing here
    * consults the LLM.
    */
-  private restoreBlock(kind: StockpileKind): RestoreBlock | null {
-    const failedAt = this.lastFailedAt.get(kind);
+  private restoreBlock(key: string): RestoreBlock | null {
+    const failedAt = this.lastFailedAt.get(key);
     if (failedAt === undefined) return null;
     const cooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
     const remainingMs = failedAt + cooldownMs - this.now();
     if (remainingMs <= 0) return null;
     return {
       code: "COOLDOWN",
-      message: `restore failed (${this.lastFailReason.get(kind) ?? "previous restore failed"}); retry in ${Math.ceil(remainingMs / 1000)}s`,
+      message: `restore failed (${this.lastFailReason.get(key) ?? "previous restore failed"}); retry in ${Math.ceil(remainingMs / 1000)}s`,
     };
   }
 
@@ -264,12 +287,12 @@ export class BackgroundManager {
    * — the tick returns silently while the block holds, and stops game chat
    * entirely (the skills throttle their own announcements as a second layer).
    */
-  private kindBlocked(kind: StockpileKind): boolean {
-    const block = this.restoreBlock(kind);
+  private kindBlocked(key: string): boolean {
+    const block = this.restoreBlock(key);
     if (block === null) return false;
-    if (this.lastBlockNotice.get(kind) !== block.code) {
-      this.lastBlockNotice.set(kind, block.code);
-      this.opts.logger.warn({ kind, block: block.message }, "background restore standing by");
+    if (this.lastBlockNotice.get(key) !== block.code) {
+      this.lastBlockNotice.set(key, block.code);
+      this.opts.logger.warn({ kind: key, block: block.message }, "background restore standing by");
     }
     return true;
   }
@@ -299,6 +322,22 @@ export class BackgroundManager {
         priority: TaskPriority.BACKGROUND,
         source: "background",
         objective: "Organize home storage by category, expanding when full.",
+        parameters: {},
+      });
+      this.opts.scheduler.claim();
+      return;
+    }
+
+    // Phase 13 (spec 10.2): opportunistic tool upgrades run only when
+    // nothing else needs the floor (and not on a failure cooldown).
+    if (this.opts.config.behavior?.auto_upgrade_tools !== false) {
+      if (this.kindBlocked("upgrade")) return;
+      this.opts.logger.info({}, "stockpiles healthy; checking for tool upgrades");
+      this.opts.scheduler.enqueue({
+        type: "upgrade_equipment",
+        priority: TaskPriority.BACKGROUND,
+        source: "background",
+        objective: "Upgrade tools when resources allow.",
         parameters: {},
       });
       this.opts.scheduler.claim();

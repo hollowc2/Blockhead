@@ -158,4 +158,14 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX IF NOT EXISTS idx_death_events_world_created
       ON death_events(world_id, created_at);
   `,
+  // v6: corpse contents and recovery verdict. `inventory_json` snapshots the
+  // items carried at the moment of death (name -> count), so a death whose
+  // drop is empty or junk-only can skip the recovery trip entirely.
+  // `recovery_skipped_reason` records that decision (nothing_carried /
+  // only_expendable_items) — a skipped death is not a failed recovery, it is
+  // one that never needed a trip.
+  `
+  ALTER TABLE death_events ADD COLUMN inventory_json TEXT;
+  ALTER TABLE death_events ADD COLUMN recovery_skipped_reason TEXT;
+  `,
 ];

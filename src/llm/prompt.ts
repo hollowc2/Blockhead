@@ -1,52 +1,29 @@
 import type { LlmMessage } from "./client.js";
 import type { StateSnapshot } from "./context.js";
+import { loadPromptAssets } from "./prompts.js";
 
 /**
- * Short, strict system prompt (spec 42): allowed-tool boundary, personality,
- * and the deterministic-code rule. Small local models need this minimal.
+ * Prompt construction (spec 42). The system prompt, the decision contract
+ * (with few-shot examples), and the background-director instructions are
+ * loaded from prompts/*.md, falling back to built-ins; the tool list and the
+ * live state snapshot are always injected fresh. Small local models get a
+ * short, strict, tool-bounded prompt.
  */
-export const SYSTEM_PROMPT = [
-  "You are CobbleBob, a calm, minimal Minecraft companion.",
-  "You choose high-level tools from the provided list. Never invent new tools.",
-  "You never control movement, pathfinding, inventory slots, or combat directly; deterministic code performs those.",
-  "Reply with short, task-oriented phrases. Keep rationales under one short sentence.",
-  "Respond only with valid JSON matching the required schema.",
-].join("\n");
+
+const assets = loadPromptAssets();
+
+/** Personality + tool boundary (prompts/system.md). */
+export const SYSTEM_PROMPT: string = assets.system;
+
+/** The decision contract text (prompts/decision.md). */
+export const DECISION_CONTRACT: string = assets.decision;
 
 /**
- * Basic few-shot examples (spec 42: "Always include 2-4 relevant few-shot
- * examples"). Static for Phase 4; later drawn from the skill library.
+ * Few-shot examples (spec 42: "Always include 2-4 relevant few-shot
+ * examples"); drawn from prompts/decision.md's JSON block. Later these can
+ * be re-ranked from skill-library retrieval.
  */
-export const FEW_SHOT_EXAMPLES: readonly { user: string; assistant: string }[] = [
-  {
-    user: "Corey: come here",
-    assistant: JSON.stringify({
-      decision: { type: "tool", tool: "come_to_player", arguments: { player: "Corey" } },
-      rationale: "Approach the owner.",
-    }),
-  },
-  {
-    user: "Corey: follow me",
-    assistant: JSON.stringify({
-      decision: { type: "tool", tool: "follow_player", arguments: { player: "Corey" } },
-      rationale: "Follow the owner.",
-    }),
-  },
-  {
-    user: "Corey: what are you doing?",
-    assistant: JSON.stringify({
-      decision: { type: "respond", response: "Following you." },
-      rationale: "Answer a status question.",
-    }),
-  },
-  {
-    user: "Corey: go home",
-    assistant: JSON.stringify({
-      decision: { type: "tool", tool: "go_home", arguments: {} },
-      rationale: "Return home.",
-    }),
-  },
-];
+export const FEW_SHOT_EXAMPLES: readonly { user: string; assistant: string }[] = assets.fewShot;
 
 /** Assemble system + few-shot + the live instruction into chat messages. */
 export function buildMessages(snapshot: StateSnapshot, toolList: string): LlmMessage[] {
@@ -61,6 +38,9 @@ export function buildMessages(snapshot: StateSnapshot, toolList: string): LlmMes
       "Available tools:",
       toolList,
       "",
+      "Decision contract:",
+      DECISION_CONTRACT,
+      "",
       "Current state:",
       JSON.stringify(snapshot, null, 2),
       "",
@@ -72,23 +52,8 @@ export function buildMessages(snapshot: StateSnapshot, toolList: string): LlmMes
   return messages;
 }
 
-/**
- * System prompt for the background director (spec 4.3). The model decides
- * the next background task from the dispatcher-capable vocabulary; survival
- * floors stay code-owned so the model never trades away safety. The food
- * priority and anti-churn rules keep a scarce-resource world from turning
- * the bot into a repeating fail loop.
- */
-export const DIRECTOR_SYSTEM_PROMPT = [
-  "You are CobbleBob's planning head. You decide the next background task.",
-  "Choose exactly ONE task from the provided list. Never invent tasks or parameters.",
-  "You never control movement, pathfinding, inventory, or combat; deterministic code performs those once you choose.",
-  "Survival floors are handled by code, not by you. You are only consulted while every stockpile sits above its floor.",
-  "Address listed shortages before optional work. Food is the top priority shortage: prefer stockpile_maintenance with kind \"food\" when food is below target.",
-  "Do not blindly repeat a restore the situation lists as recently failed — pick a different useful task or wait. A failed repeat is worse than a short wait.",
-  "When nothing useful remains, choose wait.",
-  "Reply with short, task-oriented phrases. Respond only with valid JSON matching the required schema.",
-].join("\n");
+/** System prompt for the background director (prompts/idle-proposal.md). */
+export const DIRECTOR_SYSTEM_PROMPT: string = assets.idleProposal;
 
 /** The task vocabulary the TaskDispatcher can execute, as the model sees it. */
 const DIRECTOR_TASK_DOC = [
@@ -113,17 +78,13 @@ export function buildDirectorMessages(snapshot: StateSnapshot, situation: string
         "Available tasks (choose exactly one):",
         DIRECTOR_TASK_DOC,
         "",
-        "Current state:",
-        JSON.stringify(snapshot, null, 2),
-        "",
         "Situation:",
         situation,
         "",
-        "Examples:",
-        '  {"task": {"type": "stockpile_maintenance", "kind": "food"}, "rationale": "Food is 20 under target; no recent hunt failures."}',
-        '  {"task": {"type": "wait"}, "rationale": "Every useful task failed recently; standing by."}',
+        "Current state:",
+        JSON.stringify(snapshot, null, 2),
         "",
-        'Respond only with valid JSON matching the schema.',
+        "Choose the next background task. Respond only with valid JSON matching the schema.",
       ].join("\n"),
     },
   ];

@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "llm": "llama-server -m /opt/models/qwen3-8b-q4_k_m.gguf --host 127.0.0.1 --port 8080 -c 8192 --mlock"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

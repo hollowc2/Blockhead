@@ -15,6 +15,8 @@ import { deliverCarried } from "../minecraft/containers.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { findBlockNear, findBlocksNear, findBlocksNearPoint } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
+import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
+import { classifyBlock } from "../policy/protection.js";
 import {
   ChatThrottle,
   expansionMessage,
@@ -104,9 +106,10 @@ const DROPPED_ITEM_BY_BLOCK: Record<string, string> = {
 /**
  * The carried item a `collect_resource` run accounts for and delivers. The
  * run counts *drops* ("coal" after mining "coal_ore"), never the requested
- * block name, so the quantity math sees real progress.
+ * block name, so the quantity math sees real progress. Exported so the
+ * combine skills (ensure_item) can count the same way.
  */
-function carriedItemName(resource: string): string {
+export function carriedItemName(resource: string): string {
   return DROPPED_ITEM_BY_BLOCK[bareName(resource)] ?? bareName(resource);
 }
 
@@ -185,11 +188,18 @@ export interface CollectRunOptions {
   signals?: TaskSignals;
   /** Resume state from a paused run of the same task. */
   resumeState?: CollectResumeState;
+  /**
+   * True when the owner explicitly requested this gather (spec 8.2: structural
+   * blocks inside the protected home region need an explicit request before
+   * they may be broken). Background maintenance never passes this, so it can
+   * never touch the protected region's structures.
+   */
+  userRequested?: boolean;
 }
 
 /** Abort reasons the outer loop breaks on (spec 27 stages 10, 11, and 12). */
 interface Abort {
-  errorCode: Extract<SkillErrorCode, "INVENTORY_FULL" | "DANGER_TOO_HIGH" | "TOOL_REQUIRED" | "EXPEDITION_BLOCKED">;
+  errorCode: Extract<SkillErrorCode, "INVENTORY_FULL" | "DANGER_TOO_HIGH" | "TOOL_REQUIRED" | "EXPEDITION_BLOCKED" | "PROTECTED_REGION">;
   reason: string;
 }
 
@@ -213,6 +223,8 @@ export class CollectResourceRunner {
   private interruptions = 0;
   private currentResource = "";
   private currentQuantity = 0;
+  /** Whether the current run was explicitly requested by the owner (policy). */
+  private userRequested = false;
 
   /** Phase 9: expedition lifecycle for the current run (spec 12). */
   private readonly expedition: ExpeditionTracker;
@@ -249,6 +261,7 @@ export class CollectResourceRunner {
     this.expedition.reset();
     this.currentResource = bareName(resource);
     this.currentQuantity = quantity;
+    this.userRequested = options.userRequested === true;
     try {
       return await this.execute(resource, quantity);
     } finally {
@@ -476,6 +489,17 @@ export class CollectResourceRunner {
       if (attempted.has(key)) continue;
       attempted.add(key);
 
+      // Spec 8.2: structural blocks inside the protected home region need an
+      // explicit request. Background maintenance (and a director without one)
+      // never gathers them there; the run logs and moves on.
+      const protectedPoint = this.opts.state.protectedRegion;
+      if (protectedPoint !== null && regionContains(protectedPoint, { x: site.x, y: site.y, z: site.z })) {
+        if (classifyBlock(bare) !== "terrain" && !this.userRequested) {
+          this.opts.logger.info({ resource: bare, site: key }, "skipping a protected-region structural site without an explicit request");
+          continue;
+        }
+      }
+
       data.sitesVisited += 1;
       const visit = await this.gatherAtSite(new Vec3(site.x, site.y, site.z), bare, carriedName);
       carried = countItem(this.opts.bot, carriedName);
@@ -536,7 +560,19 @@ export class CollectResourceRunner {
       const found = findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS)
         .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`));
       const outside = region ? found.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : found;
-      const candidates = outside.length > 0 ? outside : found;
+      let candidates = outside.length > 0 ? outside : found;
+      // Spec 8.2 policy: structural blocks inside the protected home region are
+      // only gathered with an explicit owner request. Natural terrain (trees,
+      // stone, ores) stays available to the bot's own rails.
+      if (outside.length === 0 && found.length > 0 && classifyBlock(bare) !== "terrain" && !this.userRequested) {
+        // The only matches are protected structures: refuse with a structured
+        // veto the model sees on the next decision instead of "not found".
+        this.announce(`Not touching ${resourceLabel(bare)} inside the protected home region: PROTECTED_REGION.`);
+        return {
+          errorCode: "PROTECTED_REGION",
+          reason: `${resourceLabel(bare)} was only found inside the protected home region`,
+        };
+      }
       if (candidates.length === 0) {
         this.announce(expansionMessage(stem, radius));
         data.expansionCount += 1;
@@ -584,6 +620,16 @@ export class CollectResourceRunner {
     const bot = this.opts.bot;
     const family = toolFamilyFor(bare);
 
+    // Spec 34: never intentionally enter known lava. A candidate standing in
+    // (or right beside) lava is skipped, not worked around.
+    if (!checkLavaEntry(bot, position, lavaAvoidanceRadius(this.opts.config)).allowed) {
+      this.opts.logger.info(
+        { at: [position.x, position.y, position.z], resource: bare },
+        "skipping a candidate beside lava",
+      );
+      return { gained: 0, abort: null };
+    }
+
     const travel = await travelAndWait(bot, position, {
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
@@ -601,9 +647,13 @@ export class CollectResourceRunner {
       const abort = await this.checkAbort();
       if (abort !== null) return { gained, abort };
 
+      const self = bot.entity;
       const targets = findBlocksNear(bot, (block) => blockMatchesResource(block, bare), GATHER_RADIUS, GATHER_BLOCKS_PER_PASS)
         .map((v) => bot.blockAt(v))
-        .filter((block) => block !== null);
+        .filter((block) => block !== null)
+        // Spec 34: never dig straight down blindly — a target directly beneath
+        // the feet is skipped; the bot digs sideways instead.
+        .filter((block) => self === null || !isStraightDownTarget(block.position, self.position));
       if (targets.length === 0) return { gained, abort: null };
 
       const before = countItem(bot, carriedName);
@@ -823,6 +873,10 @@ function abortReason(abort: Abort, expedition: boolean): string {
     case "TOOL_REQUIRED":
       return `Tools unavailable: ${abort.reason}.`;
     case "EXPEDITION_BLOCKED":
+      return abort.reason;
+    case "PROTECTED_REGION":
+      return abort.reason;
+    default:
       return abort.reason;
   }
 }

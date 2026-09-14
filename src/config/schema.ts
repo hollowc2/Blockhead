@@ -15,6 +15,44 @@ export const MinecraftConfigSchema = z.object({
       owner: z.string().default("Corey"),
     })
     .optional(),
+  /**
+   * Agent behavior switches (spec 30.1). `allow_pvp` is the ONLY way human
+   * targets become legal (spec 25 — out of scope by default); the combat
+   * policy layer consults it before every attack.
+   */
+  behavior: z
+    .object({
+      /** Short, task-oriented chat replies (spec 3, 42). */
+      concise_chat: z.boolean().default(true),
+      /** Sleep in the home bed at night when idle (spec 9). */
+      auto_sleep: z.boolean().default(true),
+      /** Upgrade tools wood -> stone -> iron when resources allow (spec 10.2). */
+      auto_upgrade_tools: z.boolean().default(true),
+      /** Player-vs-player combat; false is a hard policy veto (spec 25). */
+      allow_pvp: z.boolean().default(false),
+    })
+    .optional(),
+  /**
+   * Deterministic safety policy (spec 34). Enforced by policy/safety.ts and
+   * policy/protection.ts before dangerous work starts; the LLM only proposes.
+   */
+  policy: z
+    .object({
+      /**
+       * Health at or below which dangerous work (hunting hostiles, defending,
+       * exploring) retreats instead of continuing.
+       */
+      health_retreat_threshold: z.number().int().min(1).max(20).default(8),
+      /**
+       * Dimensions the agent may enter; any other dimension is refused with
+       * DIMENSION_FORBIDDEN (spec 34: "Never enter another dimension unless
+       * explicitly allowed by policy").
+       */
+      allowed_dimensions: z.array(z.string()).default(["overworld"]),
+      /** Standoff radius kept from known lava while choosing work sites. */
+      lava_avoidance_radius: z.number().int().positive().default(4),
+    })
+    .optional(),
   /** Local llama.cpp HTTP server connection (spec 30.1). */
   llm: z
     .object({
@@ -37,8 +75,15 @@ export const MinecraftConfigSchema = z.object({
     .object({
       /** Raw logs to gather in the WOOD stage; 3 logs make the full starter kit. */
       wood_logs: z.number().int().positive().default(8),
-      /** Initial log-search radius in blocks; expands by 2x up to 256 on misses. */
+      /** Initial log-search radius in blocks; expands by 2x up to `hunt_max_radius` on misses. */
       search_radius: z.number().int().positive().default(48),
+      /**
+       * Furthest radius the hunt expands to before giving up (gather_food
+       * patrols its ring edges because the entity scan only sees loaded
+       * chunks). Mirrors skill-library's uniform search cap of 1024 used by
+       * collect_resource.
+       */
+      hunt_max_radius: z.number().int().positive().default(1024),
       /**
        * Cobblestone to gather in the STONE_TOOLS stage: three per pickaxe /
        * axe / shovel (9) plus one for the sword and a small spare stockpile.

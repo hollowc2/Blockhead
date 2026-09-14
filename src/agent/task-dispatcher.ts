@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import type { AgentState } from "./state.js";
+import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { Scheduler } from "./scheduler.js";
 import type { TaskSignals } from "./scheduler.js";
@@ -11,11 +12,20 @@ import {
   travelHomeAndWait,
   waitHere,
 } from "../minecraft/movement.js";
+import { normalizeDimension } from "../minecraft/protection.js";
+import { checkDimensionEntry, checkHealthRetreat, checkLavaEntry, lavaAvoidanceRadius } from "../policy/safety.js";
 import type { CollectResourceRunner, CollectResumeState } from "../skills/collect-resource.js";
 import type { DeathRecoveryParams, DeathRecoveryRunner } from "../skills/death-recovery.js";
+import type { DefenseRunner } from "../skills/defense.js";
+import type { DeliveryRunner } from "../skills/delivery.js";
+import type { EnsureItemRunner } from "../skills/ensure-item.js";
+import { runEquipmentUpgrade } from "../skills/ensure-item.js";
 import type { EnsureTorchesRunner } from "../skills/ensure-torches.js";
-import type { GatherFoodRunner } from "../skills/gather-food.js";
+import { expeditionThreshold } from "../skills/expedition.js";
+import type { GatherFoodRunner, GatherFoodResumeState } from "../skills/gather-food.js";
+import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
 import type { OrganizeResumeState, OrganizeStorageRunner } from "../skills/organize-storage.js";
+import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
@@ -30,6 +40,7 @@ export interface TaskDispatcherOptions {
   scheduler: Scheduler;
   state: AgentState;
   bot: Bot;
+  config: MinecraftConfig;
   maintenance: StockpileManager;
   collect: CollectResourceRunner;
   food: GatherFoodRunner;
@@ -37,6 +48,14 @@ export interface TaskDispatcherOptions {
   deathRecovery: DeathRecoveryRunner;
   /** Phase 11: storage organization / creation (spec 14.4, 22). */
   organizeStorage: OrganizeStorageRunner;
+  /** Phase 13: ensure_item / craft_item / smelt_item / upgrade_equipment. */
+  ensureItem: EnsureItemRunner;
+  /** Phase 13: defend_self / defend_player. */
+  defense: DefenseRunner;
+  /** Phase 13: sleep / eat / equip_best / replace_equipment. */
+  utility: UtilityRunner;
+  /** Phase 13: give_item / store_items / retrieve_items. */
+  delivery: DeliveryRunner;
   logger: Logger;
 }
 
@@ -113,7 +132,132 @@ export class TaskDispatcher {
         return this.opts.collect.run(resource, quantity, {
           signals,
           resumeState: task.resumeState as CollectResumeState | undefined,
+          // Spec 8.2: an explicit owner request lifts the "no structural
+          // blocks in the protected region" default (restricted by default).
+          userRequested: task.source === "user",
         });
+      }
+      case "ensure_item":
+      case "craft_item":
+      case "smelt_item": {
+        const item = String(task.parameters.item ?? "");
+        const quantity = Number(task.parameters.quantity ?? 0);
+        if (item === "" || !Number.isFinite(quantity) || quantity <= 0) {
+          return {
+            ok: false,
+            status: "failed",
+            errorCode: "INVALID_RESOURCE",
+            message: "invalid ensure_item task parameters",
+            retryable: false,
+          };
+        }
+        const mode = task.type === "ensure_item" ? "ensure" : task.type === "craft_item" ? "craft" : "smelt";
+        return this.opts.ensureItem.run(item, quantity, {
+          mode,
+          signals,
+          resumeState: task.resumeState as { interruptions?: number } | undefined,
+        });
+      }
+      case "upgrade_equipment":
+        return runEquipmentUpgrade(this.opts.bot, this.opts.ensureItem, { signals });
+      case "gather_food": {
+        const quantity = Number(task.parameters.quantity ?? 0);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          return {
+            ok: false,
+            status: "failed",
+            errorCode: "INVALID_RESOURCE",
+            message: "invalid gather_food task parameters",
+            retryable: false,
+          };
+        }
+        return this.opts.food.run(quantity, {
+          signals,
+          resumeState: task.resumeState as GatherFoodResumeState | undefined,
+        });
+      }
+      case "hunt": {
+        const entity = String(task.parameters.entity_type ?? "");
+        const quantity = Number(task.parameters.quantity ?? 0);
+        if (entity === "" || !Number.isFinite(quantity) || quantity <= 0) {
+          return {
+            ok: false,
+            status: "failed",
+            errorCode: "INVALID_RESOURCE",
+            message: "invalid hunt task parameters",
+            retryable: false,
+          };
+        }
+        return this.opts.food.run(quantity, {
+          signals,
+          resumeState: task.resumeState as GatherFoodResumeState | undefined,
+          targetMob: entity,
+        });
+      }
+      case "travel_to":
+        return this.runTravelTo(task, signals);
+      case "explore":
+        return this.runExplore(task, signals);
+      case "give_item": {
+        const params = task.parameters as Partial<{ player: string; item: string; quantity: number }>;
+        if (typeof params.player !== "string" || params.player === "" || typeof params.item !== "string" || params.item === "" || !Number.isFinite(params.quantity) || (params.quantity ?? 0) <= 0) {
+          return this.invalidParams("give_item");
+        }
+        return this.opts.delivery.give(params.player, params.item, Number(params.quantity), {
+          signals,
+          resumeState: task.resumeState as { interruptions?: number } | undefined,
+        });
+      }
+      case "store_items": {
+        const params = task.parameters as Partial<{ filter: string; location: string }>;
+        return this.opts.delivery.store(
+          typeof params.filter === "string" && params.filter !== "" ? params.filter : null,
+          typeof params.location === "string" ? params.location : null,
+          { signals, resumeState: task.resumeState as { interruptions?: number } | undefined },
+        );
+      }
+      case "retrieve_items": {
+        const params = task.parameters as Partial<{ items: { item: string; quantity?: number }[]; location: string }>;
+        const items = Array.isArray(params.items) ? params.items : [];
+        if (items.length === 0 || items.some((entry) => typeof entry.item !== "string" || entry.item === "")) {
+          return this.invalidParams("retrieve_items");
+        }
+        return this.opts.delivery.retrieve(
+          items.map((entry) => ({ item: entry.item, quantity: Math.max(1, Math.floor(Number(entry.quantity) || 1)) })),
+          typeof params.location === "string" ? params.location : null,
+          { signals, resumeState: task.resumeState as { interruptions?: number } | undefined },
+        );
+      }
+      case "defend_self":
+        return this.opts.defense.defendSelf({ signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+      case "defend_player": {
+        const player = String(task.parameters.player ?? "");
+        if (player === "") return this.invalidParams("defend_player");
+        return this.opts.defense.defendPlayer(player, { signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+      }
+      case "sleep":
+        return this.opts.utility.sleep({ signals });
+      case "eat":
+        return this.opts.utility.eat({ signals });
+      case "equip_best":
+        return this.opts.utility.equipBest({ signals });
+      case "replace_equipment":
+        return this.opts.utility.replaceEquipment({ signals });
+      case "recover_death_items": {
+        const params = task.parameters as Partial<DeathRecoveryParams>;
+        if (
+          !Number.isFinite(params.deathId) ||
+          typeof params.dimension !== "string" ||
+          !Number.isFinite(params.x) ||
+          !Number.isFinite(params.y) ||
+          !Number.isFinite(params.z)
+        ) {
+          return this.invalidParams("recover_death_items");
+        }
+        return this.opts.deathRecovery.run(
+          { deathId: params.deathId as number, dimension: params.dimension, x: params.x as number, y: params.y as number, z: params.z as number },
+          signals,
+        );
       }
       case "stockpile_maintenance": {
         const kind = String(task.parameters.kind ?? "") as StockpileKind;
@@ -240,5 +384,106 @@ export class TaskDispatcher {
       return { ok: false, status: "failed", message: `could not reach home: ${travel.status}`, retryable: true };
     }
     return { ok: true, status: "completed", message: "home" };
+  }
+
+  /**
+   * "travel_to": walk to an explicit location (destination dimension must match
+   * the bot's current dimension; the policy layer refuses unauthorized
+   * dimensions and lava destinations).
+   */
+  private async runTravelTo(task: Task, signals: TaskSignals): Promise<SkillResult> {
+    const x = Number(task.parameters.x ?? Number.NaN);
+    const y = Number(task.parameters.y ?? Number.NaN);
+    const z = Number(task.parameters.z ?? Number.NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return this.invalidParams("travel_to");
+    }
+    const destination = { x, y, z };
+    const dimension = String(task.parameters.dimension ?? this.opts.state.self.dimension ?? "overworld");
+
+    const dimensionPolicy = checkDimensionEntry(dimension, this.opts.config);
+    if (!dimensionPolicy.allowed) {
+      return { ok: false, status: "failed", errorCode: "DIMENSION_FORBIDDEN", message: dimensionPolicy.violation.reason, retryable: false };
+    }
+    const currentDimension = normalizeDimension(this.opts.bot.game.dimension ?? "");
+    if (currentDimension !== normalizeDimension(dimension)) {
+      return { ok: false, status: "failed", errorCode: "WRONG_DIMENSION", message: `destination is in ${dimension}, the bot is in ${currentDimension}`, retryable: false };
+    }
+    const lava = checkLavaEntry(this.opts.bot, destination, lavaAvoidanceRadius(this.opts.config));
+    if (!lava.allowed) {
+      return { ok: false, status: "failed", errorCode: "DANGER_TOO_HIGH", message: lava.violation.reason, retryable: false };
+    }
+
+    const shouldAbort = (): boolean => !signals.checkpoint();
+    const travel = await travelAndWait(this.opts.bot, destination, {
+      timeoutMs: GO_HOME_TIMEOUT_MS,
+      shouldAbort,
+    });
+    if (travel.status === "aborted") {
+      return { ok: false, status: "interrupted", message: "interrupted en route" };
+    }
+    if (travel.status !== "arrived" && travel.status !== "already_there") {
+      return { ok: false, status: "failed", message: `could not reach the location: ${travel.status}`, retryable: true };
+    }
+    return { ok: true, status: "completed", message: "arrived" };
+  }
+
+  /**
+   * "explore": walk out along a compass heading to a bounded distance (never
+   * beyond the expedition threshold) and walk home again. Direction and
+   * distance are optional; a default heading rotates with the clock so
+   * repeated explores fan out around home.
+   */
+  private async runExplore(task: Task, signals: TaskSignals): Promise<SkillResult> {
+    const home = this.opts.state.home;
+    if (home === null) {
+      return { ok: false, status: "failed", message: "no home coordinate configured", retryable: false };
+    }
+    // Dangerous-work health gate (spec 34): exploring requires walking out and
+    // back; at/below the retreat threshold the bot stays put and heals.
+    if (!checkHealthRetreat(this.opts.bot.health).allowed) {
+      return { ok: false, status: "failed", errorCode: "DANGER_TOO_HIGH", message: `health ${this.opts.bot.health} is at/below the retreat threshold; not exploring`, retryable: false };
+    }
+    const threshold = expeditionThreshold(this.opts.config);
+    const rawDistance = Number(task.parameters.distance ?? 128);
+    const distance = Math.min(Math.max(Math.floor(rawDistance), 8), Math.max(8, threshold - 1));
+    const rawHeading = Number(task.parameters.heading ?? -1);
+    const heading = rawHeading >= 0 ? ((rawHeading % 360) + 360) % 360 : patrolHeadingDeg(Math.floor(Date.now() / 60_000));
+    const waypoint = patrolWaypoint(home.x, home.z, distance, heading);
+
+    const shouldAbort = (): boolean => !signals.checkpoint();
+    const standingY = Math.floor(this.opts.bot.entity?.position.y ?? home.y);
+    const outbound = await travelAndWait(this.opts.bot, { x: waypoint.x, y: standingY, z: waypoint.z }, {
+      timeoutMs: GO_HOME_TIMEOUT_MS,
+      shouldAbort,
+    });
+    if (outbound.status === "aborted") {
+      return { ok: false, status: "interrupted", message: "interrupted exploring" };
+    }
+    if (outbound.status !== "arrived" && outbound.status !== "already_there") {
+      return { ok: false, status: "failed", message: `could not explore: ${outbound.status}`, retryable: true };
+    }
+    if (signals.checkpoint()) {
+      const inbound = await travelHomeAndWait(this.opts.bot, home, {
+        dimension: home.dimension,
+        timeoutMs: GO_HOME_TIMEOUT_MS,
+        shouldAbort,
+      });
+      if (inbound.status === "aborted") {
+        return { ok: false, status: "interrupted", message: "interrupted returning from explore" };
+      }
+    }
+    return { ok: true, status: "completed", message: "exploration done" };
+  }
+
+  /** Uniform structured rejection for malformed task parameters. */
+  private invalidParams(taskType: string): SkillResult {
+    return {
+      ok: false,
+      status: "failed",
+      errorCode: "INVALID_RESOURCE",
+      message: `invalid ${taskType} task parameters`,
+      retryable: false,
+    };
   }
 }

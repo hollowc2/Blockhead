@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { Vec3 } from "vec3";
 import type { Scheduler } from "../agent/scheduler.js";
 import { TaskPriority } from "../agent/task.js";
 import { STORAGE_CATEGORIES, type StorageRepository } from "../memory/storage.js";
+import type { LocationsRepository } from "../memory/locations.js";
 import { isChestBlock } from "../minecraft/containers.js";
 import { findBlocksNear } from "../minecraft/world.js";
+import type { AgentState } from "../agent/state.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
@@ -25,12 +28,21 @@ export function registerStorageTools(
   registry: ToolRegistry,
   scheduler: Scheduler,
   storage: StorageRepository,
+  locations?: LocationsRepository,
 ): void {
   const categoryArg = {
     type: "string",
     description: `Storage category: ${STORAGE_CATEGORIES.join(", ")}.`,
   } as const;
-  const categorySchema = z.object({ category: z.enum(STORAGE_CATEGORIES) });
+  const categorySchema = z.object({
+    category: z.enum(STORAGE_CATEGORIES),
+    location: z
+      .union([
+        z.string().min(1).max(64),
+        z.object({ x: z.number(), y: z.number(), z: z.number() }),
+      ])
+      .optional(),
+  });
 
   /** True when a storage task is already queued or active (no stacking). */
   const storageTaskActive = (): boolean => {
@@ -82,8 +94,14 @@ export function registerStorageTools(
     {
       name: "register_storage",
       description:
-        "Register the nearest unregistered chest near the bot as home storage of the given category, so it becomes a delivery/organization target. No chest is moved or built; the category is all that changes.",
-      args: { category: categoryArg },
+        "Register a chest as home storage of the given category, so it becomes a delivery/organization target. `location` optionally names the chest: a named location from memory, explicit {x, y, z}, or omitted to take the nearest unregistered chest. No chest is moved or built.",
+      args: {
+        category: categoryArg,
+        location: {
+          type: "string|object",
+          description: 'Optional: a named location from memory or {"x": .., "y": .., "z": ..}.',
+        },
+      },
       argsSchema: categorySchema,
       handler: (args, ctx): ToolResult => {
         const category = String(args.category);
@@ -93,6 +111,39 @@ export function registerStorageTools(
         const registered = new Set(
           storage.list(worldId).map((location) => `${location.x},${location.y},${location.z}`),
         );
+
+        const direct = args.location;
+        if (typeof direct === "string") {
+          const found = locations === undefined ? null : resolveNamed(direct, ctx.state, locations);
+          if (found === null) return `I don't remember a place called "${direct}".`;
+          const block = ctx.bot.blockAt(new Vec3(found.x, found.y, found.z));
+          if (block === null || !isChestBlock(block)) return "No chest at that location.";
+          if (registered.has(`${found.x},${found.y},${found.z}`)) return "That chest is already registered.";
+          storage.register(worldId, {
+            dimension: found.dimension,
+            category,
+            x: found.x,
+            y: found.y,
+            z: found.z,
+          });
+          return `Registered the chest at "${direct}" as ${category} storage.`;
+        }
+        if (direct !== undefined) {
+          const position = direct as { x: number; y: number; z: number };
+          const point = { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) };
+          const block = ctx.bot.blockAt(new Vec3(point.x, point.y, point.z));
+          if (block === null || !isChestBlock(block)) return "No chest at those coordinates.";
+          if (registered.has(`${point.x},${point.y},${point.z}`)) return "That chest is already registered.";
+          storage.register(worldId, {
+            dimension: home.dimension,
+            category,
+            x: point.x,
+            y: point.y,
+            z: point.z,
+          });
+          return `Registered the chest there as ${category} storage.`;
+        }
+
         const positions = findBlocksNear(ctx.bot, isChestBlock, REGISTER_SCAN_RADIUS, 8);
         const position = positions.find(
           (position) => !registered.has(`${position.x},${position.y},${position.z}`),
@@ -113,4 +164,18 @@ export function registerStorageTools(
   for (const tool of tools) {
     registry.register(tool);
   }
+}
+
+/** Resolve a named memory location to coordinates for the register tool. */
+function resolveNamed(
+  name: string,
+  state: AgentState,
+  locations: LocationsRepository,
+): { x: number; y: number; z: number; dimension: string } | null {
+  const worldId = state.worldId;
+  if (worldId === null) return null;
+  const found = locations.getNamedLocation(worldId, name);
+  return found === null
+    ? null
+    : { x: found.x, y: found.y, z: found.z, dimension: found.dimension };
 }

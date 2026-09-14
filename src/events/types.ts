@@ -65,11 +65,22 @@ export interface DeathEvent {
    * last known position. Null when the death was not mob-caused or unseen.
    */
   killer: { name: string; x: number; y: number; z: number } | null;
+  /** Name -> count carried at the moment of death (what the corpse will drop). */
+  inventory: Record<string, number>;
 }
 
-/** A death was persisted (Phase 10); recovery may follow. */
+/** A death was persisted (Phase 10); recovery may follow or be skipped. */
 export interface DeathRecordedEvent {
   deathId: number;
+  /** Name -> count carried at death — the corpse contents. */
+  inventory: Record<string, number>;
+  /**
+   * True when the corpse holds something a recovery trip should sweep.
+   * False means the trip was skipped at death time (nothing worth carrying).
+   */
+  worthRecovering: boolean;
+  /** Why recovery was skipped without a trip (null when it will run). */
+  skipReason: "nothing_carried" | "only_expendable_items" | null;
 }
 
 /** Phase 10: a death-recovery attempt finished, recovered or failed. */

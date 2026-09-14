@@ -17,6 +17,10 @@ export interface DeathEventRecord {
   z: number;
   recovered: boolean;
   recoveryFailedReason: string | null;
+  /** Name -> count carried at death (the corpse contents); {} when unknown (pre-v6 rows). */
+  inventory: Record<string, number>;
+  /** Set when recovery was skipped without a trip (nothing worth carrying). */
+  recoverySkippedReason: string | null;
   createdAt: string;
 }
 
@@ -25,6 +29,8 @@ export interface RecordDeathInput {
   x: number;
   y: number;
   z: number;
+  /** Items carried at death; omitted when none (or unknown). */
+  inventory?: Record<string, number>;
 }
 
 interface DeathEventRow {
@@ -36,11 +42,13 @@ interface DeathEventRow {
   z: number;
   recovered: number;
   recovery_failed_reason: string | null;
+  inventory_json: string | null;
+  recovery_skipped_reason: string | null;
   created_at: string;
 }
 
 const SELECT_COLUMNS = `
-  SELECT id, world_id, dimension, x, y, z, recovered, recovery_failed_reason, created_at
+  SELECT id, world_id, dimension, x, y, z, recovered, recovery_failed_reason, inventory_json, recovery_skipped_reason, created_at
   FROM death_events`;
 
 export class DeathEventsRepository {
@@ -51,10 +59,18 @@ export class DeathEventsRepository {
     const createdAt = new Date().toISOString();
     const result = this.db.sql
       .prepare(
-        `INSERT INTO death_events (world_id, dimension, x, y, z, recovered, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?)`,
+        `INSERT INTO death_events (world_id, dimension, x, y, z, inventory_json, recovered, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
       )
-      .run(worldId, input.dimension, input.x, input.y, input.z, createdAt);
+      .run(
+        worldId,
+        input.dimension,
+        input.x,
+        input.y,
+        input.z,
+        input.inventory === undefined ? null : JSON.stringify(input.inventory),
+        createdAt,
+      );
     const row = this.db.sql
       .prepare(`${SELECT_COLUMNS} WHERE id = ?`)
       .get(result.lastInsertRowid) as DeathEventRow;
@@ -103,6 +119,19 @@ export class DeathEventsRepository {
       .run(reason, id);
   }
 
+  /**
+   * Mark recovery skipped without a trip (nothing worth carrying dropped).
+   * First write wins, like markFailed: a stale supersede or stray mark can
+   * never overwrite an earlier decision.
+   */
+  markSkipped(id: number, reason: string): void {
+    this.db.sql
+      .prepare(
+        "UPDATE death_events SET recovery_skipped_reason = ? WHERE id = ? AND recovered = 0 AND recovery_skipped_reason IS NULL",
+      )
+      .run(reason, id);
+  }
+
   private toRecord(row: DeathEventRow): DeathEventRecord {
     return {
       id: row.id,
@@ -113,7 +142,21 @@ export class DeathEventsRepository {
       z: row.z,
       recovered: row.recovered === 1,
       recoveryFailedReason: row.recovery_failed_reason,
+      inventory: parseInventoryJson(row.inventory_json),
+      recoverySkippedReason: row.recovery_skipped_reason,
       createdAt: row.created_at,
     };
+  }
+}
+
+/** Nominal inventory JSON; corrupt or absent payloads read as empty. */
+function parseInventoryJson(raw: string | null): Record<string, number> {
+  if (raw === null || raw === "") return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return parsed as Record<string, number>;
+  } catch {
+    return {};
   }
 }

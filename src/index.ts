@@ -25,6 +25,10 @@ import { CollectResourceRunner } from "./skills/collect-resource.js";
 import { DeathRecoveryRunner } from "./skills/death-recovery.js";
 import { GatherFoodRunner } from "./skills/gather-food.js";
 import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
+import { EnsureItemRunner } from "./skills/ensure-item.js";
+import { DefenseRunner } from "./skills/defense.js";
+import { UtilityRunner } from "./skills/utility.js";
+import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
 import { StockpileManager } from "./agent/maintenance.js";
 import { LlamaClient } from "./llm/client.js";
@@ -35,6 +39,13 @@ import { registerMovementTools } from "./tools/movement.js";
 import { registerBootstrapTools } from "./tools/bootstrap.js";
 import { registerResourceTools } from "./tools/resources.js";
 import { registerStorageTools } from "./tools/storage.js";
+import { registerAcquisitionTools } from "./tools/acquire.js";
+import { registerFoodTools } from "./tools/food.js";
+import { registerCombatTools } from "./tools/combat.js";
+import { registerNavigationTools } from "./tools/navigation.js";
+import { registerDeliveryTools } from "./tools/delivery.js";
+import { registerUtilityTools } from "./tools/utility.js";
+import { registerMemoryTools } from "./tools/memory.js";
 
 const config = loadConfig("config/minecraft.yaml");
 
@@ -82,11 +93,21 @@ registerBootstrapTools(registry);
 registerResourceTools(registry, scheduler);
 // Phase 11: storage tools (spec 14.4). Like the others, registered once; the
 // repository and scheduler are process-lifetime singletons.
-registerStorageTools(registry, scheduler, storage);
+registerStorageTools(registry, scheduler, storage, locations);
+// Phase 13 (spec 14): the expanded tool set. Handlers enqueue FOREGROUND
+// scheduler tasks exactly like the resource tools; every mechanic stays in
+// deterministic skills. The memory/location tools act on the repository.
+registerAcquisitionTools(registry, scheduler);
+registerFoodTools(registry, scheduler);
+registerCombatTools(registry, scheduler);
+registerNavigationTools(registry, scheduler, locations);
+registerDeliveryTools(registry, scheduler);
+registerUtilityTools(registry, scheduler, deaths);
+registerMemoryTools(registry, locations);
 
 // Phase 10: death coordination is bus-only (no bot), so one instance outlives
 // connection attempts and recovery tracking survives a reconnect.
-const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, logger });
+const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger });
 
 // The live bot session. `shutdown` and the bootstrap-resume hooks act on the
 // session currently being attempted; between attempts this is null.
@@ -222,10 +243,19 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // re-equips before the scheduler resumes the paused work.
   const deathRecovery = new DeathRecoveryRunner({ bot, state, config, bus, storage, deaths, skills, logger });
 
+  // Phase 13 (spec 14): the expanded skill set. `ensure_item` composes the
+  // gather/hunt runners plus crafting and smelting; defense, utility, and
+  // delivery runners cover the remaining tools. Every one is deterministic
+  // and one-at-a-time; the LLM only picks the registered tool name.
+  const ensureItem = new EnsureItemRunner({ bot, state, config, bus, storage, sites, skills, collect, food, logger });
+  const defense = new DefenseRunner({ bot, state, config, bus, skills, logger });
+  const utility = new UtilityRunner({ bot, state, config, storage, logger });
+  const delivery = new DeliveryRunner({ bot, state, config, storage, logger });
+
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, maintenance, collect, food, torches, deathRecovery, organizeStorage, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, ensureItem, defense, utility, delivery, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

@@ -93,9 +93,57 @@ export class LocationsRepository {
       .run(worldId, home.dimension, HOME_LOCATION_NAME, home.x, home.y, home.z, timestamp, timestamp);
   }
 
-  // --- protected regions ---
+  // --- named memory locations (spec 14.5: remember/find/forget) ---
 
-  /** The persisted region scoped to a world, or null. */
+  /**
+   * A named waypoint, resolved by (world, name) regardless of dimension. The
+   * "home" name is owned by the home row; waypoints use any other name.
+   */
+  getNamedLocation(worldId: number, name: string): { dimension: string; name: string; x: number; y: number; z: number } | null {
+    const row = this.db.sql
+      .prepare(
+        "SELECT dimension, name, x, y, z FROM locations WHERE world_id = ? AND name = ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(worldId, name) as { dimension: string; name: string; x: number; y: number; z: number } | undefined;
+    return row ?? null;
+  }
+
+  /** Insert or update a named waypoint (world + name, latest dimension wins). */
+  saveNamedLocation(
+    worldId: number,
+    input: { dimension: string; name: string; x: number; y: number; z: number },
+  ): void {
+    const timestamp = now();
+    const existing = this.db.sql
+      .prepare(
+        "SELECT id FROM locations WHERE world_id = ? AND name = ? AND category = 'waypoint' ORDER BY id DESC LIMIT 1",
+      )
+      .get(worldId, input.name) as { id: number } | undefined;
+    if (existing) {
+      this.db.sql
+        .prepare(
+          "UPDATE locations SET dimension = ?, x = ?, y = ?, z = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(input.dimension, input.x, input.y, input.z, timestamp, existing.id);
+    } else {
+      this.db.sql
+        .prepare(
+          `INSERT INTO locations (world_id, dimension, name, category, x, y, z, created_at, updated_at)
+           VALUES (?, ?, ?, 'waypoint', ?, ?, ?, ?, ?)`,
+        )
+        .run(worldId, input.dimension, input.name, input.x, input.y, input.z, timestamp, timestamp);
+    }
+  }
+
+  /** Remove every waypoint row with the name (across dimensions). */
+  deleteNamedLocation(worldId: number, name: string): boolean {
+    const result = this.db.sql
+      .prepare("DELETE FROM locations WHERE world_id = ? AND name = ? AND category = 'waypoint'")
+      .run(worldId, name);
+    return result.changes > 0;
+  }
+
+  // --- protected regions ---
   getProtectedRegion(worldId: number, name: string): StoredProtectedRegion | null {
     const row = this.db.sql
       .prepare(
