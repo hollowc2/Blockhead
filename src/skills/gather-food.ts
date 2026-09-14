@@ -63,6 +63,14 @@ const KILL_TIMEOUT_MS = 90_000;
 const COLLECT_TIMEOUT_MS = 240_000;
 /** Search radii reach the same bound the bootstrap hunt uses. */
 const MAX_SEARCH_RADIUS = 256;
+/** Wall-clock budget for one outward patrol trip between hunt radii. */
+const PATROL_TRIP_TIMEOUT_MS = 60_000;
+/**
+ * Sweep headings per retry: 8 compass directions radiate the full circle as
+ * repeated hunts rotate, so the bot searches new ground instead of
+ * re-scanning the same wedge every restore attempt.
+ */
+const SWEEP_HEADINGS = 8;
 
 export interface GatherFoodOptions {
   bot: Bot;
@@ -135,6 +143,33 @@ function nearestHuntableMob(bot: Bot, maxDistance: number): Entity | null {
     }
   }
   return best;
+}
+
+/**
+ * Compass heading in degrees for sweep step `step`. Wraps modulo
+ * `SWEEP_HEADINGS` (and handles negatives) so any counter fans out around
+ * home: 0 = along +z, 45 = +x/+z, ... 315 = -x/+z.
+ */
+export function patrolHeadingDeg(step: number): number {
+  return ((step % SWEEP_HEADINGS) + SWEEP_HEADINGS) % SWEEP_HEADINGS * 45;
+}
+
+/**
+ * Ring-edge waypoint `distance` blocks from home along `headingDeg`, rounded
+ * to whole blocks (the pathfinder's GoalNear tolerance absorbs sub-block
+ * offsets). Horizontal only: travel keeps the bot's standing altitude.
+ */
+export function patrolWaypoint(
+  homeX: number,
+  homeZ: number,
+  distance: number,
+  headingDeg: number,
+): { x: number; z: number } {
+  const rad = (headingDeg * Math.PI) / 180;
+  return {
+    x: Math.round(homeX + distance * Math.sin(rad)),
+    z: Math.round(homeZ + distance * Math.cos(rad)),
+  };
 }
 
 /** True when a dropped-item entity carries loot worth sweeping up. */
@@ -279,6 +314,32 @@ export class GatherFoodRunner {
             });
           }
         }
+        // The radius scan only sees entities the client tracks around the
+        // bot's current spot, so an empty radius reads like the world has no
+        // animals when they may simply live out of sight. Before declaring
+        // this radius empty, walk to its ring edge on this attempt's sweep
+        // heading: the doubled next radius then scans new ground, and the
+        // sweeping heading rotates across retries so repeated hunts fan out
+        // around home in all directions. Travel failure just continues from
+        // wherever the trip ended — the next scan is no worse off. The final
+        // radius never patrols (nothing left to widen) and nights without a
+        // crisis cap the sweep near home via `maxRadius`, per spec 9.2.
+        if (radius < maxRadius) {
+          const self = bot.entity;
+          if (self !== null) {
+            const waypoint = patrolWaypoint(home.x, home.z, radius, patrolHeadingDeg(this.sweepStep()));
+            const walked = await travelAndWait(
+              bot,
+              { x: waypoint.x, y: Math.floor(self.position.y), z: waypoint.z },
+              { timeoutMs: PATROL_TRIP_TIMEOUT_MS, shouldAbort: this.travelAbort },
+            );
+            if (this.stopRequested) return this.interrupted(data);
+            this.opts.logger.info(
+              { to: [waypoint.x, waypoint.z], status: walked.status },
+              "gather_food patrolled",
+            );
+          }
+        }
         this.announce(
           atNight && !this.expandAtNight
             ? "No animals close to home; night hunting stays nearby."
@@ -347,6 +408,15 @@ export class GatherFoodRunner {
     this.checkInterrupt();
     return this.stopRequested;
   };
+
+  /**
+   * Sweep step for this hunt attempt. Rotates with the wall clock (roughly
+   * one step per restore-retry window), so consecutive failed hunts fan out
+   * around home in different rings instead of repeating the same heading.
+   */
+  private sweepStep(): number {
+    return Math.floor(Date.now() / 60_000);
+  }
 
   /** Terminal result for a paused/cancelled run. Partials stay carried. */
   private interrupted(data: GatherFoodData): SkillResult<GatherFoodData> {
