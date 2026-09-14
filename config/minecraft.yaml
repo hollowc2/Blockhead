@@ -1,0 +1,86 @@
+server:
+  host: eros
+  port: 25565
+  username: CobbleBob
+
+agent:
+  name: CobbleBob
+  owner: Corey
+
+llm:
+  base_url: http://127.0.0.1:8080
+  timeout_ms: 30000
+  max_retries: 2
+
+home:
+  dimension: overworld
+  x: 0
+  y: 64
+  z: 0
+  protected_size_x: 100
+  protected_size_z: 100
+
+bootstrap:
+  wood_logs: 8
+  search_radius: 48
+  cobblestone: 12
+  stone_sword: true
+  food_items: 8
+  wool_blocks: 3
+  fuel_items: 4
+  torches: 16
+  iron_ore: 6
+
+# Phase 9 (spec 12): beyond this distance from home, in blocks, the gather
+# skills run the expedition supply check (food, tools, inventory space,
+# health, return plan) before expanding the search, then operate under the
+# distance-aware risk policy. A search that must go farther is refused when
+# the checks do not pass, so CobbleBob stays within reach of home.
+navigation:
+  expedition_threshold: 256
+
+# Phase 10 (spec 24.5): item value overrides consulted by the ItemPolicy
+# before its built-in rules. These drive the death-recovery pickup order
+# (spec 26.1) — critical -> valuable -> useful -> everything else.
+items:
+  dirt: expendable
+  cobblestone: common
+  diamond_pickaxe: critical
+
+# Phase 7: background stockpile maintenance (spec 29) + idle goal proposal
+# (spec 4.3.1). Omitted keys fall back to the schema defaults below.
+background:
+  stockpiles:
+    wood: 64
+    food: 64
+    fuel: 64
+    torches: 64
+  # Phase 8 (spec 5.4): below this floor a stockpile is restored at
+  # MAINTENANCE priority, preempting even a foreground user task.
+  stockpile_minimums:
+    wood: 16
+    food: 16
+    fuel: 16
+    torches: 8
+  check_interval_seconds: 30
+  # A failed stockpile restore backs off this long before the same kind is
+  # tried again (a 1s re-run loop on an impossible restore gets the bot
+  # kicked for chat spam). A kind whose bot state makes it incapable of
+  # succeeding stands by until the state changes, regardless of this window.
+  restore_cooldown_seconds: 60
+  # Identical game-chat announcements repeat at most once per this window;
+  # pino logs are never throttled.
+  announce_throttle_seconds: 30
+  # Phase 13: the LLM director chooses the next background task whenever the
+  # bot is idle; the deterministic shortage-then-storage ladder runs only when
+  # the model is disabled or unreachable. `llm_decision_interval_seconds` is
+  # the minimum gap between director calls (the model's "wait" is honored for
+  # the whole window; survival floors still preempt immediately).
+  llm_decisions: true
+  llm_decision_interval_seconds: 60
+
+# Phase 12 (spec 33): development dashboard. Enabled by default on a TTY;
+# the TUI owns the terminal while pino keeps writing logs/blockhead.log.
+# Set `enabled: false` to return stdout to pino console output.
+tui:
+  enabled: true
