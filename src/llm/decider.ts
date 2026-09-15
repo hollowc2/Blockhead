@@ -1,8 +1,9 @@
 import type { LlamaClient } from "./client.js";
 import { buildStateSnapshot, type DecisionInput, type StateSnapshot } from "./context.js";
-import { buildDirectorMessages, buildMessages } from "./prompt.js";
+import { buildDirectorMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
 import { AgentDecisionSchema, NextTaskSchema, type AgentDecision, type NextTaskDecision } from "./schemas.js";
 import type { DebugLog } from "./debug-log.js";
+import type { SkillsRepository } from "../memory/skills.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolContext } from "../tools/types.js";
 
@@ -12,7 +13,12 @@ export interface DecisionMakerOptions {
   debugLog: DebugLog;
   /** Retries on a model response that fails JSON extraction or zod validation. */
   maxRetries: number;
+  /** Skill-success library (spec 20.2): recent runs seed the few-shots when available. */
+  skills?: SkillsRepository;
 }
+
+/** How many recent runs to fetch for few-shot seeding (dedupe and the 4-example cap trim it). */
+const FEW_SHOT_FETCH = 8;
 
 /** Observability record of the most recent successful LLM call (Phase 12, spec 33's LLM panel). */
 export interface LlmCallRecord {
@@ -36,6 +42,7 @@ export class DecisionMaker {
   private readonly registry: ToolRegistry;
   private readonly debugLog: DebugLog;
   private readonly maxRetries: number;
+  private readonly skills?: SkillsRepository;
   private lastCallRecord: LlmCallRecord | null = null;
 
   constructor(options: DecisionMakerOptions) {
@@ -43,6 +50,7 @@ export class DecisionMaker {
     this.registry = options.registry;
     this.debugLog = options.debugLog;
     this.maxRetries = options.maxRetries;
+    this.skills = options.skills;
   }
 
   /** The most recent successful LLM call, or null before the first call. */
@@ -55,7 +63,9 @@ export class DecisionMaker {
     const snapshot = buildStateSnapshot(ctx, input);
     this.logRequest(snapshot);
 
-    const messages = buildMessages(snapshot, this.registry.describe());
+    // Spec 42: prefer skill-library retrieval when available, static fill otherwise.
+    const libraryFewShots = this.skills ? fewShotsFromSkills(this.skills.recent({ limit: FEW_SHOT_FETCH })) : [];
+    const messages = buildMessages(snapshot, this.registry.describe(), libraryFewShots);
 
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {

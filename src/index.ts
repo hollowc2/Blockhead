@@ -78,10 +78,12 @@ const client = new LlamaClient({
   maxRetries: llm.max_retries,
 });
 const debugLog = new DebugLog();
-const decider = new DecisionMaker({ client, registry, debugLog, maxRetries: llm.max_retries });
-
 const bootstrapStages = new BootstrapRepository(db);
 const skills = new SkillsRepository(db);
+// Phase 13 (spec 20.2 / 42): recent skill-library runs seed the decision
+// few-shots when available (static prompts/decision.md examples fill the rest).
+const decider = new DecisionMaker({ client, registry, debugLog, maxRetries: llm.max_retries, skills });
+
 const storage = new StorageRepository(db);
 const sites = new ResourceSitesRepository(db);
 const deaths = new DeathEventsRepository(db);

@@ -52,4 +52,46 @@ export class SkillsRepository {
       );
     return record;
   }
+
+  /**
+   * The most recent successful runs, newest first (spec 20.2). Local runs
+   * seed the decision few-shots; `limit` bounds the query and dedupe of the
+   * caller. Recent-first ordering makes the freshest, most representative
+   * run of each skill shape the next decision.
+   */
+  recent(options?: { limit?: number; skillName?: string }): SkillSuccess[] {
+    const limit = Math.max(1, Math.min(options?.limit ?? 5, 50));
+    const rows = options?.skillName
+      ? this.db.sql
+          .prepare(
+            `SELECT id, skill_name, parameters_json, starting_conditions_json, outcome_json, description, created_at
+             FROM skill_successes
+             WHERE skill_name = ?
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?`,
+          )
+          .all(options.skillName, limit)
+      : this.db.sql
+          .prepare(
+            `SELECT id, skill_name, parameters_json, starting_conditions_json, outcome_json, description, created_at
+             FROM skill_successes
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?`,
+          )
+          .all(limit);
+    return rows.map((row) => parseSkillSuccess(row as Record<string, unknown>));
+  }
+}
+
+/** Parse one skill_successes row back into a SkillSuccess. */
+function parseSkillSuccess(row: Record<string, unknown>): SkillSuccess {
+  return {
+    id: String(row.id),
+    skillName: String(row.skill_name),
+    parameters: JSON.parse(String(row.parameters_json)) as Record<string, unknown>,
+    startingConditions: JSON.parse(String(row.starting_conditions_json)) as SkillSuccess["startingConditions"],
+    outcome: JSON.parse(String(row.outcome_json)) as SkillSuccess["outcome"],
+    description: String(row.description),
+    createdAt: String(row.created_at),
+  };
 }
