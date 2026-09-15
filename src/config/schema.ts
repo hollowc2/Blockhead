@@ -57,8 +57,9 @@ export const MinecraftConfigSchema = z.object({
   llm: z
     .object({
       base_url: z.string().url().default("http://127.0.0.1:8080"),
-      timeout_ms: z.number().int().positive().default(30000),
-      max_retries: z.number().int().min(0).default(2),
+      request_timeout_ms: z.number().int().positive().default(30000),
+      http_retries: z.number().int().min(0).default(1),
+      schema_retries: z.number().int().min(0).default(1),
     })
     .optional(),
   home: z.object({

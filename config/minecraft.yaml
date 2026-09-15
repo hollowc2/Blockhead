@@ -23,8 +23,9 @@ behavior:
 
 llm:
   base_url: http://127.0.0.1:8080
-  timeout_ms: 30000
-  max_retries: 2
+  request_timeout_ms: 30000
+  http_retries: 1
+  schema_retries: 1
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:

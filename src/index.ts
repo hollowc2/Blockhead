@@ -86,20 +86,22 @@ registerMovementTools(registry);
 
 const llm = config.llm ?? {
   base_url: "http://127.0.0.1:8080",
-  timeout_ms: 30000,
-  max_retries: 2,
+  request_timeout_ms: 30000,
+  http_retries: 1,
+  schema_retries: 1,
 };
+const debugLog = new DebugLog();
 const client = new LlamaClient({
   baseUrl: llm.base_url,
-  timeoutMs: llm.timeout_ms,
-  maxRetries: llm.max_retries,
+  timeoutMs: llm.request_timeout_ms,
+  maxRetries: llm.http_retries,
+  onFailure: (failure) => debugLog.write({ event: `llm_${failure.kind}`, ...failure }),
 });
-const debugLog = new DebugLog();
 const bootstrapStages = new BootstrapRepository(db);
 const skills = new SkillsRepository(db);
 // Phase 13 (spec 20.2 / 42): recent skill-library runs seed the decision
 // few-shots when available (static prompts/decision.md examples fill the rest).
-const decider = new DecisionMaker({ client, registry, debugLog, maxRetries: llm.max_retries, skills });
+const decider = new DecisionMaker({ client, registry, debugLog, maxRetries: llm.schema_retries, skills });
 
 const storage = new StorageRepository(db);
 const sites = new ResourceSitesRepository(db);
