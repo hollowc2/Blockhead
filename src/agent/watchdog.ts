@@ -32,6 +32,24 @@ import { logger } from "../logger.js";
  * never be pushed into a permanent block by its own failures.
  */
 
+export interface WatchdogPersistence {
+  loadAll(): Array<{
+    action: string;
+    failures: number;
+    blockedAt: number | null;
+    retryAt: number | null;
+    lastReason: string | null;
+  }>;
+  upsert(state: {
+    action: string;
+    failures: number;
+    blockedAt: number | null;
+    retryAt: number | null;
+    lastReason: string | null;
+  }): void;
+  remove(action: string): void;
+}
+
 export interface ActionWatchdogOptions {
   /** Failed attempts of the same action before it is blocked. Default 3. */
   maxFailures?: number;
@@ -39,6 +57,8 @@ export interface ActionWatchdogOptions {
   cooldownMs?: number;
   /** Injectable wall clock (tests advance it to exercise the cooldown). */
   now?: () => number;
+  /** Durable action-level state, rehydrated explicitly during startup. */
+  persistence?: WatchdogPersistence;
 }
 
 /** How one settled run of an action changed its failure state. */
@@ -189,6 +209,7 @@ export class ActionWatchdog {
   private readonly maxFailures: number;
   private readonly cooldownMs: number;
   private readonly now: () => number;
+  private readonly persistence: WatchdogPersistence | undefined;
   /** fingerprint -> consecutive failure count (not counting resets/partials). */
   private readonly failures = new Map<string, number>();
   /** fingerprint -> active block (present only while `retryAt` is in the future). */
@@ -198,6 +219,32 @@ export class ActionWatchdog {
     this.maxFailures = options.maxFailures ?? DEFAULT_MAX_FAILURES;
     this.cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     this.now = options.now ?? Date.now;
+    this.persistence = options.persistence;
+  }
+
+  rehydrate(): void {
+    for (const state of this.persistence?.loadAll() ?? []) {
+      if (state.failures > 0) this.failures.set(state.action, state.failures);
+      if (state.retryAt !== null && state.retryAt > this.now()) {
+        this.blocks.set(state.action, {
+          action: state.action,
+          failures: state.failures,
+          blockedAt: state.blockedAt ?? state.retryAt - this.cooldownMs,
+          retryAt: state.retryAt,
+          lastReason: state.lastReason ?? "",
+        });
+      } else if (state.retryAt !== null) {
+        this.persistence?.remove(state.action);
+      }
+    }
+  }
+
+  private persist(action: string): void {
+    if (this.persistence === undefined) return;
+    const failures = this.failures.get(action) ?? 0;
+    const block = this.blocks.get(action);
+    if (failures === 0) this.persistence.remove(action);
+    else this.persistence.upsert({ action, failures, blockedAt: block?.blockedAt ?? null, retryAt: block?.retryAt ?? null, lastReason: block?.lastReason ?? null });
   }
 
   /**
@@ -212,6 +259,7 @@ export class ActionWatchdog {
       if (this.blocks.delete(action)) {
         logger.info({ action }, "anti-loop block cleared by success");
       }
+      this.persist(action);
       return;
     }
     if (outcome === "partial") {
@@ -225,6 +273,7 @@ export class ActionWatchdog {
           logger.info({ action }, "anti-loop block lifted after partial progress");
         }
       }
+      this.persist(action);
       return;
     }
     const count = (this.failures.get(action) ?? 0) + 1;
@@ -240,6 +289,7 @@ export class ActionWatchdog {
       });
       logger.warn({ action, failures: count, cooldownMs: this.cooldownMs }, "action blocked by anti-loop watchdog");
     }
+    this.persist(action);
   }
 
   /** Reset an action's failure state (fresh owner intent, or an owner success). */
@@ -248,6 +298,7 @@ export class ActionWatchdog {
     if (this.blocks.delete(action)) {
       logger.info({ action }, "anti-loop block cleared by owner command");
     }
+    this.persistence?.remove(action);
   }
 
   /** The active block for `action`, or null when it may run again. */
@@ -256,6 +307,7 @@ export class ActionWatchdog {
     if (block === undefined) return null;
     if (block.retryAt <= this.now()) {
       this.blocks.delete(action);
+      this.persistence?.remove(action);
       return null;
     }
     return block;
@@ -276,6 +328,7 @@ export class ActionWatchdog {
     for (const block of [...this.blocks.values()].sort((a, b) => b.blockedAt - a.blockedAt)) {
       if (block.retryAt <= now) {
         this.blocks.delete(block.action);
+        this.persistence?.remove(block.action);
         continue;
       }
       views.push({

@@ -7,6 +7,7 @@ import { HostileTracker } from "./minecraft/entities.js";
 import { TuiApp, shouldEnableTui, detectStdoutIsTty } from "./tui/app.js";
 import { EventBus } from "./events/bus.js";
 import { AppDatabase } from "./memory/database.js";
+import { ActionsRepository } from "./memory/actions.js";
 import { MIGRATIONS } from "./memory/migrations.js";
 import { LocationsRepository } from "./memory/locations.js";
 import { BootstrapRepository } from "./memory/bootstrap.js";
@@ -66,6 +67,7 @@ const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
+const actions = new ActionsRepository(db);
 // Goal layer: process-lifetime coordinator (bus-driven, no bot) over the
 // persisted goals table, so an active autonomous goal survives a restart.
 const goalsRepo = new GoalsRepository(db);
@@ -78,7 +80,9 @@ state.boot();
 const watchdog = new ActionWatchdog({
   maxFailures: config.watchdog?.max_failures,
   cooldownMs: (config.watchdog?.cooldown_seconds ?? 600) * 1000,
+  persistence: actions,
 });
+watchdog.rehydrate();
 const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
 scheduler.loadFromPersistence();
 

@@ -187,4 +187,15 @@ export const MIGRATIONS: readonly string[] = [
       ended_at TEXT
   );
   `,
+  // v8: action-level anti-loop watchdog state, shared by task instances.
+  `
+  CREATE TABLE IF NOT EXISTS action_states (
+      action TEXT PRIMARY KEY,
+      failures INTEGER NOT NULL DEFAULT 0,
+      blocked_at INTEGER,
+      retry_at INTEGER,
+      last_reason TEXT,
+      updated_at INTEGER NOT NULL
+  );
+  `,
 ];
