@@ -267,6 +267,28 @@ test("paused tasks survive a restart and resume from persistence", () => {
   assert.deepEqual(task.resumeState, { attemptedSites: ["1,64,2"], interruptions: 1 });
 });
 
+test("restart preserves most-recently-paused ordering", () => {
+  const harness = newHarness();
+  const s = harness.scheduler;
+  const first = s.enqueue(userTask("first"));
+  s.claim();
+  const second = s.enqueue(userTask("second"));
+  s.claim();
+  s.settleInterrupted(); // first paused, second active
+  const third = s.enqueue(userTask("third"));
+  s.claim();
+  s.settleInterrupted(); // second paused after first, third active
+
+  const persistedFirst = harness.tasks.get(first.id);
+  const persistedSecond = harness.tasks.get(second.id);
+  assert.ok((persistedSecond?.pauseSequence ?? 0) > (persistedFirst?.pauseSequence ?? 0));
+
+  const restarted = new Scheduler({ bus: new EventBus(), tasks: new TasksRepository(harness.db) });
+  restarted.loadFromPersistence();
+  restarted.completeActive();
+  assert.equal(restarted.active?.id, second.id);
+});
+
 test("an active task rehydrated after a crash is dispatched as ACTIVE", () => {
   const harness = newHarness();
   const s = harness.scheduler;

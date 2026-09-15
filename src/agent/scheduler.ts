@@ -83,9 +83,12 @@ export class Scheduler {
       } else {
         this.queue.push(task);
         if (task.status === TaskStatus.PAUSED) {
-          // Pause order is lost across restarts; fall back to creation order
-          // so rehydrated paused work still resumes after queued work.
-          this.pausedAt.set(task.id, ++this.pausedSeq);
+          // Pause order is persisted, so restart preserves LIFO resumption.
+          // Legacy rows without a sequence fall back to deterministic load
+          // order and receive a sequence for future transitions.
+          const sequence = task.pauseSequence ?? ++this.pausedSeq;
+          this.pausedSeq = Math.max(this.pausedSeq, sequence);
+          this.pausedAt.set(task.id, sequence);
         } else {
           this.order.set(task.id, ++this.seq);
         }
@@ -288,7 +291,8 @@ export class Scheduler {
     } else {
       this.activeTask = null;
       task.status = TaskStatus.PAUSED;
-      this.pausedAt.set(task.id, ++this.pausedSeq);
+      task.pauseSequence = ++this.pausedSeq;
+      this.pausedAt.set(task.id, task.pauseSequence);
       this.queue.push(task);
       this.tasks.update(task);
       this.bus.emit("task.paused", { task });

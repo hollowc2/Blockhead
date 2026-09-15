@@ -70,6 +70,10 @@ const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
 const actions = new ActionsRepository(db);
 const backgroundFailures = new BackgroundFailuresRepository(db);
+// Bound historical task growth before rehydrating the scheduler, so an old
+// blocked task cannot be loaded into memory immediately before being pruned.
+const taskRetentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+taskStore.pruneSettled(taskRetentionCutoff, 32);
 // Goal layer: process-lifetime coordinator (bus-driven, no bot) over the
 // persisted goals table, so an active autonomous goal survives a restart.
 // It is wired to the scheduler so replacing a goal cancels the superseded
@@ -89,9 +93,6 @@ watchdog.rehydrate();
 const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
 scheduler.loadFromPersistence();
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
-// Bound historical task growth without touching resumable work.
-const taskRetentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
-taskStore.pruneSettled(taskRetentionCutoff, 32);
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
 // code (the movement tools) performs the mechanics.

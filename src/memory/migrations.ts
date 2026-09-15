@@ -212,4 +212,16 @@ export const MIGRATIONS: readonly string[] = [
       reason TEXT NOT NULL
   );
   `,
+  // v11: durable pause ordering and targeted task indexes.
+  `
+  ALTER TABLE tasks ADD COLUMN pause_sequence INTEGER;
+
+  CREATE INDEX IF NOT EXISTS idx_tasks_unfinished
+      ON tasks(created_at)
+      WHERE status IN ('queued', 'active', 'paused', 'blocked');
+
+  CREATE INDEX IF NOT EXISTS idx_tasks_recent_settled
+      ON tasks(COALESCE(completed_at, created_at) DESC)
+      WHERE status IN ('completed', 'failed', 'blocked', 'cancelled');
+  `,
 ];

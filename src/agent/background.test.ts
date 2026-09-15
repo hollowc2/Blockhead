@@ -556,6 +556,16 @@ test("the death-loop brake stands the loop down and prunes stale background work
     status: TaskStatus.QUEUED,
     createdAt: new Date().toISOString(),
   });
+  h.queued.push({
+    id: "paused-food",
+    type: "stockpile_maintenance",
+    priority: TaskPriority.MAINTENANCE,
+    source: "background",
+    objective: "Resume food restore from checkpoint",
+    parameters: { kind: "food" },
+    status: TaskStatus.PAUSED,
+    createdAt: new Date().toISOString(),
+  });
 
   // A looming food crisis is NOT restored while the bot is dying at a kill
   // zone: the wandering hunt would feed the loop. Stale background work is
@@ -563,6 +573,7 @@ test("the death-loop brake stands the loop down and prunes stale background work
   await h.manager.tick();
   assert.deepEqual(h.issued, [], "no restore while the death-loop brake holds");
   assert.deepEqual(h.cancelled, ["stale-food"]);
+  assert.equal(h.queued.some((task) => task.id === "paused-food"), true, "paused work is retained");
 
   // The brake lifting restores normal operation: next tick acts again.
   h.loop = false;

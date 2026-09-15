@@ -16,12 +16,13 @@ interface TaskRow {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  pause_sequence: number | null;
 }
 
 const SELECT_TASK = `
   SELECT id, type, priority, source, objective, parameters_json,
          status, resume_state_json, parent_task_id, interrupted_task_id,
-         last_error, created_at, started_at, completed_at
+         last_error, created_at, started_at, completed_at, pause_sequence
   FROM tasks`;
 
 const UNFINISHED = `
@@ -40,8 +41,8 @@ export class TasksRepository {
         `INSERT INTO tasks
            (id, type, priority, source, objective, parameters_json, status,
             resume_state_json, parent_task_id, interrupted_task_id, last_error,
-            created_at, started_at, completed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, started_at, completed_at, pause_sequence)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -58,6 +59,7 @@ export class TasksRepository {
         task.createdAt,
         task.startedAt ?? null,
         task.completedAt ?? null,
+        task.pauseSequence ?? null,
       );
   }
 
@@ -67,7 +69,7 @@ export class TasksRepository {
         `UPDATE tasks SET
            priority = ?, source = ?, objective = ?, parameters_json = ?,
            status = ?, resume_state_json = ?, parent_task_id = ?,
-           interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?
+           interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?
          WHERE id = ?`,
       )
       .run(
@@ -82,6 +84,7 @@ export class TasksRepository {
         task.lastError ?? null,
         task.startedAt ?? null,
         task.completedAt ?? null,
+        task.pauseSequence ?? null,
         task.id,
       );
   }
@@ -114,11 +117,11 @@ export class TasksRepository {
   pruneSettled(olderThan: string, keepRecent = 32): number {
     const result = this.db.sql.prepare(`
       DELETE FROM tasks
-      WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.CANCELLED}')
+      WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.BLOCKED}', '${TaskStatus.CANCELLED}')
         AND COALESCE(completed_at, created_at) < ?
         AND id NOT IN (
           SELECT id FROM tasks
-          WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.CANCELLED}')
+          WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.BLOCKED}', '${TaskStatus.CANCELLED}')
           ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
           LIMIT ?
         )`).run(olderThan, Math.max(0, keepRecent));
@@ -155,6 +158,7 @@ function toTask(row: TaskRow): Task {
     createdAt: row.created_at,
     startedAt: row.started_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
+    pauseSequence: row.pause_sequence ?? undefined,
   };
 }
 

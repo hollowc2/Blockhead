@@ -35,6 +35,8 @@ export interface Task {
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+  /** Monotonic scheduler sequence assigned when this task is paused. */
+  pauseSequence?: number;
   parentTaskId?: string;
   interruptedTaskId?: string;
   resumeState?: object;

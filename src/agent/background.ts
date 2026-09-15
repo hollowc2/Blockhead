@@ -12,7 +12,7 @@ import { STOCKPILE_PRIORITY_ORDER, type StockpileManager, type StockpileSnapshot
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { BaseBuilderRunner } from "../skills/base.js";
 import type { Scheduler } from "./scheduler.js";
-import { TaskPriority, type Task } from "./task.js";
+import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { GoalManager } from "./goals.js";
@@ -240,10 +240,14 @@ export class BackgroundManager {
     // Stale background/idle tasks (e.g. a PAUSED maintenance task rehydrated
     // from a restart, or one interrupted by user work) are regenerated on
     // demand; the plan below is fresh. Goal tasks are the same: a watchdog-
-    // BLOCKED goal task (or one left queued from an earlier plan) is pruned
-    // here and the next goal decision re-plans. User tasks are never touched.
+    // A queued background task left by an earlier plan is pruned here and the
+    // next goal decision re-plans. PAUSED work is a resumable checkpoint and
+    // must remain available. User tasks are never touched.
     for (const task of [...scheduler.queued]) {
-      if (task.source === "background" || task.source === "director" || task.source === "goal") {
+      if (
+        task.status === TaskStatus.QUEUED &&
+        (task.source === "background" || task.source === "director" || task.source === "goal")
+      ) {
         scheduler.cancel(task.id);
       }
     }
@@ -883,4 +887,3 @@ function goalStepLabel(type: string, args: Record<string, unknown>): string {
       return type;
   }
 }
-
