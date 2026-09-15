@@ -101,6 +101,8 @@ interface Harness {
   directorResult: NextTaskDecision;
   /** True makes the director stub throw (model down). */
   directorFails: boolean;
+  /** When set, the director stub awaits it before returning (single-flight tests). */
+  decisionGate: Promise<void> | null;
   /** How many times the director stub was consulted. */
   decisionCount: number;
   /** The situation digest handed to the director on the last consultation. */
@@ -159,6 +161,7 @@ function newHarness(health: number, food: number): Harness {
     queued: [],
     directorResult: { task: { type: "wait" } },
     directorFails: false,
+    decisionGate: null,
     decisionCount: 0,
     enqueued: [],
     lastSituation: null,
@@ -219,6 +222,7 @@ function newHarness(health: number, food: number): Harness {
       ): Promise<NextTaskDecision> => {
         state.decisionCount++;
         state.lastSituation = situation;
+        if (state.decisionGate !== null) await state.decisionGate;
         if (state.directorFails) throw new Error("llm unreachable");
         return state.directorResult;
       },
@@ -548,4 +552,143 @@ test("the death-loop brake stands the loop down and prunes stale background work
   assert.deepEqual(h.issued, [{ kind: "food", preempt: true }]);
 
   h.manager.stop();
+});
+
+/**
+ * The settle-event director kick is a real 1s `setTimeout` in the manager.
+ * These tests replace the clock with node:test mock timers so the wiring
+ * (event -> one pending kick -> decision-eligible pass) is exercised end to
+ * end instead of poking internals. The harness's own `now`/`advance` clock
+ * is separate and untouched, so the decision-interval gate stays real.
+ */
+const flushMacrotasks = async (): Promise<void> => {
+  // The kicked pass awaits a few already-resolved stubs; each flush drains
+  // the microtask chain plus one macrotask, which is enough to settle it.
+  for (let i = 0; i < 5; i++) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+};
+
+test("a task completion schedules a fresh LLM decision inside the decision interval", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.config.background!.llm_decision_interval_seconds = 60;
+  h.directorResult = { task: { type: "build_base" } };
+
+  // First decision arms the interval gate.
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+  assert.equal(h.enqueued.length, 1);
+
+  // Without an event, the loop stands by inside the window...
+  h.advance(10_000);
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1, "plain ticks stay gated inside the interval");
+
+  // ...until a task completes: the settle event kicks a fresh decision
+  // within the window instead of waiting for the interval to expire.
+  h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+  t.mock.timers.tick(1_000);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 2, "completion triggers a decision despite the interval");
+  assert.equal(h.enqueued.length, 2, "the fresh decision enqueued new work");
+
+  h.manager.stop();
+  t.mock.timers.reset();
+});
+
+test("a task failure schedules a fresh LLM decision inside the decision interval", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.config.background!.llm_decision_interval_seconds = 60;
+  h.directorResult = { task: { type: "build_base" } };
+
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+  assert.equal(h.enqueued.length, 1);
+
+  // The directed build fails; the settle event records it and kicks a fresh
+  // decision. The failure is visible in the digest the fresh decision sees.
+  h.bus.emit("task.failed", { task: failedDirectorBuildTask() });
+  t.mock.timers.tick(1_000);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 2, "failure triggers a decision despite the interval");
+  assert.match(h.lastSituation ?? "", /Recent failures: build restore failed \(walls burned down\)/);
+
+  h.manager.stop();
+  t.mock.timers.reset();
+});
+
+test("only one LLM decision runs at a time; a settle event during a decision re-checks once after", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.config.background!.llm_decision_interval_seconds = 60;
+  let release!: () => void;
+  h.decisionGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  // A settle event starts a decision that blocks on the gate.
+  h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+  t.mock.timers.tick(1_000);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 1, "the first decision started");
+
+  // A second settle arrives while the decision is in flight: no concurrent
+  // decision call is made — the kick is retained, never stacked.
+  h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+  t.mock.timers.tick(2_000);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 1, "no second decision while one is in flight");
+
+  // The in-flight decision finishes; the retained kick re-checks exactly
+  // once, sequentially.
+  release();
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 2, "the retained kick re-decides after the in-flight decision");
+
+  h.manager.stop();
+  t.mock.timers.reset();
+});
+
+test("repeated settle events coalesce into one decision and never duplicate concurrent calls", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.config.background!.llm_decision_interval_seconds = 60;
+
+  // Decide once; the interval gate now stands plain ticks down.
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+
+  // A burst of five completions collapses into ONE pending kick — and the
+  // kick does not fire before its delay elapses.
+  for (let i = 0; i < 5; i++) {
+    h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+  }
+  t.mock.timers.tick(999);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 1, "kick not fired before its delay elapses");
+
+  t.mock.timers.tick(1);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 2, "one kick -> exactly one fresh decision for the burst");
+
+  // A later burst gets its own single decision.
+  for (let i = 0; i < 5; i++) {
+    h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+  }
+  t.mock.timers.tick(1_000);
+  await flushMacrotasks();
+  assert.equal(h.decisionCount, 3, "each burst yields exactly one decision");
+
+  h.manager.stop();
+  t.mock.timers.reset();
 });

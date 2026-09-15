@@ -29,7 +29,12 @@ import { findHomeChest } from "../minecraft/containers.js";
  * never stalls the bot. Mechanics always stay code.
  */
 
-/** A one-shot deferred re-check, so the loop continues right after a task settles. */
+/**
+ * Event-driven re-evaluation delay: a settle event schedules one deferred
+ * pass so the loop continues right after a task settles — and the delay is
+ * the anti-thrash pace between a task ending and the next LLM decision, so
+ * repeated settles never spin decisions faster than once per second.
+ */
 const RE_CHECK_DELAY_MS = 1_000;
 
 /** Horizontal standoff from home at which the bot counts as "home". */
@@ -78,6 +83,10 @@ export class BackgroundManager {
   private ticking = false;
   private timer: NodeJS.Timeout | null = null;
   private settledListeners: Array<() => void> = [];
+  /** One pending event-driven re-evaluation (coalesced: burst events collapse). */
+  private kickTimer: NodeJS.Timeout | null = null;
+  /** A kick that arrived while a pass was in flight; re-run once after it finishes. */
+  private recheckPending = false;
   /** Wall-clock of the last LLM director call (decision-interval throttle). */
   private lastDecisionAt: number | null = null;
 
@@ -98,9 +107,10 @@ export class BackgroundManager {
 
   /**
    * Start the periodic idle loop plus event-driven re-checks. The interval
-   * re-measures stockpiles; task/bootstrap events trigger an earlier check
-   * so the loop continues as soon as work settles instead of waiting out the
-   * whole interval.
+   * re-measures stockpiles; settle events (task completed/failed/cancelled,
+   * bootstrap complete) schedule a director kick so a fresh high-level LLM
+   * decision happens shortly after work settles — for an idle/wait state
+   * the periodic interval remains the fallback.
    */
   start(): void {
     if (this.timer !== null) return;
@@ -108,19 +118,18 @@ export class BackgroundManager {
     this.timer = setInterval(() => void this.tick(), Math.max(10, seconds) * 1000);
     this.timer.unref?.();
 
-    const settled = (): void => {
-      setTimeout(() => void this.tick(), RE_CHECK_DELAY_MS).unref?.();
-    };
+    const onSettled = (): void => this.scheduleKick();
     const onFailed = ({ task }: { task: Task }): void => {
       this.recordFailure(task);
-      setTimeout(() => void this.tick(), RE_CHECK_DELAY_MS).unref?.();
+      this.scheduleKick();
     };
     // One-shot re-checks, retained so stop() detaches them: a session's
     // manager is rebuilt on reconnect and must not keep firing on a dead bot.
     this.settledListeners = [
-      this.opts.bus.on("task.completed", settled),
+      this.opts.bus.on("task.completed", onSettled),
       this.opts.bus.on("task.failed", onFailed),
-      this.opts.bus.on("bootstrap.complete", settled),
+      this.opts.bus.on("task.cancelled", onSettled),
+      this.opts.bus.on("bootstrap.complete", onSettled),
     ];
   }
 
@@ -130,24 +139,59 @@ export class BackgroundManager {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.kickTimer !== null) {
+      clearTimeout(this.kickTimer);
+      this.kickTimer = null;
+    }
     for (const unsubscribe of this.settledListeners) unsubscribe();
     this.settledListeners = [];
   }
 
-  /** One idle-loop pass. Re-entrancy-safe: concurrent calls collapse. */
-  async tick(): Promise<void> {
-    if (this.ticking) return;
+  /**
+   * Schedule one event-driven re-evaluation shortly after a task settles.
+   * Burst events coalesce into a single pending kick, so repeated settle
+   * events can never stack a queue of decisions; the delayed pass runs
+   * `tick` in decision-eligible mode, which allows a fresh LLM decision
+   * even inside the decision-interval window (the delay is the anti-thrash
+   * pace). A kick never schedules another kick — only settle events and the
+   * periodic timer do — so the loop cannot recurse.
+   */
+  private scheduleKick(): void {
+    if (this.kickTimer !== null) return;
+    this.kickTimer = setTimeout(() => {
+      this.kickTimer = null;
+      void this.tick(true);
+    }, RE_CHECK_DELAY_MS);
+    this.kickTimer.unref?.();
+  }
+
+  /**
+   * One idle-loop pass. Re-entrancy-safe: concurrent calls collapse, so LLM
+   * decisions are single-flight. A decision-eligible kick arriving while a
+   * pass is in flight is retained and re-run exactly once after it finishes
+   * — never concurrently — so a settle event is never lost to a running
+   * decision.
+   */
+  async tick(decisionEligible = false): Promise<void> {
+    if (this.ticking) {
+      if (decisionEligible) this.recheckPending = true;
+      return;
+    }
     this.ticking = true;
     try {
-      await this.runOnce();
+      await this.runOnce(decisionEligible);
     } catch (err) {
       this.opts.logger.warn({ err: String(err) }, "background tick failed");
     } finally {
       this.ticking = false;
+      if (this.recheckPending) {
+        this.recheckPending = false;
+        void this.tick(true);
+      }
     }
   }
 
-  private async runOnce(): Promise<void> {
+  private async runOnce(decisionEligible = false): Promise<void> {
     const { bot, bootstrap, scheduler, logger } = this.opts;
 
     // --- deterministic gates: only act from spawned, post-bootstrap idle. ---
@@ -252,12 +296,14 @@ export class BackgroundManager {
       return;
     }
 
-    // At most one decision per interval; within the window the bot stands
-    // by, honoring the model's "wait" for the whole interval. The
-    // deterministic ladder runs only when the model itself fails.
+    // At most one decision per interval on the periodic/fallback path;
+    // within the window the bot stands by, honoring the model's "wait" for
+    // the whole interval. A decision-eligible pass (a task just settled)
+    // decides right away — the 1s kick delay already paced the re-check.
+    // The deterministic ladder runs only when the model itself fails.
     const intervalMs = (this.opts.config.background?.llm_decision_interval_seconds ?? 60) * 1000;
     const now = this.now();
-    if (this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return;
+    if (!decisionEligible && this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return;
 
     try {
       const buildCheck = await this.opts.buildBase.needsAttention();
