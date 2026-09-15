@@ -13,6 +13,7 @@ export interface LlmClientOptions {
   maxRetries: number;
   onFailure?: (failure: { kind: "timeout" | "http_error" | "network_error"; attempt: number; error: string }) => void;
   fetchImpl?: typeof fetch;
+  now?: () => number;
 }
 
 const MODEL_ID_PENDING = "local-model";
@@ -24,7 +25,11 @@ export class LlamaClient {
   private readonly maxRetries: number;
   private readonly onFailure?: LlmClientOptions["onFailure"];
   private readonly fetchImpl: typeof fetch;
+  private readonly now: () => number;
   private modelId: string | null = null;
+  private _lastSuccessAt: number | null = null;
+  private _consecutiveFailures = 0;
+  private _lastFailure: { at: number; kind: "timeout" | "http_error" | "network_error"; error: string } | null = null;
 
   constructor(options: LlmClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
@@ -32,16 +37,56 @@ export class LlamaClient {
     this.maxRetries = options.maxRetries;
     this.onFailure = options.onFailure;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.now = options.now ?? Date.now;
   }
 
   get endpoint(): string { return this.baseUrl; }
   get modelName(): string { return this.modelId ?? MODEL_ID_PENDING; }
+  get lastSuccessAt(): number | null { return this._lastSuccessAt; }
+  get consecutiveFailures(): number { return this._consecutiveFailures; }
+  get lastFailure(): typeof this._lastFailure { return this._lastFailure; }
+  get healthState(): "unknown" | "ok" | "failing" {
+    if (this._lastSuccessAt === null && this._consecutiveFailures === 0) return "unknown";
+    return this._consecutiveFailures === 0 ? "ok" : "failing";
+  }
+
+  async probe(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", signal: controller.signal });
+        if (!res.ok) return false;
+        ModelsSchema.parse(await res.json());
+        return true;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /** Record a successful transport-level response for diagnostics. */
+  noteSuccess(): void {
+    this._lastSuccessAt = this.now();
+    this._consecutiveFailures = 0;
+    this._lastFailure = null;
+  }
+
+  /** Record a failed transport-level attempt for diagnostics. */
+  noteFailure(failure: { kind: "timeout" | "http_error" | "network_error"; error: string }): void {
+    this._consecutiveFailures += 1;
+    this._lastFailure = { at: this.now(), ...failure };
+  }
 
   async complete(messages: LlmMessage[]): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        return await this.chatOnce(messages);
+        const response = await this.chatOnce(messages);
+        this.noteSuccess();
+        return response;
       } catch (err) {
         lastError = err;
         const error = err instanceof Error ? err : new Error(String(err));
@@ -50,6 +95,7 @@ export class LlamaClient {
           : error.message.startsWith("llama.cpp returned HTTP") || error.message.startsWith("llama.cpp /v1/models returned HTTP")
             ? "http_error"
             : "network_error";
+        this.noteFailure({ kind, error: error.message });
         this.onFailure?.({ kind, attempt: attempt + 1, error: error.message });
       }
     }

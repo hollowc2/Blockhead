@@ -7,7 +7,13 @@
 #   bootstrap/background     -> maintenance.yaml (bootstrap + stockpile tuning)
 #   items                    -> item-policy.yaml (spec 24.5)
 #   policy                   -> safety/policy constraints (spec 34)
-#   storage/tui              -> misc
+#   storage/status/tui        -> misc
+
+status:
+  enabled: true
+  host: 127.0.0.1
+  port: 8155
+
 # All keys are Zod-validated against src/config/schema.ts at startup.
 
 # --- 30.1 agent.yaml: identity, behavior, LLM -------------------------------

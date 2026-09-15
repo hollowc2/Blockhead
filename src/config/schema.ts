@@ -237,6 +237,13 @@ export const MinecraftConfigSchema = z.object({
    * stream in logs/blockhead.log keeps recording. Diagnostic only — never
    * required for game control.
    */
+  status: z
+    .object({
+      enabled: z.boolean().default(true),
+      host: z.string().default("127.0.0.1"),
+      port: z.number().int().positive().default(8155),
+    })
+    .optional(),
   tui: z
     .object({
       enabled: z.boolean().default(true),

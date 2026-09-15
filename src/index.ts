@@ -52,6 +52,9 @@ import { registerNavigationTools } from "./tools/navigation.js";
 import { registerDeliveryTools } from "./tools/delivery.js";
 import { registerUtilityTools } from "./tools/utility.js";
 import { registerMemoryTools } from "./tools/memory.js";
+import { TaskOutcomeTracker } from "./status/outcomes.js";
+import { buildStatusSnapshot } from "./status/snapshot.js";
+import { StatusServer } from "./status/server.js";
 
 const config = loadConfig("config/minecraft.yaml");
 
@@ -134,6 +137,9 @@ registerGoalTools(registry, goals);
 // Phase 10: death coordination is bus-only (no bot), so one instance outlives
 // connection attempts and recovery tracking survives a reconnect.
 const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger });
+const taskOutcomes = new TaskOutcomeTracker({ bus });
+const processStartedAt = Date.now();
+let statusServer: StatusServer | null = null;
 
 // The live bot session. `shutdown` and the bootstrap-resume hooks act on the
 // session currently being attempted; between attempts this is null.
@@ -168,6 +174,27 @@ if (shouldEnableTui(config, detectStdoutIsTty())) {
   tui.start();
 }
 
+statusServer = new StatusServer({
+  host: config.status?.host ?? "127.0.0.1",
+  port: config.status?.port ?? 8155,
+  logger,
+  status: () => buildStatusSnapshot({
+    startedAtMs: processStartedAt,
+    player: session?.bot.username ?? null,
+    connected: session?.bot.entity !== null && session?.bot.entity !== undefined,
+    state: { self: state.self, timePhase: state.timePhase },
+    scheduler,
+    goal: goals.active(),
+    decider,
+    client: { endpoint: client.endpoint, modelName: client.modelName, healthState: client.healthState, reachable: client.healthState === "unknown" ? null : client.healthState === "ok", lastSuccessAt: client.lastSuccessAt, consecutiveFailures: client.consecutiveFailures, lastFailure: client.lastFailure },
+    inDeathLoop: deathManager.inDeathLoop,
+    outcomes: taskOutcomes,
+  }),
+});
+if (config.status?.enabled ?? true) statusServer.start();
+
+process.on("exit", () => taskOutcomes.dispose());
+
 // Phase 8: bootstrap yielded to user work resumes when that work settles —
 // the runner is idempotent and resumes from the persisted stage boundary.
 const resumeBootstrapIfPending = (): void => {
@@ -190,6 +217,8 @@ function shutdown(code: number): void {
     active.bot.quit();
   }
   goals.dispose();
+  taskOutcomes.dispose();
+  statusServer?.stop();
   tui.stop();
   db.close();
   debugLog.close();
