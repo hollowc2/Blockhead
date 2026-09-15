@@ -22,6 +22,7 @@ const SNAPSHOT: StateSnapshot = {
   task: { active: null, progress: null, lastError: null },
   nearby: { players: [] },
   recentEvents: [],
+  blockedActions: [],
   from: "Corey",
   instruction: "get me 32 oak logs",
 };

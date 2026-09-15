@@ -117,6 +117,17 @@ background:
   llm_decisions: true
   llm_decision_interval_seconds: 60
 
+# --- anti-loop watchdog (generic, above every skill) ------------------------
+# After `max_failures` failed attempts of the same high-level action (task
+# type + normalized arguments — e.g. collect_resource:coal:32), the action
+# is temporarily BLOCKED for `cooldown_seconds`: the scheduler holds matching
+# tasks and the LLM sees the reason, so CobbleBob stops re-attempting a
+# hopeless action. Success or meaningful partial progress resets/reduces the
+# count; an explicit owner-issued command always runs and resets the state.
+watchdog:
+  max_failures: 3
+  cooldown_seconds: 600
+
 # --- misc --------------------------------------------------------------------
 storage:
   db_path: data/blockhead.db

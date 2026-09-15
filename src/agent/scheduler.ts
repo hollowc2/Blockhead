@@ -2,11 +2,18 @@ import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
 import type { EventBus } from "../events/bus.js";
 import type { TasksRepository } from "../memory/tasks.js";
+import { ActionWatchdog, actionFingerprint, type BlockView } from "./watchdog.js";
 import { TaskStatus, type NewTask, type Task } from "./task.js";
 
 export interface SchedulerOptions {
   bus: EventBus;
   tasks: TasksRepository;
+  /**
+   * Anti-loop watchdog (generic, above every skill). When present, a task
+   * whose action fingerprint is blocked stands down into TaskStatus.BLOCKED
+   * instead of running, until the block's cooldown expires.
+   */
+  watchdog?: ActionWatchdog;
 }
 
 /** Why the active task is being asked to stop (Phase 8, spec 6). */
@@ -46,6 +53,7 @@ export interface TaskSignals {
 export class Scheduler {
   private readonly bus: EventBus;
   private readonly tasks: TasksRepository;
+  private readonly watchdog: ActionWatchdog | undefined;
 
   private readonly queue: Task[] = [];
   private activeTask: Task | null = null;
@@ -64,6 +72,7 @@ export class Scheduler {
   constructor(options: SchedulerOptions) {
     this.bus = options.bus;
     this.tasks = options.tasks;
+    this.watchdog = options.watchdog;
   }
 
   /** Rehydrate live tasks from the database. Call once at startup. */
@@ -131,14 +140,23 @@ export class Scheduler {
    * Returns the activated task, or null when the task must wait.
    */
   claim(): Task | null {
-    const candidate = this.nextCandidate();
-    if (!candidate) return null;
-    const active = this.activeTask;
-    if (active === null) return this.activate(candidate.id);
-    if (this.outranks(candidate, active)) {
-      this.requestPause();
+    for (;;) {
+      const candidate = this.nextCandidate();
+      if (!candidate) return null;
+      const active = this.activeTask;
+      if (active === null) {
+        // Slot free: activate unless the anti-loop watchdog stands the
+        // action down — then consider the next candidate, so one blocked
+        // task never starves the queue behind it.
+        const activated = this.activate(candidate.id);
+        if (activated !== null) return activated;
+        continue;
+      }
+      if (this.outranks(candidate, active)) {
+        this.requestPause();
+      }
+      return null;
     }
-    return null;
   }
 
   /** True when `candidate` may displace the active task. */
@@ -172,6 +190,22 @@ export class Scheduler {
   activate(id: string): Task | null {
     const task = this.findQueued(id);
     if (!task) return null;
+    // Anti-loop gate: a blocked action stands down into BLOCKED status
+    // instead of running. Owner commands bypass the gate — an explicit
+    // request always executes, and the watchdog reset its failure state
+    // when the owner's run settled.
+    const block = this.blockFor(task);
+    if (block !== null) {
+      task.status = TaskStatus.BLOCKED;
+      task.lastError = block.reason;
+      this.tasks.update(task);
+      this.bus.emit("task.blocked", { task });
+      logger.warn(
+        { taskId: task.id, type: task.type, action: block.action },
+        "task held by anti-loop watchdog",
+      );
+      return null;
+    }
     this.removeQueued(task);
     this.activeTask = task;
     task.status = TaskStatus.ACTIVE;
@@ -320,6 +354,7 @@ export class Scheduler {
    * first (Phase 8 acceptance: iron resumes before wood).
    */
   private nextCandidate(excludedId: string | null = null): Task | null {
+    this.requeueExpiredBlocks();
     let best: Task | null = null;
     for (const task of this.queue) {
       if (task.id === excludedId) continue;
@@ -327,6 +362,43 @@ export class Scheduler {
       if (best === null || this.candidateKey(task) > this.candidateKey(best)) best = task;
     }
     return best;
+  }
+
+  /**
+   * Requeue BLOCKED tasks whose anti-loop cooldown has expired: an expired
+   * block allows exactly one fresh attempt (the gate re-blocks it if that
+   * attempt fails again). Runs lazily inside candidate selection, so no
+   * timer is needed and a retry is never scheduled before its time.
+   */
+  private requeueExpiredBlocks(): void {
+    if (this.watchdog === undefined) return;
+    for (const task of this.queue) {
+      if (task.status !== TaskStatus.BLOCKED) continue;
+      if (this.watchdog.blockFor(actionFingerprint(task.type, task.parameters)) !== null) continue;
+      task.status = TaskStatus.QUEUED;
+      this.tasks.update(task);
+      logger.info({ taskId: task.id }, "anti-loop block expired; task requeued");
+    }
+  }
+
+  /** The active watchdog block for a task, or null when it may run. */
+  private blockFor(task: Task): { action: string; reason: string } | null {
+    if (this.watchdog === undefined) return null;
+    if (task.source === "user") return null;
+    const fingerprint = actionFingerprint(task.type, task.parameters);
+    const block = this.watchdog.blockFor(fingerprint);
+    if (block === null) return null;
+    const reason = block.lastReason === "" ? "previous attempts failed" : block.lastReason;
+    return { action: fingerprint, reason: `${block.failures} failed attempts: ${reason}` };
+  }
+
+  /**
+   * Every active anti-loop block, formatted for the LLM context (chat state
+   * snapshot and the background director's situation digest). Empty when the
+   * watchdog is not wired or nothing is blocked right now.
+   */
+  blockedActions(): readonly BlockView[] {
+    return this.watchdog?.activeBlocks() ?? [];
   }
 
   private candidateKey(task: Task): number {

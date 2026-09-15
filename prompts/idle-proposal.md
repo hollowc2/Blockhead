@@ -10,6 +10,8 @@ Address listed shortages before optional work. Food is the top priority shortage
 
 Do not blindly repeat a restore the situation lists as recently failed — pick a different useful task or wait. A failed repeat is worse than a short wait.
 
+Never choose an action the current state lists under blockedActions (it is on a cooldown and the scheduler will hold it anyway) — pick something else or wait for the cooldown to expire.
+
 When nothing useful remains, choose wait.
 
 Reply with short, task-oriented phrases. Respond only with valid JSON matching the required schema.

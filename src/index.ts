@@ -17,6 +17,7 @@ import { ResourceSitesRepository } from "./memory/resource-sites.js";
 import { DeathEventsRepository } from "./memory/deaths.js";
 import { AgentState } from "./agent/state.js";
 import { Scheduler } from "./agent/scheduler.js";
+import { ActionWatchdog } from "./agent/watchdog.js";
 import { TaskDispatcher } from "./agent/task-dispatcher.js";
 import { DeathRecoveryManager } from "./agent/death-recovery.js";
 import { BackgroundManager } from "./agent/background.js";
@@ -61,7 +62,14 @@ const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
 const state = new AgentState({ bus, locations, config });
 state.boot();
-const scheduler = new Scheduler({ bus, tasks: taskStore });
+// Anti-loop watchdog (generic, above every skill): fingerprints each action
+// (task type + normalized arguments), blocks an action that failed too many
+// times for a cooldown window, and feeds the block reasons to the LLM.
+const watchdog = new ActionWatchdog({
+  maxFailures: config.watchdog?.max_failures,
+  cooldownMs: (config.watchdog?.cooldown_seconds ?? 600) * 1000,
+});
+const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
 scheduler.loadFromPersistence();
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
@@ -268,7 +276,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

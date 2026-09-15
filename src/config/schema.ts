@@ -191,6 +191,23 @@ export const MinecraftConfigSchema = z.object({
       llm_decision_interval_seconds: z.number().int().nonnegative().default(60),
     })
     .optional(),
+  /**
+   * Anti-loop watchdog tuning (generic layer above every skill). After
+   * `max_failures` failed attempts of the same high-level action (task type
+   * + normalized arguments, e.g. `collect_resource:coal:32`), the action is
+   * blocked for `cooldown_seconds` — the scheduler holds matching tasks in
+   * BLOCKED status and the LLM is shown the reason. Success or meaningful
+   * partial progress resets/reduces the count; an explicit owner-issued
+   * command always runs and resets the state.
+   */
+  watchdog: z
+    .object({
+      /** Failed attempts of one action before it is temporarily blocked. */
+      max_failures: z.number().int().min(1).default(3),
+      /** How long a block lasts before one retry is allowed. */
+      cooldown_seconds: z.number().int().positive().default(600),
+    })
+    .optional(),
   storage: z
     .object({
       /** SQLite database path; created on first run. */

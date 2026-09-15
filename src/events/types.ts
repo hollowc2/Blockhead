@@ -227,6 +227,7 @@ export interface EventMap {
   "tool.broken": ToolDurabilityEvent;
   "task.created": TaskEvent;
   "task.activated": TaskEvent;
+  "task.blocked": TaskEvent;
   "task.completed": TaskEvent;
   "task.failed": TaskEvent;
   "task.cancelled": TaskEvent;

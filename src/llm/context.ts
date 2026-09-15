@@ -28,6 +28,13 @@ export interface StateSnapshot {
     players: { name: string; distance: number }[];
   };
   recentEvents: string[];
+  /**
+   * High-level actions currently blocked by the anti-loop watchdog (same
+   * task type + normalized arguments failed repeatedly). Each entry names
+   * the action, why it was blocked, and when a retry is allowed; the model
+   * should pick something else or wait instead of re-attempting one.
+   */
+  blockedActions: { action: string; reason: string; retryInSeconds: number }[];
   from: string;
   instruction: string;
 }
@@ -68,6 +75,7 @@ export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): Stat
       players: nearbyPlayers(ctx.bot),
     },
     recentEvents: [...ctx.state.recentEvents],
+    blockedActions: [...ctx.scheduler.blockedActions()],
     from: input.from,
     instruction: input.instruction,
   };

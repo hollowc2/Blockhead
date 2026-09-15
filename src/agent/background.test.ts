@@ -199,6 +199,8 @@ function newHarness(health: number, food: number): Harness {
       // by the next tick's stale-task sweep, like unclaimed work in the real
       // loop. Assertions read `enqueued`/`issued`, never the claim result.
       claim: () => null,
+      // Anti-loop watchdog: no watchdog wired in tests, so nothing is blocked.
+      blockedActions: () => [],
     } as unknown as Scheduler,
     maintenance: {
       isBusy: () => false,

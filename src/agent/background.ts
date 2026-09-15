@@ -488,6 +488,17 @@ export class BackgroundManager {
     }
     if (failures.length > 0) lines.push(`Recent failures: ${failures.join("; ")}.`);
 
+    // Anti-loop watchdog blocks: the scheduler gate already holds these
+    // actions, and the director must not keep proposing them.
+    const blocks = this.opts.scheduler.blockedActions();
+    if (blocks.length > 0) {
+      lines.push(
+        `Blocked actions (do not retry until the cooldown expires): ${blocks
+          .map((b) => `${b.action} (${b.reason}; retry in ${b.retryInSeconds}s)`)
+          .join("; ")}.`,
+      );
+    }
+
     return lines.join("\n");
   }
 

@@ -28,6 +28,7 @@ import type { OrganizeResumeState, OrganizeStorageRunner } from "../skills/organ
 import type { BaseBuilderRunner, BaseResumeState } from "../skills/base.js";
 import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
+import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
 
@@ -59,6 +60,12 @@ export interface TaskDispatcherOptions {
   utility: UtilityRunner;
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
+  /**
+   * Anti-loop watchdog: records every settled skill-run outcome per action
+   * fingerprint, so a repeatedly-failing action is blocked (and the LLM is
+   * told why) instead of being re-attempted forever.
+   */
+  watchdog: ActionWatchdog;
   logger: Logger;
 }
 
@@ -101,19 +108,49 @@ export class TaskDispatcher {
       if (scheduler.active?.id !== task.id) return;
       if (scheduler.interruptPending) {
         // The interrupt arrived after the skill's last checkpoint; settle it
-        // here so a missed checkpoint never wedges the queue.
+        // here so a missed checkpoint never wedges the queue. A run that
+        // completed before the interrupt is still a real outcome.
+        this.recordOutcome(task, result);
         scheduler.settleInterrupted();
         return;
       }
+      this.recordOutcome(task, result);
       if (result.ok) scheduler.completeActive();
       else scheduler.failActive(result.message ?? "skill failed");
     } catch (err) {
+      const message = `execution threw: ${String(err)}`;
       this.opts.logger.error({ err: String(err), taskId: task.id }, "task execution threw");
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id === task.id) {
         if (scheduler.interruptPending) scheduler.settleInterrupted();
-        else scheduler.failActive(`execution threw: ${String(err)}`);
+        else {
+          const fingerprint = actionFingerprint(task.type, task.parameters);
+          this.opts.watchdog.record(fingerprint, "failure", task.source === "user", message);
+          scheduler.failActive(message);
+        }
       }
+    }
+  }
+
+  /**
+   * Feed one settled skill-run outcome to the anti-loop watchdog. The action
+   * fingerprint is task type + normalized goal arguments, so a block tracks
+   * the high-level action ("gather 32 coal"), not the individual task
+   * instance. Owner commands reset the action's failure state first — an
+   * explicit request never accumulates toward a permanent block. An
+   * interrupted run (pause/cancel preemption) is not the action failing and
+   * is not recorded.
+   */
+  private recordOutcome(task: Task, result: SkillResult): void {
+    if (result.status === "interrupted") return;
+    const fingerprint = actionFingerprint(task.type, task.parameters);
+    const reason = result.message ?? result.errorCode ?? "";
+    if (result.ok && result.status !== "partial") {
+      this.opts.watchdog.record(fingerprint, "success", task.source === "user", reason);
+    } else if (result.status === "partial") {
+      this.opts.watchdog.record(fingerprint, "partial", task.source === "user", reason);
+    } else {
+      this.opts.watchdog.record(fingerprint, "failure", task.source === "user", reason);
     }
   }
 
