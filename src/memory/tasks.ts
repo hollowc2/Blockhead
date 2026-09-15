@@ -110,6 +110,21 @@ export class TasksRepository {
    * context digest of recent high-level results; `limit` bounds the fetch
    * (the caller dedupes identical outcomes).
    */
+  /** Remove old terminal rows while retaining a bounded recent outcome window. */
+  pruneSettled(olderThan: string, keepRecent = 32): number {
+    const result = this.db.sql.prepare(`
+      DELETE FROM tasks
+      WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.CANCELLED}')
+        AND COALESCE(completed_at, created_at) < ?
+        AND id NOT IN (
+          SELECT id FROM tasks
+          WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.CANCELLED}')
+          ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
+          LIMIT ?
+        )`).run(olderThan, Math.max(0, keepRecent));
+    return result.changes;
+  }
+
   recentSettled(limit = 8): Task[] {
     const bounded = Math.max(1, Math.min(limit, 32));
     const rows = this.db.sql

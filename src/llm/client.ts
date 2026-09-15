@@ -14,6 +14,8 @@ export interface LlmClientOptions {
   onFailure?: (failure: { kind: "timeout" | "http_error" | "network_error"; attempt: number; error: string }) => void;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  random?: () => number;
 }
 
 const MODEL_ID_PENDING = "local-model";
@@ -26,6 +28,8 @@ export class LlamaClient {
   private readonly onFailure?: LlmClientOptions["onFailure"];
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly random: () => number;
   private modelId: string | null = null;
   private _lastSuccessAt: number | null = null;
   private _consecutiveFailures = 0;
@@ -38,6 +42,8 @@ export class LlamaClient {
     this.onFailure = options.onFailure;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.now = options.now ?? Date.now;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.random = options.random ?? Math.random;
   }
 
   get endpoint(): string { return this.baseUrl; }
@@ -97,6 +103,12 @@ export class LlamaClient {
             : "network_error";
         this.noteFailure({ kind, error: error.message });
         this.onFailure?.({ kind, attempt: attempt + 1, error: error.message });
+        if (attempt < this.maxRetries && isRetryable(error)) {
+          const base = Math.min(5000, 250 * 2 ** attempt);
+          await this.sleep(Math.round(base * (0.75 + this.random() * 0.5)));
+        } else if (attempt < this.maxRetries) {
+          break;
+        }
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
@@ -129,4 +141,12 @@ export class LlamaClient {
     this.modelId = parsed.data[0]!.id;
     return this.modelId;
   }
+}
+
+function isRetryable(error: Error): boolean {
+  if (error.name === "AbortError" || error.message === "connection refused" || error.message.includes("fetch failed")) return true;
+  const match = error.message.match(/HTTP (\d{3})/);
+  if (match === null) return false;
+  const status = Number(match[1]);
+  return status === 408 || status === 425 || status === 429 || status >= 500;
 }

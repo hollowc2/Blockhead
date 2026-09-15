@@ -326,24 +326,28 @@ export class Scheduler {
     return this.activateNext();
   }
 
-  /** Cancel a queued or active task by id. */
+  /** Cancel a queued task immediately, or request cooperative cancellation of an active run. */
   cancel(id: string): Task | null {
     const task = this.findQueued(id) ?? (this.activeTask?.id === id ? this.activeTask : null);
     if (!task) return null;
-    const wasActive = this.activeTask === task;
-    if (wasActive) {
-      this.activeTask = null;
-      this.interrupt = null;
-    } else {
-      this.removeQueued(task);
+    if (this.activeTask === task) {
+      this.requestCancel();
+      return task;
     }
+    this.removeQueued(task);
     task.status = TaskStatus.CANCELLED;
     task.completedAt = new Date().toISOString();
     this.tasks.update(task);
     this.bus.emit("task.cancelled", { task });
     logger.info({ taskId: task.id }, "task cancelled");
-    if (wasActive) this.activateNext();
     return task;
+  }
+
+  /** Requeue blocked tasks whose watchdog cooldown has expired, even when idle. */
+  maintainExpiredBlocks(): number {
+    const before = this.queue.filter((task) => task.status === TaskStatus.QUEUED).length;
+    this.requeueExpiredBlocks();
+    return this.queue.filter((task) => task.status === TaskStatus.QUEUED).length - before;
   }
 
   /**

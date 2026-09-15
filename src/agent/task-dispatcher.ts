@@ -31,11 +31,14 @@ import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
+import { withTimeout } from "../skills/skill-library.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
 /** Wall-clock budget for a "go home" trip. */
 const GO_HOME_TIMEOUT_MS = 120_000;
+/** Upper bound for any skill, including plugins that fail to settle. */
+const SKILL_TIMEOUT_MS = 10 * 60_000;
 
 export interface TaskDispatcherOptions {
   bus: EventBus;
@@ -103,7 +106,7 @@ export class TaskDispatcher {
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
     try {
-      const result = await this.runSkill(task);
+      const result = await withTimeout(SKILL_TIMEOUT_MS, this.runSkill(task));
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id !== task.id) return;
       if (scheduler.interruptPending) {

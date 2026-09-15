@@ -215,6 +215,11 @@ export class BackgroundManager {
   private async runOnce(decisionEligible = false): Promise<void> {
     const { bot, bootstrap, scheduler, logger } = this.opts;
 
+    // Expired watchdog blocks must be requeued even when no candidate was
+    // previously selectable; candidate selection alone is intentionally lazy.
+    const maintainExpiredBlocks = (scheduler as Scheduler & { maintainExpiredBlocks?: () => number }).maintainExpiredBlocks;
+    maintainExpiredBlocks?.call(scheduler);
+
     // --- deterministic gates: only act from spawned, post-bootstrap idle. ---
     if (bot.entity === null) return;
     if (bootstrap.completedStage !== BootstrapStage.NORMAL_OPERATION) return;

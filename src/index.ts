@@ -85,6 +85,9 @@ const watchdog = new ActionWatchdog({
 watchdog.rehydrate();
 const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
 scheduler.loadFromPersistence();
+// Bound historical task growth without touching resumable work.
+const taskRetentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+taskStore.pruneSettled(taskRetentionCutoff, 32);
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
 // code (the movement tools) performs the mechanics.

@@ -198,4 +198,9 @@ export const MIGRATIONS: readonly string[] = [
       updated_at INTEGER NOT NULL
   );
   `,
+  // v9: indexes for live-task restoration and recent outcome/retention scans.
+  `
+  CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_tasks_settled_time ON tasks(status, completed_at, created_at);
+  `,
 ];
