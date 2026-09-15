@@ -52,6 +52,35 @@ function failedFoodTask(): Task {
   };
 }
 
+/** A just-failed director build, as `task.failed` carries it. */
+function failedDirectorBuildTask(): Task {
+  return {
+    id: "fail-dir-build-1",
+    type: "build_base",
+    priority: TaskPriority.BACKGROUND,
+    source: "director",
+    objective: "Build the base structure at home.",
+    parameters: {},
+    status: TaskStatus.FAILED,
+    createdAt: new Date().toISOString(),
+    lastError: "walls burned down",
+  };
+}
+
+/** A successfully completed director build, as `task.completed` carries it. */
+function completedDirectorBuildTask(): Task {
+  return {
+    id: "ok-dir-build-1",
+    type: "build_base",
+    priority: TaskPriority.BACKGROUND,
+    source: "director",
+    objective: "Build the base structure at home.",
+    parameters: {},
+    status: TaskStatus.COMPLETED,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 interface Harness {
   manager: BackgroundManager;
   bus: EventBus;
@@ -311,6 +340,62 @@ test("directed stockpile restores honor the per-kind failure cooldown", async ()
   await h.manager.tick();
   assert.equal(h.issued.length, 2);
   assert.deepEqual(h.issued[1], { kind: "food", preempt: false });
+
+  h.manager.stop();
+});
+
+test("a failed director task is recorded and suppresses the same directed pick during cooldown", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.directorResult = { task: { type: "build_base" } };
+
+  // The directed build runs once, sourced from the director.
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+  assert.equal(h.enqueued.length, 1);
+  assert.equal(h.enqueued[0]!.source, "director");
+
+  // A director-sourced failure lands in the same per-kind cooldown as a
+  // background-sourced one: the tracking must not skip `director` tasks.
+  h.bus.emit("task.failed", { task: failedDirectorBuildTask() });
+
+  // Inside the window the same directed pick is vetoed — one standing-by
+  // notice, no re-enqueue — and the digest handed to the director lists the
+  // failure.
+  h.advance(1_000);
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 2, "the director is still consulted");
+  assert.equal(h.enqueued.length, 1, "directed build stands down inside the cooldown window");
+  assert.equal(h.warns.filter((w) => w.kind === "build").length, 1);
+  assert.match(h.lastSituation ?? "", /Recent failures: build restore failed \(walls burned down\)/);
+
+  // Window expired: the same directed pick runs again.
+  h.advance(59_000);
+  await h.manager.tick();
+  assert.equal(h.enqueued.length, 2);
+  assert.equal(h.enqueued[1]!.type, "build_base");
+
+  h.manager.stop();
+});
+
+test("a successful director task is not marked failed and stays immediately re-pickable", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.directorResult = { task: { type: "build_base" } };
+
+  // The directed build runs and completes successfully.
+  await h.manager.tick();
+  assert.equal(h.enqueued.length, 1);
+  h.bus.emit("task.completed", { task: completedDirectorBuildTask() });
+
+  // The same directed pick runs again immediately: a completion must never
+  // put the task into the failure cooldown — no notice, no digest entry.
+  await h.manager.tick();
+  assert.equal(h.enqueued.length, 2);
+  assert.equal(h.warns.filter((w) => w.kind === "build").length, 0, "no standing-by notice after success");
+  assert.doesNotMatch(h.lastSituation ?? "", /Recent failures/, "no recent failure recorded after success");
 
   h.manager.stop();
 });

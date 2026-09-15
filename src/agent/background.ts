@@ -278,14 +278,15 @@ export class BackgroundManager {
   }
 
   /**
-   * Record a failed background restore so the per-kind cooldown knows where
-   * to start counting. Deterministic bookkeeping keyed by the restore task:
+   * Record a failed restore so the per-kind cooldown knows where to start
+   * counting. Deterministic bookkeeping keyed by the restore task:
    * `stockpile_maintenance` -> the stockpile kind, `collect_resource` -> the
-   * resource. Only background-sourced tasks count; user work that fails is
-   * never the loop's to re-run.
+   * resource. Both loop-owned sources count toward the anti-loop cooldown —
+   * the deterministic background rails and LLM-director picks — while user
+   * work that fails is never the loop's to re-run.
    */
   private recordFailure(task: Task): void {
-    if (task.source !== "background") return;
+    if (task.source !== "background" && task.source !== "director") return;
     let key: string | null = null;
     if (task.type === "stockpile_maintenance") {
       const kind = String(task.parameters.kind ?? "");
