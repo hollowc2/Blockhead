@@ -204,15 +204,35 @@ test("a lower-priority queued task never preempts an active task", () => {
   assert.equal(s.active?.id, maintenance.id); // background runs after foreground
 });
 
-test("cancelling the active task cascades to the next candidate", () => {
-  const { scheduler: s } = newHarness();
+test("cancelling the active task waits for cooperative settlement before activating the next candidate", () => {
+  const { scheduler: s, bus } = newHarness();
+  const cancelled: string[] = [];
+  const activated: string[] = [];
+  bus.on("task.cancelled", ({ task }) => cancelled.push(task.id));
+  bus.on("task.activated", ({ task }) => activated.push(task.id));
+
   const a = s.enqueue(userTask("A"));
   const b = s.enqueue(userTask("B"));
   // Newest queued user instruction wins when nothing is active.
   assert.equal(s.claim()?.id, b.id);
+
+  // Cancellation requests an interrupt but must not free the slot yet.
   assert.equal(s.cancel(b.id)?.id, b.id);
+  assert.equal(s.active?.id, b.id);
+  assert.equal(b.status, TaskStatus.ACTIVE);
+  assert.equal(s.interruptPending, true);
+  assert.equal(s.pendingInterruptReason, "cancel");
+  assert.equal(s.queued.find((task) => task.id === a.id)?.status, TaskStatus.QUEUED);
+  assert.deepEqual(cancelled, []);
+  assert.deepEqual(activated, [b.id]);
+
+  // The running skill observes the interrupt and the executor settles it.
+  assert.equal(s.signalsFor(b).checkpoint(), false);
+  assert.equal(s.settleInterrupted()?.id, a.id);
   assert.equal(b.status, TaskStatus.CANCELLED);
   assert.equal(s.active?.id, a.id);
+  assert.deepEqual(cancelled, [b.id]);
+  assert.deepEqual(activated, [b.id, a.id]);
 });
 
 test("cancelling a queued task does not disturb the active task", () => {
