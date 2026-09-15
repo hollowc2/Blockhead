@@ -22,7 +22,7 @@ export enum TaskPriority {
   OPTIONAL = 20,
 }
 
-export type TaskSource = "user" | "system" | "maintenance" | "background" | "director";
+export type TaskSource = "user" | "system" | "maintenance" | "background" | "director" | "goal";
 
 export interface Task {
   id: string;

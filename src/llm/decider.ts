@@ -1,7 +1,14 @@
 import type { LlamaClient } from "./client.js";
 import { buildStateSnapshot, type DecisionInput, type StateSnapshot } from "./context.js";
-import { buildDirectorMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
-import { AgentDecisionSchema, NextTaskSchema, type AgentDecision, type NextTaskDecision } from "./schemas.js";
+import { buildDirectorMessages, buildGoalDecisionMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
+import {
+  AgentDecisionSchema,
+  NextGoalActionSchema,
+  NextTaskSchema,
+  type AgentDecision,
+  type NextGoalActionDecision,
+  type NextTaskDecision,
+} from "./schemas.js";
 import type { DebugLog } from "./debug-log.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { ToolRegistry } from "../tools/registry.js";
@@ -142,6 +149,60 @@ export class DecisionMaker {
     }
     throw new Error(
       `model returned invalid next task after ${this.maxRetries + 1} attempts: ${String(lastError)}`,
+    );
+  }
+
+  /**
+   * Goal driver (goal layer): with one active autonomous goal, decide the
+   * next ONE action that progresses it. Same retry-until-valid loop and the
+   * same dispatcher-capable task vocabulary as the director, plus the
+   * production actions and the terminal `complete` / `abandon` verdicts.
+   * `context` is the curated goal summary (description, criteria, current
+   * step, recent results) the background loop builds; the model never hears
+   * raw world dumps or the goal manager's internals.
+   */
+  async decideGoalAction(
+    input: DecisionInput,
+    ctx: ToolContext,
+    context: string,
+  ): Promise<NextGoalActionDecision> {
+    const snapshot = buildStateSnapshot(ctx, input);
+    this.logRequest(snapshot, { event: "goal_decision", goal_context: context });
+
+    const messages = buildGoalDecisionMessages(snapshot, context);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const startedAt = Date.now();
+      const raw = await this.client.complete(messages);
+      try {
+        const parsed = extractJson(raw);
+        const decision = NextGoalActionSchema.parse(parsed);
+        this.logResult(decision, raw, Date.now() - startedAt);
+        this.recordLastCall({
+          at: startedAt,
+          latencyMs: Date.now() - startedAt,
+          tool:
+            decision.action.type === "complete"
+              ? "complete_goal"
+              : decision.action.type === "abandon"
+                ? "abandon_goal"
+                : decision.action.type,
+          rationale: decision.rationale ?? null,
+        });
+        return decision;
+      } catch (err) {
+        lastError = err;
+        this.debugLog.write({
+          event: "goal_decision_invalid",
+          attempt: attempt + 1,
+          raw_response: raw,
+          error: String(err),
+        });
+      }
+    }
+    throw new Error(
+      `model returned invalid goal action after ${this.maxRetries + 1} attempts: ${String(lastError)}`,
     );
   }
 

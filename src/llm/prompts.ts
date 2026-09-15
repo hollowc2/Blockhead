@@ -16,6 +16,7 @@ export interface PromptAssets {
   decision: string;
   fewShot: readonly { user: string; assistant: string }[];
   idleProposal: string;
+  goal: string;
 }
 
 /** Built-in fallbacks: identical to the shipped prompts/*.md files. */
@@ -23,6 +24,7 @@ const FALLBACK_SYSTEM = [
   "You are CobbleBob, a calm, minimal Minecraft companion.",
   "You choose high-level tools from the provided list. Never invent new tools.",
   "You never control movement, pathfinding, inventory slots, or combat directly; deterministic code performs those.",
+  "An autonomous goal, when active, appears in the state and is pursued across many actions; when the owner names a multi-step objective use start_goal, and the owner may cancel it with stop/cancel or by starting a new goal.",
   "Reply with short, task-oriented phrases. Keep rationales under one short sentence.",
   "Respond only with valid JSON matching the required schema.",
 ].join("\n");
@@ -76,6 +78,15 @@ const FALLBACK_IDLE = [
   "Reply with short, task-oriented phrases. Respond only with valid JSON matching the required schema.",
 ].join("\n");
 
+const FALLBACK_GOAL = [
+  "You are CobbleBob's planning head, driving ONE autonomous goal to completion.",
+  "Pick exactly ONE next action from the provided list. Never invent actions or parameters.",
+  "You never control movement, pathfinding, inventory, or combat; deterministic code performs those once you choose.",
+  "Progress the goal with task actions. Choose \"complete\" ONLY when every success criterion is satisfied by the current state. Choose \"abandon\" only when the goal is impossible.",
+  "Recent results are outcomes of previous choices. A failed step is information, not a mandate to repeat it — pick what unblocks the goal or wait.",
+  "Reply with short, task-oriented phrases. Respond only with valid JSON matching the required schema.",
+].join("\n");
+
 function readPromptFile(path: string): string | null {
   try {
     return readFileSync(path, "utf8");
@@ -122,12 +133,14 @@ export function loadPromptAssets(dir?: string): PromptAssets {
   const system = readPromptFile(resolve(base, "system.md"));
   const decision = readPromptFile(resolve(base, "decision.md"));
   const idle = readPromptFile(resolve(base, "idle-proposal.md"));
+  const goal = readPromptFile(resolve(base, "goal.md"));
   const fewShot = decision === null ? FALLBACK_FEW_SHOT : parseFewShot(decision);
   cached = {
     system: system ?? FALLBACK_SYSTEM,
     decision: decision ?? FALLBACK_DECISION,
     fewShot: fewShot.length > 0 ? fewShot : FALLBACK_FEW_SHOT,
     idleProposal: idle ?? FALLBACK_IDLE,
+    goal: goal ?? FALLBACK_GOAL,
   };
   return cached;
 }

@@ -3,7 +3,8 @@ import { test } from "node:test";
 import type { SkillSuccess } from "../memory/skills.js";
 import type { LlmMessage } from "./client.js";
 import type { StateSnapshot } from "./context.js";
-import { buildMessages, fewShotsFromSkills } from "./prompt.js";
+import { buildGoalDecisionMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
+import { NextGoalActionSchema } from "./schemas.js";
 
 function success(name: string, parameters: Record<string, unknown>): SkillSuccess {
   return {
@@ -45,6 +46,7 @@ const SNAPSHOT: StateSnapshot = {
   recentEvents: [],
   recentTasks: [],
   blockedActions: [],
+  activeGoal: null,
   from: "Corey",
   instruction: "get me 32 oak logs",
 };
@@ -110,4 +112,38 @@ test("buildMessages without dynamic few-shots falls back to the static examples"
   const messages = buildMessages(SNAPSHOT, "[]");
   assert.equal(messages.length, 1 + 2 * 4 + 1, "all four static examples used");
   assert.match(messages[1]!.content, /come here/, "first static example leads");
+});
+
+test("buildGoalDecisionMessages carries the objective context and the closed action vocabulary", () => {
+  const context = "Objective: Prepare for a mining expedition.\nSuccess criteria: food stockpile >= 32; carried iron_pickaxe >= 1.";
+  const messages = buildGoalDecisionMessages(SNAPSHOT, context);
+  assert.equal(messages.length, 2, "system prompt + one user message");
+  assert.equal(messages[0]!.role, "system");
+  const user = messages[1]!.content;
+  assert.match(user, /Prepare for a mining expedition/);
+  assert.match(user, /"complete"/);
+  assert.match(user, /"abandon"/);
+  assert.match(user, /"ensure_item"/);
+  assert.match(user, /Current state:/);
+});
+
+test("NextGoalActionSchema accepts a progress task, complete, and abandon — and rejects free actions", () => {
+  const task = NextGoalActionSchema.safeParse({
+    action: { type: "ensure_item", item: "iron_pickaxe", quantity: 1 },
+    rationale: "craft the pickaxe",
+  });
+  assert.equal(task.success, true);
+  assert.equal(task.data!.action.type, "ensure_item");
+
+  const done = NextGoalActionSchema.safeParse({ action: { type: "complete" } });
+  assert.equal(done.success, true, "complete is a valid terminal verdict");
+
+  const abandon = NextGoalActionSchema.safeParse({ action: { type: "abandon" } });
+  assert.equal(abandon.success, true, "abandon is a valid terminal verdict");
+
+  const arbitrary = NextGoalActionSchema.safeParse({ action: { type: "tp", x: 0, y: 0, z: 0 } });
+  assert.equal(arbitrary.success, false, "the LLM cannot emit arbitrary commands");
+
+  const malformed = NextGoalActionSchema.safeParse({ action: { type: "ensure_item", item: "iron_pickaxe" } });
+  assert.equal(malformed.success, false, "missing required arguments are rejected");
 });

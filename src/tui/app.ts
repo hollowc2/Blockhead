@@ -5,6 +5,7 @@ import type { AgentState } from "../agent/state.js";
 import type { Scheduler } from "../agent/scheduler.js";
 import { TaskStatus } from "../agent/task.js";
 import type { StockpileManager } from "../agent/maintenance.js";
+import type { GoalManager } from "../agent/goals.js";
 import type { HostileTracker } from "../minecraft/entities.js";
 import { itemsSummary } from "../minecraft/inventory.js";
 import type { DecisionMaker } from "../llm/decider.js";
@@ -54,6 +55,8 @@ export interface DashboardSource {
   maintenance(): StockpileManager | null;
   /** Session-scoped hostile sensor, or null between connect attempts. */
   hostile(): HostileTracker | null;
+  /** Process-lifetime goal coordinator, or null when the goal layer is off. */
+  goals(): GoalManager | null;
 }
 
 /** The phases displayed in stockpile order (spec 33 example order). */
@@ -200,6 +203,10 @@ export class TuiApp {
         if (p.needsWork) push("Storage needs attention: chests full or disorganized");
       }),
       bus.on("director.decided", (p) => push(`Directed: ${p.task}`)),
+      bus.on("goal.started", (p) => push(`Goal started: ${p.goal.description}`)),
+      bus.on("goal.completed", (p) => push(`Goal complete: ${p.goal.description}`)),
+      bus.on("goal.blocked", (p) => push(`Goal blocked: ${p.goal.description} (${p.goal.note ?? "no progress"})`)),
+      bus.on("goal.cancelled", (p) => push(`Goal cancelled: ${p.goal.description}`)),
       bus.on("expedition.entered", (p) => {
         this.expeditionTier = p.tier === "near" ? null : p.tier;
         push(`Expedition ${p.tier}: ${meters(p.distanceFromHome)} from home`);
@@ -239,18 +246,21 @@ export class TuiApp {
         task.status === TaskStatus.QUEUED &&
         (task.source === "background" || task.source === "director"),
     );
+    const activeGoal = this.source.goals()?.active();
     let backgroundActivity: string;
     if (!connected) {
       backgroundActivity = "Disconnected — retrying";
     } else if (
       active !== null &&
-      (active.source === "background" || active.source === "maintenance" || active.source === "director")
+      (active.source === "background" || active.source === "maintenance" || active.source === "director" || active.source === "goal")
     ) {
       backgroundActivity = actionForTask(active);
     } else if (maintenance?.isBusy() === true) {
       backgroundActivity = "Measuring stockpiles";
     } else if (queuedBackground !== undefined) {
       backgroundActivity = `Queued: ${actionForTask(queuedBackground)}`;
+    } else if (activeGoal !== undefined && activeGoal !== null) {
+      backgroundActivity = `Goal: ${activeGoal.description}`;
     } else {
       backgroundActivity = "Standing by";
     }

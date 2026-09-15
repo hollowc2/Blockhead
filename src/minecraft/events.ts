@@ -16,6 +16,7 @@ import type { DecisionMaker } from "../llm/decider.js";
 import type { AgentDecision } from "../llm/schemas.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
+import type { GoalManager } from "../agent/goals.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -33,6 +34,8 @@ export interface AgentContext {
   storage: StorageRepository;
   /** Session-scoped stockpile manager for the LLM context (last measured levels). */
   maintenance: StockpileManager;
+  /** Process-lifetime goal coordinator (the active autonomous objective). */
+  goals?: GoalManager;
 }
 
 /** Matches a bare "CobbleBob?" (case-insensitive, optional trailing punctuation). */
@@ -84,6 +87,7 @@ function makeToolContext(bot: Bot, config: MinecraftConfig, ctx: AgentContext): 
     tasks: ctx.tasks,
     storage: ctx.storage,
     maintenance: ctx.maintenance,
+    goals: ctx.goals,
   };
 }
 
@@ -227,6 +231,9 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     ]);
     if (HARD_INTERRUPT_COMMANDS.has(instruction)) {
       ctx.bus.emit("chat.command", { from: username, command: "stop" });
+      // The active autonomous goal is cancelled by the same determinist stop:
+      // an owner interrupt always ends the goal it was driving.
+      ctx.goals?.cancel("stopped by the owner");
       const reply = runTool(bot, config, ctx, "stop", {});
       if (reply) bot.chat(reply);
       return;

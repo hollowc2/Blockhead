@@ -1,4 +1,5 @@
 import type { Task } from "../agent/task.js";
+import type { Goal } from "../agent/goal.js";
 import type { BootstrapStage } from "../agent/bootstrap.js";
 import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { HomeLocation } from "../minecraft/movement.js";
@@ -53,6 +54,11 @@ export interface ToolDurabilityEvent {
 /** Lifecycle events carry the persisted task so listeners can introspect it. */
 export interface TaskEvent {
   task: Task;
+}
+
+/** Goal lifecycle events carry the persisted goal (see the goal layer, spec goals). */
+export interface GoalEvent {
+  goal: Goal;
 }
 
 export interface DeathEvent {
@@ -232,6 +238,10 @@ export interface EventMap {
   "task.failed": TaskEvent;
   "task.cancelled": TaskEvent;
   "task.paused": TaskEvent;
+  "goal.started": GoalEvent;
+  "goal.completed": GoalEvent;
+  "goal.blocked": GoalEvent;
+  "goal.cancelled": GoalEvent;
   death: DeathEvent;
   respawn: Record<string, never>;
   "death.recorded": DeathRecordedEvent;

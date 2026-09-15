@@ -13,6 +13,7 @@ import { BootstrapRepository } from "./memory/bootstrap.js";
 import { SkillsRepository } from "./memory/skills.js";
 import { StorageRepository } from "./memory/storage.js";
 import { TasksRepository } from "./memory/tasks.js";
+import { GoalsRepository } from "./memory/goals.js";
 import { ResourceSitesRepository } from "./memory/resource-sites.js";
 import { DeathEventsRepository } from "./memory/deaths.js";
 import { AgentState } from "./agent/state.js";
@@ -21,6 +22,8 @@ import { ActionWatchdog } from "./agent/watchdog.js";
 import { TaskDispatcher } from "./agent/task-dispatcher.js";
 import { DeathRecoveryManager } from "./agent/death-recovery.js";
 import { BackgroundManager } from "./agent/background.js";
+import { GoalManager } from "./agent/goals.js";
+import { registerGoalTools } from "./tools/goals.js";
 import { BootstrapRunner } from "./skills/bootstrap-survival.js";
 import { CollectResourceRunner } from "./skills/collect-resource.js";
 import { DeathRecoveryRunner } from "./skills/death-recovery.js";
@@ -60,6 +63,10 @@ const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
+// Goal layer: process-lifetime coordinator (bus-driven, no bot) over the
+// persisted goals table, so an active autonomous goal survives a restart.
+const goalsRepo = new GoalsRepository(db);
+const goals = new GoalManager({ bus, goals: goalsRepo });
 const state = new AgentState({ bus, locations, config });
 state.boot();
 // Anti-loop watchdog (generic, above every skill): fingerprints each action
@@ -118,6 +125,9 @@ registerNavigationTools(registry, scheduler, locations);
 registerDeliveryTools(registry, scheduler);
 registerUtilityTools(registry, scheduler, deaths);
 registerMemoryTools(registry, locations);
+// Goal layer: start_goal / cancel_goal turn owner objectives into the one
+// persistent autonomous goal the background driver pursues.
+registerGoalTools(registry, goals);
 
 // Phase 10: death coordination is bus-only (no bot), so one instance outlives
 // connection attempts and recovery tracking survives a reconnect.
@@ -149,6 +159,7 @@ const tui = new TuiApp({
   bot: () => session?.bot ?? null,
   maintenance: () => session?.maintenance ?? null,
   hostile: () => session?.hostile ?? null,
+  goals: () => goals,
 });
 if (shouldEnableTui(config, detectStdoutIsTty())) {
   setLogEcho(false);
@@ -176,6 +187,7 @@ function shutdown(code: number): void {
     active.hostile.detach();
     active.bot.quit();
   }
+  goals.dispose();
   tui.stop();
   db.close();
   debugLog.close();
@@ -278,7 +290,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // moment the previous one settles.
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, goals, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33
@@ -300,6 +312,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     tasks: taskStore,
     storage,
     maintenance,
+    goals,
   });
 
   // Bootstrap runs on first spawn; the runner is resumable and idempotent, so a

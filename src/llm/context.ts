@@ -3,6 +3,7 @@ import type { Item } from "prismarine-item";
 import type { ToolContext } from "../tools/types.js";
 import { bareName, countLogs, countPlanks, countSticks } from "../minecraft/inventory.js";
 import { FOOD_ITEM_NAMES } from "../skills/gather-food.js";
+import { criterionLabel, type Goal } from "../agent/goal.js";
 import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
 
@@ -94,6 +95,18 @@ export interface StateSnapshot {
    * should pick something else or wait instead of re-attempting one.
    */
   blockedActions: { action: string; reason: string; retryInSeconds: number }[];
+  /**
+   * The active autonomous goal, compacted for the model: objective, status,
+   * current step, the evaluable success criteria, and the last few settled
+   * action outcomes. Null when no goal is active.
+   */
+  activeGoal: {
+    description: string;
+    status: string;
+    currentStep: string | null;
+    criteria: string[];
+    recentResults: { action: string; outcome: string; message: string | null }[];
+  } | null;
   from: string;
   instruction: string;
 }
@@ -301,6 +314,25 @@ function recentTaskOutcomes(ctx: ToolContext): StateSnapshot["recentTasks"] {
   return out;
 }
 
+/**
+ * The active goal compacted to decision-relevant lines. Kept short: the LLM
+ * only needs the objective, where it is, and what has happened on the last
+ * few steps — not the raw goal row.
+ */
+function activeGoalSummary(goal: Goal): StateSnapshot["activeGoal"] {
+  return {
+    description: goal.description,
+    status: goal.status,
+    currentStep: goal.currentStep,
+    criteria: goal.successCriteria.map(criterionLabel),
+    recentResults: goal.recentResults.slice(-3).map((result) => ({
+      action: result.action,
+      outcome: result.outcome,
+      message: result.message ?? null,
+    })),
+  };
+}
+
 /** Build the exact state snapshot handed to the LLM. */
 export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): StateSnapshot {
   const self = ctx.state.self;
@@ -326,6 +358,7 @@ export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): Stat
     recentEvents: [...ctx.state.recentEvents],
     recentTasks: recentTaskOutcomes(ctx),
     blockedActions: [...ctx.scheduler.blockedActions()],
+    activeGoal: ctx.goals?.active() ? activeGoalSummary(ctx.goals.active()!) : null,
     from: input.from,
     instruction: input.instruction,
   };

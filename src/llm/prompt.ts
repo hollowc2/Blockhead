@@ -137,6 +137,9 @@ export function buildMessages(snapshot: StateSnapshot, toolList: string, dynamic
 /** System prompt for the background director (prompts/idle-proposal.md). */
 export const DIRECTOR_SYSTEM_PROMPT: string = assets.idleProposal;
 
+/** System prompt for the goal driver (prompts/goal.md). */
+export const GOAL_SYSTEM_PROMPT: string = assets.goal;
+
 /** The task vocabulary the TaskDispatcher can execute, as the model sees it. */
 const DIRECTOR_TASK_DOC = [
   '"collect_resource" — gather `quantity` of `resource` (e.g. oak_log, stone, coal_ore, iron_ore) and deposit it in the home chest. Parameters: resource (item name), quantity (integer, 1-1024).',
@@ -168,6 +171,51 @@ export function buildDirectorMessages(snapshot: StateSnapshot, situation: string
         JSON.stringify(snapshot, null, 2),
         "",
         "Choose the next background task. Respond only with valid JSON matching the schema.",
+      ].join("\n"),
+    },
+  ];
+}
+
+/**
+ * The goal action vocabulary the goal driver may choose, as the model sees
+ * it. The director tasks plus the production actions the expedition goal
+ * needs; `complete` / `abandon` are the terminal verdicts.
+ */
+const GOAL_ACTION_DOC = [
+  '"collect_resource" — gather `quantity` of `resource` (e.g. oak_log, stone, coal_ore, iron_ore) and deposit it in the home chest. Parameters: resource (item name), quantity (integer, 1-1024).',
+  '"ensure_item" — craft (or gather) `quantity` of `item` (e.g. iron_pickaxe), keeping equipment carried. Parameters: item (item name), quantity (integer, 1-1024).',
+  '"upgrade_equipment" — forge the best tool you can from the stockpile.',
+  '"stockpile_maintenance" — restore one stockpile with its dedicated skill: wood gathers logs, food hunts animals, fuel mines coal ore, torches crafts from stored material. Parameters: kind ("wood" | "food" | "fuel" | "torches").',
+  '"organize_storage" — sort the home chests by category, creating more storage when full.',
+  '"build_base" — build or repair the stockpile shed at home.',
+  '"go_home" — return to the configured home location.',
+  '"wait" — do nothing this round.',
+  '"complete" — declare the goal finished because every success criterion is satisfied by the current state.',
+  '"abandon" — give up on the goal because it is impossible.',
+].join("\n");
+
+/**
+ * Assemble the goal-driver prompt: the objective (description, criteria,
+ * current step, recent results) plus the same curated situation digest the
+ * director sees. The LLM only hears the goal + high-signal state, never raw
+ * world dumps, and only answers from the closed action vocabulary.
+ */
+export function buildGoalDecisionMessages(snapshot: StateSnapshot, context: string): LlmMessage[] {
+  return [
+    { role: "system", content: GOAL_SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: [
+        "Available actions (choose exactly one):",
+        GOAL_ACTION_DOC,
+        "",
+        "Goal:",
+        context,
+        "",
+        "Current state:",
+        JSON.stringify(snapshot, null, 2),
+        "",
+        "Choose the next action that progresses the goal. Respond only with valid JSON matching the schema.",
       ].join("\n"),
     },
   ];

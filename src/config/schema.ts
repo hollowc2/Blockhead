@@ -169,6 +169,13 @@ export const MinecraftConfigSchema = z.object({
        */
       restore_cooldown_seconds: z.number().int().positive().default(60),
       /**
+       * Minimum seconds between auto-establishing a fresh background goal
+       * (the canned "prepare for a mining expedition" recipe). The cooldown
+       * keeps a completed goal from immediately re-arming on the next healthy
+       * idle tick, so the bot is not looping expedition goals forever.
+       */
+      goal_cooldown_seconds: z.number().int().nonnegative().default(900),
+      /**
        * Identical game-chat announcements repeat at most once per this
        * window (per skill runner), so a stuck loop cannot trip the server's
        * `disconnect.spam` rate limit. A separate process-wide budget caps

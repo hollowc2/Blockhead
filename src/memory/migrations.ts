@@ -168,4 +168,23 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE death_events ADD COLUMN inventory_json TEXT;
   ALTER TABLE death_events ADD COLUMN recovery_skipped_reason TEXT;
   `,
+  // v7: the persistent goal layer. One row is the active autonomous goal at a
+  // time (there is at most one ACTIVE row); the GoalManager rehydrates it on
+  // boot so a restart resumes driving the objective instead of forgetting it.
+  // `success_criteria_json` holds the evaluable readiness conditions and
+  // `recent_results_json` the capped per-action outcome log.
+  `
+  CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      success_criteria_json TEXT NOT NULL DEFAULT '[]',
+      current_step TEXT,
+      recent_results_json TEXT NOT NULL DEFAULT '[]',
+      note TEXT,
+      created_at TEXT NOT NULL,
+      ended_at TEXT
+  );
+  `,
 ];

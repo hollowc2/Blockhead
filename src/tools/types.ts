@@ -4,6 +4,7 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { AgentState } from "../agent/state.js";
 import type { Scheduler } from "../agent/scheduler.js";
 import type { StockpileManager } from "../agent/maintenance.js";
+import type { GoalManager } from "../agent/goals.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { EventBus } from "../events/bus.js";
@@ -28,6 +29,8 @@ export interface ToolContext {
   storage?: StorageRepository;
   /** Process-lifetime task store (recent settled outcomes for the LLM digest). */
   tasks?: TasksRepository;
+  /** Process-lifetime goal coordinator (the active autonomous objective). */
+  goals?: GoalManager;
 }
 
 /** Tool handlers return a short player-facing reply, or nothing to stay silent. */

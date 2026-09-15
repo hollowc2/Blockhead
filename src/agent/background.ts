@@ -3,21 +3,24 @@ import type { Logger } from "pino";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { DecisionMaker } from "../llm/decider.js";
-import type { NextTaskDecision } from "../llm/schemas.js";
+import type { NextGoalActionDecision, NextTaskDecision } from "../llm/schemas.js";
 import type { BootstrapRunner } from "../skills/bootstrap-survival.js";
 import type { CollectResourceRunner } from "../skills/collect-resource.js";
 import { resourceLabel } from "../skills/skill-library.js";
 import type { ToolContext } from "../tools/types.js";
-import type { StockpileKind, StockpileManager, StockpileSnapshot } from "./maintenance.js";
+import { STOCKPILE_PRIORITY_ORDER, type StockpileManager, type StockpileSnapshot } from "./maintenance.js";
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { BaseBuilderRunner } from "../skills/base.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
+import type { GoalManager } from "./goals.js";
+import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriterion } from "./goal.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import { findHomeChest } from "../minecraft/containers.js";
+import { bareName } from "../minecraft/inventory.js";
 
 /**
  * Phase 7/13: the background coordinator (spec section 4.3). This is
@@ -59,6 +62,11 @@ export interface BackgroundManagerOptions {
   storage: StorageRepository;
   /** Task store feeding the director's compact recent-outcome digest. */
   tasks: TasksRepository;
+  /**
+   * Goal coordinator (optional: the goal layer is a bolt-on — harnesses and
+   * configs without one run the director exactly as before).
+   */
+  goals?: GoalManager;
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -96,6 +104,9 @@ export class BackgroundManager {
   /** Wall-clock of the last home-chest restore attempt (repair cooldown). */
   private lastHomeChestRepairAt: number | null = null;
 
+  /** Wall-clock of the last background goal establishment (re-arm cooldown). */
+  private lastBackgroundGoalAt: number | null = null;
+
   /** Wall-clock of each kind's most recent failed restore attempt. */
   private readonly lastFailedAt = new Map<string, number>();
   /** Failure reason of the most recent failed restore attempt, per kind. */
@@ -128,11 +139,18 @@ export class BackgroundManager {
     };
     // One-shot re-checks, retained so stop() detaches them: a session's
     // manager is rebuilt on reconnect and must not keep firing on a dead bot.
+    // A goal settling (started/completed/blocked/cancelled) and a watchdog-
+    // blocked task both need a fresh pass too.
     this.settledListeners = [
       this.opts.bus.on("task.completed", onSettled),
       this.opts.bus.on("task.failed", onFailed),
       this.opts.bus.on("task.cancelled", onSettled),
+      this.opts.bus.on("task.blocked", onSettled),
       this.opts.bus.on("bootstrap.complete", onSettled),
+      this.opts.bus.on("goal.started", onSettled),
+      this.opts.bus.on("goal.completed", onSettled),
+      this.opts.bus.on("goal.blocked", onSettled),
+      this.opts.bus.on("goal.cancelled", onSettled),
     ];
   }
 
@@ -204,9 +222,11 @@ export class BackgroundManager {
 
     // Stale background/idle tasks (e.g. a PAUSED maintenance task rehydrated
     // from a restart, or one interrupted by user work) are regenerated on
-    // demand; the plan below is fresh. User tasks are never touched.
+    // demand; the plan below is fresh. Goal tasks are the same: a watchdog-
+    // BLOCKED goal task (or one left queued from an earlier plan) is pruned
+    // here and the next goal decision re-plans. User tasks are never touched.
     for (const task of [...scheduler.queued]) {
-      if (task.source === "background" || task.source === "director") {
+      if (task.source === "background" || task.source === "director" || task.source === "goal") {
         scheduler.cancel(task.id);
       }
     }
@@ -292,6 +312,14 @@ export class BackgroundManager {
         scheduler.claim();
         return;
       }
+    }
+
+    // The goal layer (when wired): an active autonomous goal owns the idle
+    // floor. The step either resolves the goal (criteria met / blocked /
+    // cancelled), enqueues one goal task, or stands by; when it handles the
+    // tick it returns and the director does not also decide.
+    if (this.opts.config.background?.llm_decisions ?? true) {
+      if (await this.runGoalStep(snapshot, decisionEligible)) return;
     }
 
     if (!(this.opts.config.background?.llm_decisions ?? true)) {
@@ -592,6 +620,240 @@ export class BackgroundManager {
       maintenance: this.opts.maintenance,
       storage: this.opts.storage,
       tasks: this.opts.tasks,
+      goals: this.opts.goals,
     };
   }
+
+  /**
+   * Goal layer (bolt-on): one active autonomous goal owns the idle floor.
+   * Returns true when this tick was handled by the goal machinery, false to
+   * fall through to the normal director/ladder path.
+   *
+   * Order of business:
+   *  1. If the success criteria are all satisfied right now, the goal is
+   *     complete — deterministically, no LLM call.
+   *  2. If no goal is active, try the one canned background recipe (healthy
+   *     stockpiles, no pickaxe, cooldown elapsed).
+   *  3. Otherwise choose ONE next action for the goal, throttled exactly like
+   *     the director's decisions.
+   */
+  private async runGoalStep(
+    snapshot: StockpileSnapshot,
+    decisionEligible: boolean,
+  ): Promise<boolean> {
+    const goals = this.opts.goals;
+    if (goals === undefined) return false;
+
+    const goal = goals.active();
+    if (goal === null) return this.maybeEstablishGoal(snapshot);
+
+    const facts = this.goalFacts(goal.successCriteria, snapshot);
+    const check = evaluateSuccessCriteria(goal, facts);
+    if (check.satisfied && goal.successCriteria.length > 0) {
+      goals.complete("success criteria met");
+      this.opts.logger.info({ goalId: goal.id }, "goal completed by criteria");
+      return true;
+    }
+
+    // Same decision throttle as the director: at most one LLM decision per
+    // interval, bypassed only when a settle-kick made this pass eligible.
+    const intervalMs = (this.opts.config.background?.llm_decision_interval_seconds ?? 60) * 1000;
+    const now = this.now();
+    if (!decisionEligible && this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return true;
+
+    this.lastDecisionAt = now;
+    return this.decideGoalStep(goal.id);
+  }
+
+  /**
+   * Facts to evaluate goal criteria against: stockpile levels (carried +
+   * stored) and carried + equipped item counts. Equipment lives on the
+   * entity, not `bot.inventory`, so a count must look in both places — an
+   * equipped pickaxe is still a carried pickaxe for readiness.
+   */
+  private goalFacts(
+    criteria: readonly SuccessCriterion[],
+    snapshot: StockpileSnapshot,
+  ) {
+    const needsInventory = criteria.some((c) => c.kind === "inventory");
+    const inventory: Record<string, number> = {};
+    if (needsInventory) {
+      for (const item of this.opts.bot.inventory.items()) {
+        const name = bareName(item.name);
+        inventory[name] = (inventory[name] ?? 0) + item.count;
+      }
+      const equipment = this.opts.bot.entity?.equipment ?? [];
+      for (const equipped of equipment) {
+        if (equipped === null) continue;
+        const name = bareName(equipped.name);
+        inventory[name] = (inventory[name] ?? 0) + 1;
+      }
+      for (const c of criteria) {
+        if (c.kind === "inventory") inventory[c.item] ??= 0;
+      }
+    }
+    return { stockpile: snapshot.levels, inventory };
+  }
+
+  /**
+   * The one canned background goal: with every stockpile at/above target and
+   * no usable pickaxe anywhere, establish "prepare for a mining expedition"
+   * with the readiness criteria the user described. Gated by a cooldown so a
+   * completed goal is not instantly re-armed on the next healthy tick.
+   */
+  private maybeEstablishGoal(snapshot: StockpileSnapshot): boolean {
+    const goals = this.opts.goals;
+    if (goals === undefined || goals.active() !== null) return false;
+
+    const targets = snapshot.targets;
+    for (const kind of STOCKPILE_PRIORITY_ORDER) {
+      if (snapshot.levels[kind] < targets[kind]) return false;
+    }
+
+    const criteria: SuccessCriterion[] = [
+      { kind: "stockpile", stockpile: "food", min: 32 },
+      { kind: "stockpile", stockpile: "torches", min: 64 },
+      { kind: "inventory", item: "iron_pickaxe", min: 1 },
+    ];
+    const facts = this.goalFacts(criteria, snapshot);
+    if ((facts.inventory?.["iron_pickaxe"] ?? 0) > 0) return false;
+
+    const cooldownMs = (this.opts.config.background?.goal_cooldown_seconds ?? 900) * 1000;
+    const now = this.now();
+    if (this.lastBackgroundGoalAt !== null && now - this.lastBackgroundGoalAt < cooldownMs) return false;
+
+    this.lastBackgroundGoalAt = now;
+    goals.start({ description: "Prepare for a mining expedition.", source: "background", successCriteria: criteria });
+    return true;
+  }
+
+  /**
+   * One validated goal decision: map the LLM's single next action onto a
+   * goal-sourced scheduler task (with the goal's id so results can be traced
+   * back), set the goal's current step, and claim the slot — or settle the
+   * goal terminal states (`complete` / `abandon`). Model failures stand the
+   * tick down; the periodic interval re-checks.
+   */
+  private async decideGoalStep(goalId: string): Promise<boolean> {
+    const goals = this.opts.goals!;
+    const goal = goals.active();
+    if (goal === null || goal.id !== goalId) return false;
+
+    const situation = this.buildGoalSituation(goal);
+    let decision: NextGoalActionDecision;
+    try {
+      decision = await this.opts.decider.decideGoalAction(
+        { from: "system", instruction: "Choose the next action toward the goal." },
+        this.toolContext(),
+        situation,
+      );
+    } catch (err) {
+      // Model down or invalid output: keep the goal, stand down this tick.
+      this.opts.logger.warn({ err: String(err), goalId }, "goal decision failed; standing by");
+      return true;
+    }
+
+    const action = decision.action;
+    this.opts.bus.emit("director.decided", { task: action.type, rationale: decision.rationale ?? null });
+
+    if (action.type === "wait") {
+      goals.recordStandingBy(action.type);
+      this.opts.logger.info({ goalId }, "goal standing by");
+      return true;
+    }
+    if (action.type === "complete") {
+      goals.complete(decision.rationale ?? "goal achieved");
+      return true;
+    }
+    if (action.type === "abandon") {
+      goals.cancel(decision.rationale ?? "gave up on the goal");
+      return true;
+    }
+
+    const args = actionArguments(action);
+    const parameters = { ...args, goalId };
+    const stepLabel = goalStepLabel(action.type, args);
+    goals.setCurrentStep(stepLabel);
+    this.opts.scheduler.enqueue({
+      type: action.type,
+      priority: TaskPriority.BACKGROUND,
+      source: "goal",
+      objective: `[goal] ${stepLabel}`,
+      parameters,
+    });
+    this.opts.scheduler.claim();
+    this.opts.logger.info({ goalId, type: action.type }, "goal step dispatched");
+    return true;
+  }
+
+  /**
+   * The goal context digest handed to the LLM: the objective, its criteria,
+   * where it is now, and what the last few actions accomplished — plus the
+   * same high-signal situation lines the director sees.
+   */
+  private buildGoalSituation(goal: Goal): string {
+    const lines: string[] = [
+      `Objective: ${goal.description}`,
+      `Source: ${goal.source}`,
+    ];
+    if (goal.successCriteria.length > 0) {
+      lines.push(`Success criteria (complete when all are met): ${goal.successCriteria.map(criterionLabel).join("; ")}.`);
+    }
+    if (goal.currentStep !== null) lines.push(`Current step: ${goal.currentStep}.`);
+    if (goal.recentResults.length > 0) {
+      const outcomes = goal.recentResults
+        .map((r) => `${r.action} ${r.outcome}${r.message ? ` (${r.message})` : ""}`)
+        .join("; ");
+      lines.push(`Recent results: ${outcomes}.`);
+    }
+    lines.push(`Time of day: ${this.opts.state.timePhase ?? "unknown"}.`);
+    const blocks = this.opts.scheduler.blockedActions();
+    if (blocks.length > 0) {
+      lines.push(
+        `Blocked actions (do not retry until the cooldown expires): ${blocks
+          .map((b) => `${b.action} (${b.reason}; retry in ${b.retryInSeconds}s)`)
+          .join("; ")}.`,
+      );
+    }
+    return lines.join("\n");
+  }
 }
+
+/**
+ * The action's concrete parameters (the goal id is added by the caller).
+ * Discriminated-union narrowing: each branch contributes its own fields.
+ */
+function actionArguments(
+  action: {
+    type: string;
+  } & Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(action)) {
+    if (key !== "type" && value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+/** Short step label for a goal action ("collect 16 food" / "craft an iron pickaxe"). */
+function goalStepLabel(type: string, args: Record<string, unknown>): string {
+  switch (type) {
+    case "collect_resource":
+      return `collect ${String(args.quantity ?? "?")} ${String(args.resource ?? "?")}`;
+    case "ensure_item":
+      return `ensure ${String(args.quantity ?? "?")} ${String(args.item ?? "?")}`;
+    case "stockpile_maintenance":
+      return `restore ${String(args.kind ?? "?")} stockpile`;
+    case "organize_storage":
+      return "organize storage";
+    case "build_base":
+      return "build the base";
+    case "go_home":
+      return "go home";
+    case "upgrade_equipment":
+      return "upgrade equipment";
+    default:
+      return type;
+  }
+}
+
