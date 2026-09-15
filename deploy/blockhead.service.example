@@ -1,0 +1,39 @@
+# Example systemd unit for Blockhead on Maia.
+# Replace every /path/to/... placeholder before installing this file.
+# Find npm with: command -v npm
+# systemd does not load interactive shell profiles (including nvm).
+
+[Unit]
+Description=Blockhead Minecraft companion
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=blockhead
+Group=blockhead
+WorkingDirectory=/path/to/Blockhead
+
+# Use the repository's normal production command. Replace this with the
+# absolute path printed by `command -v npm`; do not assume /usr/bin/npm.
+ExecStart=/path/to/npm start
+
+# Blockhead exits 0 for SIGTERM/SIGINT and 1 after an unexpected post-spawn
+# Minecraft disconnect. Restart only the latter (or another abnormal failure).
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=0
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+
+# The app's config, database, and file logs are relative to WorkingDirectory.
+# Edit config/minecraft.yaml in the checkout; LOG_LEVEL is read by the logger.
+Environment=LOG_LEVEL=info
+
+# Application output is also available in logs/blockhead.log and
+# logs/blockhead-debug.jsonl under WorkingDirectory.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
