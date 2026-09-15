@@ -53,6 +53,41 @@ sudo -u blockhead npm ci
 Edit `/srv/blockhead/config/minecraft.yaml` and verify its `server`, `home`,
 `agent.owner`, and `llm.base_url` values before starting the service.
 
+## Deploy from Zeus with the script
+
+Once the checkout and systemd unit are installed on Maia, run the deployment
+from the repository checkout on Zeus:
+
+```bash
+./scripts/deploy-maia
+```
+
+The script connects to Maia over SSH, refuses a dirty remote working tree,
+updates the configured branch with `git pull --ff-only`, runs `npm ci`,
+`npm run typecheck`, and `npm test`, then restarts the service and prints its
+status. It stops immediately on failure, so a failed install, typecheck, or
+test does not restart the working service. It never discards local changes.
+
+Defaults can be overridden with environment variables near the invocation:
+
+```bash
+SSH_HOST=maia REMOTE_REPO=/srv/blockhead SERVICE_NAME=blockhead \\
+  DEPLOY_BRANCH=main ./scripts/deploy-maia
+```
+
+The defaults are `maia`, `/srv/blockhead`, `blockhead`, and `main`,
+respectively. If the checkout is dirty or the branch cannot be advanced
+fast-forward-only, fix that condition on Maia and rerun the script; it will
+not reset, clean, or overwrite the checkout.
+
+To follow Blockhead logs remotely while deploying:
+
+```bash
+ssh maia 'journalctl -u blockhead -f'
+```
+
+Use `sudo` inside the command if Maia's journal permissions require it.
+
 ## Find npm and install the unit
 
 Run this as the same account that will run Blockhead:
