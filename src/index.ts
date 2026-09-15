@@ -30,6 +30,7 @@ import { DefenseRunner } from "./skills/defense.js";
 import { UtilityRunner } from "./skills/utility.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
+import { BaseBuilderRunner } from "./skills/base.js";
 import { StockpileManager } from "./agent/maintenance.js";
 import { LlamaClient } from "./llm/client.js";
 import { DecisionMaker } from "./llm/decider.js";
@@ -39,6 +40,7 @@ import { registerMovementTools } from "./tools/movement.js";
 import { registerBootstrapTools } from "./tools/bootstrap.js";
 import { registerResourceTools } from "./tools/resources.js";
 import { registerStorageTools } from "./tools/storage.js";
+import { registerBaseTools } from "./tools/base.js";
 import { registerAcquisitionTools } from "./tools/acquire.js";
 import { registerFoodTools } from "./tools/food.js";
 import { registerCombatTools } from "./tools/combat.js";
@@ -96,6 +98,8 @@ registerResourceTools(registry, scheduler);
 // Phase 11: storage tools (spec 14.4). Like the others, registered once; the
 // repository and scheduler are process-lifetime singletons.
 registerStorageTools(registry, scheduler, storage, locations);
+// Central stockpile base: the shed the chests, table, and furnace stockpile in.
+registerBaseTools(registry, scheduler);
 // Phase 13 (spec 14): the expanded tool set. Handlers enqueue FOREGROUND
 // scheduler tasks exactly like the resource tools; every mechanic stays in
 // deterministic skills. The memory/location tools act on the repository.
@@ -239,6 +243,13 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // is deterministic code.
   const organizeStorage = new OrganizeStorageRunner({ bot, state, config, bus, storage, skills, logger });
 
+  // Central stockpile base (spec 4.3 "improve basic infrastructure"): the
+  // builder measures the shed (plank walls, roof, door), gathers planks, and
+  // places the missing cells. Chests, the table, and the furnace land on its
+  // blueprint slots, so the stockpile grows at one centralized location
+  // instead of a scatter pile at the home column.
+  const buildBase = new BaseBuilderRunner({ bot, state, config, bus, skills, logger });
+
   // Phase 10: death recovery (spec 26). A death is recorded (site, dimension,
   // time) and ordinary work pauses; on respawn an EMERGENCY-priority task runs
   // the deterministic value-ordered recovery sweep, records the outcome, and
@@ -257,9 +268,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, ensureItem, defense, utility, delivery, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, storage, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33

@@ -51,6 +51,7 @@ import {
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
+import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -633,7 +634,7 @@ export class BootstrapRunner {
       }
       this.opts.logger.info({ home: correctedHome }, "crafting: rebuilt the missing crafting table");
     }
-    const spot = findPlacementSpot(bot, correctedHome);
+    const spot = stationSlotSpot(bot, correctedHome, "crafting_table") ?? findPlacementSpot(bot, correctedHome);
     if (spot === null) {
       // The home column may be blocked (a tree on slope terrain, e.g. spawn
       // mountains) while the bot itself stands on open ground. Fall back to
@@ -1055,7 +1056,7 @@ export class BootstrapRunner {
 
     const item = findItem(bot, "chest");
     if (item === null) return { ok: false, reason: "chest vanished before placement" };
-    let spot = findPlacementSpot(bot, home);
+    let spot = freeChestSlotSpot(bot, home) ?? findPlacementSpot(bot, home);
     if (spot === null) {
       // The home column may be blocked (a crater from repeated deaths at
       // spawn, e.g.) while the bot itself stands on open ground. Mirror the
@@ -1304,7 +1305,7 @@ export class BootstrapRunner {
 
     const item = findItem(bot, "furnace");
     if (item === null) return null;
-    const spot = findPlacementSpot(bot, home);
+    const spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, home);
     if (spot === null) return null;
     const placed = await placeItemAt(bot, item, spot);
     return placed !== null && isFurnaceBlock(placed) ? placed : null;

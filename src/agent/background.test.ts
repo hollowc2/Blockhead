@@ -7,7 +7,10 @@ import { EventBus } from "../events/bus.js";
 import type { BootstrapRunner } from "../skills/bootstrap-survival.js";
 import type { CollectResourceRunner } from "../skills/collect-resource.js";
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
+import type { BaseBuilderRunner } from "../skills/base.js";
 import type { DecisionMaker } from "../llm/decider.js";
+import type { DecisionInput } from "../llm/context.js";
+import type { ToolContext } from "../tools/types.js";
 import type { NextTaskDecision } from "../llm/schemas.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { AgentState } from "./state.js";
@@ -71,10 +74,14 @@ interface Harness {
   directorFails: boolean;
   /** How many times the director stub was consulted. */
   decisionCount: number;
+  /** The situation digest handed to the director on the last consultation. */
+  lastSituation: string | null;
   /** Tasks the manager asked the scheduler to enqueue (director choices). */
   enqueued: Array<Task>;
   /** Whether the organize-storage probe reports work this tick. */
   organizeNeedsWork: boolean;
+  /** Whether the base-structure probe reports work this tick. */
+  buildNeedsWork: boolean;
   /** The live config object; tests mutate `background` keys to drive cadence. */
   config: MinecraftConfig;
   advance(ms: number): void;
@@ -125,7 +132,9 @@ function newHarness(health: number, food: number): Harness {
     directorFails: false,
     decisionCount: 0,
     enqueued: [],
+    lastSituation: null,
     organizeNeedsWork: false,
+    buildNeedsWork: false,
     config,
     advance: (ms: number) => {
       now += ms;
@@ -174,8 +183,13 @@ function newHarness(health: number, food: number): Harness {
     } as unknown as StockpileManager,
     collect: {} as unknown as CollectResourceRunner,
     decider: {
-      decideNextTask: async (): Promise<NextTaskDecision> => {
+      decideNextTask: async (
+        _input: DecisionInput,
+        _ctx: ToolContext,
+        situation: string,
+      ): Promise<NextTaskDecision> => {
         state.decisionCount++;
+        state.lastSituation = situation;
         if (state.directorFails) throw new Error("llm unreachable");
         return state.directorResult;
       },
@@ -191,6 +205,13 @@ function newHarness(health: number, food: number): Harness {
         reason: state.organizeNeedsWork ? "chests full" : "none",
       }),
     } as unknown as OrganizeStorageRunner,
+    buildBase: {
+      isRunning: false,
+      needsAttention: async () => ({
+        needsWork: state.buildNeedsWork,
+        reason: state.buildNeedsWork ? "walls missing" : null,
+      }),
+    } as unknown as BaseBuilderRunner,
     storage: {} as unknown as StorageRepository,
     logger,
     now: () => now,
@@ -362,6 +383,55 @@ test("a director failure falls back to the deterministic ladder", async () => {
   assert.equal(h.enqueued.length, 1);
   assert.equal(h.enqueued[0]!.type, "organize_storage");
   assert.equal(h.enqueued[0]!.source, "background");
+
+  h.manager.stop();
+});
+
+test("a missing base structure runs the build before storage expansion", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.directorFails = true;
+  h.buildNeedsWork = true;
+  h.organizeNeedsWork = true; // storage also wants work; the shed wins
+
+  await h.manager.tick();
+  assert.equal(h.enqueued.length, 1);
+  assert.equal(h.enqueued[0]!.type, "build_base");
+  assert.equal(h.enqueued[0]!.priority, TaskPriority.BACKGROUND);
+  assert.equal(h.enqueued[0]!.source, "background");
+
+  h.manager.stop();
+});
+
+test("the director can direct a base build", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.directorResult = { task: { type: "build_base" } };
+
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+  assert.equal(h.enqueued.length, 1);
+  assert.equal(h.enqueued[0]!.type, "build_base");
+  assert.equal(h.enqueued[0]!.source, "director");
+
+  h.manager.stop();
+});
+
+test("the situation digest tells the director whether the base structure is incomplete", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.directorResult = { task: { type: "wait" } };
+
+  h.buildNeedsWork = true;
+  await h.manager.tick();
+  assert.match(h.lastSituation ?? "", /Base structure: incomplete \(walls missing\)\./);
+
+  h.buildNeedsWork = false;
+  await h.manager.tick();
+  assert.match(h.lastSituation ?? "", /Base structure: complete\./);
 
   h.manager.stop();
 });

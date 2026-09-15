@@ -41,6 +41,7 @@ export const NextTaskSchema = z.object({
       kind: z.enum(["wood", "food", "fuel", "torches"]),
     }),
     z.object({ type: z.literal("organize_storage") }),
+    z.object({ type: z.literal("build_base") }),
     z.object({ type: z.literal("go_home") }),
     z.object({ type: z.literal("wait") }),
   ]),

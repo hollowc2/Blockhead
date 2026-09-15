@@ -13,6 +13,7 @@ import { registerMovementTools } from "./movement.js";
 import { registerBootstrapTools } from "./bootstrap.js";
 import { registerResourceTools } from "./resources.js";
 import { registerStorageTools } from "./storage.js";
+import { registerBaseTools } from "./base.js";
 import { registerAcquisitionTools } from "./acquire.js";
 import { registerFoodTools } from "./food.js";
 import { registerCombatTools } from "./combat.js";
@@ -40,6 +41,7 @@ function newHarness(): Harness {
   registerBootstrapTools(registry);
   registerResourceTools(registry, scheduler);
   registerStorageTools(registry, scheduler, storage, locations);
+  registerBaseTools(registry, scheduler);
   registerAcquisitionTools(registry, scheduler);
   registerFoodTools(registry, scheduler);
   registerCombatTools(registry, scheduler);
@@ -76,6 +78,7 @@ const REQUIRED_TOOLS = [
   "find_location",
   "inspect_area",
   "register_storage",
+  "build_base",
   "collect_resource",
   "come_to_player",
   "follow_player",

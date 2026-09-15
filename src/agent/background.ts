@@ -10,6 +10,7 @@ import { resourceLabel } from "../skills/skill-library.js";
 import type { ToolContext } from "../tools/types.js";
 import type { StockpileKind, StockpileManager, StockpileSnapshot } from "./maintenance.js";
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
+import type { BaseBuilderRunner } from "../skills/base.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
@@ -46,6 +47,8 @@ export interface BackgroundManagerOptions {
   bootstrap: BootstrapRunner;
   /** Phase 11: storage organization runner, probed every idle tick. */
   organizeStorage: OrganizeStorageRunner;
+  /** Central stockpile base: the structure builder, probed every idle tick. */
+  buildBase: BaseBuilderRunner;
   /** Home storage registration; the idle loop re-establishes a missing home chest. */
   storage: StorageRepository;
   logger: Logger;
@@ -150,7 +153,7 @@ export class BackgroundManager {
     // --- deterministic gates: only act from spawned, post-bootstrap idle. ---
     if (bot.entity === null) return;
     if (bootstrap.completedStage !== BootstrapStage.NORMAL_OPERATION) return;
-    if (this.opts.maintenance.isBusy() || this.opts.organizeStorage.isRunning) return;
+    if (this.opts.maintenance.isBusy() || this.opts.organizeStorage.isRunning || this.opts.buildBase.isRunning) return;
 
     // Stale background/idle tasks (e.g. a PAUSED maintenance task rehydrated
     // from a restart, or one interrupted by user work) are regenerated on
@@ -257,10 +260,11 @@ export class BackgroundManager {
     if (this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return;
 
     try {
+      const buildCheck = await this.opts.buildBase.needsAttention();
       const decision = await this.opts.decider.decideNextTask(
         { from: "system", instruction: "Choose the next background task." },
         this.toolContext(),
-        this.buildSituation(snapshot),
+        this.buildSituation(snapshot, buildCheck),
       );
       this.lastDecisionAt = now;
       this.applyDirectedDecision(decision, snapshot);
@@ -291,6 +295,8 @@ export class BackgroundManager {
       if (resource !== "") key = `resource:${resource}`;
     } else if (task.type === "upgrade_equipment") {
       key = "upgrade";
+    } else if (task.type === "build_base") {
+      key = "build";
     }
     if (key === null) return;
     this.lastFailedAt.set(key, this.now());
@@ -351,6 +357,24 @@ export class BackgroundManager {
       return; // the task-settled hook re-checks when the run ends.
     }
 
+    // The centralized stockpile shed comes before storage expansion: chests,
+    // the table, and the furnace land on blueprint slots inside it, so the
+    // structure is the first infrastructure a healthy bot builds.
+    if (this.kindBlocked("build")) return;
+    const buildCheck = await this.opts.buildBase.needsAttention();
+    if (buildCheck.needsWork) {
+      this.opts.logger.info({ reason: buildCheck.reason }, "base structure incomplete; starting build");
+      this.opts.scheduler.enqueue({
+        type: "build_base",
+        priority: TaskPriority.BACKGROUND,
+        source: "background",
+        objective: "Build the base structure at home.",
+        parameters: {},
+      });
+      this.opts.scheduler.claim();
+      return;
+    }
+
     // Phase 11: home storage is the next background need (spec 22).
     const storageCheck = await this.opts.organizeStorage.needsAttention();
     if (storageCheck.needsWork) {
@@ -391,7 +415,10 @@ export class BackgroundManager {
    * time of day, and every recent failed restore so the model can weigh
    * retries with facts instead of guessing.
    */
-  private buildSituation(snapshot: StockpileSnapshot): string {
+  private buildSituation(
+    snapshot: StockpileSnapshot,
+    buildCheck: { needsWork: boolean; reason: string | null },
+  ): string {
     const lines: string[] = [];
     if (snapshot.deficits.length === 0) {
       lines.push("Stockpiles: all at or above target.");
@@ -401,6 +428,9 @@ export class BackgroundManager {
         .join("; ");
       lines.push(`Stockpiles: ${shortages}.`);
     }
+    lines.push(
+      `Base structure: ${buildCheck.needsWork ? `incomplete (${buildCheck.reason ?? "needs work"})` : "complete"}.`,
+    );
     lines.push(`Time of day: ${this.opts.state.timePhase ?? "unknown"}.`);
 
     const failures: string[] = [];
@@ -460,6 +490,18 @@ export class BackgroundManager {
           priority: TaskPriority.BACKGROUND,
           source: "director",
           objective: "Organize home storage by category, expanding when full.",
+          parameters: {},
+        });
+        scheduler.claim();
+        return;
+      case "build_base":
+        // A failed build stands down into the same per-kind cooldown.
+        if (this.kindBlocked("build")) return;
+        scheduler.enqueue({
+          type: "build_base",
+          priority: TaskPriority.BACKGROUND,
+          source: "director",
+          objective: "Build the base structure at home.",
           parameters: {},
         });
         scheduler.claim();

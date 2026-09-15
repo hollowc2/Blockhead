@@ -17,6 +17,7 @@ import { findBlockNear, findPlacementSpot, placeItemAt } from "../minecraft/worl
 import { travelHomeAndWait } from "../minecraft/movement.js";
 import { isEquipmentName } from "../policy/item-policy.js";
 import { ChatThrottle, gameChatBudgetAllows, resourceLabel, type SkillResult } from "./skill-library.js";
+import { stationSlotSpot } from "./base.js";
 import type { CollectResourceRunner } from "./collect-resource.js";
 import { carriedItemName } from "./collect-resource.js";
 import type { GatherFoodRunner } from "./gather-food.js";
@@ -706,7 +707,7 @@ export class EnsureItemRunner {
     if (!hasItem(bot, "crafting_table")) return null;
     const item = findItem(bot, "crafting_table");
     if (item === null) return null;
-    const spot = findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z });
+    const spot = stationSlotSpot(bot, home, "crafting_table") ?? findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z });
     if (spot === null) return null;
     const placed = await placeItemAt(bot, item, spot);
     return placed !== null && placed.name === "crafting_table" ? placed : null;
@@ -730,7 +731,7 @@ export class EnsureItemRunner {
     if (!hasItem(bot, "furnace")) return null;
     const item = findItem(bot, "furnace");
     if (item === null) return null;
-    const spot = findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z }, 6);
+    const spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z }, 6);
     if (spot === null) return null;
     const placed = await placeItemAt(bot, item, spot);
     return placed !== null && placed.name === "furnace" ? placed : null;

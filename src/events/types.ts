@@ -177,6 +177,18 @@ export interface StorageCheckedEvent {
   needsWork: boolean;
 }
 
+/** A periodic base-structure measurement (the `build_base` probe). */
+export interface StructureCheckedEvent {
+  /** Wall cells still air (placeable). */
+  missingWalls: number;
+  /** Roof cells still air (placeable). */
+  missingRoof: number;
+  /** True when the door gap is empty and a door can be placed. */
+  doorMissing: boolean;
+  /** True when the background loop should run a build/repair pass. */
+  needsWork: boolean;
+}
+
 /** The background director chose a next task (spec 4.3). */
 export interface DirectorDecidedEvent {
   task: string;
@@ -236,6 +248,7 @@ export interface EventMap {
   "resource.gather.failed": ResourceGatherFailedEvent;
   "stockpile.checked": StockpileCheckedEvent;
   "storage.checked": StorageCheckedEvent;
+  "structure.checked": StructureCheckedEvent;
   "director.decided": DirectorDecidedEvent;
   "expedition.entered": ExpeditionEnteredEvent;
   "expedition.denied": ExpeditionDeniedEvent;

@@ -142,6 +142,7 @@ const DIRECTOR_TASK_DOC = [
   '"collect_resource" — gather `quantity` of `resource` (e.g. oak_log, stone, coal_ore, iron_ore) and deposit it in the home chest. Parameters: resource (item name), quantity (integer, 1-1024).',
   '"stockpile_maintenance" — restore one stockpile with its dedicated skill: wood gathers logs, food hunts animals, fuel mines coal ore, torches crafts from stored material. Parameters: kind ("wood" | "food" | "fuel" | "torches").',
   '"organize_storage" — sort the home chests by category, creating more storage when full.',
+  '"build_base" — build or repair the stockpile shed at home (plank walls, roof, door); chests, the crafting table, and the furnace have fixed slots inside it.',
   '"go_home" — return to the configured home location.',
   '"wait" — do nothing this round.',
 ].join("\n");

@@ -25,6 +25,7 @@ import { expeditionThreshold } from "../skills/expedition.js";
 import type { GatherFoodRunner, GatherFoodResumeState } from "../skills/gather-food.js";
 import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
 import type { OrganizeResumeState, OrganizeStorageRunner } from "../skills/organize-storage.js";
+import type { BaseBuilderRunner, BaseResumeState } from "../skills/base.js";
 import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
@@ -48,6 +49,8 @@ export interface TaskDispatcherOptions {
   deathRecovery: DeathRecoveryRunner;
   /** Phase 11: storage organization / creation (spec 14.4, 22). */
   organizeStorage: OrganizeStorageRunner;
+  /** Central stockpile base: structure build/repair (`build_base`). */
+  buildBase: BaseBuilderRunner;
   /** Phase 13: ensure_item / craft_item / smelt_item / upgrade_equipment. */
   ensureItem: EnsureItemRunner;
   /** Phase 13: defend_self / defend_player. */
@@ -301,6 +304,11 @@ export class TaskDispatcher {
         return this.opts.organizeStorage.run({
           signals,
           resumeState: task.resumeState as OrganizeResumeState | undefined,
+        });
+      case "build_base":
+        return this.opts.buildBase.run({
+          signals,
+          resumeState: task.resumeState as BaseResumeState | undefined,
         });
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");

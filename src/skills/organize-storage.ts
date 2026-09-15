@@ -38,6 +38,7 @@ import {
   type PlacementSpot,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillErrorCode, type SkillResult } from "./skill-library.js";
+import { freeChestSlotSpot } from "./base.js";
 
 /**
  * Phase 11: storage organization (spec sections 14.4, 22, 23).
@@ -531,12 +532,18 @@ export class OrganizeStorageRunner {
     return { ok: true };
   }
 
-  /** An air cell near home with solid floor, away from registered chests. */
+  /** The next stockpile chest slot (center first), else a scatter cell near
+   *  home with solid floor, away from registered chests. Slots keep the
+   *  stockpile at its centralized location; the scatter fallback only runs
+   *  when every slot is occupied (the row holds three chests). */
   private async findChestSpot(): Promise<PlacementSpot | null> {
     const bot = this.opts.bot;
     const home = this.opts.state.home;
     const worldId = this.opts.state.worldId;
     if (home === null || bot.entity === null) return null;
+
+    const slotted = freeChestSlotSpot(bot, home);
+    if (slotted !== null) return slotted;
 
     const exclude: Vec3[] = [];
     if (worldId !== null) {
