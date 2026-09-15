@@ -72,8 +72,9 @@ const actions = new ActionsRepository(db);
 const backgroundFailures = new BackgroundFailuresRepository(db);
 // Goal layer: process-lifetime coordinator (bus-driven, no bot) over the
 // persisted goals table, so an active autonomous goal survives a restart.
+// It is wired to the scheduler so replacing a goal cancels the superseded
+// goal's tasks (active step cooperatively, queued steps outright).
 const goalsRepo = new GoalsRepository(db);
-const goals = new GoalManager({ bus, goals: goalsRepo });
 const state = new AgentState({ bus, locations, config });
 state.boot();
 // Anti-loop watchdog (generic, above every skill): fingerprints each action
@@ -87,6 +88,7 @@ const watchdog = new ActionWatchdog({
 watchdog.rehydrate();
 const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
 scheduler.loadFromPersistence();
+const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 // Bound historical task growth without touching resumable work.
 const taskRetentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
 taskStore.pruneSettled(taskRetentionCutoff, 32);

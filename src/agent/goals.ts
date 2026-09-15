@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { EventBus } from "../events/bus.js";
 import type { GoalsRepository } from "../memory/goals.js";
+import type { Scheduler } from "./scheduler.js";
 import type { Task } from "./task.js";
 import { GoalStatus, type Goal, type GoalResult, type NewGoal } from "./goal.js";
 import { logger } from "../logger.js";
@@ -14,6 +15,13 @@ const MAX_RECENT_RESULTS = 6;
 export interface GoalManagerOptions {
   bus: EventBus;
   goals: GoalsRepository;
+  /**
+   * Task scheduler. When a goal is replaced, the manager cancels every
+   * `source: "goal"` task tagged with the superseded goal's id (an active
+   * run cooperatively, queued/paused/blocked steps outright) so no step
+   * keeps executing work for an objective the owner already moved on from.
+   */
+  scheduler: Scheduler;
 }
 
 /**
@@ -30,8 +38,8 @@ export interface GoalManagerOptions {
  * Terminal transitions:
  *  - completed  — success criteria evaluated as met by the driver, or the
  *                 LLM chose "complete".
- *  - blocked    — the anti-loop watchdog stood the goal's working action
- *                 down (`task.blocked`): the goal cannot make progress.
+ *  - blocked    — a goal-level failure makes the goal unable to proceed.
+ *                 Temporary watchdog blocks are recorded as retryable waits.
  *  - cancelled  — the owner stopped it (hard interrupt / cancel_goal), a new
  *                 goal superseded it, or the LLM chose "abandon".
  */
@@ -66,7 +74,11 @@ export class GoalManager {
    */
   start(input: NewGoal): Goal {
     if (this.goal !== null) {
-      this.transition(GoalStatus.CANCELLED, "superseded by a new goal");
+      const superseded = this.transition(GoalStatus.CANCELLED, "superseded by a new goal");
+      // The owner moved the bot on to a new objective: nothing may keep
+      // executing the old goal — cooperatively stop its active run and cancel
+      // its queued/paused/blocked steps (scheduler.cancel does both forms).
+      if (superseded !== null) this.cancelGoalTasks(superseded);
     }
     const goal: Goal = {
       ...input,
@@ -133,6 +145,28 @@ export class GoalManager {
   }
 
   /**
+   * Cancel every scheduler task that belongs to a goal. Cooperative by design
+   * (`Scheduler.cancel`): an active run is asked to stop and its executor
+   * settles the cancellation once the skill checks in at its next checkpoint;
+   * queued, paused, and watchdog-blocked steps are cancelled immediately. Only
+   * `source: "goal"` tasks tagged with the goal's id are touched, so a
+   * superseded goal never stops unrelated user, maintenance, or rescue work.
+   * Iterates a snapshot of the queue because cancelling splices it.
+   */
+  private cancelGoalTasks(goal: Goal): void {
+    const scheduler = this.opts.scheduler;
+    const active = scheduler.active;
+    if (active !== null && active.source === "goal" && active.parameters.goalId === goal.id) {
+      scheduler.cancel(active.id);
+    }
+    for (const task of [...scheduler.queued]) {
+      if (task.source === "goal" && task.parameters.goalId === goal.id) {
+        scheduler.cancel(task.id);
+      }
+    }
+  }
+
+  /**
    * Record the outcome of one goal task against the live goal. Only tasks
    * this goal actually enqueued (source "goal" with a matching goalId) count;
    * an unrelated settled task never touches the goal.
@@ -160,8 +194,10 @@ export class GoalManager {
       ),
       bus.on("task.blocked", ({ task }) => {
         if (task.source !== "goal" || this.goal === null || task.parameters.goalId !== this.goal.id) return;
-        this.recordResult(task, "blocked", task.lastError ?? "action blocked");
-        this.block(task.lastError ?? "its action was blocked by the anti-loop watchdog");
+        // Watchdog blocks are temporary action-level cooldowns. Keep the goal
+        // active so the background driver can re-plan after the scheduler
+        // requeues the task; only goal-level failures should be terminal.
+        this.recordResult(task, "blocked", task.lastError ?? "action blocked; waiting for retry");
       }),
       bus.on("task.cancelled", ({ task }) =>
         this.recordResult(task, "cancelled", "interrupted"),

@@ -4,6 +4,8 @@ import { EventBus } from "../events/bus.js";
 import { AppDatabase } from "../memory/database.js";
 import { MIGRATIONS } from "../memory/migrations.js";
 import { GoalsRepository } from "../memory/goals.js";
+import { TasksRepository } from "../memory/tasks.js";
+import { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import {
   GoalStatus,
@@ -44,8 +46,20 @@ function goalTask(goalId: string, overrides: Partial<Task> = {}): { task: Task }
   };
 }
 
+/** A goal-sourced scheduler step, shaped exactly like the background goal driver enqueues. */
+function enqueueGoalStep(scheduler: Scheduler, goalId: string, type = "collect_resource"): Task {
+  return scheduler.enqueue({
+    type,
+    priority: TaskPriority.BACKGROUND,
+    source: "goal",
+    objective: `[goal] ${type}`,
+    parameters: { goalId, resource: "coal_ore", quantity: 16 },
+  });
+}
+
 interface Harness {
   bus: EventBus;
+  scheduler: Scheduler;
   manager: GoalManager;
   close: () => void;
   events: string[];
@@ -56,12 +70,13 @@ function newHarness(): Harness {
   const db = new AppDatabase(":memory:");
   db.runMigrations(MIGRATIONS);
   const repo = new GoalsRepository(db);
-  const manager = new GoalManager({ bus, goals: repo });
+  const scheduler = new Scheduler({ bus, tasks: new TasksRepository(db) });
+  const manager = new GoalManager({ bus, goals: repo, scheduler });
   const events: string[] = [];
   for (const name of ["goal.started", "goal.completed", "goal.blocked", "goal.cancelled"] as const) {
     bus.on(name, () => events.push(name));
   }
-  return { bus, manager, close: () => db.close(), events };
+  return { bus, scheduler, manager, close: () => db.close(), events };
 }
 
 test("start records an active goal and emits goal.started", () => {
@@ -127,14 +142,15 @@ test("results from an unrelated or mismatched task are ignored", () => {
   }
 });
 
-test("task.blocked for the goal's action blocks the goal (terminal)", () => {
+test("task.blocked for a goal action records a retryable wait", () => {
   const h = newHarness();
   try {
     const goal = h.manager.start(newGen());
     h.bus.emit("task.blocked", goalTask(goal.id, { status: TaskStatus.BLOCKED, lastError: "3 failed attempts" }));
 
-    assert.equal(h.manager.active(), null, "blocked goal is no longer active");
-    assert.equal(h.events[1], "goal.blocked");
+    assert.equal(h.manager.active()!.id, goal.id, "temporary block keeps goal active");
+    assert.equal(h.events.length, 1, "no terminal goal event emitted");
+    assert.equal(h.manager.active()!.recentResults[0]?.outcome, "blocked");
   } finally {
     h.close();
   }
@@ -155,17 +171,86 @@ test("cancel clears the goal; subsequent start works", () => {
   }
 });
 
+test("replacing a goal cancels the superseded goal's queued steps only", () => {
+  const h = newHarness();
+  try {
+    const first = h.manager.start(newGen({ description: "first" }));
+    const oldQueued = enqueueGoalStep(h.scheduler, first.id);
+    const foreignQueued = enqueueGoalStep(h.scheduler, "some-other-goal");
+    const userQueued = h.scheduler.enqueue({
+      type: "collect_resource",
+      priority: TaskPriority.BACKGROUND,
+      source: "user",
+      objective: "Gather logs.",
+      parameters: { resource: "oak_log", quantity: 32 },
+    });
+
+    h.manager.start(newGen({ description: "second" }));
+
+    assert.equal(oldQueued.status, TaskStatus.CANCELLED, "old goal's queued step cancelled");
+    assert.equal(foreignQueued.status, TaskStatus.QUEUED, "another goal's step untouched");
+    assert.equal(userQueued.status, TaskStatus.QUEUED, "non-goal work untouched");
+  } finally {
+    h.close();
+  }
+});
+
+test("replacing a goal cooperatively cancels the superseded goal's active run", () => {
+  const h = newHarness();
+  try {
+    const first = h.manager.start(newGen({ description: "first" }));
+    const running = enqueueGoalStep(h.scheduler, first.id, "travel_to");
+    assert.equal(h.scheduler.claim()?.id, running.id);
+    assert.equal(running.status, TaskStatus.ACTIVE);
+
+    h.manager.start(newGen({ description: "second" }));
+
+    // Cooperative: the run is asked to stop but not hard-killed; the skill
+    // observes the interrupt at its next checkpoint, then settles cancelled.
+    assert.equal(running.status, TaskStatus.ACTIVE, "run winds down until its executor settles");
+    assert.equal(h.scheduler.pendingInterruptReason, "cancel");
+    assert.equal(h.scheduler.signalsFor(running).checkpoint(), false, "skill observes the interrupt");
+    assert.equal(h.scheduler.settleInterrupted(), null);
+    assert.equal(running.status, TaskStatus.CANCELLED, "superseded run settles cancelled");
+  } finally {
+    h.close();
+  }
+});
+
+test("replacing a goal does not interrupt unrelated active work", () => {
+  const h = newHarness();
+  try {
+    h.manager.start(newGen({ description: "goal" }));
+    const ownerRun = h.scheduler.enqueue({
+      type: "collect_resource",
+      priority: TaskPriority.FOREGROUND,
+      source: "user",
+      objective: "Gather iron.",
+      parameters: { resource: "iron_ore", quantity: 32 },
+    });
+    assert.equal(h.scheduler.claim()?.id, ownerRun.id);
+
+    h.manager.start(newGen({ description: "next goal" }));
+
+    assert.equal(ownerRun.status, TaskStatus.ACTIVE);
+    assert.equal(h.scheduler.pendingInterruptReason, null, "foreign active work keeps running");
+  } finally {
+    h.close();
+  }
+});
+
 test("a goal rehydrates the persisted active row on construction", () => {
   const bus = new EventBus();
   const db = new AppDatabase(":memory:");
   try {
     db.runMigrations(MIGRATIONS);
     const repo = new GoalsRepository(db);
-    const first = new GoalManager({ bus, goals: repo });
+    const scheduler = new Scheduler({ bus, tasks: new TasksRepository(db) });
+    const first = new GoalManager({ bus, goals: repo, scheduler });
     const goal = first.start(newGen());
     first.dispose();
 
-    const second = new GoalManager({ bus, goals: repo });
+    const second = new GoalManager({ bus, goals: repo, scheduler });
     assert.equal(second.active()!.id, goal.id, "restart resumes the same active goal");
     second.dispose();
   } finally {

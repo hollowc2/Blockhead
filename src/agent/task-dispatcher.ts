@@ -121,7 +121,9 @@ export class TaskDispatcher {
       if (result.ok) scheduler.completeActive();
       else scheduler.failActive(result.message ?? "skill failed");
     } catch (err) {
-      const message = `execution threw: ${String(err)}`;
+      const message = String(err).includes("operation timed out")
+        ? `skill execution timed out after ${SKILL_TIMEOUT_MS}ms`
+        : `execution threw: ${String(err)}`;
       this.opts.logger.error({ err: String(err), taskId: task.id }, "task execution threw");
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id === task.id) {
