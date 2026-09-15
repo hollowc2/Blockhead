@@ -19,6 +19,7 @@ import type { GoalManager } from "./goals.js";
 import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriterion } from "./goal.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
+import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import { findHomeChest } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 
@@ -62,6 +63,8 @@ export interface BackgroundManagerOptions {
   storage: StorageRepository;
   /** Task store feeding the director's compact recent-outcome digest. */
   tasks: TasksRepository;
+  /** Durable failure cooldowns for deterministic background retries. */
+  backgroundFailures?: BackgroundFailuresRepository;
   /**
    * Goal coordinator (optional: the goal layer is a bolt-on — harnesses and
    * configs without one run the director exactly as before).
@@ -117,6 +120,15 @@ export class BackgroundManager {
   constructor(options: BackgroundManagerOptions) {
     this.opts = options;
     this.now = options.now ?? Date.now;
+    const now = this.now();
+    for (const state of options.backgroundFailures?.loadAll() ?? []) {
+      if (state.retryAt <= now) {
+        options.backgroundFailures?.remove(state.action);
+        continue;
+      }
+      this.lastFailedAt.set(state.action, state.failedAt);
+      this.lastFailReason.set(state.action, state.reason);
+    }
   }
 
   /**
@@ -382,8 +394,12 @@ export class BackgroundManager {
       key = "build";
     }
     if (key === null) return;
-    this.lastFailedAt.set(key, this.now());
-    this.lastFailReason.set(key, task.lastError ?? "skill failed");
+    const failedAt = this.now();
+    const reason = task.lastError ?? "skill failed";
+    this.lastFailedAt.set(key, failedAt);
+    this.lastFailReason.set(key, reason);
+    const cooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
+    this.opts.backgroundFailures?.upsert({ action: key, failedAt, retryAt: failedAt + cooldownMs, reason });
   }
 
   /**
@@ -401,7 +417,13 @@ export class BackgroundManager {
     if (failedAt === undefined) return null;
     const cooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
     const remainingMs = failedAt + cooldownMs - this.now();
-    if (remainingMs <= 0) return null;
+    if (remainingMs <= 0) {
+      this.lastFailedAt.delete(key);
+      this.lastFailReason.delete(key);
+      this.lastBlockNotice.delete(key);
+      this.opts.backgroundFailures?.remove(key);
+      return null;
+    }
     return {
       code: "COOLDOWN",
       message: `restore failed (${this.lastFailReason.get(key) ?? "previous restore failed"}); retry in ${Math.ceil(remainingMs / 1000)}s`,
