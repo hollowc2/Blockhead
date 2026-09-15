@@ -203,4 +203,13 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_tasks_settled_time ON tasks(status, completed_at, created_at);
   `,
+  // v10: durable cooldowns for deterministic background restore retries.
+  `
+  CREATE TABLE IF NOT EXISTS background_failures (
+      action TEXT PRIMARY KEY,
+      failed_at INTEGER NOT NULL,
+      retry_at INTEGER NOT NULL,
+      reason TEXT NOT NULL
+  );
+  `,
 ];

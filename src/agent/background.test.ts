@@ -14,6 +14,9 @@ import type { ToolContext } from "../tools/types.js";
 import type { NextTaskDecision } from "../llm/schemas.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
+import { AppDatabase } from "../memory/database.js";
+import { MIGRATIONS } from "../memory/migrations.js";
+import { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import type { AgentState } from "./state.js";
 import type { StockpileDeficit, StockpileManager, StockpileSnapshot } from "./maintenance.js";
 import type { Scheduler } from "./scheduler.js";
@@ -102,6 +105,10 @@ interface Harness {
   directorResult: NextTaskDecision;
   /** True makes the director stub throw (model down). */
   directorFails: boolean;
+  /** Durable cooldown repository shared across manager recreations. */
+  backgroundFailures: BackgroundFailuresRepository;
+  /** Manager options, used by restart regression tests. */
+  options: BackgroundManagerOptions;
   /** When set, the director stub awaits it before returning (single-flight tests). */
   decisionGate: Promise<void> | null;
   /** How many times the director stub was consulted. */
@@ -130,6 +137,9 @@ function newHarness(health: number, food: number): Harness {
     findBlocks: () => [],
   } as unknown as Bot;
   const bus = new EventBus();
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS);
+  const backgroundFailures = new BackgroundFailuresRepository(db);
   const warns: Array<Record<string, unknown>> = [];
   const logger = {
     info: () => {},
@@ -152,6 +162,8 @@ function newHarness(health: number, food: number): Harness {
 
   const state: Harness = {
     manager: undefined!,
+    backgroundFailures,
+    options: undefined!,
     bus,
     crisis: foodCrisis(),
     shortage: null,
@@ -250,11 +262,13 @@ function newHarness(health: number, food: number): Harness {
     } as unknown as BaseBuilderRunner,
     storage: {} as unknown as StorageRepository,
     tasks: {} as unknown as TasksRepository,
+    backgroundFailures,
     logger,
     now: () => now,
     inDeathLoop: () => state.loop,
   };
 
+  state.options = options;
   state.manager = new BackgroundManager(options);
   state.manager.start();
   return state;
@@ -572,6 +586,27 @@ const flushMacrotasks = async (): Promise<void> => {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 };
+
+test("background failure cooldown survives manager recreation", async () => {
+  const h = newHarness(12, 19);
+  await h.manager.tick();
+  h.bus.emit("task.failed", { task: failedFoodTask() });
+  h.manager.stop();
+
+  const restored = new BackgroundManager(h.options);
+  restored.start();
+  h.manager = restored;
+  h.advance(1_000);
+  await restored.tick();
+  assert.equal(h.issued.length, 1, "rehydrated cooldown suppresses the immediate retry");
+  assert.equal(h.warns.filter((w) => w.kind === "food").length, 1);
+
+  h.advance(59_000);
+  await restored.tick();
+  assert.equal(h.issued.length, 2, "retry becomes eligible after persisted expiry");
+  assert.deepEqual(h.backgroundFailures.loadAll(), [], "expired cooldown is removed");
+  restored.stop();
+});
 
 test("a task completion schedules a fresh LLM decision inside the decision interval", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });

@@ -14,6 +14,7 @@ import { BootstrapRepository } from "./memory/bootstrap.js";
 import { SkillsRepository } from "./memory/skills.js";
 import { StorageRepository } from "./memory/storage.js";
 import { TasksRepository } from "./memory/tasks.js";
+import { BackgroundFailuresRepository } from "./memory/background-failures.js";
 import { GoalsRepository } from "./memory/goals.js";
 import { ResourceSitesRepository } from "./memory/resource-sites.js";
 import { DeathEventsRepository } from "./memory/deaths.js";
@@ -68,6 +69,7 @@ db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
 const actions = new ActionsRepository(db);
+const backgroundFailures = new BackgroundFailuresRepository(db);
 // Goal layer: process-lifetime coordinator (bus-driven, no bot) over the
 // persisted goals table, so an active autonomous goal survives a restart.
 const goalsRepo = new GoalsRepository(db);
@@ -328,7 +330,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // moment the previous one settles.
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, goals, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33
