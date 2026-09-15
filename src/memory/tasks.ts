@@ -103,6 +103,25 @@ export class TasksRepository {
       .all() as TaskRow[];
     return rows.map(toTask);
   }
+
+  /**
+   * The most recently settled outcomes (completed/failed/cancelled, plus
+   * tasks currently standing down as BLOCKED), newest first. Feeds the LLM
+   * context digest of recent high-level results; `limit` bounds the fetch
+   * (the caller dedupes identical outcomes).
+   */
+  recentSettled(limit = 8): Task[] {
+    const bounded = Math.max(1, Math.min(limit, 32));
+    const rows = this.db.sql
+      .prepare(
+        `${SELECT_TASK}
+         WHERE status IN ('${TaskStatus.COMPLETED}', '${TaskStatus.FAILED}', '${TaskStatus.CANCELLED}', '${TaskStatus.BLOCKED}')
+         ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
+         LIMIT ?`,
+      )
+      .all(bounded) as TaskRow[];
+    return rows.map(toTask);
+  }
 }
 
 function toTask(row: TaskRow): Task {

@@ -7,12 +7,15 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { AgentState } from "../agent/state.js";
 import type { Scheduler } from "../agent/scheduler.js";
 import { TaskPriority } from "../agent/task.js";
+import type { StockpileManager } from "../agent/maintenance.js";
 import type { EventBus } from "../events/bus.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolContext } from "../tools/types.js";
 import type { BootstrapRunner } from "../skills/bootstrap-survival.js";
 import type { DecisionMaker } from "../llm/decider.js";
 import type { AgentDecision } from "../llm/schemas.js";
+import type { TasksRepository } from "../memory/tasks.js";
+import type { StorageRepository } from "../memory/storage.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -24,6 +27,12 @@ export interface AgentContext {
   owner: string;
   /** Bootstrap state machine (Phase 5); tools use it when present. */
   bootstrap?: BootstrapRunner;
+  /** Task store for the LLM context digest of recent settled outcomes. */
+  tasks: TasksRepository;
+  /** Home-storage registry for the LLM context (registered chest locations). */
+  storage: StorageRepository;
+  /** Session-scoped stockpile manager for the LLM context (last measured levels). */
+  maintenance: StockpileManager;
 }
 
 /** Matches a bare "CobbleBob?" (case-insensitive, optional trailing punctuation). */
@@ -72,6 +81,9 @@ function makeToolContext(bot: Bot, config: MinecraftConfig, ctx: AgentContext): 
     bus: ctx.bus,
     scheduler: ctx.scheduler,
     bootstrap: ctx.bootstrap,
+    tasks: ctx.tasks,
+    storage: ctx.storage,
+    maintenance: ctx.maintenance,
   };
 }
 

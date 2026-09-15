@@ -16,6 +16,7 @@ import { TaskPriority, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { StorageRepository } from "../memory/storage.js";
+import type { TasksRepository } from "../memory/tasks.js";
 import { findHomeChest } from "../minecraft/containers.js";
 
 /**
@@ -56,6 +57,8 @@ export interface BackgroundManagerOptions {
   buildBase: BaseBuilderRunner;
   /** Home storage registration; the idle loop re-establishes a missing home chest. */
   storage: StorageRepository;
+  /** Task store feeding the director's compact recent-outcome digest. */
+  tasks: TasksRepository;
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -586,6 +589,9 @@ export class BackgroundManager {
       bus: this.opts.bus,
       scheduler: this.opts.scheduler,
       bootstrap: this.opts.bootstrap,
+      maintenance: this.opts.maintenance,
+      storage: this.opts.storage,
+      tasks: this.opts.tasks,
     };
   }
 }

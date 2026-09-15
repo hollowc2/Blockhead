@@ -13,6 +13,7 @@ import type { DecisionInput } from "../llm/context.js";
 import type { ToolContext } from "../tools/types.js";
 import type { NextTaskDecision } from "../llm/schemas.js";
 import type { StorageRepository } from "../memory/storage.js";
+import type { TasksRepository } from "../memory/tasks.js";
 import type { AgentState } from "./state.js";
 import type { StockpileDeficit, StockpileManager, StockpileSnapshot } from "./maintenance.js";
 import type { Scheduler } from "./scheduler.js";
@@ -248,6 +249,7 @@ function newHarness(health: number, food: number): Harness {
       }),
     } as unknown as BaseBuilderRunner,
     storage: {} as unknown as StorageRepository,
+    tasks: {} as unknown as TasksRepository,
     logger,
     now: () => now,
     inDeathLoop: () => state.loop,
