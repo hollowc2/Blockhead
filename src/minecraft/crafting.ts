@@ -3,6 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Recipe } from "prismarine-recipe";
 import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { craftRecipe } from "./primitives.js";
 import { observedDelta } from "../status/deltas.js";
 
 /**
@@ -69,7 +70,7 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
   try {
     const before = countItem(bot, name);
     throwIfAborted(signal);
-    await bot.craft(recipe, times, table);
+    await craftRecipe(bot, recipe, times, table, signal);
     throwIfAborted(signal);
     const crafted = Math.max(0, countItem(bot, name) - before);
     const delta = observedDelta(before, countItem(bot, name), times);
@@ -103,7 +104,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
     const times = Math.min(craftsNeeded, logCount);
     try {
       throwIfAborted(signal);
-      await bot.craft(recipe, times);
+      await craftRecipe(bot, recipe, times, undefined, signal);
       throwIfAborted(signal);
     } catch (err) {
       throwIfAborted(signal);
@@ -136,7 +137,7 @@ export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortS
   const times = Math.ceil((targetTotal - initial) / 4);
   try {
     throwIfAborted(signal);
-    await bot.craft(recipe, times);
+    await craftRecipe(bot, recipe, times, undefined, signal);
     throwIfAborted(signal);
     const after = countSticks(bot);
     const delta = observedDelta(initial, after, Math.max(1, targetTotal - initial));

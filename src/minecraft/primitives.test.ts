@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { WorldActionExecutor } from "../agent/world-actions.js";
-import { deposit, openContainer } from "./primitives.js";
+import { craftRecipe, deposit, openContainer } from "./primitives.js";
 
 test("a hanging container mutation retains the lease until the plugin settles", async () => {
   const executor = new WorldActionExecutor();
@@ -45,4 +45,18 @@ test("window adapters reject an already-aborted signal before mutation", async (
     /missing window|aborted/i,
   );
   assert.equal(opened, false);
+});
+
+test("an explicit signal cannot bypass the active lease requirement", async () => {
+  let opened = false;
+  const bot = { openContainer: async () => { opened = true; return {} as any; } } as any;
+  await assert.rejects(openContainer(bot, {} as any, new AbortController().signal), /active scheduler lease/);
+  assert.equal(opened, false);
+});
+
+test("crafting is rejected outside a scheduler lease", async () => {
+  let crafted = false;
+  const bot = { craft: async () => { crafted = true; } } as any;
+  await assert.rejects(craftRecipe(bot, {} as any, 1, undefined, new AbortController().signal), /active scheduler lease/);
+  assert.equal(crafted, false);
 });

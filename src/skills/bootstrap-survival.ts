@@ -672,7 +672,7 @@ export class BootstrapRunner {
       const nearby = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
       this.opts.logger.warn({ home: correctedHome, nearby: nearby?.position, pos: bot.entity?.position }, "crafting: no placement spot near home");
       if (nearby === null) return null;
-      const placedNear = await placeItemAt(bot, item, nearby);
+      const placedNear = await placeItemAt(bot, item, nearby, this.signal ?? undefined);
       if (placedNear === null || placedNear.name !== "crafting_table") {
         this.opts.logger.warn({ home: correctedHome, spot: nearby.position, placed: placedNear?.name }, "crafting: placement did not stick");
         return null;
@@ -680,7 +680,7 @@ export class BootstrapRunner {
       return placedNear;
     }
 
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
     if (placed === null || placed.name !== "crafting_table") {
       this.opts.logger.warn({ home: correctedHome, spot: spot.position, placed: placed?.name }, "crafting: placement did not stick");
       return null;
@@ -1009,7 +1009,7 @@ export class BootstrapRunner {
       if (item === null) return { ok: false, reason: "bed vanished before placement" };
       const spot = findPlacementSpot(bot, home, TABLE_SCAN_RADIUS, excluded);
       if (spot === null) return { ok: false, reason: "no floor space near home for a bed" };
-      const placed = await placeItemAt(bot, item, spot);
+      const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
       if (placed !== null && isBedBlock(placed)) {
         return { ok: true, message: "Bed crafted and placed at home." };
       }
@@ -1097,7 +1097,7 @@ export class BootstrapRunner {
       }
     }
     if (spot === null) return { ok: false, reason: "no floor space near home for a chest" };
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
     if (placed === null || !isChestBlock(placed)) {
       return { ok: false, reason: "could not place the chest at home" };
     }
@@ -1335,7 +1335,7 @@ export class BootstrapRunner {
     if (item === null) return null;
     const spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, home);
     if (spot === null) return null;
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
     return placed !== null && isFurnaceBlock(placed) ? placed : null;
   }
 

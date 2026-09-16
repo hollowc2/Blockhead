@@ -2,9 +2,10 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
-import { findItem } from "./inventory.js";
+import { countItem, findItem } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { closeFurnace, openFurnace, putFuel, putInput, takeOutput } from "./primitives.js";
+import { observedDelta } from "../status/deltas.js";
 
 /**
  * Deterministic smelting primitives. Slot mechanics stay inside mineflayer's
@@ -49,6 +50,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
 
   throwIfAborted(signal);
   let window: Furnace | null = null;
+  const beforeOutput = countItem(bot, options.outputName);
   try {
     window = await openFurnace(bot, furnaceBlock, signal);
     throwIfAborted(signal);
@@ -72,9 +74,12 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
         return { ok: false, reason: `could not take smelted item: ${String(err)}` };
       }
     }
-    return options.times > 0
-      ? { ok: true, smelted: options.times }
-      : { ok: false, reason: "smelt request made no inventory change" };
+    const delta = observedDelta(beforeOutput, countItem(bot, options.outputName), options.times);
+    return delta.status === "COMPLETE"
+      ? { ok: true, smelted: delta.delta }
+      : { ok: false, reason: delta.delta > 0
+        ? `smelting made partial progress (${delta.delta}/${options.times})`
+        : "smelting made no output change" };
   } finally {
     if (window !== null) await closeFurnace(window).catch(() => undefined);
   }
