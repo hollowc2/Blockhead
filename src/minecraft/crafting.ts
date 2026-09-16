@@ -52,8 +52,9 @@ export function recipeUsable(bot: Bot, recipe: Recipe, times: number): boolean {
  * table recipes (mineflayer activates it to open the crafting window).
  */
 export async function craftItem(bot: Bot, name: string, options: CraftOptions = {}): Promise<CraftResult> {
-  requireWorldActionLease(options.signal);
-  throwIfAborted(options.signal);
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
+  throwIfAborted(signal);
   const times = options.times ?? 1;
   const id = itemId(bot, name);
   if (id === null) return failure(name, `unknown item '${name}'`);
@@ -67,14 +68,14 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
 
   try {
     const before = countItem(bot, name);
-    throwIfAborted(options.signal);
+    throwIfAborted(signal);
     await bot.craft(recipe, times, table);
-    throwIfAborted(options.signal);
+    throwIfAborted(signal);
     const crafted = Math.max(0, countItem(bot, name) - before);
     const delta = observedDelta(before, countItem(bot, name), times);
     return delta.delta > 0 ? { ok: true, name, crafted: delta.delta } : failure(name, "craft completed without an output delta");
   } catch (err) {
-    throwIfAborted(options.signal);
+    throwIfAborted(signal);
     return failure(name, String(err));
   }
 }
@@ -85,7 +86,7 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
  * owned log type so mixed inventories are handled.
  */
 export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   throwIfAborted(signal);
   const initial = countPlanks(bot);
   let planks = initial;
@@ -122,7 +123,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
  * sticks are carried.
  */
 export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   throwIfAborted(signal);
   const initial = countSticks(bot);
   if (initial >= targetTotal) return failure("stick", "craft request made no inventory change (target already satisfied)");

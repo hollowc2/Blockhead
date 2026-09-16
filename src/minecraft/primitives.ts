@@ -6,31 +6,31 @@ import { requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted
 
 /** Small, lease-bound adapters for Mineflayer mutations with no higher-level orchestration. */
 export async function equipItem(bot: Bot, item: Item, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.equip(item, "hand");
   throwIfAborted(signal);
 }
 
 export async function equipToolForBlock(bot: Bot, block: Parameters<NonNullable<Bot["tool"]>["equipForBlock"]>[0], signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.tool.equipForBlock(block);
   throwIfAborted(signal);
 }
 
 export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.dig(block);
   throwIfAborted(signal);
 }
 
 export async function tossItem(bot: Bot, type: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.toss(type, metadata, count);
   throwIfAborted(signal);
 }
 
 export async function pvpAttack(bot: Bot, target: Entity, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.pvp.attack(target);
   throwIfAborted(signal);
 }
@@ -52,7 +52,7 @@ export async function collectBlockOperation(
   options: { ignoreNoPath: boolean },
   signal?: AbortSignal,
 ): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.collectBlock.collect(blocks, options);
   throwIfAborted(signal);
 }
@@ -61,7 +61,7 @@ export type ContainerWindow = Chest | Dispenser;
 
 /** Open a container while retaining the caller's lease and cancellation contract. */
 export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal): Promise<ContainerWindow> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   const window = await bot.openContainer(block);
   throwIfAborted(signal);
   return window;
@@ -69,14 +69,14 @@ export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal
 
 /** Deposit through a container adapter; Mineflayer itself has no AbortSignal parameter. */
 export async function deposit(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await window.deposit(itemType, metadata, count);
   throwIfAborted(signal);
 }
 
 /** Withdraw through a container adapter; Mineflayer itself has no AbortSignal parameter. */
 export async function withdraw(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await window.withdraw(itemType, metadata, count);
   throwIfAborted(signal);
 }
@@ -89,7 +89,7 @@ export async function closeWindow(window: { close: () => Promise<void> }): Promi
 
 /** Execute a window click through the same lease and cancellation boundary. */
 export async function clickWindow<T>(window: { click: (...args: any[]) => Promise<T> }, args: any[], signal?: AbortSignal): Promise<T> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   const result = await window.click(...args);
   throwIfAborted(signal);
   return result;
@@ -97,7 +97,7 @@ export async function clickWindow<T>(window: { click: (...args: any[]) => Promis
 
 /** Open a furnace through the uniform window boundary. */
 export async function openFurnace(bot: Bot, block: Block, signal?: AbortSignal): Promise<Furnace> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   const window = await bot.openFurnace(block);
   throwIfAborted(signal);
   return window;
@@ -105,19 +105,19 @@ export async function openFurnace(bot: Bot, block: Block, signal?: AbortSignal):
 
 /** Furnace fuel/input/output adapters retain signal checks around plugin calls. */
 export async function putFuel(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await window.putFuel(itemType, metadata, count);
   throwIfAborted(signal);
 }
 
 export async function putInput(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await window.putInput(itemType, metadata, count);
   throwIfAborted(signal);
 }
 
 export async function takeOutput(window: Furnace, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await window.takeOutput();
   throwIfAborted(signal);
 }
@@ -129,19 +129,19 @@ export async function closeFurnace(window: Furnace): Promise<void> {
 }
 
 export async function sleepAt(bot: Bot, bed: Parameters<Bot["sleep"]>[0], signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.sleep(bed);
   throwIfAborted(signal);
 }
 
 export async function wakeBot(bot: Bot, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.wake();
   throwIfAborted(signal);
 }
 
 export async function eatFood(bot: Bot, food: string, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.autoEat.eat({ food });
   throwIfAborted(signal);
 }
@@ -152,7 +152,7 @@ export async function cancelEating(bot: Bot, signal?: AbortSignal): Promise<void
 }
 
 export async function equipAllArmor(bot: Bot, signal?: AbortSignal): Promise<void> {
-  requireWorldActionLease(signal);
+  signal ??= requireWorldActionLease(signal).signal;
   await bot.armorManager.equipAll();
   throwIfAborted(signal);
 }

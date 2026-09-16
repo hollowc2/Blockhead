@@ -39,35 +39,36 @@ const DEFAULT_SMELT_TIMEOUT_MS = 120_000;
  * output slot to fill, and takes the result into the inventory.
  */
 export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOptions): Promise<SmeltResult> {
-  requireWorldActionLease(options.signal);
-  throwIfAborted(options.signal);
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
+  throwIfAborted(signal);
   const outputId = itemId(bot, options.outputName);
   if (outputId === null) {
     return { ok: false, reason: `unknown item '${options.outputName}'` };
   }
 
-  throwIfAborted(options.signal);
+  throwIfAborted(signal);
   let window: Furnace | null = null;
   try {
-    window = await openFurnace(bot, furnaceBlock, options.signal);
-    throwIfAborted(options.signal);
+    window = await openFurnace(bot, furnaceBlock, signal);
+    throwIfAborted(signal);
     for (let pass = 0; pass < options.times; pass++) {
-      throwIfAborted(options.signal);
+      throwIfAborted(signal);
       const input = findItem(bot, options.inputName);
       if (input === null) return { ok: false, reason: `no ${options.inputName} to smelt` };
       const fuel = findItem(bot, options.fuelName);
       if (fuel === null) return { ok: false, reason: `no ${options.fuelName} to burn` };
 
-      await putFuel(window, fuel.type, null, 1, options.signal);
-      await putInput(window, input.type, null, 1, options.signal);
+      await putFuel(window, fuel.type, null, 1, signal);
+      await putInput(window, input.type, null, 1, signal);
 
-      const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, options.signal);
+      const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, signal);
       if (!done) return { ok: false, reason: "smelting timed out" };
       try {
-        throwIfAborted(options.signal);
-        await takeOutput(window, options.signal);
+        throwIfAborted(signal);
+        await takeOutput(window, signal);
       } catch (err) {
-        throwIfAborted(options.signal);
+        throwIfAborted(signal);
         return { ok: false, reason: `could not take smelted item: ${String(err)}` };
       }
     }
