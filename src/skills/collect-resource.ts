@@ -17,6 +17,7 @@ import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, isRa
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
+import { cancelCollection } from "../minecraft/primitives.js";
 import {
   ChatThrottle,
   expansionMessage,
@@ -660,7 +661,7 @@ export class CollectResourceRunner {
       const before = countItem(bot, carriedName);
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
-          await bot.collectBlock.cancelTask();
+          await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err), resource: bare }, "collect pass failed");

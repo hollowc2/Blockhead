@@ -295,7 +295,7 @@ export class BackgroundManager {
     // Probes are world reads and container repair can mutate the world. They
     // use the same scheduler lease as foreground tasks, closing the race
     // between an idle tick and a task becoming active.
-    const snapshot = await this.worldProbe(() => this.opts.maintenance.check());
+    const snapshot = await this.worldProbe((signal) => this.opts.maintenance.check(signal));
 
     // Phase 8 (spec 5.4): a stockpile below its survival floor is a crisis —
     // escalate to MAINTENANCE priority and preempt whatever is running, even
@@ -380,14 +380,14 @@ export class BackgroundManager {
     }
   }
 
-  private async worldProbe<T>(work: () => Promise<T>): Promise<T> {
+  private async worldProbe<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const run = (this.opts.scheduler as Scheduler & {
       runWorldAction?: <R>(owner: string, signal: AbortSignal, action: () => Promise<R>) => Promise<R>;
     }).runWorldAction;
-    if (typeof run !== "function") return work();
+    if (typeof run !== "function") return work(new AbortController().signal);
     const controller = new AbortController();
     try {
-      return await run.call(this.opts.scheduler, `background-probe:${randomUUID()}`, controller.signal, work) as T;
+      return await run.call(this.opts.scheduler, `background-probe:${randomUUID()}`, controller.signal, () => work(controller.signal)) as T;
     } finally {
       // A probe owns a real lease. Retire its signal when the probe settles so
       // a reconnect cannot retain a session-scoped waiter or runner.
@@ -505,7 +505,7 @@ export class BackgroundManager {
     }
 
     // Phase 11: home storage is the next background need (spec 22).
-    const storageCheck = await this.worldProbe(() => this.opts.organizeStorage.needsAttention());
+    const storageCheck = await this.worldProbe((signal) => this.opts.organizeStorage.needsAttention(signal));
     if (storageCheck.needsWork) {
       this.opts.logger.info({ reason: storageCheck.reason }, "storage needs organization; starting storage pass");
       this.opts.scheduler.enqueue({

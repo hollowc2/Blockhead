@@ -188,10 +188,10 @@ export class StockpileManager {
    * `stockpile.checked` event. Opens each registered chest once; a chest
    * that cannot be opened is skipped and re-read on the next pass.
    */
-  async check(): Promise<StockpileSnapshot> {
+  async check(signal?: AbortSignal): Promise<StockpileSnapshot> {
     const targets = this.targets;
     const carried = itemsSummary(this.opts.bot);
-    const stored = await countStoredItems(this.opts.bot, this.opts.state, this.opts.storage);
+    const stored = await countStoredItems(this.opts.bot, this.opts.state, this.opts.storage, signal);
 
     let wood = 0;
     let food = 0;

@@ -4,6 +4,7 @@ import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
 import { findItem } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { closeFurnace, openFurnace, putFuel, putInput, takeOutput } from "./primitives.js";
 
 /**
  * Deterministic smelting primitives. Slot mechanics stay inside mineflayer's
@@ -48,7 +49,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   throwIfAborted(options.signal);
   let window: Furnace | null = null;
   try {
-    window = await bot.openFurnace(furnaceBlock);
+    window = await openFurnace(bot, furnaceBlock, options.signal);
     throwIfAborted(options.signal);
     for (let pass = 0; pass < options.times; pass++) {
       throwIfAborted(options.signal);
@@ -57,17 +58,14 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
       const fuel = findItem(bot, options.fuelName);
       if (fuel === null) return { ok: false, reason: `no ${options.fuelName} to burn` };
 
-      await window.putFuel(fuel.type, null, 1);
-      throwIfAborted(options.signal);
-      await window.putInput(input.type, null, 1);
-      throwIfAborted(options.signal);
+      await putFuel(window, fuel.type, null, 1, options.signal);
+      await putInput(window, input.type, null, 1, options.signal);
 
       const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, options.signal);
       if (!done) return { ok: false, reason: "smelting timed out" };
       try {
         throwIfAborted(options.signal);
-        await window.takeOutput();
-        throwIfAborted(options.signal);
+        await takeOutput(window, options.signal);
       } catch (err) {
         throwIfAborted(options.signal);
         return { ok: false, reason: `could not take smelted item: ${String(err)}` };
@@ -77,7 +75,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
       ? { ok: true, smelted: options.times }
       : { ok: false, reason: "smelt request made no inventory change" };
   } finally {
-    await window?.close().catch(() => undefined);
+    if (window !== null) await closeFurnace(window).catch(() => undefined);
   }
 }
 

@@ -7,6 +7,7 @@ import type { StorageLocation, StorageRepository } from "../memory/storage.js";
 import { bareName, countItem } from "./inventory.js";
 import { findBlocksNear } from "./world.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { closeWindow, deposit, openContainer, withdraw } from "./primitives.js";
 import { observedTransfer } from "../status/deltas.js";
 
 /**
@@ -94,14 +95,14 @@ export async function countStoredItems(
     const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
     if (block === null || !isChestBlock(block)) continue;
     try {
-      const chest = await bot.openContainer(block);
+      const chest = await openContainer(bot, block, signal);
       try {
         for (const item of chest.containerItems()) {
           const name = bareName(item.name);
           totals[name] = (totals[name] ?? 0) + item.count;
         }
       } finally {
-        await chest.close();
+        await closeWindow(chest);
       }
     } catch (err) {
       // A busy chest must not break the whole stockpile pass.
@@ -137,13 +138,12 @@ export async function deliverCarried(
   }
 
   try {
-    const container = await bot.openContainer(chest);
+    const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
-      await container.deposit(itemId, null, before);
-      throwIfAborted(signal);
+      await deposit(container, itemId, null, before, signal);
     } finally {
-      await container.close();
+      await closeWindow(container);
     }
   } catch (err) {
     throwIfAborted(signal);
@@ -177,7 +177,7 @@ export async function deliverCarriedItems(
   }
   let delivered = 0;
   try {
-    const container = await bot.openContainer(chest);
+    const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
       for (const name of itemNames) {
@@ -190,8 +190,7 @@ export async function deliverCarriedItems(
           continue;
         }
         try {
-          await container.deposit(itemId, null, before);
-          throwIfAborted(signal);
+          await deposit(container, itemId, null, before, signal);
           delivered += Math.max(0, before - countItem(bot, name));
         } catch (err) {
           throwIfAborted(signal);
@@ -199,7 +198,7 @@ export async function deliverCarriedItems(
         }
       }
     } finally {
-      await container.close();
+      await closeWindow(container);
     }
   } catch (err) {
     throwIfAborted(signal);
@@ -233,13 +232,12 @@ export async function withdrawFromHomeChest(
   }
   const before = countItem(bot, itemName);
   try {
-    const container = await bot.openContainer(chest);
+    const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
-      await container.withdraw(itemId, null, count);
-      throwIfAborted(signal);
+      await withdraw(container, itemId, null, count, signal);
     } finally {
-      await container.close();
+      await closeWindow(container);
     }
   } catch (err) {
     throwIfAborted(signal);
@@ -300,8 +298,9 @@ export async function measureStorage(
   bot: Bot,
   state: AgentState,
   storage: StorageRepository,
+  signal?: AbortSignal,
 ): Promise<StorageMeasurement> {
-  requireWorldActionLease();
+  requireWorldActionLease(signal);
   const worldId = state.worldId;
   if (worldId === null) {
     return { chests: [], slotsTotal: 0, slotsUsed: 0, items: {}, missingChests: 0, reachable: false };
@@ -309,13 +308,14 @@ export async function measureStorage(
   const chests: ChestMeasurement[] = [];
   let missingChests = 0;
   for (const location of storage.list(worldId)) {
+    throwIfAborted(signal);
     const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
     if (block === null || !isChestBlock(block)) {
       missingChests += 1;
       continue;
     }
     try {
-      const chest = await bot.openContainer(block);
+      const chest = await openContainer(bot, block, signal);
       try {
         const items: Record<string, number> = {};
         let usedSlots = 0;
@@ -333,7 +333,7 @@ export async function measureStorage(
           items,
         });
       } finally {
-        await chest.close();
+        await closeWindow(chest);
       }
     } catch (err) {
       // A busy chest is skipped; `reachable` reports whether any was read.
@@ -386,15 +386,14 @@ export async function transferItem(
   let destinationBefore = 0;
   let destinationAfter = 0;
   try {
-    const source = await bot.openContainer(from);
+    const source = await openContainer(bot, from, signal);
     throwIfAborted(signal);
     try {
       sourceBefore = source.containerCount(itemId, null);
-      await source.withdraw(itemId, null, count);
-      throwIfAborted(signal);
+      await withdraw(source, itemId, null, count, signal);
       sourceAfter = source.containerCount(itemId, null);
     } finally {
-      await source.close();
+      await closeWindow(source);
     }
   } catch (err) {
     throwIfAborted(signal);
@@ -402,15 +401,14 @@ export async function transferItem(
     return { moved: 0 };
   }
   try {
-    const target = await bot.openContainer(to);
+    const target = await openContainer(bot, to, signal);
     throwIfAborted(signal);
     try {
       destinationBefore = target.containerCount(itemId, null);
-      await target.deposit(itemId, null, count);
-      throwIfAborted(signal);
+      await deposit(target, itemId, null, count, signal);
       destinationAfter = target.containerCount(itemId, null);
     } finally {
-      await target.close();
+      await closeWindow(target);
     }
   } catch (err) {
     throwIfAborted(signal);

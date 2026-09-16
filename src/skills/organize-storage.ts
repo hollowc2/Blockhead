@@ -38,6 +38,7 @@ import {
   type PlacementSpot,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillErrorCode, type SkillResult } from "./skill-library.js";
+import { cancelCollection } from "../minecraft/primitives.js";
 import { freeChestSlotSpot } from "./base.js";
 
 /**
@@ -392,10 +393,10 @@ export class OrganizeStorageRunner {
    * storage and reports whether an organize/expand pass is needed, emitting
    * `storage.checked` for observability. Never modifies anything.
    */
-  async needsAttention(): Promise<{ needsWork: boolean; reason: string | null }> {
+  async needsAttention(signal?: AbortSignal): Promise<{ needsWork: boolean; reason: string | null }> {
     const worldId = this.opts.state.worldId;
     const registered = worldId === null ? [] : this.opts.storage.list(worldId);
-    const measurement = await measureStorage(this.opts.bot, this.opts.state, this.opts.storage);
+    const measurement = await measureStorage(this.opts.bot, this.opts.state, this.opts.storage, signal);
     const decision = decideStorageWork(measurement, registered);
     this.opts.bus.emit("storage.checked", {
       chests: measurement.chests.length,
@@ -448,7 +449,7 @@ export class OrganizeStorageRunner {
     // Expand while the decision demands it, re-measuring after each creation
     // so a fresh chest (empty, newly registered) is never re-expanded for.
     let registered = this.opts.storage.list(worldId);
-    let measurement = await measureStorage(bot, this.opts.state, this.opts.storage);
+    let measurement = await measureStorage(bot, this.opts.state, this.opts.storage, this.signals?.signal);
     data.slotsUsed = measurement.slotsUsed;
     data.slotsTotal = measurement.slotsTotal;
     for (let pass = 0; pass < MAX_CHESTS_PER_RUN; pass++) {
@@ -460,7 +461,7 @@ export class OrganizeStorageRunner {
       if (!created.ok) return this.fail(data, "STORAGE_NOT_FOUND", created.reason);
       data.chestsCreated += 1;
       registered = this.opts.storage.list(worldId);
-      measurement = await measureStorage(bot, this.opts.state, this.opts.storage);
+      measurement = await measureStorage(bot, this.opts.state, this.opts.storage, this.signals?.signal);
       data.slotsUsed = measurement.slotsUsed;
       data.slotsTotal = measurement.slotsTotal;
     }
@@ -640,7 +641,7 @@ export class OrganizeStorageRunner {
       const before = have;
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
-          await bot.collectBlock.cancelTask();
+          await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {
         return { ok: false, reason: `could not collect logs: ${String(err)}` };

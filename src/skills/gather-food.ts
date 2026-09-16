@@ -12,7 +12,7 @@ import { deliverCarriedItems } from "../minecraft/containers.js";
 import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
-import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { cancelCollection, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
@@ -636,7 +636,7 @@ export class GatherFoodRunner {
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
       await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
-        await bot.collectBlock.cancelTask();
+        await cancelCollection(bot);
       }, this.signals?.signal);
     } catch (err) {
       return { ok: false, reason: `could not collect drops: ${String(err)}` };
@@ -664,7 +664,7 @@ export class GatherFoodRunner {
       this.opts.logger.info({ blocks: targets.map((b) => b.name), radius }, "gather_food foraging");
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
-          await bot.collectBlock.cancelTask();
+          await cancelCollection(bot);
         }, this.signals?.signal);
         blocks = targets.length;
       } catch (err) {
@@ -676,7 +676,7 @@ export class GatherFoodRunner {
     if (drops.length > 0) {
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
-          await bot.collectBlock.cancelTask();
+        await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err) }, "gather_food drop pickup failed");

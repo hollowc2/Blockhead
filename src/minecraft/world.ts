@@ -4,6 +4,7 @@ import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { cancelCollection } from "./primitives.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -116,7 +117,7 @@ export async function collectBlocks(
     if (countHeld() >= targetTotal) break;
     try {
       await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), async () => {
-        await bot.collectBlock.cancelTask();
+        await cancelCollection(bot);
       }, signal);
     } catch (err) {
       // An aborted primitive must never advance to another target. The old

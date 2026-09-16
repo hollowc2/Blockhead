@@ -1,4 +1,5 @@
-import type { Bot } from "mineflayer";
+import type { Bot, Chest, Dispenser, Furnace } from "mineflayer";
+import type { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
 import type { Item } from "prismarine-item";
 import { requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
@@ -42,6 +43,77 @@ export async function pvpStop(bot: Bot, signal?: AbortSignal): Promise<void> {
 export async function cancelCollection(bot: Bot): Promise<void> {
   requireWorldActionCleanupLease();
   await bot.collectBlock.cancelTask();
+}
+
+export type ContainerWindow = Chest | Dispenser;
+
+/** Open a container while retaining the caller's lease and cancellation contract. */
+export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal): Promise<ContainerWindow> {
+  requireWorldActionLease(signal);
+  const window = await bot.openContainer(block);
+  throwIfAborted(signal);
+  return window;
+}
+
+/** Deposit through a container adapter; Mineflayer itself has no AbortSignal parameter. */
+export async function deposit(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await window.deposit(itemType, metadata, count);
+  throwIfAborted(signal);
+}
+
+/** Withdraw through a container adapter; Mineflayer itself has no AbortSignal parameter. */
+export async function withdraw(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await window.withdraw(itemType, metadata, count);
+  throwIfAborted(signal);
+}
+
+/** Close a container as lease-owned cleanup, including after the lease signal aborts. */
+export async function closeWindow(window: { close: () => Promise<void> }): Promise<void> {
+  requireWorldActionCleanupLease();
+  await window.close();
+}
+
+/** Execute a window click through the same lease and cancellation boundary. */
+export async function clickWindow<T>(window: { click: (...args: any[]) => Promise<T> }, args: any[], signal?: AbortSignal): Promise<T> {
+  requireWorldActionLease(signal);
+  const result = await window.click(...args);
+  throwIfAborted(signal);
+  return result;
+}
+
+/** Open a furnace through the uniform window boundary. */
+export async function openFurnace(bot: Bot, block: Block, signal?: AbortSignal): Promise<Furnace> {
+  requireWorldActionLease(signal);
+  const window = await bot.openFurnace(block);
+  throwIfAborted(signal);
+  return window;
+}
+
+/** Furnace fuel/input/output adapters retain signal checks around plugin calls. */
+export async function putFuel(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await window.putFuel(itemType, metadata, count);
+  throwIfAborted(signal);
+}
+
+export async function putInput(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await window.putInput(itemType, metadata, count);
+  throwIfAborted(signal);
+}
+
+export async function takeOutput(window: Furnace, signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await window.takeOutput();
+  throwIfAborted(signal);
+}
+
+/** Close a furnace as lease-owned cleanup, including after the lease signal aborts. */
+export async function closeFurnace(window: Furnace): Promise<void> {
+  requireWorldActionCleanupLease();
+  await window.close();
 }
 
 export async function sleepAt(bot: Bot, bed: Parameters<Bot["sleep"]>[0], signal?: AbortSignal): Promise<void> {
