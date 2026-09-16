@@ -14,6 +14,16 @@ status:
   host: 127.0.0.1
   port: 8155
 
+# Phase 1 dashboard configuration groundwork. The collector is read-only in
+# this phase; no dashboard or viewer server is started yet.
+dashboard:
+  enabled: true
+  host: 0.0.0.0
+  port: 3000
+  viewer_enabled: true
+  viewer_port: 3001
+  viewer_distance: 6
+
 # All keys are Zod-validated against src/config/schema.ts at startup.
 
 # --- 30.1 agent.yaml: identity, behavior, LLM -------------------------------

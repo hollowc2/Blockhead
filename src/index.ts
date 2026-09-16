@@ -59,6 +59,11 @@ import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
 import { ConnectionStateMachine } from "./agent/connection-state.js";
 import { stopWorldPrimitives } from "./agent/world-actions.js";
+import { EventHistory } from "./dashboard/event-history.js";
+import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
+import { startDashboard } from "./dashboard/lifecycle.js";
+import { ViewerManager } from "./dashboard/viewer.js";
+import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -67,6 +72,7 @@ const connectionState = new ConnectionStateMachine();
 // connection attempt; the DB, scheduler, and memory are opened once so a long
 // server outage does not reopen SQLite and re-run migrations on every retry.
 const bus = new EventBus();
+const eventHistory = new EventHistory({ bus });
 const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
@@ -160,6 +166,14 @@ const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, c
 const taskOutcomes = new TaskOutcomeTracker({ bus });
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
+let dashboardServer: ReturnType<typeof startDashboard> = null;
+const viewerManager = new ViewerManager({
+  enabled: config.dashboard?.viewer_enabled ?? false,
+  port: config.dashboard?.viewer_port ?? 3001,
+  distance: config.dashboard?.viewer_distance ?? 6,
+  adapter: prismarineViewerAdapter,
+  logger,
+});
 
 // The live bot session. `shutdown` and the bootstrap-resume hooks act on the
 // session currently being attempted; between attempts this is null.
@@ -174,6 +188,24 @@ interface Session {
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
+
+// Phase 1 dashboard telemetry is process-lifetime and read-only. It is
+// constructed now so future dashboard transports can consume the same
+// reconnect-safe snapshot without owning or mutating agent services.
+const dashboardTelemetry = new DashboardTelemetryCollector({
+  config,
+  startedAtMs: processStartedAt,
+  bot: () => session?.bot ?? null,
+  maintenance: () => session?.maintenance ?? null,
+  hostile: () => session?.hostile ?? null,
+  state,
+  scheduler,
+  goals: () => goals,
+  decider,
+  client,
+  eventHistory,
+  viewer: () => viewerManager.telemetry(),
+});
 
 // Phase 12 (spec 33): the development dashboard runs for the whole process,
 // across connect attempts, and reads session state through getters. It owns
@@ -214,7 +246,18 @@ statusServer = new StatusServer({
 });
 if (config.status?.enabled ?? true) statusServer.start();
 
-process.on("exit", () => taskOutcomes.dispose());
+dashboardServer = startDashboard({
+  enabled: config.dashboard?.enabled ?? true,
+  host: config.dashboard?.host ?? "0.0.0.0",
+  port: config.dashboard?.port ?? 3000,
+  logger,
+  snapshot: () => dashboardTelemetry.snapshot(),
+});
+
+process.on("exit", () => {
+  taskOutcomes.dispose();
+  eventHistory.dispose();
+});
 
 // Phase 8: bootstrap yielded to user work resumes when that work settles —
 // the runner is idempotent and resumes from the persisted stage boundary.
@@ -233,8 +276,10 @@ let shuttingDown = false;
 async function shutdown(code: number): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  viewerManager.stop();
   const active = session;
   if (active !== null) {
+    viewerManager.stopFor(active.bot);
     active.background.stop();
     active.hostile.detach();
     scheduler.requestCancel();
@@ -244,6 +289,7 @@ async function shutdown(code: number): Promise<void> {
   goals.dispose();
   taskOutcomes.dispose();
   statusServer?.stop();
+  dashboardServer?.stop();
   tui.stop();
   db.close();
   debugLog.close();
@@ -377,6 +423,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
+    void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {
       logger.error({ err: String(err) }, "supervised bootstrap run failed");

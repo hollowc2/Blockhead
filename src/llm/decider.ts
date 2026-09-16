@@ -10,7 +10,8 @@ import type { ToolContext } from "../tools/types.js";
 export interface DecisionMakerOptions { client: LlamaClient; registry: ToolRegistry; debugLog: DebugLog; maxRetries: number; skills?: SkillsRepository; }
 export type LlmRuntimeState = "READY" | "PAUSED" | "DEGRADED";
 const FEW_SHOT_FETCH = 8;
-export interface LlmCallRecord { at: number; latencyMs: number; tool: string; rationale: string | null; }
+export interface LlmActivity { thinking: boolean; callType: "owner_instruction" | "background_director" | "goal_decision" | null; startedAt: string | null; }
+export interface LlmCallRecord { at: number; latencyMs: number; tool: string; rationale: string | null; success: boolean; error: string | null; }
 
 type ParsedResult<T> = { decision: T; raw: string; startedAt: number };
 
@@ -21,43 +22,68 @@ export class DecisionMaker {
   private readonly maxRetries: number;
   private readonly skills?: SkillsRepository;
   private lastCallRecord: LlmCallRecord | null = null;
+  private readonly activeCalls = new Map<number, { callType: NonNullable<LlmActivity["callType"]>; startedAt: number }>();
+  private nextActivityId = 0;
   private runtime: LlmRuntimeState = "READY";
   private lastDecisionKey: string | null = null;
   private repeatedDecisions = 0;
   constructor(options: DecisionMakerOptions) { this.client = options.client; this.registry = options.registry; this.debugLog = options.debugLog; this.maxRetries = options.maxRetries; this.skills = options.skills; }
   get lastCall(): LlmCallRecord | null { return this.lastCallRecord; }
+  get activity(): LlmActivity {
+    const active = [...this.activeCalls.entries()].at(-1)?.[1];
+    return active === undefined
+      ? { thinking: false, callType: null, startedAt: null }
+      : { thinking: true, callType: active.callType, startedAt: new Date(active.startedAt).toISOString() };
+  }
   get runtimeState(): LlmRuntimeState { return this.runtime; }
   resume(): void { this.runtime = "READY"; this.repeatedDecisions = 0; this.lastDecisionKey = null; }
 
   async decide(input: DecisionInput, ctx: ToolContext): Promise<AgentDecision> {
-    const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot);
-    const shots = this.skills ? fewShotsFromSkills(this.skills.recent({ limit: FEW_SHOT_FETCH })) : [];
-    const result = await this.completeWithRepair(AgentDecisionSchema, buildMessages(snapshot, this.registry.describe(), shots), "agent_decision");
-    const decision = result.decision as AgentDecision;
-    this.noteDecision(decision);
-    this.logResult(decision, result.raw, Date.now() - result.startedAt);
-    this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: decision.rationale ?? null });
-    return decision;
+    return this.withActivity("owner_instruction", async (startedAt) => {
+      const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot);
+      const shots = this.skills ? fewShotsFromSkills(this.skills.recent({ limit: FEW_SHOT_FETCH })) : [];
+      const result = await this.completeWithRepair(AgentDecisionSchema, buildMessages(snapshot, this.registry.describe(), shots), "agent_decision");
+      const decision = result.decision as AgentDecision;
+      this.noteDecision(decision);
+      this.logResult(decision, result.raw, Date.now() - startedAt);
+      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: concise(decision.rationale), success: true, error: null });
+      return decision;
+    });
   }
 
   async decideNextTask(input: DecisionInput, ctx: ToolContext, situation: string): Promise<NextTaskDecision> {
-    const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "director_decision", situation });
-    const result = await this.completeWithRepair(NextTaskSchema, buildDirectorMessages(snapshot, situation), "director_decision");
-    const decision = result.decision as NextTaskDecision;
-    this.noteDecision(decision);
-    this.logResult(decision, result.raw, Date.now() - result.startedAt);
-    this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.task.type, rationale: decision.rationale ?? null });
-    return decision;
+    return this.withActivity("background_director", async (startedAt) => {
+      const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "director_decision", situation });
+      const result = await this.completeWithRepair(NextTaskSchema, buildDirectorMessages(snapshot, situation), "director_decision");
+      const decision = result.decision as NextTaskDecision;
+      this.noteDecision(decision);
+      this.logResult(decision, result.raw, Date.now() - startedAt);
+      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale), success: true, error: null });
+      return decision;
+    });
   }
 
   async decideGoalAction(input: DecisionInput, ctx: ToolContext, context: string): Promise<NextGoalActionDecision> {
-    const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "goal_decision", goal_context: context });
-    const result = await this.completeWithRepair(NextGoalActionSchema, buildGoalDecisionMessages(snapshot, context), "goal_decision");
-    const decision = result.decision as NextGoalActionDecision;
-    this.noteDecision(decision);
-    this.logResult(decision, result.raw, Date.now() - result.startedAt);
-    this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: decision.rationale ?? null });
-    return decision;
+    return this.withActivity("goal_decision", async (startedAt) => {
+      const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "goal_decision", goal_context: context });
+      const result = await this.completeWithRepair(NextGoalActionSchema, buildGoalDecisionMessages(snapshot, context), "goal_decision");
+      const decision = result.decision as NextGoalActionDecision;
+      this.noteDecision(decision);
+      this.logResult(decision, result.raw, Date.now() - startedAt);
+      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale), success: true, error: null });
+      return decision;
+    });
+  }
+
+  private async withActivity<T>(callType: NonNullable<LlmActivity["callType"]>, action: (startedAt: number) => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
+    const id = this.nextActivityId++;
+    this.activeCalls.set(id, { callType, startedAt });
+    try { return await action(startedAt); }
+    catch (error) {
+      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: "unknown", rationale: null, success: false, error: conciseError(error) });
+      throw error;
+    } finally { this.activeCalls.delete(id); }
   }
 
   private async completeWithRepair<T extends object>(schema: { parse(input: unknown): T }, initial: LlmMessage[], eventPrefix: string): Promise<ParsedResult<T>> {
@@ -108,6 +134,17 @@ export class DecisionMaker {
   private logRequest(snapshot: StateSnapshot, extra: Record<string, unknown> = {}): void { this.debugLog.write({ event: "agent_decision", ...extra, from: snapshot.from, instruction: snapshot.instruction, state_snapshot: snapshot, tools: this.registry.names() }); }
   private logResult(decision: unknown, raw: string, durationMs: number): void { this.debugLog.write({ event: "agent_decision_result", llm_response: raw, decision, duration_ms: durationMs }); }
   private recordLastCall(record: LlmCallRecord): void { this.lastCallRecord = record; }
+}
+
+function concise(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length <= 240 ? normalized : `${normalized.slice(0, 237)}...`;
+}
+
+function conciseError(error: unknown): string {
+  const message = concise(error instanceof Error ? error.message : String(error)) ?? "unknown error";
+  return message.replace(/\b(api[_ -]?key|token|password|secret)\b\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]");
 }
 
 function repairMessages(messages: readonly LlmMessage[], raw: string, error: string, shape: string): LlmMessage[] {
