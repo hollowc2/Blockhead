@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import type { StorageLocation, StorageRepository } from "../memory/storage.js";
 import { bareName, countItem } from "./inventory.js";
 import { findBlocksNear } from "./world.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { observedTransfer } from "../status/deltas.js";
 
 /**
@@ -84,6 +84,7 @@ export async function countStoredItems(
   state: AgentState,
   storage: StorageRepository,
 ): Promise<Record<string, number>> {
+  requireWorldActionLease();
   const worldId = state.worldId;
   if (worldId === null) return {};
   const totals: Record<string, number> = {};
@@ -117,6 +118,7 @@ export async function deliverCarried(
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<{ delivered: number }> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
@@ -164,6 +166,7 @@ export async function deliverCarriedItems(
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<{ delivered: number }> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
@@ -214,6 +217,7 @@ export async function withdrawFromHomeChest(
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<{ withdrawn: number }> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
@@ -295,6 +299,7 @@ export async function measureStorage(
   state: AgentState,
   storage: StorageRepository,
 ): Promise<StorageMeasurement> {
+  requireWorldActionLease();
   const worldId = state.worldId;
   if (worldId === null) {
     return { chests: [], slotsTotal: 0, slotsUsed: 0, items: {}, missingChests: 0, reachable: false };
@@ -367,6 +372,7 @@ export async function transferItem(
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<{ moved: number }> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const itemId = bot.registry.itemsByName[bareName(itemName)]?.id;
   if (itemId === undefined) {

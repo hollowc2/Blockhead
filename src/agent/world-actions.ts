@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /** Scheduler-owned serialization and common cancellation helpers for Mineflayer. */
 export interface WorldActionLease {
   readonly owner: string;
@@ -5,6 +7,22 @@ export interface WorldActionLease {
   readonly signal: AbortSignal;
   /** Primitive acknowledgement: resolves only after the leased action settles. */
   readonly acknowledged: Promise<void>;
+}
+
+const worldActionContext = new AsyncLocalStorage<WorldActionLease>();
+
+/** Run code with the lease that owns its Mineflayer mutations. */
+export function withWorldActionLease<T>(lease: WorldActionLease, action: () => Promise<T>): Promise<T> {
+  return worldActionContext.run(lease, action);
+}
+
+/** Require a scheduler-owned context before a primitive touches the world. */
+export function requireWorldActionLease(signal?: AbortSignal): WorldActionLease {
+  const lease = worldActionContext.getStore();
+  if (lease === undefined) throw new Error("world mutation requires an active scheduler lease");
+  throwIfAborted(lease.signal);
+  throwIfAborted(signal);
+  return lease;
 }
 
 export interface WorldActionOptions {
@@ -60,7 +78,7 @@ export class WorldActionExecutor {
     const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise };
     this.cancelled = false;
     this.startedAt = Date.now();
-    const actionPromise = Promise.resolve().then(() => {
+    const actionPromise = withWorldActionLease(leased, async () => {
       throwIfAborted(controller.signal);
       return action(leased);
     });

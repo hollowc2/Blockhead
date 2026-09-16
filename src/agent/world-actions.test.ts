@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WorldActionExecutor, stopWorldPrimitives } from "./world-actions.js";
+import { WorldActionExecutor, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
+
+test("window primitives require a scheduler lease context", () => {
+  assert.throws(() => requireWorldActionLease(), /active scheduler lease/);
+});
+
+test("lease context is visible across awaited primitive work", async () => {
+  const executor = new WorldActionExecutor();
+  await executor.run("storage", new AbortController().signal, async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(requireWorldActionLease().owner, "storage");
+  });
+  assert.equal(executor.activeOwner, null);
+});
 
 test("world actions serialize and a cancelled waiter never acquires the lease", async () => {
   const executor = new WorldActionExecutor();
