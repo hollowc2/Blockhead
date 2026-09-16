@@ -1,6 +1,7 @@
 import type { GoalStatus, GoalSource, SuccessCriterion } from "../agent/goal.js";
 import type { StockpileKind } from "../agent/maintenance.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
+import type { LlmActivity } from "../llm/decider.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -38,6 +39,7 @@ export interface DashboardSnapshot {
   inventory: InventorySummary | null;
   danger: DangerSummary | null;
   llmLastCall: LlmLastCallSummary;
+  llmActivity: LlmActivity;
   path: PathSummary | null;
   recentEvents: readonly RecentEvent[];
   recentFailures: readonly RecentFailure[];

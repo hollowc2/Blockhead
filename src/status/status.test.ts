@@ -10,7 +10,7 @@ const input = (overrides: Partial<StatusInput> = {}): StatusInput => ({
   startedAtMs: 1_000, nowMs: () => 4_000, player: "CobbleBob", connected: true,
   state: { self: { position: { x: 1, y: 2, z: 3 }, health: 20, food: 18, dimension: "overworld" }, timePhase: "day" },
   scheduler: { active: task(), queued: [], interruptPending: false, pendingInterruptReason: null, blockedActions: () => [] },
-  goal: null, decider: { lastCall: { at: 2_000, latencyMs: 50, tool: "gather_food", rationale: "safe" } },
+  goal: null, decider: { lastCall: { at: 2_000, latencyMs: 50, tool: "gather_food", rationale: "safe", success: true, error: null } },
   client: { endpoint: "http://127.0.0.1:8080", modelName: "local", healthState: "ok", reachable: true, lastSuccessAt: 2_500, consecutiveFailures: 0, lastFailure: null },
   inDeathLoop: false, outcomes: { last: null, consecutiveFailures: 0, recent: () => [] }, ...overrides,
 });

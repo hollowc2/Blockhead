@@ -110,6 +110,7 @@ export class DashboardTelemetryCollector {
       inventory,
       danger,
       llmLastCall: projectLlmLastCall(lastCall),
+      llmActivity: this.source.decider?.activity ?? { thinking: false, callType: null, startedAt: null },
       path: null,
       recentEvents: this.source.eventHistory.recentEvents().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
       recentFailures: this.source.eventHistory.recentFailures().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
