@@ -55,6 +55,19 @@ test("collects a connected bot snapshot without retaining the bot", () => {
   notStrictEqual(snapshot.inventory, (bot as unknown as { inventory: unknown }).inventory);
 });
 
+test("reads the current bot from the getter after a reconnect", () => {
+  const firstBot = { username: "FirstBot", entity: { position: { x: 1, y: 64, z: 1 } }, inventory: { items: () => [] } } as unknown as Bot;
+  const secondBot = { username: "SecondBot", entity: { position: { x: 2, y: 64, z: 2 } }, inventory: { items: () => [] } } as unknown as Bot;
+  let currentBot: Bot | null = firstBot;
+  const collector = new DashboardTelemetryCollector(source({ bot: () => currentBot }));
+
+  equal(collector.snapshot().connection.player, "FirstBot");
+  currentBot = secondBot;
+  equal(collector.snapshot().connection.player, "SecondBot");
+  currentBot = null;
+  equal(collector.snapshot().connection.connected, false);
+});
+
 test("projects an active goal and active task", () => {
   const goal = { id: "goal-1", description: "Prepare", source: "owner", status: "active", createdAt: "2026-01-01T00:00:00.000Z", currentStep: "gather", successCriteria: [], recentResults: [] };
   const task = { id: "task-1", type: "collect_resource", priority: 70, source: "user", objective: "Gather wood", parameters: {}, status: "active", createdAt: "2026-01-01T00:00:00.000Z" };

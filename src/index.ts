@@ -61,6 +61,7 @@ import { ConnectionStateMachine } from "./agent/connection-state.js";
 import { stopWorldPrimitives } from "./agent/world-actions.js";
 import { EventHistory } from "./dashboard/event-history.js";
 import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
+import { startDashboard } from "./dashboard/lifecycle.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -163,6 +164,7 @@ const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, c
 const taskOutcomes = new TaskOutcomeTracker({ bus });
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
+let dashboardServer: ReturnType<typeof startDashboard> = null;
 
 // The live bot session. `shutdown` and the bootstrap-resume hooks act on the
 // session currently being attempted; between attempts this is null.
@@ -234,6 +236,14 @@ statusServer = new StatusServer({
 });
 if (config.status?.enabled ?? true) statusServer.start();
 
+dashboardServer = startDashboard({
+  enabled: config.dashboard?.enabled ?? true,
+  host: config.dashboard?.host ?? "0.0.0.0",
+  port: config.dashboard?.port ?? 3000,
+  logger,
+  snapshot: () => dashboardTelemetry.snapshot(),
+});
+
 process.on("exit", () => {
   taskOutcomes.dispose();
   eventHistory.dispose();
@@ -267,6 +277,7 @@ async function shutdown(code: number): Promise<void> {
   goals.dispose();
   taskOutcomes.dispose();
   statusServer?.stop();
+  dashboardServer?.stop();
   tui.stop();
   db.close();
   debugLog.close();
