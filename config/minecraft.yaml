@@ -19,7 +19,7 @@ status:
 # --- 30.1 agent.yaml: identity, behavior, LLM -------------------------------
 agent:
   name: CobbleBob
-  owner: Corey
+  owner: Barnabyisbig
 
 behavior:
   concise_chat: true       # short task-oriented replies (spec 3)
