@@ -55,6 +55,8 @@ import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipTool
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
+import type { WorldMutation } from "../agent/world-actions.js";
+import { revalidateAction } from "../policy/action-boundary.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -240,7 +242,15 @@ export class BootstrapRunner {
           `bootstrap:${this.worldId ?? "unknown"}`,
           controller.signal,
           () => this.runLeased(controller.signal),
-          { onCancel: () => stopWorldPrimitives(this.opts.bot), onRecovery: () => stopWorldPrimitives(this.opts.bot) },
+          {
+            beforeMutation: (mutation: WorldMutation) => {
+              const point = mutation.point ?? this.opts.bot.entity?.position;
+              if (!point) throw new Error("bootstrap mutation policy revalidation requires a live bot position");
+              const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, { blockName: mutation.blockName });
+              if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "bootstrap mutation rejected by policy");
+            },
+            onCancel: () => stopWorldPrimitives(this.opts.bot), onRecovery: () => stopWorldPrimitives(this.opts.bot),
+          },
         );
       } finally {
         controller.abort(new Error("bootstrap settled"));
