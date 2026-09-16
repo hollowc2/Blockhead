@@ -52,6 +52,10 @@ interface DynamicGoalOwnership { generation: number; owner: string; removeAbort:
 const dynamicGoals = new WeakMap<Bot, DynamicGoalOwnership>();
 const dynamicGoalGenerations = new WeakMap<Bot, number>();
 
+function ownsDynamicGoal(bot: Bot, ownership: DynamicGoalOwnership): boolean {
+  return dynamicGoals.get(bot) === ownership && dynamicGoalGenerations.get(bot) === ownership.generation;
+}
+
 function invalidateDynamicGoal(bot: Bot): void {
   const current = dynamicGoals.get(bot);
   if (!current) return;
@@ -66,14 +70,14 @@ function installDynamicGoal(bot: Bot, owner: string, signal: AbortSignal, goal: 
   dynamicGoalGenerations.set(bot, generation);
   const ownership: DynamicGoalOwnership = { generation, owner, removeAbort: () => undefined, removeTeardown: () => undefined };
   const stopIfOwned = (): void => {
-    if (dynamicGoals.get(bot) !== ownership) return;
+    if (!ownsDynamicGoal(bot, ownership)) return;
     invalidateDynamicGoal(bot);
     try { bot.pathfinder.stop(); } catch { /* disconnect cleanup */ }
     try { bot.pathfinder.setGoal(null); } catch { /* disconnect cleanup */ }
   };
   ownership.removeAbort = () => signal.removeEventListener("abort", stopIfOwned);
   ownership.removeTeardown = registerWorldActionTeardown(bot, () => {
-    if (dynamicGoals.get(bot) === ownership) invalidateDynamicGoal(bot);
+    if (ownsDynamicGoal(bot, ownership)) invalidateDynamicGoal(bot);
   });
   signal.addEventListener("abort", stopIfOwned, { once: true });
   throwIfAborted(signal);
