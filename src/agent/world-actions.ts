@@ -173,7 +173,11 @@ export class WorldActionExecutor {
 }
 
 export function abortError(reason: unknown): Error {
-  const error = reason instanceof Error ? reason : new Error(reason === undefined ? "operation aborted" : String(reason));
+  // DOMException and some Mineflayer/plugin errors expose a read-only `name`.
+  // Clone the message instead of mutating the original cancellation reason.
+  const error = reason instanceof Error
+    ? new Error(reason.message, { cause: reason })
+    : new Error(reason === undefined ? "operation aborted" : String(reason));
   error.name = "AbortError";
   return error;
 }

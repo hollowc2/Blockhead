@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WorldActionExecutor, registerWorldActionTeardown, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
+import { WorldActionExecutor, abortError, registerWorldActionTeardown, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
+
+test("abortError does not mutate errors with a read-only name", () => {
+  const reason = Object.freeze(new DOMException("cancelled", "OperationError"));
+  const error = abortError(reason);
+  assert.equal(error.name, "AbortError");
+  assert.equal(error.message, "cancelled");
+  assert.equal(error.cause, reason);
+  assert.equal(reason.name, "OperationError");
+});
 
 test("window primitives require a scheduler lease context", () => {
   assert.throws(() => requireWorldActionLease(), /active scheduler lease/);
