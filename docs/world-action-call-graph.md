@@ -33,17 +33,19 @@ before settling or replacing a task.
 
 ## Direct Mineflayer mutations
 
-The task-dispatcher path owns these calls through its outer lease:
+The task-dispatcher path owns these calls through its outer lease. The
+Mineflayer calls themselves are concentrated in the adapter modules listed
+below; callers do not invoke them directly:
 
 ```text
-bot.pathfinder.goto / setGoal / stop
-bot.collectBlock.collect / cancelTask
+bot.pathfinder.goto / setGoal / stop (movement.ts; dynamic setGoal is sync)
+bot.collectBlock.collect / cancelTask (primitives.ts)
 bot.dig
 bot.placeBlock
 bot.equip
 bot.craft
-bot.openFurnace; Furnace.putFuel / putInput / takeOutput / close
-bot.openContainer / chest deposit/withdraw and window click/close
+bot.openFurnace; Furnace.putFuel / putInput / takeOutput / close (primitives.ts)
+bot.openContainer / chest deposit/withdraw and window click/close (primitives.ts)
 bot.toss
 bot.autoEat.eat / cancelEat
 bot.sleep / wake
@@ -83,6 +85,18 @@ bot.spawn -> state refresh -> bootstrap lease + rehydrated task dispatch
 `ConnectionStateMachine` validates lifecycle transitions and bounds reconnect
 backoff. Session listeners and runners are rebuilt per connection attempt.
 
+## Signal and settlement contract
+
+Every leased adapter checks the supplied signal before the Mineflayer call and
+after its promise settles. If a caller omits a signal, the adapter derives the
+active lease signal, so bootstrap and older maintenance call sites cannot
+escape cancellation. Container and furnace close are cleanup adapters: they
+intentionally do not reject merely because the lease signal is aborted, and
+are awaited while the lease remains owned. Mineflayer's container/furnace
+methods have no native AbortSignal parameter, so a genuinely hung plugin call
+cannot be forcibly interrupted; the executor retains ownership until that
+promise settles and the replacement cannot overlap it.
+
 ## Remaining audit items
 
 The current boundary coverage is:
@@ -99,17 +113,48 @@ The current boundary coverage is:
 Known limitations intentionally deferred to the next hardening slices:
 
 - dynamic `setGoal` follow/stop helpers remain synchronous because Mineflayer
-  exposes no settlement promise for those calls; cleanup still clears the goal
-  and stops the pathfinder before ownership is released;
+  exposes no settlement promise for those calls. Follow installs a lease-signal
+  stop hook, and executor cleanup clears the goal and stops the pathfinder
+  before ownership is released. The unavoidable limitation is that a server
+  tick can race the synchronous call; there is no Mineflayer acknowledgement
+  to await for that single call.
 - `bot.chat` in event/skill announcement paths is a protocol side effect, not a
   world mutation, but it has no scheduler lease;
-- some bootstrap craft/smelt and maintenance measurement paths still use the
-  active lease context without a TaskSignals parameter at every call site;
-- container/window close and transfer calls are lease-protected, but their
-  individual Mineflayer methods do not all accept a signal argument, so the
-  next slice should make those adapters uniformly signal-aware;
-- delta and immediate policy revalidation coverage is not yet uniform across
-  every storage/window/equipment/combat mutation.
+- protocol chat announcements are intentionally outside the world-action
+  lease; they are rate-limited side effects, not world mutations;
+- the adapter layer is uniformly signal-aware, but Mineflayer's individual
+  container/furnace methods do not accept AbortSignal and can only be awaited,
+  not forcibly interrupted;
+- `stopWorldPrimitives` in `agent/world-actions.ts` contains the remaining
+  direct shutdown calls. It is deliberately a best-effort disconnect/recovery
+  coordinator that must also work when no AsyncLocalStorage lease exists
+  (end/disconnect and process shutdown); task-scoped mutation paths use the
+  lease-bound adapters. This is the one explicit unleased cleanup boundary.
+
+## Direct dangerous-call inventory
+
+The following direct calls remain, with their reason:
+
+- `src/agent/world-actions.ts`: pathfinder `stop`/`setGoal(null)`,
+  collectblock `cancelTask`, PvP `stop`, and current-window `close` — the
+  unleased disconnect/recovery cleanup boundary described above.
+- `src/minecraft/primitives.ts`: all equipment, digging, tossing, PvP,
+  collection, container, furnace, sleep, eating, armor, and window calls —
+  the explicit lease-bound adapter implementation; each performs signal and
+  lease checks at its boundary.
+- `src/minecraft/movement.ts`: pathfinder `goto`, dynamic `setGoal`, and
+  `stop` — the explicit movement adapter; dynamic calls are synchronous in
+  the Mineflayer API and have the settlement limitation above.
+- `src/minecraft/world.ts`: `bot.equip` and `bot.placeBlock` — the explicit
+  placement adapter; both are lease/signal checked and post-verified.
+- `src/minecraft/crafting.ts` and `src/minecraft/smelting.ts`: craft and
+  furnace calls — explicit lease/signal adapters; furnace close is awaited
+  cleanup.
+- `src/minecraft/events.ts` and skill announcement methods: `bot.chat` —
+  protocol announcements intentionally outside the world-action lease and
+  governed by chat throttles where skill-generated.
+- database/status `.close()` calls — local resource shutdown, not Mineflayer
+  world mutation.
 
 The next slices should close these items in subsystem order: storage/windows,
 bootstrap signal threading, then delta/policy contracts.
