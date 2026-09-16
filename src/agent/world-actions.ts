@@ -1,5 +1,18 @@
 /** Scheduler-owned serialization and common cancellation helpers for Mineflayer. */
-export interface WorldActionLease { readonly owner: string; readonly signal: AbortSignal; }
+export interface WorldActionLease {
+  readonly owner: string;
+  /** A lease-local signal. It is aborted when the caller cancels or the lease times out. */
+  readonly signal: AbortSignal;
+  /** Primitive acknowledgement: resolves only after the leased action settles. */
+  readonly acknowledged: Promise<void>;
+}
+
+export interface WorldActionOptions {
+  /** Maximum time to wait for the primitive to settle after cancellation. */
+  timeoutMs?: number;
+  /** Called when the lease is cancelled or times out, before acknowledgement is awaited. */
+  onCancel?: () => void | Promise<void>;
+}
 
 interface Waiter {
   owner: string; signal: AbortSignal;
@@ -14,9 +27,39 @@ export class WorldActionExecutor {
   get activeOwner(): string | null { return this.owner; }
   get pendingCount(): number { return this.waiters.length; }
 
-  async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>): Promise<T> {
+  async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options: WorldActionOptions = {}): Promise<T> {
     const lease = await this.acquire(owner, signal);
-    try { return await action(lease); } finally { this.release(lease); }
+    const controller = new AbortController();
+    let cancelled = false;
+    let cancelReason: unknown;
+    const forwardAbort = (): void => {
+      cancelled = true;
+      cancelReason = signal.reason;
+      controller.abort(signal.reason);
+    };
+    if (signal.aborted) forwardAbort();
+    else signal.addEventListener("abort", forwardAbort, { once: true });
+    const cancel = (reason: unknown = new Error("world action cancelled")): void => {
+      if (cancelled) return;
+      cancelled = true;
+      cancelReason = reason;
+      controller.abort(reason);
+      void options.onCancel?.();
+    };
+    const acknowledged = Promise.withResolvers<void>();
+    const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise };
+    const actionPromise = Promise.resolve().then(() => action(leased));
+    const timeout = options.timeoutMs === undefined ? undefined : setTimeout(() => cancel(new Error("world action lease timed out")), options.timeoutMs);
+    try {
+      const result = await actionPromise;
+      if (cancelled) throw abortError(cancelReason);
+      return result;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+      signal.removeEventListener("abort", forwardAbort);
+      acknowledged.resolve();
+      this.release(leased);
+    }
   }
 
   assertAvailable(): void {
@@ -25,7 +68,10 @@ export class WorldActionExecutor {
 
   private acquire(owner: string, signal: AbortSignal): Promise<WorldActionLease> {
     if (signal.aborted) return Promise.reject(abortError(signal.reason));
-    if (this.owner === null) { this.owner = owner; return Promise.resolve({ owner, signal }); }
+    if (this.owner === null) {
+      this.owner = owner;
+      return Promise.resolve({ owner, signal, acknowledged: Promise.resolve() });
+    }
     return new Promise((resolve, reject) => {
       const waiter: Waiter = { owner, signal, resolve, reject, onAbort: () => {
         const index = this.waiters.indexOf(waiter);
@@ -45,7 +91,7 @@ export class WorldActionExecutor {
       next.signal.removeEventListener("abort", next.onAbort);
       if (next.signal.aborted) { next.reject(abortError(next.signal.reason)); continue; }
       this.owner = next.owner;
-      next.resolve({ owner: next.owner, signal: next.signal });
+      next.resolve({ owner: next.owner, signal: next.signal, acknowledged: Promise.resolve() });
       return;
     }
   }

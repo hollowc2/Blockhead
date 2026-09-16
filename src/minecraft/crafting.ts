@@ -83,7 +83,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
   throwIfAborted(signal);
   const initial = countPlanks(bot);
   let planks = initial;
-  if (planks >= targetTotal) return { ok: true, name: "planks", crafted: 0 };
+  if (planks >= targetTotal) return failure("planks", "craft request made no inventory change (target already satisfied)");
 
   for (const [logName, logCount] of Object.entries(logsByType(bot))) {
     if (planks >= targetTotal) break;
@@ -115,7 +115,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
 export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
   throwIfAborted(signal);
   const initial = countSticks(bot);
-  if (initial >= targetTotal) return { ok: true, name: "stick", crafted: 0 };
+  if (initial >= targetTotal) return failure("stick", "craft request made no inventory change (target already satisfied)");
 
   const id = itemId(bot, "stick");
   if (id === null) return failure("stick", "unknown item 'stick'");

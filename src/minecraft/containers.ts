@@ -6,6 +6,7 @@ import type { Logger } from "pino";
 import type { StorageLocation, StorageRepository } from "../memory/storage.js";
 import { bareName, countItem } from "./inventory.js";
 import { findBlocksNear } from "./world.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic container primitives (spec 22/23): locate home storage and
@@ -113,7 +114,9 @@ export async function deliverCarried(
   storage: StorageRepository,
   itemName: string,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<{ delivered: number }> {
+  throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
     logger.warn("no chest at home to deposit into");
@@ -130,8 +133,10 @@ export async function deliverCarried(
 
   try {
     const container = await bot.openContainer(chest);
+    throwIfAborted(signal);
     try {
       await container.deposit(itemId, null, before);
+      throwIfAborted(signal);
     } finally {
       await container.close();
     }
@@ -155,7 +160,9 @@ export async function deliverCarriedItems(
   storage: StorageRepository,
   itemNames: readonly string[],
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<{ delivered: number }> {
+  throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
     logger.warn("no chest at home to deposit into");
@@ -164,8 +171,10 @@ export async function deliverCarriedItems(
   let delivered = 0;
   try {
     const container = await bot.openContainer(chest);
+    throwIfAborted(signal);
     try {
       for (const name of itemNames) {
+        throwIfAborted(signal);
         const before = countItem(bot, name);
         if (before === 0) continue;
         const itemId = bot.registry.itemsByName[bareName(name)]?.id;
@@ -175,8 +184,10 @@ export async function deliverCarriedItems(
         }
         try {
           await container.deposit(itemId, null, before);
+          throwIfAborted(signal);
           delivered += Math.max(0, before - countItem(bot, name));
         } catch (err) {
+          throwIfAborted(signal);
           logger.warn({ err: String(err), item: name }, "chest deposit failed");
         }
       }
@@ -198,7 +209,9 @@ export async function withdrawFromHomeChest(
   itemName: string,
   count: number,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<{ withdrawn: number }> {
+  throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
     logger.warn("no chest at home to withdraw from");
@@ -212,8 +225,10 @@ export async function withdrawFromHomeChest(
   const before = countItem(bot, itemName);
   try {
     const container = await bot.openContainer(chest);
+    throwIfAborted(signal);
     try {
       await container.withdraw(itemId, null, count);
+      throwIfAborted(signal);
     } finally {
       await container.close();
     }
@@ -346,7 +361,9 @@ export async function transferItem(
   itemName: string,
   count: number,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<{ moved: number }> {
+  throwIfAborted(signal);
   const itemId = bot.registry.itemsByName[bareName(itemName)]?.id;
   if (itemId === undefined) {
     logger.warn({ item: itemName }, "no item id for transfer");
@@ -358,27 +375,33 @@ export async function transferItem(
   let destinationAfter = 0;
   try {
     const source = await bot.openContainer(from);
+    throwIfAborted(signal);
     try {
       sourceBefore = source.containerCount(itemId, null);
       await source.withdraw(itemId, null, count);
+      throwIfAborted(signal);
       sourceAfter = source.containerCount(itemId, null);
     } finally {
       await source.close();
     }
   } catch (err) {
+    throwIfAborted(signal);
     logger.warn({ err: String(err), item: itemName }, "transfer withdraw failed");
     return { moved: 0 };
   }
   try {
     const target = await bot.openContainer(to);
+    throwIfAborted(signal);
     try {
       destinationBefore = target.containerCount(itemId, null);
       await target.deposit(itemId, null, count);
+      throwIfAborted(signal);
       destinationAfter = target.containerCount(itemId, null);
     } finally {
       await target.close();
     }
   } catch (err) {
+    throwIfAborted(signal);
     logger.warn({ err: String(err), item: itemName }, "transfer deposit failed");
     return { moved: 0 };
   }

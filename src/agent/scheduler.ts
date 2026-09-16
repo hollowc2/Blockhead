@@ -4,7 +4,7 @@ import type { EventBus } from "../events/bus.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import { ActionWatchdog, actionFingerprint, type BlockView } from "./watchdog.js";
 import { TaskStatus, type NewTask, type Task } from "./task.js";
-import { WorldActionExecutor, type WorldActionLease } from "./world-actions.js";
+import { WorldActionExecutor, type WorldActionLease, type WorldActionOptions } from "./world-actions.js";
 
 export interface SchedulerOptions {
   bus: EventBus;
@@ -134,8 +134,8 @@ export class Scheduler {
 
   get worldActionOwner(): string | null { return this.worldExecutor.activeOwner; }
 
-  runWorldAction<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>): Promise<T> {
-    return this.worldExecutor.run(owner, signal, action);
+  runWorldAction<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options?: WorldActionOptions): Promise<T> {
+    return this.worldExecutor.run(owner, signal, action, options);
   }
 
   assertWorldActionAvailable(): void { this.worldExecutor.assertAvailable(); }

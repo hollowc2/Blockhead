@@ -39,3 +39,39 @@ test("a failed world action releases ownership and cleanup stops every primitive
   });
   assert.deepEqual(calls, ["path-stop", "goal-clear", "collect-cancel", "pvp-stop", "window-close"]);
 });
+
+test("lease cancellation aborts the primitive and acknowledges before ownership is released", async () => {
+  const executor = new WorldActionExecutor();
+  const controller = new AbortController();
+  let observedAbort = false;
+  let acknowledged = false;
+  const run = executor.run("timed", controller.signal, async (lease) => {
+    await new Promise<void>((resolve) => {
+      lease.signal.addEventListener("abort", () => { observedAbort = true; resolve(); }, { once: true });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return "done";
+  }, { timeoutMs: 5 });
+  await assert.rejects(run, /timed out|aborted/);
+  acknowledged = observedAbort && executor.activeOwner === null;
+  assert.equal(acknowledged, true);
+});
+
+test("external cancellation cannot let a replacement action overlap the old primitive", async () => {
+  const executor = new WorldActionExecutor();
+  const firstController = new AbortController();
+  const secondController = new AbortController();
+  let firstSettled = false;
+  const first = executor.run("first", firstController.signal, async (lease) => {
+    await new Promise<void>((resolve) => lease.signal.addEventListener("abort", () => resolve(), { once: true }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    firstSettled = true;
+  });
+  const second = executor.run("second", secondController.signal, async () => {
+    assert.equal(firstSettled, true);
+  });
+  firstController.abort(new Error("replace"));
+  await assert.rejects(first, /replace/);
+  await second;
+  assert.equal(executor.activeOwner, null);
+});

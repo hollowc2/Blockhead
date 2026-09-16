@@ -181,6 +181,10 @@ export class TaskDispatcher {
       }
     } finally {
       await stopWorldPrimitives(this.opts.bot);
+      // The dispatcher must never hand control back to arbitration while a
+      // Mineflayer primitive still owns the serialized world lease.
+      try { this.opts.scheduler.assertWorldActionAvailable(); }
+      catch (err) { this.opts.logger.error({ taskId: task.id, err: String(err) }, "stale world primitive after task cleanup"); }
       if (timer !== undefined) clearTimeout(timer);
       clearInterval(progressTimer);
     }

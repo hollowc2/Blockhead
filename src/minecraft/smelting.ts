@@ -44,6 +44,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
     return { ok: false, reason: `unknown item '${options.outputName}'` };
   }
 
+  throwIfAborted(options.signal);
   const window = await bot.openFurnace(furnaceBlock);
   try {
     for (let pass = 0; pass < options.times; pass++) {
@@ -54,7 +55,9 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
       if (fuel === null) return { ok: false, reason: `no ${options.fuelName} to burn` };
 
       await window.putFuel(fuel.type, null, 1);
+      throwIfAborted(options.signal);
       await window.putInput(input.type, null, 1);
+      throwIfAborted(options.signal);
 
       const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, options.signal);
       if (!done) return { ok: false, reason: "smelting timed out" };
@@ -65,7 +68,9 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
         return { ok: false, reason: `could not take smelted item: ${String(err)}` };
       }
     }
-    return { ok: true, smelted: options.times };
+    return options.times > 0
+      ? { ok: true, smelted: options.times }
+      : { ok: false, reason: "smelt request made no inventory change" };
   } finally {
     await window.close().catch(() => undefined);
   }

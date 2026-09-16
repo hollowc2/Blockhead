@@ -116,8 +116,12 @@ export async function collectBlocks(
     try {
       await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), () => {
         void bot.collectBlock.cancelTask();
-      });
+      }, signal);
     } catch (err) {
+      // An aborted primitive must never advance to another target. The old
+      // implementation treated cancellation like an unreachable block and
+      // could keep acting after a replacement task acquired the lease.
+      throwIfAborted(signal);
       skipped++;
       logSkip?.(block, err);
       continue;
@@ -192,13 +196,15 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
   try {
     await bot.equip(item, "hand");
     throwIfAborted(signal);
-  } catch {
+  } catch (err) {
+    throwIfAborted(signal);
     return null;
   }
   try {
     await bot.placeBlock(spot.reference, spot.face);
     throwIfAborted(signal);
-  } catch {
+  } catch (err) {
+    throwIfAborted(signal);
     return null;
   }
   return bot.blockAt(spot.position);
