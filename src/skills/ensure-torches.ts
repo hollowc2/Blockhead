@@ -189,10 +189,10 @@ export class EnsureTorchesRunner {
     // Fuel: carried -> home chest -> fresh coal ore.
     let fuel = countFuelItems(bot);
     if (fuel < crafts) {
-      await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, "coal", crafts - fuel, this.opts.logger);
+      await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, "coal", crafts - fuel, this.opts.logger, this.signals?.signal);
       fuel = countFuelItems(bot);
       if (fuel < crafts) {
-        await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, "charcoal", crafts - fuel, this.opts.logger);
+        await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, "charcoal", crafts - fuel, this.opts.logger, this.signals?.signal);
         fuel = countFuelItems(bot);
       }
       if (fuel < crafts) {
@@ -241,7 +241,7 @@ export class EnsureTorchesRunner {
     }
     if (this.stopRequested) return this.interrupted(data);
 
-    const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, "torch", this.opts.logger);
+    const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, "torch", this.opts.logger, this.signals?.signal);
     data.delivered = delivered.delivered;
     const done = delivered.delivered > 0;
     if (done) {

@@ -45,6 +45,18 @@ export async function cancelCollection(bot: Bot): Promise<void> {
   await bot.collectBlock.cancelTask();
 }
 
+/** Start a collectblock operation under the same lease/signal boundary as all other mutations. */
+export async function collectBlockOperation(
+  bot: Bot,
+  blocks: Parameters<NonNullable<Bot["collectBlock"]>["collect"]>[0],
+  options: { ignoreNoPath: boolean },
+  signal?: AbortSignal,
+): Promise<void> {
+  requireWorldActionLease(signal);
+  await bot.collectBlock.collect(blocks, options);
+  throwIfAborted(signal);
+}
+
 export type ContainerWindow = Chest | Dispenser;
 
 /** Open a container while retaining the caller's lease and cancellation contract. */

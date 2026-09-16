@@ -107,7 +107,8 @@ function stopOnAbort(bot: Bot, signal?: AbortSignal): () => void {
 
 /** Walk to a player's current position, then stop. */
 export async function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -127,7 +128,8 @@ export async function comeToPlayer(bot: Bot, playerName: string, signal?: AbortS
 
 /** Keep within follow range of a player, re-pathing as they move. */
 export async function followPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -137,27 +139,36 @@ export async function followPlayer(bot: Bot, playerName: string, signal?: AbortS
 
   // Dynamic goal: pathfinder re-computes the path as the target moves.
   throwIfAborted(signal);
+  // setGoal is synchronous and has no settlement promise. The lease cleanup
+  // also calls stop/setGoal(null); this listener covers a signal abort that
+  // occurs while the dynamic goal remains active after this function returns.
+  stopOnAbort(bot, signal);
   bot.pathfinder.setGoal(new goals.GoalFollow(target, FOLLOW_RANGE), true);
   return { ok: true, status: "started" };
 }
 
 /** Cancel any active movement goal, including a follow. */
 export function stopFollowing(bot: Bot, signal?: AbortSignal): MovementResult {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
+  throwIfAborted(signal);
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }
 
 /** Stop in place wherever the bot currently is. */
 export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
+  throwIfAborted(signal);
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }
 
 /** Navigate to the configured home location. */
 export async function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): Promise<MovementResult> {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -179,7 +190,8 @@ export async function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal)
 
 /** Navigate to an arbitrary location in the current dimension. */
 export async function travelTo(bot: Bot, location: Location, signal?: AbortSignal): Promise<MovementResult> {
-  requireWorldActionLease(signal);
+  const lease = requireWorldActionLease(signal);
+  signal ??= lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -241,9 +253,10 @@ export async function raceTrip(
   trip: Promise<TravelWaitResult>,
   options: TravelWaitOptions,
 ): Promise<TravelWaitResult> {
-  requireWorldActionLease(options.signal);
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
   const { promise: nap, resolve: resolveNap } = Promise.withResolvers<TravelWaitResult>();
-  const removeAbort = stopOnAbort(bot, options.signal);
+  const removeAbort = stopOnAbort(bot, signal);
   const poll = setInterval(() => {
     if (options.signal?.aborted || options.shouldAbort?.() === true) resolveNap({ status: "aborted" });
   }, ABORT_POLL_MS);
@@ -253,7 +266,7 @@ export async function raceTrip(
   );
 
   try {
-    if (options.signal?.aborted) return { status: "aborted" };
+    if (signal.aborted) return { status: "aborted" };
     const winner = await Promise.race([trip, nap]);
     if (winner.status === "timed_out" || winner.status === "aborted") {
       bot.pathfinder.stop();
@@ -279,7 +292,8 @@ export async function raceTrip(
  * persisted home Y to the real ground once the bot is on the column.
  */
 export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
-  requireWorldActionLease(options.signal);
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { status: "not_ready" };
   if (options.dimension) {
@@ -288,7 +302,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     if (current !== expected) return { status: "wrong_dimension" };
   }
   if (!bot.registry) return { status: "not_ready" };
-  if (options.signal?.aborted) return { status: "aborted" };
+  if (signal.aborted) return { status: "aborted" };
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
 
@@ -301,7 +315,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   const trip = bot.pathfinder
     .goto(new goals.GoalNear(goal.x, goal.y, goal.z, range))
     .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-  return raceTrip(bot, trip, options);
+  return raceTrip(bot, trip, { ...options, signal });
 }
 
 /**
@@ -310,7 +324,8 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
  * the blocking primitive for skills that must be *somewhere* before acting.
  */
 export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
-  requireWorldActionLease(options.signal);
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
   const self: Entity | null = bot.entity;
   if (!self) return { status: "not_ready" };
   if (options.dimension) {
@@ -319,7 +334,7 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
     if (current !== expected) return { status: "wrong_dimension" };
   }
   if (!bot.registry) return { status: "not_ready" };
-  if (options.signal?.aborted) return { status: "aborted" };
+  if (signal.aborted) return { status: "aborted" };
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
 
@@ -331,5 +346,5 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
   const trip = bot.pathfinder
     .goto(new goals.GoalNear(location.x, location.y, location.z, range))
     .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-  return raceTrip(bot, trip, options);
+  return raceTrip(bot, trip, { ...options, signal });
 }

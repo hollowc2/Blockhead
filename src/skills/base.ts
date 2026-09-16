@@ -23,7 +23,7 @@ import {
   type PlacementSpot,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
-import { cancelCollection } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -576,7 +576,7 @@ export class BaseBuilderRunner {
 
       const before = have;
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
           await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {

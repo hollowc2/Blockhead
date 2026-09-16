@@ -38,7 +38,7 @@ import {
   type PlacementSpot,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillErrorCode, type SkillResult } from "./skill-library.js";
-import { cancelCollection } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
 import { freeChestSlotSpot } from "./base.js";
 
 /**
@@ -640,7 +640,7 @@ export class OrganizeStorageRunner {
 
       const before = have;
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
           await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {
@@ -698,7 +698,7 @@ export class OrganizeStorageRunner {
         if (targetBlock === null || !isChestBlock(targetBlock)) continue;
         if (sourceBlock === targetBlock) continue;
 
-        const transferred = await transferItem(bot, sourceBlock, targetBlock, name, count, this.opts.logger);
+        const transferred = await transferItem(bot, sourceBlock, targetBlock, name, count, this.opts.logger, this.signals?.signal);
         moved += transferred.moved;
         if (this.stopRequested) return moved;
       }

@@ -51,7 +51,7 @@ import {
   placeItemAt,
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
-import { cancelCollection, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
@@ -1615,7 +1615,7 @@ export class BootstrapRunner {
     const drops = lootDropsNear(bot, LOOT_RADIUS);
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
-      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => cancelCollection(bot), this.signal ?? undefined);
+      await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signal ?? undefined), () => cancelCollection(bot), this.signal ?? undefined);
     } catch (err) {
       return { ok: false, reason: `could not collect drops: ${String(err)}` };
     }

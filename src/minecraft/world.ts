@@ -4,7 +4,7 @@ import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
-import { cancelCollection } from "./primitives.js";
+import { cancelCollection, collectBlockOperation } from "./primitives.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -116,7 +116,7 @@ export async function collectBlocks(
     throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
     try {
-      await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), async () => {
+      await withTimeout(timeoutMs, collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
       }, signal);
     } catch (err) {

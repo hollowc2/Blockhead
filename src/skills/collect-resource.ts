@@ -17,7 +17,7 @@ import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, isRa
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
-import { cancelCollection } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
 import {
   ChatThrottle,
   expansionMessage,
@@ -355,7 +355,7 @@ export class CollectResourceRunner {
         // Travel failure: log, keep items, report delivery as impossible.
         this.opts.logger.warn({ status: returned.status }, "could not return home to deliver");
       } else if (carried > 0 || data.carriedAtStart > 0) {
-        const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, carriedName, this.opts.logger);
+        const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, carriedName, this.opts.logger, this.signals?.signal);
         if (delivered.delivered > 0) data.delivered = delivered.delivered;
       }
       // Phase 9: the run is home — end expedition mode with its status message
@@ -660,7 +660,7 @@ export class CollectResourceRunner {
 
       const before = countItem(bot, carriedName);
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
           await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {

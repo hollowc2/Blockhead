@@ -12,7 +12,7 @@ import { deliverCarriedItems } from "../minecraft/containers.js";
 import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
-import { cancelCollection, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
@@ -511,7 +511,7 @@ export class GatherFoodRunner {
     if (have < quantity) {
       if (have > 0 && countsFood) {
         // Partial kills still deliver what was gathered (spec 23).
-        const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger);
+        const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal);
         data.delivered = partial.delivered;
       }
       return this.fail(data, "RESOURCE_NOT_FOUND", `only ${have}/${quantity} ${countsFood ? "food" : "kills"} nearby`);
@@ -519,7 +519,7 @@ export class GatherFoodRunner {
 
     let complete: boolean;
     if (countsFood) {
-      const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger);
+      const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal);
       data.delivered = delivered.delivered;
       complete = delivered.delivered > 0;
       if (complete) {
@@ -635,7 +635,7 @@ export class GatherFoodRunner {
     const drops = lootDropsNear(bot, LOOT_RADIUS);
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
-      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
+      await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signals?.signal), async () => {
         await cancelCollection(bot);
       }, this.signals?.signal);
     } catch (err) {
@@ -663,7 +663,7 @@ export class GatherFoodRunner {
     if (targets.length > 0) {
       this.opts.logger.info({ blocks: targets.map((b) => b.name), radius }, "gather_food foraging");
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
           await cancelCollection(bot);
         }, this.signals?.signal);
         blocks = targets.length;
@@ -675,7 +675,7 @@ export class GatherFoodRunner {
     const drops = foodDropsNear(bot, radius);
     if (drops.length > 0) {
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signals?.signal), async () => {
         await cancelCollection(bot);
         }, this.signals?.signal);
       } catch (err) {

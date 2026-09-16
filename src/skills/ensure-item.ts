@@ -396,7 +396,7 @@ export class EnsureItemRunner {
     if (data.availableAtStart >= quantity) {
       const carried = countItem(bot, bare);
       if (isEquipmentName(bare) && carried < quantity) {
-        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, bare, quantity - carried, this.opts.logger);
+        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, bare, quantity - carried, this.opts.logger, this.signals?.signal);
         this.withdrawAccount(bare, withdrawn.withdrawn);
         data.withdrawals += withdrawn.withdrawn;
       }
@@ -666,7 +666,7 @@ export class EnsureItemRunner {
     const inChest = Math.max(0, (this.stored[bare] ?? 0));
     const fromChest = Math.min(count - carried, inChest);
     if (fromChest > 0) {
-      const withdrawn = await withdrawFromHomeChest(this.opts.bot, this.opts.state, this.opts.storage, bare, fromChest, this.opts.logger);
+      const withdrawn = await withdrawFromHomeChest(this.opts.bot, this.opts.state, this.opts.storage, bare, fromChest, this.opts.logger, this.signals?.signal);
       this.withdrawAccount(bare, withdrawn.withdrawn);
       if (withdrawn.withdrawn > 0) {
         this.opts.logger.info({ item: bare, count: withdrawn.withdrawn }, "ensure_item withdrew stock from the home chest");
@@ -744,7 +744,7 @@ export class EnsureItemRunner {
       if (!name.endsWith("_planks") || sitting <= 0) continue;
       const need = count - countPlanks(this.opts.bot);
       if (need <= 0) return { ok: true };
-      const withdrawn = await withdrawFromHomeChest(this.opts.bot, this.opts.state, this.opts.storage, name, Math.min(need, sitting), this.opts.logger);
+      const withdrawn = await withdrawFromHomeChest(this.opts.bot, this.opts.state, this.opts.storage, name, Math.min(need, sitting), this.opts.logger, this.signals?.signal);
       this.withdrawAccount(name, withdrawn.withdrawn);
     }
     return countPlanks(this.opts.bot) >= count ? { ok: true } : { ok: false, reason: "not enough planks in stock" };
@@ -768,7 +768,7 @@ export class EnsureItemRunner {
     // target already available, nothing new arrived to deposit.
     const deposit = !alreadyHadIt && !isEquipmentName(bare) && FOOD_ITEM_NAMES[bare] !== true;
     if (deposit && targetMet) {
-      const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, bare, this.opts.logger);
+      const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, bare, this.opts.logger, this.signals?.signal);
       data.delivered = delivered.delivered;
       if (delivered.delivered > 0) {
         this.stored[bare] = (this.stored[bare] ?? 0) + delivered.delivered;

@@ -206,7 +206,7 @@ export class UtilityRunner {
       let replaced = 0;
       for (const name of broken) {
         if (hasItem(bot, name)) continue; // a fresh copy already sits in the inventory
-        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, 1, this.opts.logger);
+        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, 1, this.opts.logger, this.signals?.signal);
         if (withdrawn.withdrawn > 0) replaced += 1;
       }
       if (this.stopRequested) return this.interruptedResult();
