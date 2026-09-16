@@ -394,6 +394,7 @@ export class GatherFoodRunner {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return this.interrupted(data);
     if (travel.status !== "arrived" && travel.status !== "already_there") {
@@ -468,7 +469,7 @@ export class GatherFoodRunner {
             const walked = await travelAndWait(
               bot,
               { x: waypoint.x, y: Math.floor(self.position.y), z: waypoint.z },
-              { timeoutMs: this.patrolTimeoutMs(radius), shouldAbort: this.travelAbort },
+              { timeoutMs: this.patrolTimeoutMs(radius), shouldAbort: this.travelAbort, signal: this.signals?.signal },
             );
             if (this.stopRequested) return this.interrupted(data);
             this.opts.logger.info(
@@ -595,6 +596,7 @@ export class GatherFoodRunner {
       timeoutMs: KILL_TIMEOUT_MS,
       range: 3,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (approach.status !== "arrived" && approach.status !== "already_there") {
@@ -613,7 +615,7 @@ export class GatherFoodRunner {
     try {
       await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(mob), () => {
         void bot.pvp.stop();
-      });
+      }, this.signals?.signal);
     } catch (err) {
       void bot.pvp.stop();
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
@@ -634,7 +636,7 @@ export class GatherFoodRunner {
     try {
       await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => {
         void bot.collectBlock.cancelTask();
-      });
+      }, this.signals?.signal);
     } catch (err) {
       return { ok: false, reason: `could not collect drops: ${String(err)}` };
     }

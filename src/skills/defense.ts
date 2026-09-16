@@ -228,6 +228,7 @@ export class DefenseRunner {
       timeoutMs: KILL_TIMEOUT_MS,
       range: 3,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (approach.status !== "arrived" && approach.status !== "already_there") {
@@ -246,7 +247,7 @@ export class DefenseRunner {
     try {
       await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(hostile), () => {
         void bot.pvp.stop();
-      });
+      }, this.signals?.signal);
     } catch (err) {
       void bot.pvp.stop();
       if (Date.now() > deadline) return { ok: false, reason: "defense budget exceeded" };

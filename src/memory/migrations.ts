@@ -244,4 +244,17 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE death_events ADD COLUMN recovery_task_id TEXT;
   CREATE INDEX IF NOT EXISTS idx_death_events_lifecycle ON death_events(world_id, lifecycle, id);
   `,
+  // v14: structured startup quarantine diagnostics. Corrupt or duplicate live
+  // rows are retained for audit while their runtime representation is made safe.
+  `
+  CREATE TABLE IF NOT EXISTS quarantine_diagnostics (
+      id INTEGER PRIMARY KEY,
+      table_name TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      field TEXT NOT NULL,
+      error TEXT NOT NULL,
+      recovery_action TEXT NOT NULL,
+      created_at TEXT NOT NULL
+  );
+  `,
 ];

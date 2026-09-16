@@ -211,7 +211,11 @@ export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onT
   }
   clearTimeout(timeoutHandle);
   signal?.removeEventListener("abort", abortHandler);
-  if (winner.ok) return winner.value;
+  if (winner.ok) {
+    if (signal?.aborted) throw new DOMException("operation aborted", "AbortError");
+    return winner.value;
+  }
+  if (signal?.aborted) throw new DOMException("operation aborted", "AbortError");
   throw new Error(winner.error);
 }
 

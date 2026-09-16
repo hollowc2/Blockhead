@@ -53,6 +53,13 @@ export const MinecraftConfigSchema = z.object({
       lava_avoidance_radius: z.number().int().positive().default(4),
     })
     .optional(),
+  /** Serialization boundary for every Mineflayer world mutation. */
+  world_actions: z
+    .object({
+      /** Optional upper bound; cancellation cleanup still keeps ownership until settlement. */
+      timeout_ms: z.number().int().positive().optional(),
+    })
+    .optional(),
   /** Local llama.cpp HTTP server connection (spec 30.1). */
   llm: z
     .object({

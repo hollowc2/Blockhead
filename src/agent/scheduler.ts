@@ -15,6 +15,7 @@ export interface SchedulerOptions {
    * instead of running, until the block's cooldown expires.
    */
   watchdog?: ActionWatchdog;
+  worldActionTimeoutMs?: number;
 }
 
 /** Why the active task is being asked to stop (Phase 8, spec 6). */
@@ -59,6 +60,7 @@ export class Scheduler {
   private readonly tasks: TasksRepository;
   private readonly watchdog: ActionWatchdog | undefined;
   private readonly worldExecutor = new WorldActionExecutor();
+  private readonly worldActionTimeoutMs: number | undefined;
 
   private readonly queue: Task[] = [];
   private activeTask: Task | null = null;
@@ -79,6 +81,7 @@ export class Scheduler {
     this.bus = options.bus;
     this.tasks = options.tasks;
     this.watchdog = options.watchdog;
+    this.worldActionTimeoutMs = options.worldActionTimeoutMs;
   }
 
   /** Rehydrate live tasks from the database. Call once at startup. */
@@ -133,9 +136,10 @@ export class Scheduler {
   }
 
   get worldActionOwner(): string | null { return this.worldExecutor.activeOwner; }
+  get worldActionDiagnostics() { return this.worldExecutor.diagnostics; }
 
   runWorldAction<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options?: WorldActionOptions): Promise<T> {
-    return this.worldExecutor.run(owner, signal, action, options);
+    return this.worldExecutor.run(owner, signal, action, { timeoutMs: this.worldActionTimeoutMs, ...options });
   }
 
   assertWorldActionAvailable(): void { this.worldExecutor.assertAvailable(); }

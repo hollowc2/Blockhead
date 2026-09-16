@@ -92,7 +92,12 @@ const watchdog = new ActionWatchdog({
   persistence: actions,
 });
 watchdog.rehydrate();
-const scheduler = new Scheduler({ bus, tasks: taskStore, watchdog });
+const scheduler = new Scheduler({
+  bus,
+  tasks: taskStore,
+  watchdog,
+  worldActionTimeoutMs: config.world_actions?.timeout_ms,
+});
 scheduler.loadFromPersistence();
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 

@@ -122,7 +122,20 @@ export class TasksRepository {
     const rows = this.db.sql
       .prepare(`${SELECT_TASK} ${UNFINISHED} ORDER BY created_at`)
       .all() as TaskRow[];
-    return rows.map(toTask);
+    return rows.flatMap((row) => {
+      try {
+        // Validate persisted JSON before the scheduler sees a row. A malformed
+        // live task is terminally quarantined, never allowed to crash startup.
+        JSON.parse(row.parameters_json);
+        if (row.resume_state_json !== null) JSON.parse(row.resume_state_json);
+        return [toTask(row)];
+      } catch (error) {
+        this.db.sql.prepare("UPDATE tasks SET status = ?, last_error = ?, completed_at = ? WHERE id = ?")
+          .run(TaskStatus.FAILED, `quarantined malformed task: ${String(error)}`, new Date().toISOString(), row.id);
+        this.quarantine(row.id, "parameters_json/resume_state_json", error, "mark failed and exclude from execution");
+        return [];
+      }
+    });
   }
 
   findLiveByWorkKey(workKey: string): Task | null {
@@ -162,6 +175,12 @@ export class TasksRepository {
       )
       .all(bounded) as TaskRow[];
     return rows.map(toTask);
+  }
+
+  private quarantine(rowId: string, field: string, error: unknown, recoveryAction: string): void {
+    this.db.sql.prepare(`INSERT INTO quarantine_diagnostics
+      (table_name, row_id, field, error, recovery_action, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run("tasks", rowId, field, String(error), recoveryAction, new Date().toISOString());
   }
 }
 

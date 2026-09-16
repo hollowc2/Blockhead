@@ -12,6 +12,15 @@ export interface WorldActionOptions {
   timeoutMs?: number;
   /** Called when the lease is cancelled or times out, before acknowledgement is awaited. */
   onCancel?: () => void | Promise<void>;
+  /** Recovery hook for a plugin that ignores cancellation or leaves state open. */
+  onRecovery?: (reason: unknown) => void | Promise<void>;
+}
+
+export interface WorldActionDiagnostics {
+  owner: string | null;
+  pending: number;
+  cancelled: boolean;
+  startedAt: number | null;
 }
 
 interface Waiter {
@@ -24,41 +33,55 @@ interface Waiter {
 export class WorldActionExecutor {
   private owner: string | null = null;
   private readonly waiters: Waiter[] = [];
+  private cancelled = false;
+  private startedAt: number | null = null;
   get activeOwner(): string | null { return this.owner; }
   get pendingCount(): number { return this.waiters.length; }
+  get diagnostics(): WorldActionDiagnostics { return { owner: this.owner, pending: this.waiters.length, cancelled: this.cancelled, startedAt: this.startedAt }; }
 
   async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options: WorldActionOptions = {}): Promise<T> {
     const lease = await this.acquire(owner, signal);
     const controller = new AbortController();
     let cancelled = false;
     let cancelReason: unknown;
-    const forwardAbort = (): void => {
-      cancelled = true;
-      cancelReason = signal.reason;
-      controller.abort(signal.reason);
-    };
-    if (signal.aborted) forwardAbort();
-    else signal.addEventListener("abort", forwardAbort, { once: true });
+    let cancellationCleanup: Promise<void> = Promise.resolve();
     const cancel = (reason: unknown = new Error("world action cancelled")): void => {
       if (cancelled) return;
       cancelled = true;
       cancelReason = reason;
       controller.abort(reason);
-      void options.onCancel?.();
+      cancellationCleanup = Promise.resolve(options.onCancel?.()).catch(() => undefined);
     };
+    const forwardAbort = (): void => { cancel(signal.reason); };
+    if (signal.aborted) forwardAbort();
+    else signal.addEventListener("abort", forwardAbort, { once: true });
     const acknowledged = Promise.withResolvers<void>();
     const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise };
-    const actionPromise = Promise.resolve().then(() => action(leased));
+    this.cancelled = false;
+    this.startedAt = Date.now();
+    const actionPromise = Promise.resolve().then(() => {
+      throwIfAborted(controller.signal);
+      return action(leased);
+    });
     const timeout = options.timeoutMs === undefined ? undefined : setTimeout(() => cancel(new Error("world action lease timed out")), options.timeoutMs);
+    let actionError: unknown = null;
     try {
-      const result = await actionPromise;
+      let result: T;
+      try { result = await actionPromise; }
+      catch (error) { actionError = error; throw error; }
       if (cancelled) throw abortError(cancelReason);
       return result;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
       signal.removeEventListener("abort", forwardAbort);
+      if (cancelled || actionError !== null) {
+        await cancellationCleanup;
+        await Promise.resolve(options.onRecovery?.(cancelReason ?? actionError)).catch(() => undefined);
+      }
       acknowledged.resolve();
       this.release(leased);
+      this.cancelled = false;
+      this.startedAt = null;
     }
   }
 

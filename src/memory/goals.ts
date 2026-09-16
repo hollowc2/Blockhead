@@ -79,10 +79,16 @@ export class GoalsRepository {
 
   /** The single live goal, or null. There is at most one active goal at a time. */
   getActive(): Goal | null {
-    const row = this.db.sql
-      .prepare(`${SELECT_GOAL} WHERE status = ? LIMIT 1`)
-      .get(GoalStatus.ACTIVE) as GoalRow | undefined;
-    return row ? this.safeGoal(row) : null;
+    const rows = this.db.sql
+      .prepare(`${SELECT_GOAL} WHERE status = ? ORDER BY created_at DESC, id DESC`)
+      .all(GoalStatus.ACTIVE) as GoalRow[];
+    const valid = rows.map((row) => this.safeGoal(row)).filter((goal): goal is Goal => goal !== null);
+    for (const duplicate of valid.slice(1)) {
+      this.db.sql.prepare("UPDATE goals SET status = ?, note = ?, ended_at = ? WHERE id = ? AND status = ?")
+        .run(GoalStatus.CANCELLED, "quarantined duplicate active goal during restart", new Date().toISOString(), duplicate.id, GoalStatus.ACTIVE);
+      this.quarantine(duplicate.id, "status", "duplicate ACTIVE row", "cancel duplicate; retain newest active goal");
+    }
+    return valid[0] ?? null;
   }
 
   private safeGoal(row: GoalRow): Goal | null {
@@ -91,9 +97,16 @@ export class GoalsRepository {
     } catch (error) {
       this.db.sql.prepare("UPDATE goals SET status = ?, note = ?, ended_at = ? WHERE id = ? AND status = ?")
         .run(GoalStatus.CANCELLED, `quarantined malformed persisted goal: ${String(error)}`, new Date().toISOString(), row.id, row.status);
+      this.quarantine(row.id, "success_criteria_json/recent_results_json", error, "cancel malformed goal and continue startup");
       logger.error({ goalId: row.id, error: String(error) }, "malformed persisted goal quarantined");
       return null;
     }
+  }
+
+  private quarantine(rowId: string, field: string, error: unknown, recoveryAction: string): void {
+    this.db.sql.prepare(`INSERT INTO quarantine_diagnostics
+      (table_name, row_id, field, error, recovery_action, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run("goals", rowId, field, String(error), recoveryAction, new Date().toISOString());
   }
 }
 

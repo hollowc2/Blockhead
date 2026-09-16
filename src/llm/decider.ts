@@ -8,6 +8,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolContext } from "../tools/types.js";
 
 export interface DecisionMakerOptions { client: LlamaClient; registry: ToolRegistry; debugLog: DebugLog; maxRetries: number; skills?: SkillsRepository; }
+export type LlmRuntimeState = "READY" | "PAUSED" | "DEGRADED";
 const FEW_SHOT_FETCH = 8;
 export interface LlmCallRecord { at: number; latencyMs: number; tool: string; rationale: string | null; }
 
@@ -20,14 +21,20 @@ export class DecisionMaker {
   private readonly maxRetries: number;
   private readonly skills?: SkillsRepository;
   private lastCallRecord: LlmCallRecord | null = null;
+  private runtime: LlmRuntimeState = "READY";
+  private lastDecisionKey: string | null = null;
+  private repeatedDecisions = 0;
   constructor(options: DecisionMakerOptions) { this.client = options.client; this.registry = options.registry; this.debugLog = options.debugLog; this.maxRetries = options.maxRetries; this.skills = options.skills; }
   get lastCall(): LlmCallRecord | null { return this.lastCallRecord; }
+  get runtimeState(): LlmRuntimeState { return this.runtime; }
+  resume(): void { this.runtime = "READY"; this.repeatedDecisions = 0; this.lastDecisionKey = null; }
 
   async decide(input: DecisionInput, ctx: ToolContext): Promise<AgentDecision> {
     const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot);
     const shots = this.skills ? fewShotsFromSkills(this.skills.recent({ limit: FEW_SHOT_FETCH })) : [];
     const result = await this.completeWithRepair(AgentDecisionSchema, buildMessages(snapshot, this.registry.describe(), shots), "agent_decision");
     const decision = result.decision as AgentDecision;
+    this.noteDecision(decision);
     this.logResult(decision, result.raw, Date.now() - result.startedAt);
     this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: decision.rationale ?? null });
     return decision;
@@ -37,6 +44,7 @@ export class DecisionMaker {
     const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "director_decision", situation });
     const result = await this.completeWithRepair(NextTaskSchema, buildDirectorMessages(snapshot, situation), "director_decision");
     const decision = result.decision as NextTaskDecision;
+    this.noteDecision(decision);
     this.logResult(decision, result.raw, Date.now() - result.startedAt);
     this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.task.type, rationale: decision.rationale ?? null });
     return decision;
@@ -46,6 +54,7 @@ export class DecisionMaker {
     const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "goal_decision", goal_context: context });
     const result = await this.completeWithRepair(NextGoalActionSchema, buildGoalDecisionMessages(snapshot, context), "goal_decision");
     const decision = result.decision as NextGoalActionDecision;
+    this.noteDecision(decision);
     this.logResult(decision, result.raw, Date.now() - result.startedAt);
     this.recordLastCall({ at: result.startedAt, latencyMs: Date.now() - result.startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: decision.rationale ?? null });
     return decision;
@@ -56,7 +65,13 @@ export class DecisionMaker {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       const startedAt = Date.now();
-      const raw = await this.client.complete(messages);
+      let raw: string;
+      try {
+        raw = await this.client.complete(messages);
+      } catch (error) {
+        this.runtime = "DEGRADED";
+        throw error;
+      }
       let parsed: unknown;
       try { parsed = extractJson(raw); }
       catch (err) {
@@ -75,7 +90,19 @@ export class DecisionMaker {
         if (attempt < this.maxRetries) messages = repairMessages(messages, raw, String(err), "the expected JSON schema");
       }
     }
+    this.runtime = "PAUSED";
     throw new Error(`model returned invalid output after ${this.maxRetries + 1} attempts: ${String(lastError)}`);
+  }
+
+  private noteDecision(decision: unknown): void {
+    const key = JSON.stringify(decision);
+    if (key === this.lastDecisionKey) this.repeatedDecisions++;
+    else { this.lastDecisionKey = key; this.repeatedDecisions = 0; }
+    if (this.repeatedDecisions >= 3) {
+      this.runtime = "PAUSED";
+      throw new Error("repeated identical model decisions exceeded retry budget");
+    }
+    this.runtime = "READY";
   }
 
   private logRequest(snapshot: StateSnapshot, extra: Record<string, unknown> = {}): void { this.debugLog.write({ event: "agent_decision", ...extra, from: snapshot.from, instruction: snapshot.instruction, state_snapshot: snapshot, tools: this.registry.names() }); }

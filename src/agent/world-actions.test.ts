@@ -70,8 +70,23 @@ test("external cancellation cannot let a replacement action overlap the old prim
   const second = executor.run("second", secondController.signal, async () => {
     assert.equal(firstSettled, true);
   });
+  // Let the first primitive install its cancellation handler before replacing
+  // it; cancellation before a primitive starts is covered by the lease guard.
+  await new Promise<void>((resolve) => setImmediate(resolve));
   firstController.abort(new Error("replace"));
   await assert.rejects(first, /replace/);
   await second;
   assert.equal(executor.activeOwner, null);
+});
+
+test("recovery runs after a rejected primitive and diagnostics identify the owner", async () => {
+  const executor = new WorldActionExecutor();
+  const recovered: unknown[] = [];
+  await assert.rejects(executor.run("broken", new AbortController().signal, async () => {
+    assert.equal(executor.diagnostics.owner, "broken");
+    throw new Error("plugin rejected");
+  }, { onRecovery: (reason) => { recovered.push(reason); } }), /plugin rejected/);
+  assert.equal(recovered.length, 1);
+  assert.equal(executor.diagnostics.owner, null);
+  assert.equal(executor.diagnostics.pending, 0);
 });

@@ -633,6 +633,7 @@ export class CollectResourceRunner {
     const travel = await travelAndWait(bot, position, {
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return { gained: 0, abort: null };
     if (travel.status !== "arrived" && travel.status !== "already_there") {
@@ -660,7 +661,7 @@ export class CollectResourceRunner {
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
           void bot.collectBlock.cancelTask();
-        });
+        }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err), resource: bare }, "collect pass failed");
         if (family === "pickaxe" && !hasFamilyTool(bot, family)) {
@@ -744,6 +745,7 @@ export class CollectResourceRunner {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (travel.status !== "arrived" && travel.status !== "already_there") {
@@ -756,6 +758,7 @@ export class CollectResourceRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
       range: 1,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (tableTravel.status !== "arrived" && tableTravel.status !== "already_there") {

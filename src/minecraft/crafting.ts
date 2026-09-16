@@ -65,11 +65,13 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
 
   try {
     const before = countItem(bot, name);
+    throwIfAborted(options.signal);
     await bot.craft(recipe, times, table);
     throwIfAborted(options.signal);
     const crafted = Math.max(0, countItem(bot, name) - before);
     return crafted > 0 ? { ok: true, name, crafted } : failure(name, "craft completed without an output delta");
   } catch (err) {
+    throwIfAborted(options.signal);
     return failure(name, String(err));
   }
 }
@@ -95,9 +97,11 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
     const craftsNeeded = Math.ceil((targetTotal - planks) / 4);
     const times = Math.min(craftsNeeded, logCount);
     try {
+      throwIfAborted(signal);
       await bot.craft(recipe, times);
       throwIfAborted(signal);
     } catch (err) {
+      throwIfAborted(signal);
       return failure(planksForLog(logName), String(err));
     }
     planks = countPlanks(bot);
@@ -124,10 +128,12 @@ export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortS
 
   const times = Math.ceil((targetTotal - initial) / 4);
   try {
+    throwIfAborted(signal);
     await bot.craft(recipe, times);
     throwIfAborted(signal);
     return { ok: true, name: "stick", crafted: countSticks(bot) - initial };
   } catch (err) {
+    throwIfAborted(signal);
     return failure("stick", String(err));
   }
 }

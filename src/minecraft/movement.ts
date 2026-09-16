@@ -3,6 +3,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type * as Pathfinder from "mineflayer-pathfinder";
 import { logger } from "../logger.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 // Node's cjs-module-lexer fails to detect the `goals` named export of this CJS
 // package, so named ESM imports would resolve to undefined at runtime.
@@ -78,14 +79,23 @@ function getPlayerEntity(bot: Bot, playerName: string): Entity | null {
 }
 
 /** Start a one-shot pathfinder goal. Cancellation is expected (e.g. a newer command wins). */
-function startGoto(bot: Bot, goal: Pathfinder.goals.Goal): void {
+function startGoto(bot: Bot, goal: Pathfinder.goals.Goal, signal?: AbortSignal): void {
+  throwIfAborted(signal);
   void bot.pathfinder.goto(goal).catch((err: unknown) => {
     logger.debug({ err: String(err) }, "movement goal ended");
   });
 }
 
+function stopOnAbort(bot: Bot, signal?: AbortSignal): () => void {
+  if (!signal) return () => undefined;
+  const stop = (): void => { try { bot.pathfinder.stop(); } catch { /* disconnect cleanup */ } };
+  if (signal.aborted) stop();
+  else signal.addEventListener("abort", stop, { once: true });
+  return () => signal.removeEventListener("abort", stop);
+}
+
 /** Walk to a player's current position, then stop. */
-export function comeToPlayer(bot: Bot, playerName: string): MovementResult {
+export function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal): MovementResult {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -99,12 +109,12 @@ export function comeToPlayer(bot: Bot, playerName: string): MovementResult {
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(p.x, p.y, p.z, ARRIVE_RANGE));
+  startGoto(bot, new goals.GoalNear(p.x, p.y, p.z, ARRIVE_RANGE), signal);
   return { ok: true, status: "started" };
 }
 
 /** Keep within follow range of a player, re-pathing as they move. */
-export function followPlayer(bot: Bot, playerName: string): MovementResult {
+export function followPlayer(bot: Bot, playerName: string, signal?: AbortSignal): MovementResult {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -113,6 +123,7 @@ export function followPlayer(bot: Bot, playerName: string): MovementResult {
   if (!target) return { ok: false, status: "player_not_found" };
 
   // Dynamic goal: pathfinder re-computes the path as the target moves.
+  throwIfAborted(signal);
   bot.pathfinder.setGoal(new goals.GoalFollow(target, FOLLOW_RANGE), true);
   return { ok: true, status: "started" };
 }
@@ -130,7 +141,7 @@ export function waitHere(bot: Bot): MovementResult {
 }
 
 /** Navigate to the configured home location. */
-export function goHome(bot: Bot, home: HomeLocation): MovementResult {
+export function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): MovementResult {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -146,12 +157,12 @@ export function goHome(bot: Bot, home: HomeLocation): MovementResult {
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(home.x, home.y, home.z, ARRIVE_RANGE));
+  startGoto(bot, new goals.GoalNear(home.x, home.y, home.z, ARRIVE_RANGE), signal);
   return { ok: true, status: "started" };
 }
 
 /** Navigate to an arbitrary location in the current dimension. */
-export function travelTo(bot: Bot, location: Location): MovementResult {
+export function travelTo(bot: Bot, location: Location, signal?: AbortSignal): MovementResult {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -161,7 +172,7 @@ export function travelTo(bot: Bot, location: Location): MovementResult {
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(location.x, location.y, location.z, ARRIVE_RANGE));
+  startGoto(bot, new goals.GoalNear(location.x, location.y, location.z, ARRIVE_RANGE), signal);
   return { ok: true, status: "started" };
 }
 
@@ -214,6 +225,7 @@ async function raceTrip(
   options: TravelWaitOptions,
 ): Promise<TravelWaitResult> {
   const { promise: nap, resolve: resolveNap } = Promise.withResolvers<TravelWaitResult>();
+  const removeAbort = stopOnAbort(bot, options.signal);
   const poll = setInterval(() => {
     if (options.signal?.aborted || options.shouldAbort?.() === true) resolveNap({ status: "aborted" });
   }, ABORT_POLL_MS);
@@ -232,6 +244,7 @@ async function raceTrip(
   } finally {
     clearInterval(poll);
     clearTimeout(timer);
+    removeAbort();
   }
 }
 

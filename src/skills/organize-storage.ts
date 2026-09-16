@@ -430,6 +430,7 @@ export class OrganizeStorageRunner {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
     });
     if (this.stopRequested) return this.interrupted(data);
     if (travel.status !== "arrived" && travel.status !== "already_there") {
@@ -640,7 +641,7 @@ export class OrganizeStorageRunner {
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
           void bot.collectBlock.cancelTask();
-        });
+        }, this.signals?.signal);
       } catch (err) {
         return { ok: false, reason: `could not collect logs: ${String(err)}` };
       }
