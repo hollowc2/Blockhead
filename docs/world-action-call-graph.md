@@ -85,22 +85,31 @@ backoff. Session listeners and runners are rebuilt per connection attempt.
 
 ## Remaining audit items
 
-These are intentionally still open for later focused slices:
+The current boundary coverage is:
 
-- movement primitive convenience APIs now await one-shot `goto` paths and
-  retain cancellation listeners until the pathfinder promise settles; dynamic
-  `setGoal` follow/stop helpers remain synchronous because Mineflayer exposes
-  no settlement promise for those calls;
+- one-shot movement, collection, placement, crafting, smelting, digging,
+  equipment, tossing, PvP, sleep, eating, and armor mutations have explicit
+  lease-bound adapters and signal checks;
+- timeout cancellation hooks are awaitable, and the shared timeout helper
+  observes plugin settlement before returning; dispatcher cancellation,
+  replacement, timeout, and disconnect cleanup await the lease acknowledgement;
+- container/window entry points require the AsyncLocalStorage lease context and
+  signal-aware paths re-check cancellation around transfers and close windows;
+
+Known limitations intentionally deferred to the next hardening slices:
+
+- dynamic `setGoal` follow/stop helpers remain synchronous because Mineflayer
+  exposes no settlement promise for those calls; cleanup still clears the goal
+  and stops the pathfinder before ownership is released;
 - `bot.chat` in event/skill announcement paths is a protocol side effect, not a
   world mutation, but it has no scheduler lease;
-- several bootstrap stage calls still rely on the lease cleanup callback rather
-  than passing the lease signal into every individual craft/smelt helper;
-- direct plugin calls in task runners are protected by the dispatcher lease,
-  and container/window primitives reject calls outside the AsyncLocalStorage
-  lease context; remaining non-container primitive APIs still rely on the
-  dispatcher boundary rather than requiring a token in their signatures;
+- some bootstrap craft/smelt and maintenance measurement paths still use the
+  active lease context without a TaskSignals parameter at every call site;
+- container/window close and transfer calls are lease-protected, but their
+  individual Mineflayer methods do not all accept a signal argument, so the
+  next slice should make those adapters uniformly signal-aware;
 - delta and immediate policy revalidation coverage is not yet uniform across
   every storage/window/equipment/combat mutation.
 
-The next slices should close these items in subsystem order: movement and
-primitive adapters, storage/windows, then delta/policy contracts.
+The next slices should close these items in subsystem order: storage/windows,
+bootstrap signal threading, then delta/policy contracts.
