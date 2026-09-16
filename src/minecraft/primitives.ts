@@ -10,6 +10,12 @@ export async function equipItem(bot: Bot, item: Item, signal?: AbortSignal): Pro
   throwIfAborted(signal);
 }
 
+export async function equipToolForBlock(bot: Bot, block: Parameters<NonNullable<Bot["tool"]>["equipForBlock"]>[0], signal?: AbortSignal): Promise<void> {
+  requireWorldActionLease(signal);
+  await bot.tool.equipForBlock(block);
+  throwIfAborted(signal);
+}
+
 export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
   requireWorldActionLease(signal);
   await bot.dig(block);
@@ -31,6 +37,11 @@ export async function pvpAttack(bot: Bot, target: Entity, signal?: AbortSignal):
 export async function pvpStop(bot: Bot, signal?: AbortSignal): Promise<void> {
   requireWorldActionCleanupLease();
   await bot.pvp.stop();
+}
+
+export async function cancelCollection(bot: Bot): Promise<void> {
+  requireWorldActionCleanupLease();
+  await bot.collectBlock.cancelTask();
 }
 
 export async function sleepAt(bot: Bot, bed: Parameters<Bot["sleep"]>[0], signal?: AbortSignal): Promise<void> {

@@ -387,7 +387,7 @@ export class EnsureItemRunner {
       return this.fail(data, "PATH_UNREACHABLE", `could not return home: ${returned.status}`, true);
     }
 
-    const stored = await countStoredItems(bot, this.opts.state, this.opts.storage);
+    const stored = await countStoredItems(bot, this.opts.state, this.opts.storage, this.signals?.signal);
     this.stored = { ...stored };
     data.availableAtStart = this.available(bare);
 

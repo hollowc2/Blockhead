@@ -83,12 +83,14 @@ export async function countStoredItems(
   bot: Bot,
   state: AgentState,
   storage: StorageRepository,
+  signal?: AbortSignal,
 ): Promise<Record<string, number>> {
-  requireWorldActionLease();
+  requireWorldActionLease(signal);
   const worldId = state.worldId;
   if (worldId === null) return {};
   const totals: Record<string, number> = {};
   for (const location of storage.list(worldId)) {
+    throwIfAborted(signal);
     const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
     if (block === null || !isChestBlock(block)) continue;
     try {

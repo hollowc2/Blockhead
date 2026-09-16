@@ -51,7 +51,7 @@ import {
   placeItemAt,
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
-import { digBlock, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { cancelCollection, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
@@ -1615,9 +1615,7 @@ export class BootstrapRunner {
     const drops = lootDropsNear(bot, LOOT_RADIUS);
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
-      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
-        await bot.collectBlock.cancelTask();
-      });
+      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => cancelCollection(bot), this.signal ?? undefined);
     } catch (err) {
       return { ok: false, reason: `could not collect drops: ${String(err)}` };
     }
@@ -1718,9 +1716,9 @@ export class BootstrapRunner {
       const stoneHere = isCobbleStone(block);
       try {
         await withTimeout(TRENCH_STEP_TIMEOUT_MS, (async () => {
-          await bot.tool.equipForBlock(block);
+          await equipToolForBlock(bot, block, this.signal ?? undefined);
           await digBlock(bot, block, this.signal ?? undefined);
-        })());
+        })(), undefined, this.signal ?? undefined);
       } catch (err) {
         return { ok: false, reason: `could not dig the trench: ${String(err)}` };
       }
@@ -2054,19 +2052,25 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * observed so no late rejection goes unhandled; `onTimeout` runs to cancel it
  * when possible (e.g. stopping pathfinding).
  */
-async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void): Promise<T> {
+async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void | Promise<void>, signal?: AbortSignal): Promise<T> {
   const awaited = promise.then(
     (value) => ({ ok: true, value } as const),
     (error) => ({ ok: false, error: String(error) } as const),
   );
   const { promise: timer, resolve: resolveTimer } = Promise.withResolvers<{ timedOut: true }>();
-  setTimeout(() => resolveTimer({ timedOut: true }), timeoutMs);
+  const timeoutHandle = setTimeout(() => resolveTimer({ timedOut: true }), timeoutMs);
+  const abort = (): void => resolveTimer({ timedOut: true });
+  signal?.addEventListener("abort", abort, { once: true });
 
   const winner = await Promise.race([awaited, timer]);
   if (winner && typeof winner === "object" && "timedOut" in winner) {
-    if (onTimeout) onTimeout();
-    throw new Error(`operation timed out after ${timeoutMs}ms`);
+    clearTimeout(timeoutHandle);
+    signal?.removeEventListener("abort", abort);
+    if (onTimeout) await onTimeout();
+    throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new Error(`operation timed out after ${timeoutMs}ms`);
   }
+  clearTimeout(timeoutHandle);
+  signal?.removeEventListener("abort", abort);
   if (winner.ok) return winner.value;
   throw new Error(winner.error);
 }
