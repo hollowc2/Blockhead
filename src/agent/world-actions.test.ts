@@ -137,6 +137,39 @@ test("external cancellation cannot let a replacement action overlap the old prim
   assert.equal(executor.activeOwner, null);
 });
 
+test("disconnect cleanup is awaited before a replacement becomes idle-owned", async () => {
+  const executor = new WorldActionExecutor();
+  const firstController = new AbortController();
+  let releaseCleanup!: () => void;
+  let cleanupStarted = false;
+  let replacementStarted = false;
+  const bot = {
+    collectBlock: {
+      cancelTask: () => new Promise<void>((resolve) => {
+        cleanupStarted = true;
+        releaseCleanup = resolve;
+      }),
+    },
+  } as any;
+  const first = executor.run("disconnecting", firstController.signal, async (lease) => {
+    await new Promise<void>((resolve) => lease.signal.addEventListener("abort", () => resolve(), { once: true }));
+  }, { onCancel: () => stopWorldPrimitives(bot) });
+  const replacement = executor.run("replacement", new AbortController().signal, async () => {
+    replacementStarted = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  firstController.abort(new Error("disconnect"));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(cleanupStarted, true);
+  assert.equal(replacementStarted, false);
+  releaseCleanup();
+  await assert.rejects(first, /disconnect/);
+  await replacement;
+  assert.equal(replacementStarted, true);
+  assert.equal(executor.activeOwner, null);
+  assert.equal(executor.pendingCount, 0);
+});
+
 test("recovery runs after a rejected primitive and diagnostics identify the owner", async () => {
   const executor = new WorldActionExecutor();
   const recovered: unknown[] = [];
