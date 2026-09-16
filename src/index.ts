@@ -58,6 +58,7 @@ import { TaskOutcomeTracker } from "./status/outcomes.js";
 import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
 import { ConnectionStateMachine } from "./agent/connection-state.js";
+import { stopWorldPrimitives } from "./agent/world-actions.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -169,6 +170,7 @@ interface Session {
   hostile: HostileTracker;
   /** Phase 12: session-scoped stockpile manager (dashboard readout). */
   maintenance: StockpileManager;
+  dispatcher: TaskDispatcher;
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
@@ -228,14 +230,16 @@ bus.on("task.failed", resumeBootstrapIfPending);
 bus.on("task.cancelled", resumeBootstrapIfPending);
 
 let shuttingDown = false;
-function shutdown(code: number): void {
+async function shutdown(code: number): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   const active = session;
   if (active !== null) {
     active.background.stop();
     active.hostile.detach();
-    active.bot.quit();
+    scheduler.requestCancel();
+    await active.dispatcher.waitForIdle();
+    await stopWorldPrimitives(active.bot);
   }
   goals.dispose();
   taskOutcomes.dispose();
@@ -245,15 +249,15 @@ function shutdown(code: number): void {
   debugLog.close();
   closeLogs();
   if (active !== null) {
+    active.bot.quit();
     active.bot.once("end", () => process.exit(code));
-    setTimeout(() => process.exit(code), 2000).unref();
   } else {
     process.exit(code);
   }
 }
 
-process.on("SIGINT", () => shutdown(0));
-process.on("SIGTERM", () => shutdown(0));
+process.on("SIGINT", () => { void shutdown(0); });
+process.on("SIGTERM", () => { void shutdown(0); });
 
 /**
  * Build one full bot session (bot + its skill graph) and run it until the
@@ -352,7 +356,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // the rest of the bot wiring; detached when the connection ends.
   const hostile = new HostileTracker(bot, bus);
   hostile.attach();
-  session = { bot, background, hostile, maintenance };
+  session = { bot, background, hostile, maintenance, dispatcher };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
