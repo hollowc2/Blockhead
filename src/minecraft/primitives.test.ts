@@ -60,3 +60,20 @@ test("crafting is rejected outside a scheduler lease", async () => {
   await assert.rejects(craftRecipe(bot, {} as any, 1, undefined, new AbortController().signal), /active scheduler lease/);
   assert.equal(crafted, false);
 });
+
+test("window mutations retain the opened block for each policy recheck", async () => {
+  const executor = new WorldActionExecutor();
+  const seen: Array<{ action: string; point?: { x: number; y: number; z: number } }> = [];
+  const bot = {
+    openContainer: async () => ({ deposit: async () => undefined, close: async () => undefined }),
+  } as any;
+  const block = { name: "chest", position: { x: 9, y: 64, z: -3 } } as any;
+  await executor.run("window-policy-point", new AbortController().signal, async () => {
+    const window = await openContainer(bot, block);
+    await deposit(window, 1, null, 1);
+  }, { beforeMutation: (mutation) => seen.push({ action: mutation.action, point: mutation.point }) });
+  assert.deepEqual(seen, [
+    { action: "container", point: block.position },
+    { action: "container", point: block.position },
+  ]);
+});
