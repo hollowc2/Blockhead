@@ -1001,6 +1001,13 @@ export class BootstrapRunner {
     if (existing !== null) return { ok: true, message: "Bed already placed at home." };
 
     if (findBedItem(bot) === null) {
+      // A persisted world may have completed the old WOOL stage by counting
+      // mixed colors together. Repair that state in place before attempting
+      // the color-specific bed recipe.
+      if (maxWoolColorCount(bot) < WOOL_TARGET) {
+        const wool = await this.stageWool();
+        if (!wool.ok) return wool;
+      }
       // Modern registries only know colored beds, and each color's recipe
       // demands matching wool ("red_bed" always wants red_wool, etc.); the
       // bed is crafted from whatever wool is actually carried. A fresh stock
