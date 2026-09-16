@@ -56,7 +56,11 @@ bot.pvp.attack / stop
 The implementations are distributed across `src/minecraft/*.ts` and
 `src/skills/*.ts`; each task runner receives `TaskSignals` from the dispatcher.
 The bootstrap entry point now also has an explicit scheduler lease and cleanup
-hooks.
+hooks; its lease-local `AbortSignal` is the state-machine equivalent of
+`TaskSignals` because bootstrap is session work rather than a queued `Task`.
+The scheduler-backed path is required for live world mutations; the
+no-scheduler runner path is retained only for read-only/test construction and
+cannot bypass the adapter lease requirement.
 
 ## Background probes and event-driven handlers
 
@@ -112,7 +116,8 @@ The current boundary coverage is:
 - container/window entry points require the AsyncLocalStorage lease context and
   signal-aware paths re-check cancellation around transfers and close windows;
   storage paths also re-check `useContainers` immediately before opening and
-  immediately before each deposit/withdraw, and credit only observed deltas;
+  immediately before each deposit/withdraw using the opened block's bound
+  location/type, and credit only observed deltas;
 - crafting, smelting, placement, and recovery production chains pass their
   task signal explicitly at the call sites; adapters still reject missing or
   already-aborted signals when called by compatibility/maintenance code;
@@ -135,8 +140,6 @@ Known limitations:
   to await for that single call.
 - `bot.chat` in event/skill announcement paths is a protocol side effect, not a
   world mutation, but it has no scheduler lease;
-- protocol chat announcements are intentionally outside the world-action
-  lease; they are rate-limited side effects, not world mutations;
 - the adapter layer is uniformly signal-aware, but Mineflayer's individual
   container/furnace methods do not accept AbortSignal and can only be awaited,
   not forcibly interrupted;
