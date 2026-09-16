@@ -918,7 +918,10 @@ export class BootstrapRunner {
     // Eating stays enabled so the hunt does not starve mid-kill (idempotent).
     bot.autoEat.enableAuto();
 
-    let have = countWool(bot);
+    // Bed recipes require three wool blocks of the same color. Counting all
+    // dyed wool together can leave the next BED stage with an uncrafteable
+    // mix such as one white, one brown, and one gray wool.
+    let have = maxWoolColorCount(bot);
     if (have >= target) return { ok: true, message: `Already carrying ${have} wool.` };
 
     const home = this.opts.state.home;
@@ -961,13 +964,13 @@ export class BootstrapRunner {
       const kill = await this.killMob(sheep);
       if (!kill.ok) return { ok: false, reason: kill.reason };
       kills += 1;
-      have = countWool(bot);
+      have = maxWoolColorCount(bot);
       if (have <= before) {
         this.announce(`Hunted ${kill.name}; no wool dropped.`);
       }
     }
 
-    have = countWool(bot);
+    have = maxWoolColorCount(bot);
     if (have < target) return { ok: false, reason: `only ${have}/${target} wool found nearby` };
     return { ok: true, message: `Hunted ${kills} sheep; ${have} wool ready.` };
   }
@@ -1953,13 +1956,15 @@ function findBedItem(bot: Bot): Item | null {
   return null;
 }
 
-/** Total wool blocks (any color) carried — the WOOL stage's metric. */
-function countWool(bot: Bot): number {
-  let total = 0;
+/** Largest carried stack of one wool color, which is the bed-stage metric. */
+export function maxWoolColorCount(bot: Bot): number {
+  const counts = new Map<string, number>();
   for (const item of bot.inventory.items()) {
-    if (bareName(item.name).endsWith("_wool")) total += item.count;
+    const name = bareName(item.name);
+    if (!name.endsWith("_wool")) continue;
+    counts.set(name, (counts.get(name) ?? 0) + item.count);
   }
-  return total;
+  return Math.max(0, ...counts.values());
 }
 
 /** Nearest sheep within `maxDistance` of the bot, or null. */
