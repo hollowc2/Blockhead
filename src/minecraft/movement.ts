@@ -78,12 +78,23 @@ function getPlayerEntity(bot: Bot, playerName: string): Entity | null {
   return bot.players[playerName]?.entity ?? null;
 }
 
-/** Start a one-shot pathfinder goal. Cancellation is expected (e.g. a newer command wins). */
-function startGoto(bot: Bot, goal: Pathfinder.goals.Goal, signal?: AbortSignal): void {
+/** Start a one-shot pathfinder goal and return its settlement promise.
+ *
+ * This deliberately does not detach the Mineflayer promise. Callers that own
+ * a world lease must keep awaiting this promise so a replacement action cannot
+ * overlap a still-running pathfinder operation.
+ */
+async function startGoto(bot: Bot, goal: Pathfinder.goals.Goal, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal);
-  void bot.pathfinder.goto(goal).catch((err: unknown) => {
+  const removeAbort = stopOnAbort(bot, signal);
+  try {
+    await bot.pathfinder.goto(goal);
+  } catch (err) {
     logger.debug({ err: String(err) }, "movement goal ended");
-  });
+    throw err;
+  } finally {
+    removeAbort();
+  }
 }
 
 function stopOnAbort(bot: Bot, signal?: AbortSignal): () => void {
@@ -95,7 +106,7 @@ function stopOnAbort(bot: Bot, signal?: AbortSignal): () => void {
 }
 
 /** Walk to a player's current position, then stop. */
-export function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal): MovementResult {
+export async function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -109,12 +120,12 @@ export function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal)
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(p.x, p.y, p.z, ARRIVE_RANGE), signal);
-  return { ok: true, status: "started" };
+  await startGoto(bot, new goals.GoalNear(p.x, p.y, p.z, ARRIVE_RANGE), signal);
+  return { ok: true, status: "done" };
 }
 
 /** Keep within follow range of a player, re-pathing as they move. */
-export function followPlayer(bot: Bot, playerName: string, signal?: AbortSignal): MovementResult {
+export async function followPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -141,7 +152,7 @@ export function waitHere(bot: Bot): MovementResult {
 }
 
 /** Navigate to the configured home location. */
-export function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): MovementResult {
+export async function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): Promise<MovementResult> {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -157,12 +168,12 @@ export function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): Move
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(home.x, home.y, home.z, ARRIVE_RANGE), signal);
-  return { ok: true, status: "started" };
+  await startGoto(bot, new goals.GoalNear(home.x, home.y, home.z, ARRIVE_RANGE), signal);
+  return { ok: true, status: "done" };
 }
 
 /** Navigate to an arbitrary location in the current dimension. */
-export function travelTo(bot: Bot, location: Location, signal?: AbortSignal): MovementResult {
+export async function travelTo(bot: Bot, location: Location, signal?: AbortSignal): Promise<MovementResult> {
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -172,8 +183,8 @@ export function travelTo(bot: Bot, location: Location, signal?: AbortSignal): Mo
     return { ok: true, status: "already_there" };
   }
 
-  startGoto(bot, new goals.GoalNear(location.x, location.y, location.z, ARRIVE_RANGE), signal);
-  return { ok: true, status: "started" };
+  await startGoto(bot, new goals.GoalNear(location.x, location.y, location.z, ARRIVE_RANGE), signal);
+  return { ok: true, status: "done" };
 }
 
 export type TravelWaitStatus =
