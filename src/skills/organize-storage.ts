@@ -518,7 +518,7 @@ export class OrganizeStorageRunner {
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (!chestItem.ok) return chestItem;
 
-    const placed = await placeItemAt(bot, chestItem.item, spot);
+    const placed = await placeItemAt(bot, chestItem.item, spot, this.signals?.signal);
     if (placed === null || !isChestBlock(placed)) {
       return { ok: false, reason: "could not place the chest at home" };
     }
@@ -574,7 +574,7 @@ export class OrganizeStorageRunner {
         if (this.stopRequested) return { ok: false, reason: "interrupted" };
         if (!gathered.ok) return { ok: false, reason: gathered.reason };
       }
-      const planks = await craftPlanks(bot, CHEST_PLANK_COST);
+      const planks = await craftPlanks(bot, CHEST_PLANK_COST, this.signals?.signal);
       if (!planks.ok) return { ok: false, reason: planks.reason };
     }
 
@@ -582,7 +582,7 @@ export class OrganizeStorageRunner {
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
     if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
 
-    const chest = await craftItem(bot, "chest", { craftingTable: table });
+    const chest = await craftItem(bot, "chest", { craftingTable: table, signal: this.signals?.signal });
     if (!chest.ok) return { ok: false, reason: chest.reason };
     const item = findItem(bot, "chest");
     return item !== null ? { ok: true, item } : { ok: false, reason: "the crafted chest vanished" };
@@ -603,16 +603,16 @@ export class OrganizeStorageRunner {
         const gathered = await this.gatherLogs(logsNeeded);
         if (!gathered.ok) return null;
       }
-      const planks = await craftPlanks(bot, TABLE_PLANK_COST);
+      const planks = await craftPlanks(bot, TABLE_PLANK_COST, this.signals?.signal);
       if (!planks.ok) return null;
     }
-    const table = await craftItem(bot, "crafting_table");
+    const table = await craftItem(bot, "crafting_table", { signal: this.signals?.signal });
     if (!table.ok) return null;
     const item = findItem(bot, "crafting_table");
     if (item === null) return null;
     const spot = findPlacementSpot(bot, home, 4);
     if (spot === null) return null;
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signals?.signal);
     return placed !== null && placed.name === "crafting_table" ? placed : null;
   }
 

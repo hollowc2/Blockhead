@@ -326,7 +326,7 @@ export class DeathRecoveryRunner {
     // task was interrupted (the pause keeps this run resumable).
     if (!interrupted) {
       data.returnedHome = await this.returnHome(signals);
-      data.equipmentRebuilt = await this.ensureEssentialEquipment();
+      data.equipmentRebuilt = await this.ensureEssentialEquipment(signals);
     }
 
     const total = Object.values(data.pickedUp).reduce((sum, count) => sum + count, 0);
@@ -488,15 +488,15 @@ export class DeathRecoveryRunner {
    * ingredients and a table are already at hand. Best-effort — returning to
    * operation never blocks on this.
    */
-  private async ensureEssentialEquipment(): Promise<boolean> {
+  private async ensureEssentialEquipment(signals: TaskSignals): Promise<boolean> {
     const bot = this.opts.bot;
     if (hasUsableFamilyTool(bot, "axe") && hasUsableFamilyTool(bot, "pickaxe")) return true;
-    if (!hasUsableFamilyTool(bot, "axe")) await this.obtainTool("axe");
-    if (!hasUsableFamilyTool(bot, "pickaxe")) await this.obtainTool("pickaxe");
+    if (!hasUsableFamilyTool(bot, "axe")) await this.obtainTool("axe", signals);
+    if (!hasUsableFamilyTool(bot, "pickaxe")) await this.obtainTool("pickaxe", signals);
     return hasUsableFamilyTool(bot, "axe") && hasUsableFamilyTool(bot, "pickaxe");
   }
 
-  private async obtainTool(family: "axe" | "pickaxe"): Promise<void> {
+  private async obtainTool(family: "axe" | "pickaxe", signals: TaskSignals): Promise<void> {
     const bot = this.opts.bot;
     const spares = family === "axe" ? ["iron_axe", "stone_axe", "wooden_axe"] : ["iron_pickaxe", "stone_pickaxe", "wooden_pickaxe"];
     // Probe the home chest once per family, not once per spare item: a home
@@ -505,7 +505,7 @@ export class DeathRecoveryRunner {
     const chest = findHomeChest(bot, this.opts.state, this.opts.storage);
     if (chest !== null) {
       for (const name of spares) {
-        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, 1, this.opts.logger);
+        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, 1, this.opts.logger, signals.signal);
         if (withdrawn.withdrawn > 0) return;
       }
     }
@@ -513,7 +513,7 @@ export class DeathRecoveryRunner {
     if (countItem(bot, "cobblestone") < 3 || countItem(bot, "stick") < 2) return;
     const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
     if (table === null) return;
-    await craftItem(bot, family === "axe" ? "stone_axe" : "stone_pickaxe", { craftingTable: table });
+    await craftItem(bot, family === "axe" ? "stone_axe" : "stone_pickaxe", { craftingTable: table, signal: signals.signal });
   }
 
   private errorCodeFor(failure: RecoveryFailure | null): string | undefined {

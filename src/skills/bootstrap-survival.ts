@@ -557,15 +557,15 @@ export class BootstrapRunner {
     }
 
     if (planksTarget > 0) {
-      const planks = await craftPlanks(bot, planksTarget);
+      const planks = await craftPlanks(bot, planksTarget, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
     }
     if (sticksTarget > 0) {
-      const sticks = await craftSticks(bot, sticksTarget);
+      const sticks = await craftSticks(bot, sticksTarget, this.signal ?? undefined);
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
     if (needTable) {
-      const table = await craftItem(bot, "crafting_table");
+      const table = await craftItem(bot, "crafting_table", { signal: this.signal ?? undefined });
       if (!table.ok) return { ok: false, reason: table.reason };
     }
 
@@ -644,13 +644,13 @@ export class BootstrapRunner {
             return null;
           }
         }
-        const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST);
+        const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST, this.signal ?? undefined);
         if (!planks.ok) {
           this.opts.logger.warn({ home: correctedHome, reason: planks.reason }, "crafting: could not craft planks for a new table");
           return null;
         }
       }
-      const crafted = await craftItem(bot, "crafting_table");
+      const crafted = await craftItem(bot, "crafting_table", { signal: this.signal ?? undefined });
       if (!crafted.ok) {
         this.opts.logger.warn({ home: correctedHome, reason: crafted.reason }, "crafting: could not craft a new table");
         return null;
@@ -704,7 +704,7 @@ export class BootstrapRunner {
         }
       }
     }
-    return craftItem(bot, name, { craftingTable: table });
+    return craftItem(bot, name, { craftingTable: table, signal: this.signal ?? undefined });
   }
 
   // --- stone tools (Phase 5.2) ---
@@ -750,7 +750,7 @@ export class BootstrapRunner {
     const missing = stoneTools.filter((name) => !hasItem(bot, name));
     if (missing.length > 0) {
       // Two planks per tool handle; the sword takes one, so this over-buys.
-      const sticks = await craftSticks(bot, countSticks(bot) + missing.length * 2);
+      const sticks = await craftSticks(bot, countSticks(bot) + missing.length * 2, this.signal ?? undefined);
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
 
@@ -997,7 +997,7 @@ export class BootstrapRunner {
       if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
       const table = await this.ensureTableAtHome();
       if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
-      const planks = await craftPlanks(bot, countPlanks(bot) + 3);
+      const planks = await craftPlanks(bot, countPlanks(bot) + 3, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
       const bed = await this.craftBedAtTable(table);
       if (!bed.ok) return { ok: false, reason: bed.reason };
@@ -1070,7 +1070,7 @@ export class BootstrapRunner {
           const logsPrep = await this.ensureLogs(logsNeeded);
           if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
         }
-        const planks = await craftPlanks(bot, CHEST_PLANK_COST);
+      const planks = await craftPlanks(bot, CHEST_PLANK_COST, this.signal ?? undefined);
         if (!planks.ok && countPlanks(bot) < CHEST_PLANK_COST && attempt === 0) {
           this.opts.logger.warn({ reason: planks.reason, planks: countPlanks(bot) }, "chest planks under-crafted; retrying");
         }
@@ -1212,12 +1212,12 @@ export class BootstrapRunner {
     if (planksNeeded > 0) {
       const logsPrep = await this.ensureLogs(Math.ceil(planksNeeded / 4));
       if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
-      const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded);
+      const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
     }
-    const sticks = await craftSticks(bot, countSticks(bot) + crafts);
+    const sticks = await craftSticks(bot, countSticks(bot) + crafts, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
-    const torches = await craftItem(bot, "torch", { times: crafts });
+    const torches = await craftItem(bot, "torch", { times: crafts, signal: this.signal ?? undefined });
     if (!torches.ok) return { ok: false, reason: torches.reason };
 
     have = countItem(bot, "torch");
@@ -1297,7 +1297,7 @@ export class BootstrapRunner {
 
     // Two sticks per tool (the sword takes one; over-buying is fine, as in
     // the stone-tools stage).
-    const sticks = await craftSticks(bot, countSticks(bot) + planned.length * 2);
+      const sticks = await craftSticks(bot, countSticks(bot) + planned.length * 2, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
     const made: string[] = [];
@@ -1419,7 +1419,7 @@ export class BootstrapRunner {
         .filter((name) => name.endsWith("_wool")),
     )].sort((a, b) => countItem(bot, b) - countItem(bot, a));
     for (const wool of colors) {
-      const made = await craftItem(bot, `${wool.replace(/_wool$/, "")}_bed`, { craftingTable: table });
+      const made = await craftItem(bot, `${wool.replace(/_wool$/, "")}_bed`, { craftingTable: table, signal: this.signal ?? undefined });
       if (made.ok) return made;
     }
     return failure("bed", "no bed recipe matches the carried wool");
@@ -1631,9 +1631,9 @@ export class BootstrapRunner {
 
     const needSticks = needPickaxe || needAxe ? 4 : 0;
     const planksTarget = countPlanks(bot) + (needPickaxe ? 3 : 0) + (needAxe ? 3 : 0) + (needSticks > 0 ? 2 : 0);
-    const planks = await craftPlanks(bot, planksTarget);
+    const planks = await craftPlanks(bot, planksTarget, this.signal ?? undefined);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countSticks(bot) + needSticks);
+    const sticks = await craftSticks(bot, countSticks(bot) + needSticks, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
     if (needPickaxe) {

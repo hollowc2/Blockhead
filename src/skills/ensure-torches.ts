@@ -223,10 +223,10 @@ export class EnsureTorchesRunner {
           if (this.stopRequested) return this.interrupted(data);
           if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
         }
-        const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded);
+        const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded, this.signals?.signal);
         if (!planks.ok) return this.fail(data, "TOOL_REQUIRED", planks.reason);
       }
-      const sticks = await craftSticks(bot, countSticks(bot) + sticksNeeded);
+      const sticks = await craftSticks(bot, countSticks(bot) + sticksNeeded, this.signals?.signal);
       if (!sticks.ok) return this.fail(data, "TOOL_REQUIRED", sticks.reason);
     }
 
@@ -235,7 +235,7 @@ export class EnsureTorchesRunner {
     // TORCHES stage. The table-window variant opens the table and has failed
     // with "missing ingredient" on this server.
     if (this.stopRequested) return this.interrupted(data);
-    const torches = await craftItem(bot, "torch", { times: crafts });
+    const torches = await craftItem(bot, "torch", { times: crafts, signal: this.signals?.signal });
     if (!torches.ok) {
       return this.fail(data, "TOOL_REQUIRED", torches.reason);
     }
@@ -310,9 +310,9 @@ export class EnsureTorchesRunner {
         const gathered = await this.gatherLogs(logsNeeded);
         if (!gathered.ok) return { ok: false, reason: gathered.reason };
       }
-      const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST);
+      const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST, this.signals?.signal);
       if (!planks.ok) return { ok: false, reason: planks.reason };
-      const crafted = await craftItem(bot, "crafting_table");
+      const crafted = await craftItem(bot, "crafting_table", { signal: this.signals?.signal });
       if (!crafted.ok) return { ok: false, reason: crafted.reason };
       const item = findItem(bot, "crafting_table");
       if (item === null) return { ok: false, reason: "the crafted table vanished" };
@@ -325,7 +325,7 @@ export class EnsureTorchesRunner {
         }
       }
       if (spot === null) return { ok: false, reason: "no floor space to place a crafting table at home" };
-      const placed = await placeItemAt(bot, item, spot);
+      const placed = await placeItemAt(bot, item, spot, this.signals?.signal);
       if (placed === null || placed.name !== "crafting_table") {
         return { ok: false, reason: "could not place a crafting table at home" };
       }
@@ -348,11 +348,11 @@ export class EnsureTorchesRunner {
       const gathered = await this.gatherLogs(logsNeeded);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
     }
-    const planks = await craftPlanks(bot, countPlanks(bot) + 3 + 2);
+    const planks = await craftPlanks(bot, countPlanks(bot) + 3 + 2, this.signals?.signal);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countSticks(bot) + 2);
+    const sticks = await craftSticks(bot, countSticks(bot) + 2, this.signals?.signal);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
-    const made = await craftItem(bot, "wooden_pickaxe", { craftingTable: table });
+    const made = await craftItem(bot, "wooden_pickaxe", { craftingTable: table, signal: this.signals?.signal });
     if (!made.ok) return { ok: false, reason: made.reason };
     this.opts.logger.info({}, "ensure_torches crafted a wooden pickaxe");
     return { ok: true };

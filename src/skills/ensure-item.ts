@@ -558,6 +558,7 @@ export class EnsureItemRunner {
         fuelName: "oak_log",
         outputName: "charcoal",
         times: charcoalMissing,
+        signal: this.signals?.signal,
       });
       if (!smelt.ok) {
         return { errorCode: "NOT_READY", reason: `charcoal production failed: ${smelt.reason}`, retryable: true };
@@ -591,6 +592,7 @@ export class EnsureItemRunner {
     const crafted = await craftItem(this.opts.bot, name, {
       times: step.quantity,
       craftingTable: step.table ? (table ?? undefined) : undefined,
+      signal: this.signals?.signal,
     });
     if (!crafted.ok) {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: crafted.reason, retryable: true };
@@ -628,6 +630,7 @@ export class EnsureItemRunner {
       fuelName: fuelItem.name,
       outputName: bare,
       times: step.quantity,
+      signal: this.signals?.signal,
     });
     if (!smelted.ok) {
       return { errorCode: "NOT_READY", reason: smelted.reason, retryable: true };
@@ -700,7 +703,7 @@ export class EnsureItemRunner {
     if (!hasItem(bot, "crafting_table")) {
       const planks = await this.materializePlanks(TABLE_PLANK_COST);
       if (planks.ok) {
-        const crafted = await craftItem(bot, "crafting_table");
+        const crafted = await craftItem(bot, "crafting_table", { signal: this.signals?.signal });
         if (!crafted.ok) return null;
       }
     }
@@ -709,7 +712,7 @@ export class EnsureItemRunner {
     if (item === null) return null;
     const spot = stationSlotSpot(bot, home, "crafting_table") ?? findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z });
     if (spot === null) return null;
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signals?.signal);
     return placed !== null && placed.name === "crafting_table" ? placed : null;
   }
 
@@ -724,7 +727,7 @@ export class EnsureItemRunner {
     if (!hasItem(bot, "furnace")) {
       const stone = await this.materialize("stone", FURNACE_STONE_COST);
       if (stone.ok) {
-        const crafted = await craftItem(bot, "furnace");
+      const crafted = await craftItem(bot, "furnace", { signal: this.signals?.signal });
         if (!crafted.ok) return null;
       }
     }
@@ -733,7 +736,7 @@ export class EnsureItemRunner {
     if (item === null) return null;
     const spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, { x: home.x, y: home.y, z: home.z }, 6);
     if (spot === null) return null;
-    const placed = await placeItemAt(bot, item, spot);
+    const placed = await placeItemAt(bot, item, spot, this.signals?.signal);
     return placed !== null && placed.name === "furnace" ? placed : null;
   }
 

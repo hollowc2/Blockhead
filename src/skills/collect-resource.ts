@@ -775,12 +775,12 @@ export class CollectResourceRunner {
       const gathered = await this.gatherLogsForTool(logsNeeded);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
     }
-    const planks = await craftPlanks(bot, countPlanks(bot) + 3);
+    const planks = await craftPlanks(bot, countPlanks(bot) + 3, this.signals?.signal);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countItem(bot, "stick") + 2);
+    const sticks = await craftSticks(bot, countItem(bot, "stick") + 2, this.signals?.signal);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
-    const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table });
+    const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table, signal: this.signals?.signal });
     if (!made.ok) return { ok: false, reason: made.reason };
     return { ok: true };
   }

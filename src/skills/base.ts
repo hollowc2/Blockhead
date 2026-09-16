@@ -274,11 +274,11 @@ function findReferenceFor(bot: Bot, cell: Vec3, placed: ReadonlySet<string>): Pi
  * Returns the block the server ended up with, or null when nothing could be
  * equipped or placed.
  */
-async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet<string>): Promise<Block | null> {
+async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet<string>, signal?: AbortSignal): Promise<Block | null> {
   const support = findReferenceFor(bot, cell, placed);
   if (support === null) return null;
   const spot: PlacementSpot = { position: cell, ...support };
-  const placedBlock = await placeItemAt(bot, item, spot);
+  const placedBlock = await placeItemAt(bot, item, spot, signal);
   return placedBlock !== null && !isAir(placedBlock) ? placedBlock : null;
 }
 
@@ -469,7 +469,7 @@ export class BaseBuilderRunner {
         if (this.stopRequested) return this.interrupted(data);
         if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
       }
-      const planks = await craftPlanks(bot, before.planksNeeded);
+      const planks = await craftPlanks(bot, before.planksNeeded, this.signals?.signal);
       if (this.stopRequested) return this.interrupted(data);
       if (!planks.ok) return this.fail(data, "INSUFFICIENT_MATERIALS", planks.reason);
     }
@@ -480,7 +480,7 @@ export class BaseBuilderRunner {
     if (before.doorMissing && findDoorItem(bot) === null) {
       const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
       if (table !== null) {
-        const door = await craftItem(bot, "oak_door", { craftingTable: table });
+        const door = await craftItem(bot, "oak_door", { craftingTable: table, signal: this.signals?.signal });
         if (!door.ok) {
           this.opts.logger.warn({ reason: door.reason }, "build_base: could not craft a door; leaving the gap");
         }
@@ -498,7 +498,7 @@ export class BaseBuilderRunner {
       if (!isAir(bot.blockAt(cell))) continue;
       const plank = findPlanksItem(bot);
       if (plank === null) break;
-      const block = await placeAtCell(bot, plank, cell, placedCells);
+      const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);
       if (block !== null) {
         placedCells.add(cellKey(cell));
         data.placedWalls += 1;
@@ -511,7 +511,7 @@ export class BaseBuilderRunner {
         if (!isAir(bot.blockAt(cell))) continue;
         const plank = findPlanksItem(bot);
         if (plank === null) break;
-        const block = await placeAtCell(bot, plank, cell, placedCells);
+        const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);
         if (block !== null) {
           placedCells.add(cellKey(cell));
           data.placedRoof += 1;
@@ -525,7 +525,7 @@ export class BaseBuilderRunner {
       if (doorItem !== null) {
         const lower = layout.doorCells[0]!;
         if (isAir(bot.blockAt(lower))) {
-          const block = await placeAtCell(bot, doorItem, lower, placedCells);
+          const block = await placeAtCell(bot, doorItem, lower, placedCells, this.signals?.signal);
           if (block !== null && isDoorBlock(block)) {
             data.doorPlaced = true;
             placedCells.add(cellKey(lower));
