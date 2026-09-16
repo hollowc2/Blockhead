@@ -87,8 +87,10 @@ backoff. Session listeners and runners are rebuilt per connection attempt.
 
 These are intentionally still open for later focused slices:
 
-- movement tools can still call fire-and-forget `setGoal` directly when invoked
-  as a tool; soft chat interrupts already enqueue leased movement tasks;
+- movement primitive convenience APIs still expose fire-and-forget `setGoal`
+  and `goto` paths when called outside a task; high-level movement tools now
+  enqueue leased scheduler tasks, and awaited trips retain the lease until
+  `goto` settles after cancellation;
 - `bot.chat` in event/skill announcement paths is a protocol side effect, not a
   world mutation, but it has no scheduler lease;
 - several bootstrap stage calls still rely on the lease cleanup callback rather
