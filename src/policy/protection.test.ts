@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_HOME_POLICY, createProtectedRegion } from "../minecraft/protection.js";
 import { checkBlockDestruction, checkBlockPlacement, classifyBlock } from "./protection.js";
+import { revalidateAction } from "./action-boundary.js";
+import { MinecraftConfigSchema } from "../config/schema.js";
 
 const region = createProtectedRegion({
   name: "home",
@@ -72,4 +74,19 @@ test("the default home policy allows containers, beds, tables, furnaces; forbids
   assert.equal(DEFAULT_HOME_POLICY.fire, false);
   assert.equal(DEFAULT_HOME_POLICY.lava, false);
   assert.equal(DEFAULT_HOME_POLICY.breakStructure, false);
+});
+
+test("last-safe-point policy revalidation rejects protected mutations before the adapter call", () => {
+  const config = MinecraftConfigSchema.parse({
+    server: { host: "h", port: 25565, username: "CobbleBob" },
+    home: { x: 0, y: 64, z: 0 },
+  });
+  const bot = { entity: { position: inside }, health: 20, findBlocks: () => [] } as any;
+  const deniedPlace = revalidateAction(bot, "place", inside, config, region, { blockName: "torch" });
+  assert.equal(deniedPlace.allowed, false);
+  const deniedContainer = revalidateAction(bot, "container", inside, config, {
+    ...region,
+    policy: { ...region.policy, useContainers: false },
+  });
+  assert.equal(deniedContainer.allowed, false);
 });
