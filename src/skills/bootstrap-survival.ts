@@ -1531,6 +1531,7 @@ export class BootstrapRunner {
       outputName: "charcoal",
       times: needed,
       timeoutMs: SMELT_TIMEOUT_MS,
+      signal: this.signal ?? undefined,
     });
     if (!smelt.ok) return { ok: false, reason: smelt.reason };
     return { ok: true, have: countFuelItems(bot) };
@@ -1561,6 +1562,7 @@ export class BootstrapRunner {
       outputName: "iron_ingot",
       times: count,
       timeoutMs: SMELT_TIMEOUT_MS,
+      signal: this.signal ?? undefined,
     });
     if (!smelt.ok) return { ok: false, reason: smelt.reason };
     return { ok: true, ingots: countItem(bot, "iron_ingot") };
