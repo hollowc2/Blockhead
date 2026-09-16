@@ -29,7 +29,7 @@ behavior:
 
 llm:
   base_url: http://127.0.0.1:8080
-  request_timeout_ms: 30000
+  request_timeout_ms: 120000
   http_retries: 1
   schema_retries: 1
 
