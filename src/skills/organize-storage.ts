@@ -698,7 +698,7 @@ export class OrganizeStorageRunner {
         if (targetBlock === null || !isChestBlock(targetBlock)) continue;
         if (sourceBlock === targetBlock) continue;
 
-        const transferred = await transferItem(bot, sourceBlock, targetBlock, name, count, this.opts.logger, this.signals?.signal);
+        const transferred = await transferItem(bot, this.opts.state, sourceBlock, targetBlock, name, count, this.opts.logger, this.signals?.signal);
         moved += transferred.moved;
         if (this.stopRequested) return moved;
       }

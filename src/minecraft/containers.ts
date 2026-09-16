@@ -9,6 +9,15 @@ import { findBlocksNear } from "./world.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { closeWindow, deposit, openContainer, withdraw } from "./primitives.js";
 import { observedTransfer } from "../status/deltas.js";
+import { canPerform } from "./protection.js";
+
+/** Re-check container policy at the last safe point before each window mutation. */
+function assertContainerAllowed(state: AgentState, block: Block): void {
+  const region = state.protectedRegion;
+  if (!canPerform("useContainers", region, { x: block.position.x, y: block.position.y, z: block.position.z })) {
+    throw new Error("container use rejected by protected-region policy");
+  }
+}
 
 /**
  * Deterministic container primitives (spec 22/23): locate home storage and
@@ -95,6 +104,7 @@ export async function countStoredItems(
     const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
     if (block === null || !isChestBlock(block)) continue;
     try {
+      assertContainerAllowed(state, block);
       const chest = await openContainer(bot, block, signal);
       try {
         for (const item of chest.containerItems()) {
@@ -138,9 +148,11 @@ export async function deliverCarried(
   }
 
   try {
+    assertContainerAllowed(state, chest);
     const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
+      assertContainerAllowed(state, chest);
       await deposit(container, itemId, null, before, signal);
     } finally {
       await closeWindow(container);
@@ -177,6 +189,7 @@ export async function deliverCarriedItems(
   }
   let delivered = 0;
   try {
+    assertContainerAllowed(state, chest);
     const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
@@ -190,6 +203,7 @@ export async function deliverCarriedItems(
           continue;
         }
         try {
+          assertContainerAllowed(state, chest);
           await deposit(container, itemId, null, before, signal);
           delivered += Math.max(0, before - countItem(bot, name));
         } catch (err) {
@@ -232,9 +246,11 @@ export async function withdrawFromHomeChest(
   }
   const before = countItem(bot, itemName);
   try {
+    assertContainerAllowed(state, chest);
     const container = await openContainer(bot, chest, signal);
     throwIfAborted(signal);
     try {
+      assertContainerAllowed(state, chest);
       await withdraw(container, itemId, null, count, signal);
     } finally {
       await closeWindow(container);
@@ -315,6 +331,7 @@ export async function measureStorage(
       continue;
     }
     try {
+      assertContainerAllowed(state, block);
       const chest = await openContainer(bot, block, signal);
       try {
         const items: Record<string, number> = {};
@@ -367,6 +384,7 @@ export async function measureStorage(
  */
 export async function transferItem(
   bot: Bot,
+  state: AgentState,
   from: Block,
   to: Block,
   itemName: string,
@@ -386,10 +404,12 @@ export async function transferItem(
   let destinationBefore = 0;
   let destinationAfter = 0;
   try {
+    assertContainerAllowed(state, from);
     const source = await openContainer(bot, from, signal);
     throwIfAborted(signal);
     try {
       sourceBefore = source.containerCount(itemId, null);
+      assertContainerAllowed(state, from);
       await withdraw(source, itemId, null, count, signal);
       sourceAfter = source.containerCount(itemId, null);
     } finally {
@@ -401,10 +421,12 @@ export async function transferItem(
     return { moved: 0 };
   }
   try {
+    assertContainerAllowed(state, to);
     const target = await openContainer(bot, to, signal);
     throwIfAborted(signal);
     try {
       destinationBefore = target.containerCount(itemId, null);
+      assertContainerAllowed(state, to);
       await deposit(target, itemId, null, count, signal);
       destinationAfter = target.containerCount(itemId, null);
     } finally {
