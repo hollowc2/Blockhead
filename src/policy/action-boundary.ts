@@ -29,6 +29,12 @@ export function revalidateAction(
   if (action === "container" && !canPerform("useContainers", region, point)) {
     return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "container use rejected by protected-region policy" } };
   }
+  if (action === "craft" && options.blockName === "crafting_table" && !canPerform("useCraftingTables", region, point)) {
+    return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "crafting-table use rejected by protected-region policy" } };
+  }
+  if (action === "smelt" && ["furnace", "smoker", "blast_furnace"].includes(options.blockName ?? "") && !canPerform("useFurnaces", region, point)) {
+    return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "furnace use rejected by protected-region policy" } };
+  }
   if (action === "dig") {
     if (options.blockName === undefined) return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "current block state is unavailable" } };
     const verdict = checkBlockDestruction(options.blockName, point, region, options.userRequested === true);

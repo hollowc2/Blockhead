@@ -29,9 +29,9 @@ export async function equipToolForBlock(bot: Bot, block: Parameters<NonNullable<
 }
 
 /** Lease-bound placement adapters; callers must not invoke Bot.equip/placeBlock directly. */
-export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock"]>[0], face: Parameters<Bot["placeBlock"]>[1], signal?: AbortSignal): Promise<void> {
+export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock"]>[0], face: Parameters<Bot["placeBlock"]>[1], signal?: AbortSignal, mutationPoint?: { x: number; y: number; z: number }, blockName?: string): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "place", { x: reference.position.x, y: reference.position.y, z: reference.position.z });
+  beforeMutation(lease, "place", mutationPoint ?? blockPoint(reference), blockName);
   await bot.placeBlock(reference, face);
   throwIfAborted(signal);
 }

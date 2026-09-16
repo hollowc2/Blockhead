@@ -204,7 +204,7 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     return null;
   }
   try {
-    await placeBlock(bot, spot.reference, spot.face, signal);
+    await placeBlock(bot, spot.reference, spot.face, signal, { x: spot.position.x, y: spot.position.y, z: spot.position.z }, item.name);
     throwIfAborted(signal);
   } catch (err) {
     throwIfAborted(signal);
