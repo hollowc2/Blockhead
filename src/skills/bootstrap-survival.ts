@@ -939,34 +939,63 @@ export class BootstrapRunner {
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
     const atNight = !bot.time.isDay;
-    const maxRadius = atNight ? baseRadius : MAX_SEARCH_RADIUS;
+    const maxRadius = atNight ? baseRadius : (config?.hunt_max_radius ?? MAX_SEARCH_RADIUS);
+    const outwardLegs = atNight ? 0 : HUNT_OUTWARD_LEGS;
+    const homeForLegs = this.opts.state.home;
 
     let kills = 0;
-    for (let radius = baseRadius; radius <= maxRadius && have < target; radius = Math.min(radius * 2, maxRadius + 1)) {
-      // Same low-health rule as the food hunt: block only when no sheep is
-      // in reach — a passive sheep cannot fight back, and its meat keeps the
-      // starving bot alive between wool kills.
-      if (bot.health <= HUNT_MIN_HEALTH && nearestSheep(bot, radius) === null) {
+    for (let leg = 0; leg <= outwardLegs && have < target; leg++) {
+      if (leg > 0 && bot.health <= HUNT_MIN_HEALTH) {
         const recovered = await recoverLowHealth(bot);
         if (!recovered.ok) return { ok: false, reason: recovered.reason };
       }
-      const sheep = nearestSheep(bot, radius);
-      if (sheep === null) {
-        this.announce(
-          atNight
-            ? "No sheep close to home; night hunting stays nearby."
-            : `No sheep within ${radius} blocks. Expanding search.`,
-        );
-        continue;
+      if (leg > 0 && homeForLegs !== null) {
+        const dir = HUNT_OUTWARD_DIRS[(leg - 1) % HUNT_OUTWARD_DIRS.length];
+        const self = bot.entity;
+        if (self !== null && dir !== undefined) {
+          const [dx, dz] = dir;
+          const goalX = homeForLegs.x + dx * HUNT_OUTWARD_STEP;
+          const goalZ = homeForLegs.z + dz * HUNT_OUTWARD_STEP;
+          const goalY = groundLevelAt(bot, goalX, goalZ) ?? Math.floor(self.position.y);
+          const legTravel = await travelAndWait(bot, { x: goalX, y: goalY, z: goalZ }, {
+            dimension: homeForLegs.dimension,
+            timeoutMs: HUNT_OUTWARD_LEG_TIMEOUT_MS,
+          });
+          if (legTravel.status !== "arrived" && legTravel.status !== "already_there") {
+            this.opts.logger.warn({ leg, travel: legTravel }, "wool: outward leg unreachable; scanning this spot instead");
+          }
+        }
+        this.announce(`No sheep near home; checking ${HUNT_OUTWARD_STEP * leg} blocks out.`);
       }
 
-      const before = maxWoolColorCount(bot);
-      const kill = await this.killMob(sheep);
-      if (!kill.ok) return { ok: false, reason: kill.reason };
-      kills += 1;
-      have = maxWoolColorCount(bot);
-      if (have <= before) {
-        this.announce(`Hunted ${kill.name}; no wool dropped.`);
+      let foundHere = false;
+      for (let radius = baseRadius; radius <= maxRadius && have < target && !foundHere; radius = Math.min(radius * 2, maxRadius + 1)) {
+        if (bot.health <= HUNT_MIN_HEALTH && nearestSheep(bot, radius) === null) {
+          const recovered = await recoverLowHealth(bot);
+          if (!recovered.ok) return { ok: false, reason: recovered.reason };
+        }
+        const sheep = nearestSheep(bot, radius);
+        if (sheep === null) {
+          if (leg === 0) {
+            this.announce(
+              atNight
+                ? "No sheep close to home; night hunting stays nearby."
+                : `No sheep within ${radius} blocks. Expanding search.`,
+            );
+          }
+          continue;
+        }
+
+        const before = maxWoolColorCount(bot);
+        const kill = await this.killMob(sheep);
+        if (!kill.ok) return { ok: false, reason: kill.reason };
+        kills += 1;
+        have = maxWoolColorCount(bot);
+        if (have <= before) {
+          this.announce(`Hunted ${kill.name}; no wool dropped.`);
+        } else {
+          foundHere = true;
+        }
       }
     }
 
