@@ -87,7 +87,7 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
  * owned log type so mixed inventories are handled.
  */
 export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
-  signal ??= requireWorldActionLease(signal).signal;
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   throwIfAborted(signal);
   const initial = countPlanks(bot);
   let planks = initial;
@@ -124,7 +124,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
  * sticks are carried.
  */
 export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
-  signal ??= requireWorldActionLease(signal).signal;
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   throwIfAborted(signal);
   const initial = countSticks(bot);
   if (initial >= targetTotal) return failure("stick", "craft request made no inventory change (target already satisfied)");
