@@ -13,6 +13,7 @@ import { HOSTILE_MOB_NAMES } from "../policy/combat.js";
 import { TOOL_FAMILIES } from "./expedition.js";
 import { sleep as waitMs, withTimeout, type SkillResult } from "./skill-library.js";
 import { throwIfAborted } from "../agent/world-actions.js";
+import { cancelEating, eatFood, equipAllArmor, equipItem, sleepAt, wakeBot } from "../minecraft/primitives.js";
 
 /** True when a block is a bed of any color. */
 export function isBedBlock(block: Block | null): boolean {
@@ -91,7 +92,7 @@ export class UtilityRunner {
       const bed = beds[0]!;
       try {
         throwIfAborted(this.signals?.signal);
-        await withTimeout(SLEEP_START_TIMEOUT_MS, bot.sleep(bed), () => undefined, this.signals?.signal);
+        await withTimeout(SLEEP_START_TIMEOUT_MS, sleepAt(bot, bed, this.signals?.signal), undefined, this.signals?.signal);
         throwIfAborted(this.signals?.signal);
       } catch (err) {
         throwIfAborted(this.signals?.signal);
@@ -105,7 +106,7 @@ export class UtilityRunner {
         if (this.stopRequested) {
           try {
             throwIfAborted(this.signals?.signal);
-            await bot.wake();
+            await wakeBot(bot, this.signals?.signal);
             throwIfAborted(this.signals?.signal);
           } catch {
             // already awake
@@ -116,7 +117,7 @@ export class UtilityRunner {
         await waitMs(SLEEP_POLL_MS);
       }
       try {
-        await bot.wake();
+        await wakeBot(bot, this.signals?.signal);
       } catch {
         // already awake
       }
@@ -132,7 +133,7 @@ export class UtilityRunner {
       if (bot.food >= 20) return { ok: true, message: "Not hungry." };
       try {
         throwIfAborted(this.signals?.signal);
-        await withTimeout(EAT_TIMEOUT_MS, bot.autoEat.eat({ food: food.name }), () => bot.autoEat.cancelEat(), this.signals?.signal);
+        await withTimeout(EAT_TIMEOUT_MS, eatFood(bot, food.name, this.signals?.signal), () => cancelEating(bot, this.signals?.signal), this.signals?.signal);
         throwIfAborted(this.signals?.signal);
       } catch (err) {
         throwIfAborted(this.signals?.signal);
@@ -156,7 +157,7 @@ export class UtilityRunner {
           if (item === null) continue;
           try {
             throwIfAborted(this.signals?.signal);
-            await bot.equip(item, "hand");
+            await equipItem(bot, item, this.signals?.signal);
             throwIfAborted(this.signals?.signal);
           } catch {
             continue;
@@ -167,7 +168,7 @@ export class UtilityRunner {
       }
       try {
         throwIfAborted(this.signals?.signal);
-        await bot.armorManager.equipAll();
+        await equipAllArmor(bot, this.signals?.signal);
         throwIfAborted(this.signals?.signal);
         equipped += 1;
       } catch (err) {

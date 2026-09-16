@@ -7,6 +7,7 @@ import type { StorageRepository } from "../memory/storage.js";
 import { bareName, countItem, findItem } from "../minecraft/inventory.js";
 import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
+import { tossItem } from "../minecraft/primitives.js";
 import { resourceStem } from "./skill-library.js";
 import { storageCategoryFor } from "./organize-storage.js";
 import { withTimeout, type SkillResult } from "./skill-library.js";
@@ -89,7 +90,7 @@ export class DeliveryRunner {
       const before = countItem(bot, item);
       try {
         throwIfAborted(this.signals?.signal);
-        await withTimeout(30_000, bot.toss(held.type, held.metadata, count), () => undefined, this.signals?.signal);
+        await withTimeout(30_000, tossItem(bot, held.type, held.metadata, count, this.signals?.signal), undefined, this.signals?.signal);
         throwIfAborted(this.signals?.signal);
       } catch (err) {
         throwIfAborted(this.signals?.signal);

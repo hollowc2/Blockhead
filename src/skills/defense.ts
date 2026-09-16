@@ -8,6 +8,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
+import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { attackTargetAllowed, isHumanTarget, HOSTILE_MOB_NAMES } from "../policy/combat.js";
 import { checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
@@ -238,22 +239,22 @@ export class DefenseRunner {
     const weapon = findItem(bot, "iron_sword") ?? findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
     if (weapon !== null) {
       try {
-        await bot.equip(weapon, "hand");
+        await equipItem(bot, weapon, this.signals?.signal);
       } catch {
         // A fist is a last resort; the sword is a speed bonus.
       }
     }
 
     try {
-      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(hostile), async () => {
-        await bot.pvp.stop();
+      await withTimeout(KILL_TIMEOUT_MS, pvpAttack(bot, hostile, this.signals?.signal), async () => {
+        await pvpStop(bot, this.signals?.signal);
       }, this.signals?.signal);
     } catch (err) {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signals?.signal);
       if (Date.now() > deadline) return { ok: false, reason: "defense budget exceeded" };
       return { ok: false, reason: `could not kill the ${hostile.name ?? "hostile"}: ${String(err)}` };
     } finally {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signals?.signal);
     }
     return { ok: true, killed: hostile.name ?? "hostile" };
   }

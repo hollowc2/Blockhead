@@ -51,6 +51,7 @@ import {
   placeItemAt,
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
+import { digBlock, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
@@ -1586,21 +1587,21 @@ export class BootstrapRunner {
     const weapon = findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
     if (weapon !== null) {
       try {
-        await bot.equip(weapon, "hand");
+        await equipItem(bot, weapon, this.signal ?? undefined);
       } catch {
         // Passive mobs die to a fist; the sword is a speed bonus, not a requirement.
       }
     }
 
     try {
-      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(mob), async () => {
-        await bot.pvp.stop();
+      await withTimeout(KILL_TIMEOUT_MS, pvpAttack(bot, mob, this.signal ?? undefined), async () => {
+        await pvpStop(bot, this.signal ?? undefined);
       });
     } catch (err) {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signal ?? undefined);
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
     } finally {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signal ?? undefined);
     }
 
     const loot = await this.collectLoot();
@@ -1718,7 +1719,7 @@ export class BootstrapRunner {
       try {
         await withTimeout(TRENCH_STEP_TIMEOUT_MS, (async () => {
           await bot.tool.equipForBlock(block);
-          await bot.dig(block);
+          await digBlock(bot, block, this.signal ?? undefined);
         })());
       } catch (err) {
         return { ok: false, reason: `could not dig the trench: ${String(err)}` };

@@ -12,6 +12,7 @@ import { deliverCarriedItems } from "../minecraft/containers.js";
 import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
+import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
@@ -606,21 +607,21 @@ export class GatherFoodRunner {
     const weapon = findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
     if (weapon !== null) {
       try {
-        await bot.equip(weapon, "hand");
+        await equipItem(bot, weapon, this.signals?.signal);
       } catch {
         // Passive mobs die to a fist; the sword is a speed bonus, not a requirement.
       }
     }
 
     try {
-      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(mob), async () => {
-        await bot.pvp.stop();
+      await withTimeout(KILL_TIMEOUT_MS, pvpAttack(bot, mob, this.signals?.signal), async () => {
+        await pvpStop(bot, this.signals?.signal);
       }, this.signals?.signal);
     } catch (err) {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signals?.signal);
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
     } finally {
-      await bot.pvp.stop();
+      await pvpStop(bot, this.signals?.signal);
     }
 
     const loot = await this.collectLoot();

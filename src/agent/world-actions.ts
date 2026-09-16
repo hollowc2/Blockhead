@@ -25,6 +25,13 @@ export function requireWorldActionLease(signal?: AbortSignal): WorldActionLease 
   return lease;
 }
 
+/** Require ownership for cleanup that must still run after the lease signal aborts. */
+export function requireWorldActionCleanupLease(): WorldActionLease {
+  const lease = worldActionContext.getStore();
+  if (lease === undefined) throw new Error("world cleanup requires an active scheduler lease");
+  return lease;
+}
+
 export interface WorldActionOptions {
   /** Maximum time to wait for the primitive to settle after cancellation. */
   timeoutMs?: number;
