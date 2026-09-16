@@ -171,3 +171,18 @@ test("unknown tool names are rejected by the registry", () => {
   assert.equal(registry.has("run_js"), false);
   assert.throws(() => registry.validateArgs("run_js", {}));
 });
+
+test("movement tools enqueue scheduler work instead of mutating Mineflayer directly", () => {
+  const { registry, scheduler } = newHarness();
+  const bot = {} as never;
+  const state = { home: { x: 1, y: 2, z: 3, dimension: "overworld" } } as never;
+  const ctx = { bot, state, scheduler } as never;
+
+  assert.equal(registry.get("come_to_player")!.handler({ player: "Corey" }, ctx), "On my way.");
+  assert.equal(scheduler.active?.type, "interrupt");
+  assert.equal(scheduler.active?.parameters.tool, "come_to_player");
+
+  scheduler.requestCancel();
+  assert.equal(registry.get("go_home")!.handler({}, ctx), "Heading home.");
+  assert.equal(scheduler.queued.some((task) => task.type === "go_home"), true);
+});
