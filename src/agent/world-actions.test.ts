@@ -115,6 +115,33 @@ test("lease cancellation aborts the primitive and acknowledges before ownership 
   assert.equal(acknowledged, true);
 });
 
+test("an already-aborted lease never invokes its action", async () => {
+  const executor = new WorldActionExecutor();
+  const controller = new AbortController();
+  controller.abort(new Error("already disconnected"));
+  let mutated = false;
+  await assert.rejects(executor.run("already-aborted", controller.signal, async () => { mutated = true; }), /already disconnected|aborted/i);
+  assert.equal(mutated, false);
+  assert.equal(executor.activeOwner, null);
+  assert.equal(executor.pendingCount, 0);
+});
+
+test("a timed-out lease settles before its queued replacement starts", async () => {
+  const executor = new WorldActionExecutor();
+  let replacementStarted = false;
+  const first = executor.run("timed-out", new AbortController().signal, async (lease) => {
+    await new Promise<void>((resolve) => lease.signal.addEventListener("abort", () => resolve(), { once: true }));
+  }, { timeoutMs: 5 });
+  const replacement = executor.run("after-timeout", new AbortController().signal, async () => {
+    replacementStarted = true;
+  });
+  await assert.rejects(first, /timed out|aborted/i);
+  await replacement;
+  assert.equal(replacementStarted, true);
+  assert.equal(executor.activeOwner, null);
+  assert.equal(executor.pendingCount, 0);
+});
+
 test("external cancellation cannot let a replacement action overlap the old primitive", async () => {
   const executor = new WorldActionExecutor();
   const firstController = new AbortController();
