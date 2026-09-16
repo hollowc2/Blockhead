@@ -960,7 +960,7 @@ export class BootstrapRunner {
         continue;
       }
 
-      const before = countWool(bot);
+      const before = maxWoolColorCount(bot);
       const kill = await this.killMob(sheep);
       if (!kill.ok) return { ok: false, reason: kill.reason };
       kills += 1;
