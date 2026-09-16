@@ -39,6 +39,7 @@ import {
   ARRIVE_RANGE,
   travelAndWait,
   travelHomeAndWait,
+  type HomeLocation,
 } from "../minecraft/movement.js";
 import {
   collectBlocks,
@@ -410,7 +411,7 @@ export class BootstrapRunner {
   /** HOME: walk to the configured home coordinate and wait for arrival. */
   private async stageHome(): Promise<StageOutcome> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const self = bot.entity;
@@ -470,19 +471,38 @@ export class BootstrapRunner {
   }
 
   /**
-   * Guarantee a REACHABLE home before stage mechanics run. Home travel is
-   * X/Z-relative (route to the column at the bot's own altitude, snap Y to
-   * ground on arrival). If even that cannot be walked to — a spawn mountain
-   * where the bot is perched in the middle of a cliff — claim the bot's
-   * current standing position as home and persist it, so bootstrap never
-   * dead-ends on an unreachable coordinate. Always returns true after
-   * claiming, on the theory that a base the bot cannot reach is worse than
-   * a base at its feet.
+   * Guarantee a REACHABLE home before stage mechanics run. A registered
+   * general chest is the durable shelter anchor when the persisted home was
+   * accidentally moved by an earlier recovery attempt. If navigation still
+   * fails, keep the persisted home intact and let the stage retry instead of
+   * moving the protected region to a transient standing position.
    */
   private async ensureReachableHome(scope: string): Promise<boolean> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null || bot.entity === null) return false;
+
+    const previousHome = home;
+    const registeredHome = this.opts.storage
+      .listByCategory(this.worldId ?? -1, "general")
+      .filter((location) => location.dimension === home!.dimension)
+      .map((location) => ({ location, block: bot.blockAt(new Vec3(location.x, location.y, location.z)) }))
+      .find(({ block }) => block !== null && isChestBlock(block));
+    if (registeredHome !== undefined) {
+      const { location } = registeredHome;
+      const distance = Math.hypot(location.x - home.x, location.z - home.z);
+      if (distance > ARRIVE_RANGE) {
+        const aligned: HomeLocation = {
+          dimension: location.dimension,
+          x: location.x,
+          y: location.y,
+          z: location.z,
+        };
+        this.opts.state.setHome(aligned);
+        home = aligned;
+        this.opts.logger.info({ from: previousHome, to: aligned, chest: location }, "home aligned to registered chest");
+      }
+    }
 
     const p = bot.entity.position;
     const snapY = (): number =>
@@ -510,13 +530,9 @@ export class BootstrapRunner {
       return true;
     }
 
-    // The configured home cannot be reached; the base becomes where the bot
-    // stands. Persist so a restart also converges on the claim.
-    const standing = p.floored();
-    this.opts.state.setHome({ ...home, x: standing.x, y: standing.y, z: standing.z });
-    this.opts.logger.warn({ scope, travel, from: home, to: this.opts.state.home }, "home unreachable; claimed standing position as home");
-    this.announce(`Home unreachable (${travel.status}); claiming this spot as home.`);
-    return true;
+    this.opts.logger.warn({ scope, travel, home }, "home unreachable; keeping persisted home");
+    this.announce(`Home unreachable (${travel.status}); retrying without moving home.`);
+    return false;
   }
 
   /** WOOD: collect raw logs until the target is met, expanding the search. */
@@ -631,7 +647,7 @@ export class BootstrapRunner {
   /** Ensure a placed crafting table exists within `TABLE_SCAN_RADIUS` of home. */
   private async ensureTableAtHome(): Promise<Block | null> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return null;
 
     const self = bot.entity;
@@ -762,7 +778,7 @@ export class BootstrapRunner {
     const target = config?.cobblestone ?? COBBLE_TARGET;
     const wantSword = config?.stone_sword ?? true;
 
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -770,9 +786,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("stone_tools");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("stone_tools")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
     const table = await this.ensureTableAtHome();
     if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
@@ -827,7 +843,7 @@ export class BootstrapRunner {
     let have = countFoodItems(bot);
     if (have >= target) return { ok: true, message: `Already carrying ${have} food items.` };
 
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -835,9 +851,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("food");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("food")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
@@ -954,7 +970,7 @@ export class BootstrapRunner {
     let have = maxWoolColorCount(bot);
     if (have >= target) return { ok: true, message: `Already carrying ${have} wool.` };
 
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -962,9 +978,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("wool");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("wool")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
@@ -1043,7 +1059,7 @@ export class BootstrapRunner {
    */
   private async stageBed(): Promise<StageOutcome> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -1051,9 +1067,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("bed");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("bed")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
     const existing = bedBlockNear(bot, BED_SCAN_RADIUS);
@@ -1114,7 +1130,7 @@ export class BootstrapRunner {
    */
   async restoreHomeChest(): Promise<StageOutcome> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -1122,9 +1138,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("storage");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("storage")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
     const existing = chestBlockNear(bot, CHEST_SCAN_RADIUS);
@@ -1218,7 +1234,7 @@ export class BootstrapRunner {
    */
   private async stageFurnace(): Promise<StageOutcome> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -1226,9 +1242,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("furnace");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("furnace")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
     const alreadyPlaced = furnaceBlockNear(bot, FURNACE_SCAN_RADIUS) !== null;
@@ -1335,7 +1351,7 @@ export class BootstrapRunner {
    */
   private async stageIronTools(): Promise<StageOutcome> {
     const bot = this.opts.bot;
-    const home = this.opts.state.home;
+    let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -1343,9 +1359,9 @@ export class BootstrapRunner {
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      await this.ensureReachableHome("iron_tools");
-      const claimed = this.opts.state.home;
-      if (claimed === null) return { ok: false, reason: "no home coordinate configured" };
+      if (!await this.ensureReachableHome("iron_tools")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
     const table = await this.ensureTableAtHome();
     if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
