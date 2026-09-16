@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import minecraftData from "minecraft-data";
+import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
-import { raceTrip } from "./movement.js";
+import { stopWorldPrimitives } from "../agent/world-actions.js";
+import { followPlayer, raceTrip } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -20,4 +23,36 @@ test("cancelled movement waits for the underlying pathfinder promise to settle",
   resolveGoto();
   assert.deepEqual(await trip, { status: "timed_out" });
   assert.deepEqual(events, ["stop", "goto-settled"]);
+});
+
+test("a replaced follow goal cannot be stopped by the stale goal signal", async () => {
+  const registry = minecraftData("1.21.11");
+  const calls: string[] = [];
+  const bot = {
+    registry,
+    entity: { position: new Vec3(0, 64, 0) },
+    players: { alice: { entity: { position: new Vec3(10, 64, 0) } } },
+    collectBlock: {},
+    pathfinder: {
+      setMovements: () => undefined,
+      setGoal: (goal: unknown) => calls.push(goal === null ? "clear" : "goal"),
+      stop: () => calls.push("stop"),
+      goto: async () => undefined,
+    },
+  } as any;
+  const firstController = new AbortController();
+  await new WorldActionExecutor().run("follow-first", firstController.signal, async () => {
+    assert.deepEqual((await followPlayer(bot, "alice")).ok, true);
+  });
+  await stopWorldPrimitives(bot);
+
+  const secondController = new AbortController();
+  await new WorldActionExecutor().run("follow-second", secondController.signal, async () => {
+    assert.deepEqual((await followPlayer(bot, "alice")).ok, true);
+  });
+  const beforeStaleAbort = calls.length;
+  firstController.abort(new Error("stale follow replaced"));
+  assert.equal(calls.length, beforeStaleAbort);
+  await stopWorldPrimitives(bot);
+  assert.deepEqual(calls, ["goal", "stop", "clear", "goal", "stop", "clear"]);
 });
