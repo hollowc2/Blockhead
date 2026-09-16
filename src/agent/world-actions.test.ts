@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WorldActionExecutor, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
+import { WorldActionExecutor, registerWorldActionTeardown, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
 
 test("window primitives require a scheduler lease context", () => {
   assert.throws(() => requireWorldActionLease(), /active scheduler lease/);
@@ -13,6 +13,26 @@ test("lease context is visible across awaited primitive work", async () => {
     assert.equal(requireWorldActionLease().owner, "storage");
   });
   assert.equal(executor.activeOwner, null);
+});
+
+test("teardown calls are serialized and invalidate registered stale state", async () => {
+  const events: string[] = [];
+  const releases: Array<() => void> = [];
+  const bot = {
+    collectBlock: { cancelTask: () => new Promise<void>((resolve) => { events.push("collect-start"); releases.push(() => { events.push("collect-end"); resolve(); }); }) },
+  };
+  let invalidated = false;
+  registerWorldActionTeardown(bot, () => { invalidated = true; });
+  const first = stopWorldPrimitives(bot);
+  const second = stopWorldPrimitives(bot);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(invalidated, true);
+  assert.deepEqual(events, ["collect-start"]);
+  releases.shift()!();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  releases.shift()!();
+  await Promise.all([first, second]);
+  assert.deepEqual(events, ["collect-start", "collect-end", "collect-start", "collect-end"]);
 });
 
 test("world actions serialize and a cancelled waiter never acquires the lease", async () => {

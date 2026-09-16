@@ -97,7 +97,7 @@ methods have no native AbortSignal parameter, so a genuinely hung plugin call
 cannot be forcibly interrupted; the executor retains ownership until that
 promise settles and the replacement cannot overlap it.
 
-## Remaining audit items
+## Current hardening coverage
 
 The current boundary coverage is:
 
@@ -109,8 +109,19 @@ The current boundary coverage is:
   replacement, timeout, and disconnect cleanup await the lease acknowledgement;
 - container/window entry points require the AsyncLocalStorage lease context and
   signal-aware paths re-check cancellation around transfers and close windows;
+  storage paths also re-check `useContainers` immediately before opening and
+  immediately before each deposit/withdraw, and credit only observed deltas;
+- crafting, smelting, placement, and recovery production chains pass their
+  task signal explicitly at the call sites; adapters still reject missing or
+  already-aborted signals when called by compatibility/maintenance code;
+- teardown is a named, per-bot serialized adapter. It is the only unleased
+  Mineflayer mutation boundary and runs dynamic-goal invalidation, pathfinder
+  stop/goal clear, collectblock cancellation, PvP stop, and current-window
+  close in order, awaiting every asynchronous cleanup before a second teardown
+  or replacement can proceed. Process signals await dispatcher idle and this
+  same teardown before quitting.
 
-Known limitations intentionally deferred to the next hardening slices:
+Known limitations:
 
 - dynamic `setGoal` follow/stop helpers remain synchronous because Mineflayer
   exposes no settlement promise for those calls. Follow installs a lease-signal
@@ -125,11 +136,10 @@ Known limitations intentionally deferred to the next hardening slices:
 - the adapter layer is uniformly signal-aware, but Mineflayer's individual
   container/furnace methods do not accept AbortSignal and can only be awaited,
   not forcibly interrupted;
-- `stopWorldPrimitives` in `agent/world-actions.ts` contains the remaining
-  direct shutdown calls. It is deliberately a best-effort disconnect/recovery
-  coordinator that must also work when no AsyncLocalStorage lease exists
-  (end/disconnect and process shutdown); task-scoped mutation paths use the
-  lease-bound adapters. This is the one explicit unleased cleanup boundary.
+- Mineflayer has no acknowledgement promise for synchronous dynamic
+  `setGoal`/`stop` calls. A server tick can race the call; generation and lease
+  ownership guards prevent stale callbacks from affecting a replacement, but
+  no synchronous settlement can be awaited from Mineflayer.
 
 ## Direct dangerous-call inventory
 
@@ -137,7 +147,8 @@ The following direct calls remain, with their reason:
 
 - `src/agent/world-actions.ts`: pathfinder `stop`/`setGoal(null)`,
   collectblock `cancelTask`, PvP `stop`, and current-window `close` — the
-  unleased disconnect/recovery cleanup boundary described above.
+  named serialized teardown adapter required for disconnect, cancellation,
+  replacement, timeout, and process teardown when no lease context exists.
 - `src/minecraft/primitives.ts`: all equipment, digging, tossing, PvP,
   collection, container, furnace, sleep, eating, armor, and window calls —
   the explicit lease-bound adapter implementation; each performs signal and
@@ -145,16 +156,16 @@ The following direct calls remain, with their reason:
 - `src/minecraft/movement.ts`: pathfinder `goto`, dynamic `setGoal`, and
   `stop` — the explicit movement adapter; dynamic calls are synchronous in
   the Mineflayer API and have the settlement limitation above.
-- `src/minecraft/world.ts`: `bot.equip` and `bot.placeBlock` — the explicit
-  placement adapter; both are lease/signal checked and post-verified.
+- `src/minecraft/world.ts`: no direct dangerous Mineflayer mutation remains;
+  placement delegates to the adapters in `src/minecraft/primitives.ts`.
 - `src/minecraft/crafting.ts` and `src/minecraft/smelting.ts`: craft and
   furnace calls — explicit lease/signal adapters; furnace close is awaited
-  cleanup.
+  cleanup. Recipe discovery and inventory reads are observations.
 - `src/minecraft/events.ts` and skill announcement methods: `bot.chat` —
   protocol announcements intentionally outside the world-action lease and
   governed by chat throttles where skill-generated.
+- `src/index.ts`: `bot.quit()` — protocol/session teardown after dispatcher
+  idle and world cleanup; it cannot be lease-bound because it ends the lease's
+  transport and is not a world mutation.
 - database/status `.close()` calls — local resource shutdown, not Mineflayer
   world mutation.
-
-The next slices should close these items in subsystem order: storage/windows,
-bootstrap signal threading, then delta/policy contracts.
