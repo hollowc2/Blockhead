@@ -1,10 +1,19 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import type { Logger } from "pino";
 import { WebSocketServer, WebSocket, type WebSocket as WebSocketType } from "ws";
 import type { DashboardSnapshot } from "./types.js";
 
 const SNAPSHOT_INTERVAL_MS = 500;
 const MAX_BUFFERED_BYTES = 1_048_576;
+const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "public");
+const STATIC_ASSETS: Readonly<Record<string, { file: string; contentType: string }>> = {
+  "/": { file: "index.html", contentType: "text/html; charset=utf-8" },
+  "/dashboard.css": { file: "dashboard.css", contentType: "text/css; charset=utf-8" },
+  "/dashboard.js": { file: "dashboard.js", contentType: "text/javascript; charset=utf-8" },
+};
 
 export interface DashboardServerOptions {
   host: string;
@@ -75,9 +84,16 @@ export class DashboardServer {
       this.sendJson(response, 405, { error: "method not allowed" }, { allow: "GET" });
       return;
     }
-    if (pathname === "/") {
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      response.end("<!doctype html><html><head><title>CobbleBob Dashboard</title></head><body><h1>CobbleBob Dashboard</h1></body></html>");
+    const asset = STATIC_ASSETS[pathname];
+    if (asset) {
+      try {
+        const body = await readFile(join(PUBLIC_DIR, asset.file));
+        response.writeHead(200, { "content-type": asset.contentType, "cache-control": "no-store" });
+        response.end(body);
+      } catch (error) {
+        this.options.logger?.warn({ err: String(error), pathname }, "dashboard static asset failed");
+        this.sendJson(response, 500, { error: "asset unavailable" });
+      }
       return;
     }
     if (pathname === "/health") {

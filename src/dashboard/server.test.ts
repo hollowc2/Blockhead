@@ -44,16 +44,39 @@ function running(snapshotValue: () => DashboardSnapshot): { server: DashboardSer
   return { server, port: waitForPort(server) };
 }
 
-test("serves health, state, placeholder root, and JSON 404", async () => {
+test("serves health, state, static root, and JSON 404", async () => {
   const { server, port: portPromise } = running(() => snapshot(7));
   const port = await portPromise;
   try {
     assert.deepEqual(JSON.parse((await http(port, "GET", "/health")).body), { ok: true, service: "blockhead-dashboard" });
     assert.deepEqual(JSON.parse((await http(port, "GET", "/api/state")).body), snapshot(7));
-    assert.match((await http(port, "GET", "/")).body, /CobbleBob Dashboard/);
+    const root = await http(port, "GET", "/");
+    assert.equal(root.status, 200);
+    assert.match(root.body, /CobbleBob Dashboard/);
+    assert.match(root.body, /href="\/dashboard\.css"/);
+    assert.match(root.body, /src="\/dashboard\.js"/);
+    const css = await http(port, "GET", "/dashboard.css");
+    assert.equal(css.status, 200);
+    assert.match(css.body, /status-live/);
+    const js = await http(port, "GET", "/dashboard.js");
+    assert.equal(js.status, 200);
+    assert.match(js.body, /\/api\/state/);
+    assert.match(js.body, /\/ws/);
     const missing = await http(port, "GET", "/missing");
     assert.equal(missing.status, 404);
     assert.deepEqual(JSON.parse(missing.body), { error: "not found" });
+  } finally { server.stop(); }
+});
+
+test("does not serve unknown static paths", async () => {
+  const { server, port: portPromise } = running(() => snapshot(1));
+  const port = await portPromise;
+  try {
+    for (const path of ["/dashboard.json", "/public/index.html", "/../package.json", "/%2e%2e/package.json"]) {
+      const response = await http(port, "GET", path);
+      assert.equal(response.status, 404, path);
+      assert.deepEqual(JSON.parse(response.body), { error: "not found" });
+    }
   } finally { server.stop(); }
 });
 
@@ -61,9 +84,12 @@ test("rejects mutation-style requests", async () => {
   const { server, port: portPromise } = running(() => snapshot(1));
   const port = await portPromise;
   try {
-    const response = await http(port, "POST", "/api/state");
-    assert.equal(response.status, 405);
-    assert.deepEqual(JSON.parse(response.body), { error: "method not allowed" });
+    const requests: readonly (readonly [string, string])[] = [["POST", "/api/state"], ["PUT", "/"], ["DELETE", "/health"]];
+    for (const [method, path] of requests) {
+      const response = await http(port, method, path);
+      assert.equal(response.status, 405);
+      assert.deepEqual(JSON.parse(response.body), { error: "method not allowed" });
+    }
   } finally { server.stop(); }
 });
 
