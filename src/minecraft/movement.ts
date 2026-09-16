@@ -3,7 +3,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type * as Pathfinder from "mineflayer-pathfinder";
 import { logger } from "../logger.js";
-import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
 // Node's cjs-module-lexer fails to detect the `goals` named export of this CJS
 // package, so named ESM imports would resolve to undefined at runtime.
@@ -48,6 +48,38 @@ export type MovementResult =
   | { ok: false; status: "not_ready" | "player_not_found" | "wrong_dimension" };
 
 const movementsByBot = new WeakMap<Bot, Pathfinder.Movements>();
+interface DynamicGoalOwnership { generation: number; owner: string; removeAbort: () => void; removeTeardown: () => void; }
+const dynamicGoals = new WeakMap<Bot, DynamicGoalOwnership>();
+const dynamicGoalGenerations = new WeakMap<Bot, number>();
+
+function invalidateDynamicGoal(bot: Bot): void {
+  const current = dynamicGoals.get(bot);
+  if (!current) return;
+  current.removeAbort();
+  current.removeTeardown();
+  dynamicGoals.delete(bot);
+}
+
+function installDynamicGoal(bot: Bot, owner: string, signal: AbortSignal, goal: Pathfinder.goals.Goal): void {
+  invalidateDynamicGoal(bot);
+  const generation = (dynamicGoalGenerations.get(bot) ?? 0) + 1;
+  dynamicGoalGenerations.set(bot, generation);
+  const ownership: DynamicGoalOwnership = { generation, owner, removeAbort: () => undefined, removeTeardown: () => undefined };
+  const stopIfOwned = (): void => {
+    if (dynamicGoals.get(bot) !== ownership) return;
+    invalidateDynamicGoal(bot);
+    try { bot.pathfinder.stop(); } catch { /* disconnect cleanup */ }
+    try { bot.pathfinder.setGoal(null); } catch { /* disconnect cleanup */ }
+  };
+  ownership.removeAbort = () => signal.removeEventListener("abort", stopIfOwned);
+  ownership.removeTeardown = registerWorldActionTeardown(bot, () => {
+    if (dynamicGoals.get(bot) === ownership) invalidateDynamicGoal(bot);
+  });
+  signal.addEventListener("abort", stopIfOwned, { once: true });
+  throwIfAborted(signal);
+  bot.pathfinder.setGoal(goal, true);
+  dynamicGoals.set(bot, ownership);
+}
 
 /**
  * Lazy pathfinder setup. `Movements` reads `bot.registry`, which is only
@@ -139,11 +171,7 @@ export async function followPlayer(bot: Bot, playerName: string, signal?: AbortS
 
   // Dynamic goal: pathfinder re-computes the path as the target moves.
   throwIfAborted(signal);
-  // setGoal is synchronous and has no settlement promise. The lease cleanup
-  // also calls stop/setGoal(null); this listener covers a signal abort that
-  // occurs while the dynamic goal remains active after this function returns.
-  stopOnAbort(bot, signal);
-  bot.pathfinder.setGoal(new goals.GoalFollow(target, FOLLOW_RANGE), true);
+  installDynamicGoal(bot, lease.owner, signal, new goals.GoalFollow(target, FOLLOW_RANGE));
   return { ok: true, status: "started" };
 }
 
@@ -152,6 +180,8 @@ export function stopFollowing(bot: Bot, signal?: AbortSignal): MovementResult {
   const lease = requireWorldActionLease(signal);
   signal ??= lease.signal;
   throwIfAborted(signal);
+  invalidateDynamicGoal(bot);
+  bot.pathfinder.stop();
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }
@@ -161,6 +191,8 @@ export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
   const lease = requireWorldActionLease(signal);
   signal ??= lease.signal;
   throwIfAborted(signal);
+  invalidateDynamicGoal(bot);
+  bot.pathfinder.stop();
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }

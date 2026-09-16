@@ -10,6 +10,16 @@ export interface WorldActionLease {
 }
 
 const worldActionContext = new AsyncLocalStorage<WorldActionLease>();
+const teardownHooks = new WeakMap<object, Set<() => void>>();
+const teardownChains = new WeakMap<object, Promise<void>>();
+
+/** Register synchronous state invalidation for the unleased teardown boundary. */
+export function registerWorldActionTeardown(bot: object, hook: () => void): () => void {
+  let hooks = teardownHooks.get(bot);
+  if (!hooks) { hooks = new Set(); teardownHooks.set(bot, hooks); }
+  hooks.add(hook);
+  return () => hooks?.delete(hook);
+}
 
 /** Run code with the lease that owns its Mineflayer mutations. */
 export function withWorldActionLease<T>(lease: WorldActionLease, action: () => Promise<T>): Promise<T> {
@@ -162,19 +172,33 @@ export function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError(signal.reason);
 }
 
-/** Best-effort shutdown for every long-lived primitive used by the agent. */
+/**
+ * Disconnect/process teardown adapter. This is intentionally unleased: it is
+ * the authority that runs when a lease context is unavailable. Calls are
+ * serialized per bot, every async cleanup is awaited, and registered dynamic
+ * ownership is invalidated before plugin stop requests are issued.
+ */
 export async function stopWorldPrimitives(bot: {
   pathfinder?: { stop?: () => void; setGoal?: (goal: null) => void };
   collectBlock?: { cancelTask?: () => Promise<void> | void };
   pvp?: { stop?: () => void | Promise<void> };
   currentWindow?: unknown;
 }): Promise<void> {
-  try { bot.pathfinder?.stop?.(); } catch { /* best effort */ }
-  try { bot.pathfinder?.setGoal?.(null); } catch { /* best effort */ }
-  try { await bot.collectBlock?.cancelTask?.(); } catch { /* best effort */ }
-  try { await bot.pvp?.stop?.(); } catch { /* best effort */ }
-  try {
-    const window = bot.currentWindow as { close?: () => Promise<void> | void } | null | undefined;
-    await window?.close?.();
-  } catch { /* best effort */ }
+  const previous = teardownChains.get(bot) ?? Promise.resolve();
+  const cleanup = previous.catch(() => undefined).then(async () => {
+    for (const hook of teardownHooks.get(bot) ?? []) {
+      try { hook(); } catch { /* invalidation must not block shutdown */ }
+    }
+    try { bot.pathfinder?.stop?.(); } catch { /* best effort */ }
+    try { bot.pathfinder?.setGoal?.(null); } catch { /* best effort */ }
+    try { await bot.collectBlock?.cancelTask?.(); } catch { /* best effort */ }
+    try { await bot.pvp?.stop?.(); } catch { /* best effort */ }
+    try {
+      const window = bot.currentWindow as { close?: () => Promise<void> | void } | null | undefined;
+      await window?.close?.();
+    } catch { /* best effort */ }
+  });
+  teardownChains.set(bot, cleanup);
+  await cleanup;
+  if (teardownChains.get(bot) === cleanup) teardownChains.delete(bot);
 }
