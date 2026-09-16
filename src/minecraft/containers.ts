@@ -7,6 +7,7 @@ import type { StorageLocation, StorageRepository } from "../memory/storage.js";
 import { bareName, countItem } from "./inventory.js";
 import { findBlocksNear } from "./world.js";
 import { throwIfAborted } from "../agent/world-actions.js";
+import { observedTransfer } from "../status/deltas.js";
 
 /**
  * Deterministic container primitives (spec 22/23): locate home storage and
@@ -141,6 +142,7 @@ export async function deliverCarried(
       await container.close();
     }
   } catch (err) {
+    throwIfAborted(signal);
     logger.warn({ err: String(err), item: itemName }, "chest deposit failed");
     return { delivered: 0 };
   }
@@ -195,6 +197,7 @@ export async function deliverCarriedItems(
       await container.close();
     }
   } catch (err) {
+    throwIfAborted(signal);
     logger.warn({ err: String(err) }, "chest deposit failed");
     return { delivered: 0 };
   }
@@ -233,6 +236,7 @@ export async function withdrawFromHomeChest(
       await container.close();
     }
   } catch (err) {
+    throwIfAborted(signal);
     logger.warn({ err: String(err), item: itemName }, "chest withdraw failed");
     return { withdrawn: 0 };
   }
@@ -408,5 +412,6 @@ export async function transferItem(
   // A transfer is successful only for the intersection of the source delta
   // and destination delta. This handles partial deposits and pre-existing
   // stacks without ever crediting a requested amount optimistically.
-  return { moved: Math.max(0, Math.min(count, sourceBefore - sourceAfter, destinationAfter - destinationBefore)) };
+  const result = observedTransfer(sourceBefore, sourceAfter, destinationBefore, destinationAfter, count);
+  return { moved: result.delta };
 }

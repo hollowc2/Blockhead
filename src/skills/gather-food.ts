@@ -664,7 +664,7 @@ export class GatherFoodRunner {
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
           void bot.collectBlock.cancelTask();
-        });
+        }, this.signals?.signal);
         blocks = targets.length;
       } catch (err) {
         this.opts.logger.warn({ err: String(err) }, "gather_food forage collect failed");
@@ -676,7 +676,7 @@ export class GatherFoodRunner {
       try {
         await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => {
           void bot.collectBlock.cancelTask();
-        });
+        }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err) }, "gather_food drop pickup failed");
       }

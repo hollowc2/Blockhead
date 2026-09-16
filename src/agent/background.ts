@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import type { MinecraftConfig } from "../config/schema.js";
@@ -280,10 +281,11 @@ export class BackgroundManager {
       !userBound &&
       (this.lastHomeChestRepairAt === null || tickNow - this.lastHomeChestRepairAt >= repairCooldownMs)
     ) {
-      if (findHomeChest(bot, this.opts.state, this.opts.storage) === null) {
+      const homeChest = await this.worldProbe(async () => findHomeChest(bot, this.opts.state, this.opts.storage));
+      if (homeChest === null) {
         this.lastHomeChestRepairAt = tickNow;
         logger.warn("home chest missing; restoring home storage");
-        const restored = await this.opts.bootstrap.restoreHomeChest();
+        const restored = await this.worldProbe(() => this.opts.bootstrap.restoreHomeChest());
         if (!restored.ok) {
           logger.warn({ reason: restored.reason }, "home chest restore failed; retrying after cooldown");
         }
@@ -361,7 +363,7 @@ export class BackgroundManager {
     if (!decisionEligible && this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return;
 
     try {
-      const buildCheck = await this.opts.buildBase.needsAttention();
+      const buildCheck = await this.worldProbe(() => this.opts.buildBase.needsAttention());
       const decision = await this.opts.decider.decideNextTask(
         { from: "system", instruction: "Choose the next background task." },
         this.toolContext(),
@@ -384,7 +386,13 @@ export class BackgroundManager {
     }).runWorldAction;
     if (typeof run !== "function") return work();
     const controller = new AbortController();
-    return run.call(this.opts.scheduler, "background-probe", controller.signal, work) as Promise<T>;
+    try {
+      return await run.call(this.opts.scheduler, `background-probe:${randomUUID()}`, controller.signal, work) as T;
+    } finally {
+      // A probe owns a real lease. Retire its signal when the probe settles so
+      // a reconnect cannot retain a session-scoped waiter or runner.
+      controller.abort(new Error("background probe settled"));
+    }
   }
 
   /**
@@ -482,7 +490,7 @@ export class BackgroundManager {
     // the table, and the furnace land on blueprint slots inside it, so the
     // structure is the first infrastructure a healthy bot builds.
     if (this.kindBlocked("build")) return;
-    const buildCheck = await this.opts.buildBase.needsAttention();
+    const buildCheck = await this.worldProbe(() => this.opts.buildBase.needsAttention());
     if (buildCheck.needsWork) {
       this.opts.logger.info({ reason: buildCheck.reason }, "base structure incomplete; starting build");
       this.opts.scheduler.enqueue({
@@ -497,7 +505,7 @@ export class BackgroundManager {
     }
 
     // Phase 11: home storage is the next background need (spec 22).
-    const storageCheck = await this.opts.organizeStorage.needsAttention();
+    const storageCheck = await this.worldProbe(() => this.opts.organizeStorage.needsAttention());
     if (storageCheck.needsWork) {
       this.opts.logger.info({ reason: storageCheck.reason }, "storage needs organization; starting storage pass");
       this.opts.scheduler.enqueue({

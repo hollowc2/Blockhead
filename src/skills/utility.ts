@@ -12,6 +12,7 @@ import { travelHomeAndWait } from "../minecraft/movement.js";
 import { HOSTILE_MOB_NAMES } from "../policy/combat.js";
 import { TOOL_FAMILIES } from "./expedition.js";
 import { sleep as waitMs, withTimeout, type SkillResult } from "./skill-library.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /** True when a block is a bed of any color. */
 export function isBedBlock(block: Block | null): boolean {
@@ -78,6 +79,7 @@ export class UtilityRunner {
         dimension: home.dimension,
         timeoutMs: TRAVEL_TIMEOUT_MS,
         shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
       });
       if (this.stopRequested) return this.interruptedResult();
       if (returned.status !== "arrived" && returned.status !== "already_there") {
@@ -88,8 +90,11 @@ export class UtilityRunner {
       if (beds.length === 0) return { ok: false, errorCode: "NOT_READY", message: "no bed at home to sleep in", retryable: true };
       const bed = beds[0]!;
       try {
-        await withTimeout(SLEEP_START_TIMEOUT_MS, bot.sleep(bed), () => undefined);
+        throwIfAborted(this.signals?.signal);
+        await withTimeout(SLEEP_START_TIMEOUT_MS, bot.sleep(bed), () => undefined, this.signals?.signal);
+        throwIfAborted(this.signals?.signal);
       } catch (err) {
+        throwIfAborted(this.signals?.signal);
         return { ok: false, errorCode: "NOT_READY", message: `cannot sleep now: ${String(err).split(";")[0]}`, retryable: false };
       }
       if (this.stopRequested) return this.interruptedResult();
@@ -99,7 +104,9 @@ export class UtilityRunner {
         this.checkInterrupt();
         if (this.stopRequested) {
           try {
+            throwIfAborted(this.signals?.signal);
             await bot.wake();
+            throwIfAborted(this.signals?.signal);
           } catch {
             // already awake
           }
@@ -124,8 +131,11 @@ export class UtilityRunner {
       if (food === undefined) return { ok: false, errorCode: "RESOURCE_NOT_FOUND", message: "no food to eat", retryable: false };
       if (bot.food >= 20) return { ok: true, message: "Not hungry." };
       try {
-        await withTimeout(EAT_TIMEOUT_MS, bot.autoEat.eat({ food: food.name }), () => bot.autoEat.cancelEat());
+        throwIfAborted(this.signals?.signal);
+        await withTimeout(EAT_TIMEOUT_MS, bot.autoEat.eat({ food: food.name }), () => bot.autoEat.cancelEat(), this.signals?.signal);
+        throwIfAborted(this.signals?.signal);
       } catch (err) {
+        throwIfAborted(this.signals?.signal);
         return { ok: false, errorCode: "NOT_READY", message: `could not eat: ${String(err)}`, retryable: true };
       }
       return { ok: true, message: "Ate." };
@@ -145,7 +155,9 @@ export class UtilityRunner {
           const item = findItem(bot, names[i] ?? "");
           if (item === null) continue;
           try {
+            throwIfAborted(this.signals?.signal);
             await bot.equip(item, "hand");
+            throwIfAborted(this.signals?.signal);
           } catch {
             continue;
           }
@@ -154,7 +166,9 @@ export class UtilityRunner {
         }
       }
       try {
+        throwIfAborted(this.signals?.signal);
         await bot.armorManager.equipAll();
+        throwIfAborted(this.signals?.signal);
         equipped += 1;
       } catch (err) {
         this.opts.logger.info({ err: String(err) }, "equip_best armor skipped");
@@ -177,6 +191,7 @@ export class UtilityRunner {
         dimension: home.dimension,
         timeoutMs: TRAVEL_TIMEOUT_MS,
         shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
       });
       if (this.stopRequested) return this.interruptedResult();
       if (returned.status !== "arrived" && returned.status !== "already_there") {

@@ -10,6 +10,7 @@ import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { resourceStem } from "./skill-library.js";
 import { storageCategoryFor } from "./organize-storage.js";
 import { withTimeout, type SkillResult } from "./skill-library.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Phase 13 delivery skills (spec 14.4): `give_item`, `store_items`, and
@@ -85,13 +86,19 @@ export class DeliveryRunner {
         return { ok: false, message: `I am not carrying ${item}`, errorCode: "RESOURCE_NOT_FOUND", retryable: false, data };
       }
       const count = Math.min(quantity, countItem(bot, item));
+      const before = countItem(bot, item);
       try {
-        await withTimeout(30_000, bot.toss(held.type, held.metadata, count), () => undefined);
+        throwIfAborted(this.signals?.signal);
+        await withTimeout(30_000, bot.toss(held.type, held.metadata, count), () => undefined, this.signals?.signal);
+        throwIfAborted(this.signals?.signal);
       } catch (err) {
+        throwIfAborted(this.signals?.signal);
         return { ok: false, message: `could not toss ${item}: ${String(err)}`, errorCode: "NOT_READY", retryable: true, data };
       }
-      data.handled = count;
-      return { ok: true, message: `Gave ${count} ${item} to ${player}.`, data };
+      data.handled = Math.max(0, before - countItem(bot, item));
+      return data.handled > 0
+        ? { ok: true, message: `Gave ${data.handled} ${item} to ${player}.`, data }
+        : { ok: false, message: `No ${item} was tossed.`, errorCode: "NOT_READY", retryable: true, data };
     });
   }
 
@@ -110,6 +117,7 @@ export class DeliveryRunner {
         dimension: home.dimension,
         timeoutMs: TRAVEL_TIMEOUT_MS,
         shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
       });
       if (this.stopRequested) return this.interruptedResult(data);
       if (returned.status !== "arrived" && returned.status !== "already_there") {
@@ -124,7 +132,7 @@ export class DeliveryRunner {
       const names = [...new Set(bot.inventory.items().map((item) => bareName(item.name)))].filter(matches);
       let delivered = 0;
       for (const name of names) {
-        const result = await deliverCarried(bot, this.opts.state, this.opts.storage, name, this.opts.logger);
+        const result = await deliverCarried(bot, this.opts.state, this.opts.storage, name, this.opts.logger, this.signals?.signal);
         delivered += result.delivered;
         if (this.stopRequested) return this.interruptedResult(data);
       }
@@ -150,6 +158,7 @@ export class DeliveryRunner {
         dimension: home.dimension,
         timeoutMs: TRAVEL_TIMEOUT_MS,
         shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
       });
       if (this.stopRequested) return this.interruptedResult(data);
       if (returned.status !== "arrived" && returned.status !== "already_there") {
@@ -160,7 +169,7 @@ export class DeliveryRunner {
       for (const entry of items) {
         const name = bareName(entry.item);
         const count = Math.max(1, Math.floor(entry.quantity));
-        const result = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, count, this.opts.logger);
+        const result = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, count, this.opts.logger, this.signals?.signal);
         withdrawn += result.withdrawn;
         if (this.stopRequested) return this.interruptedResult(data);
       }

@@ -90,3 +90,21 @@ test("recovery runs after a rejected primitive and diagnostics identify the owne
   assert.equal(executor.diagnostics.owner, null);
   assert.equal(executor.diagnostics.pending, 0);
 });
+
+test("recovery completes before a queued replacement receives ownership", async () => {
+  const executor = new WorldActionExecutor();
+  let cleaned = false;
+  const first = executor.run("stale", new AbortController().signal, async () => {
+    throw new Error("plugin rejected");
+  }, {
+    onRecovery: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      cleaned = true;
+    },
+  });
+  const second = executor.run("replacement", new AbortController().signal, async () => {
+    assert.equal(cleaned, true);
+  });
+  await assert.rejects(first, /plugin rejected/);
+  await second;
+});

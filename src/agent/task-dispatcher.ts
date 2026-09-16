@@ -87,6 +87,7 @@ export interface TaskDispatcherOptions {
 export class TaskDispatcher {
   private readonly opts: TaskDispatcherOptions;
   private readonly unsubscribe: () => void;
+  private readonly executions = new Set<Promise<void>>();
 
   constructor(options: TaskDispatcherOptions) {
     this.opts = options;
@@ -103,7 +104,25 @@ export class TaskDispatcher {
 
   private onActivated(task: Task): void {
     if (task.status !== TaskStatus.ACTIVE) return;
-    void this.execute(task);
+    this.track(this.execute(task));
+  }
+
+  /** Start a rehydrated task while keeping disconnect teardown observable. */
+  executeTracked(task: Task): void {
+    this.track(this.execute(task));
+  }
+
+  /** Wait until every session-scoped execution has fully settled and cleaned up. */
+  async waitForIdle(): Promise<void> {
+    while (this.executions.size > 0) await Promise.all([...this.executions]);
+  }
+
+  private track(run: Promise<void>): void {
+    this.executions.add(run);
+    void run.then(
+      () => this.executions.delete(run),
+      () => this.executions.delete(run),
+    );
   }
 
   /** Run the skill for an ACTIVE task and settle it. Boot entry point too. */
@@ -111,7 +130,13 @@ export class TaskDispatcher {
     if (task.status !== TaskStatus.ACTIVE) return;
     const signals = this.opts.scheduler.signalsFor(task);
     const run = typeof this.opts.scheduler.runWorldAction === "function"
-      ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task))
+      ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task), {
+        // Cleanup belongs to the lease, not to the dispatcher finally block:
+        // otherwise a rejected plugin can release ownership and let the next
+        // task start while the old primitive is still active.
+        onCancel: () => stopWorldPrimitives(this.opts.bot),
+        onRecovery: () => stopWorldPrimitives(this.opts.bot),
+      })
       : this.runSkill(task);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const progressTimer = setInterval(() => {

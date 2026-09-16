@@ -3,6 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Recipe } from "prismarine-recipe";
 import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
 import { throwIfAborted } from "../agent/world-actions.js";
+import { observedDelta } from "../status/deltas.js";
 
 /**
  * Deterministic crafting primitives. Recipes come from minecraft-data through
@@ -69,7 +70,8 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
     await bot.craft(recipe, times, table);
     throwIfAborted(options.signal);
     const crafted = Math.max(0, countItem(bot, name) - before);
-    return crafted > 0 ? { ok: true, name, crafted } : failure(name, "craft completed without an output delta");
+    const delta = observedDelta(before, countItem(bot, name), times);
+    return delta.delta > 0 ? { ok: true, name, crafted: delta.delta } : failure(name, "craft completed without an output delta");
   } catch (err) {
     throwIfAborted(options.signal);
     return failure(name, String(err));
@@ -107,8 +109,9 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
     planks = countPlanks(bot);
   }
 
-  return planks >= targetTotal
-    ? { ok: true, name: "planks", crafted: planks - initial }
+  const delta = observedDelta(initial, planks, Math.max(1, targetTotal - initial));
+  return planks >= targetTotal && delta.delta > 0
+    ? { ok: true, name: "planks", crafted: delta.delta }
     : failure("planks", `not enough logs to craft ${targetTotal} planks (${planks} held)`);
 }
 
@@ -131,7 +134,9 @@ export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortS
     throwIfAborted(signal);
     await bot.craft(recipe, times);
     throwIfAborted(signal);
-    return { ok: true, name: "stick", crafted: countSticks(bot) - initial };
+    const after = countSticks(bot);
+    const delta = observedDelta(initial, after, Math.max(1, targetTotal - initial));
+    return delta.delta > 0 ? { ok: true, name: "stick", crafted: delta.delta } : failure("stick", "craft completed without an output delta");
   } catch (err) {
     throwIfAborted(signal);
     return failure("stick", String(err));

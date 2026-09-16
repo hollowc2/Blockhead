@@ -380,7 +380,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     // (crashed mid-skill) from its persisted resume state, then reclaim the
     // queue so paused user work continues.
     if (scheduler.active !== null) {
-      void dispatcher.execute(scheduler.active);
+      dispatcher.executeTracked(scheduler.active);
     }
     scheduler.activateNext();
     connectionState.transition("READY");
@@ -392,6 +392,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Request cancellation before session resources are torn down. The active
   // task remains leased until its dispatcher promise settles.
   scheduler.requestCancel();
+  await dispatcher.waitForIdle();
   if (connectionState.state === "READY" || connectionState.state === "SPAWNED") connectionState.transition("INTERRUPTING");
 
   // Connection is over (never connected, or the game dropped us): tear down
