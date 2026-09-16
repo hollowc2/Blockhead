@@ -10,7 +10,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countLogs, countPlanks, countSticks, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, hasAirNeighbor, isRawLog, placeItemAt } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, type SkillResult } from "./skill-library.js";
 
@@ -176,7 +176,7 @@ export class EnsureTorchesRunner {
     if (home === null) {
       return this.fail(data, "STORAGE_NOT_FOUND", "no home coordinate configured");
     }
-    const travel = await travelAndWait(bot, home, {
+    const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,

@@ -10,7 +10,7 @@ import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { deliverCarriedItems } from "../minecraft/containers.js";
 import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
@@ -391,7 +391,7 @@ export class GatherFoodRunner {
     if (home === null) {
       return this.fail(data, "STORAGE_NOT_FOUND", "no home coordinate configured");
     }
-    const travel = await travelAndWait(bot, home, {
+    const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,

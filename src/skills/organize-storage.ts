@@ -28,7 +28,7 @@ import {
   type ChestMeasurement,
   type StorageMeasurement,
 } from "../minecraft/containers.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import {
   findBlockNear,
   findBlocksNear,
@@ -427,7 +427,7 @@ export class OrganizeStorageRunner {
     if (home === null) {
       return this.fail(data, "STORAGE_NOT_FOUND", "no home coordinate configured");
     }
-    const travel = await travelAndWait(bot, home, {
+    const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,

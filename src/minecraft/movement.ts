@@ -276,6 +276,9 @@ export interface TravelWaitOptions {
 
 const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
 
+/** Keep long home routes from turning into one expensive, fragile A* search. */
+const HOME_LEG_LENGTH = 48;
+
 /** How often the travel loop re-checks `shouldAbort`. */
 const ABORT_POLL_MS = 250;
 
@@ -343,15 +346,40 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   const range = options.range ?? ARRIVE_RANGE;
 
   const p = self.position;
-  if (Math.hypot(p.x - home.x, p.z - home.z) <= range) {
+  const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
+  if (initialDistance <= range) {
     return { status: "already_there" };
   }
 
-  const goal: Location = { x: home.x, y: Math.floor(p.y), z: home.z };
-  const trip = bot.pathfinder
-    .goto(new goals.GoalNear(goal.x, goal.y, goal.z, range))
-    .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-  return raceTrip(bot, trip, { ...options, signal });
+  // A long GoalNear can make mineflayer-pathfinder spend the entire timeout
+  // planning through unloaded or difficult terrain. Break it into bounded
+  // horizontal legs; refresh Y after every leg because the ground elevation
+  // may change substantially on the way home.
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
+  let distance = initialDistance;
+  while (distance > range) {
+    if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+    const current = bot.entity;
+    if (!current) return { status: "not_ready" };
+    const leg = Math.min(HOME_LEG_LENGTH, distance);
+    const fraction = leg / distance;
+    const goal: Location = {
+      x: current.position.x + (home.x - current.position.x) * fraction,
+      y: Math.floor(current.position.y),
+      z: current.position.z + (home.z - current.position.z) * fraction,
+    };
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return { status: "timed_out" };
+    const trip = bot.pathfinder
+      .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
+      .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+    const result = await raceTrip(bot, trip, { ...options, timeoutMs: remaining, signal });
+    if (result.status !== "arrived" && result.status !== "already_there") return result;
+    const after = bot.entity;
+    if (!after) return { status: "not_ready" };
+    distance = Math.hypot(after.position.x - home.x, after.position.z - home.z);
+  }
+  return { status: "arrived" };
 }
 
 /**

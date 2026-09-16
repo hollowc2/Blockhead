@@ -12,7 +12,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countLogs, countPlanks, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, isRawLog } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
@@ -727,7 +727,31 @@ export class CollectResourceRunner {
   private async ensureTool(bare: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const family = toolFamilyFor(bare);
     if (family === null || hasFamilyTool(this.opts.bot, family)) return { ok: true };
-    return this.craftWoodenTool(family);
+
+    // Logs are the one tool-family resource that can be gathered by hand.
+    // Bootstrap the missing ingredients locally before attempting the trip
+    // home; otherwise a stranded bot with an empty inventory can never reach
+    // the crafting-table step that would let it make progress.
+    if (family === "axe" && countLogs(this.opts.bot) === 0) {
+      const gathered = await this.gatherLogsForTool(1);
+      if (!gathered.ok) {
+        this.opts.logger.warn({ reason: gathered.reason }, "could not bootstrap a log for wooden axe");
+        return { ok: true };
+      }
+    }
+
+    const crafted = await this.craftWoodenTool(family);
+    if (crafted.ok) return crafted;
+
+    // Bare hands are slow but valid for logs. Keep the gather task alive when
+    // home is temporarily unreachable; the delivery phase will still report
+    // a separate home/storage failure if that remains unresolved.
+    if (family === "axe") {
+      this.opts.logger.warn({ reason: crafted.reason }, "wooden axe unavailable; gathering logs by hand");
+      this.announce("I cannot reach the crafting table, so I’m gathering logs by hand.");
+      return { ok: true };
+    }
+    return crafted;
   }
 
   /** Stage 11: announce and re-craft a tool that broke mid-run. */
@@ -742,7 +766,7 @@ export class CollectResourceRunner {
     const home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home to craft a tool at" };
 
-    const travel = await travelAndWait(bot, home, {
+    const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
@@ -826,7 +850,7 @@ export class CollectResourceRunner {
   private async returnHome(): Promise<{ status: string }> {
     const home = this.opts.state.home;
     if (home === null) return { status: "no_home" };
-    return travelAndWait(this.opts.bot, home, {
+    return travelHomeAndWait(this.opts.bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
       shouldAbort: this.travelAbort,
