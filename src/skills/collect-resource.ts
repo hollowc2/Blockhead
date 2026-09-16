@@ -659,8 +659,8 @@ export class CollectResourceRunner {
 
       const before = countItem(bot, carriedName);
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
+        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+          await bot.collectBlock.cancelTask();
         }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err), resource: bare }, "collect pass failed");

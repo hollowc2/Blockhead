@@ -3,7 +3,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type * as Pathfinder from "mineflayer-pathfinder";
 import { logger } from "../logger.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
 // Node's cjs-module-lexer fails to detect the `goals` named export of this CJS
 // package, so named ESM imports would resolve to undefined at runtime.
@@ -107,6 +107,7 @@ function stopOnAbort(bot: Bot, signal?: AbortSignal): () => void {
 
 /** Walk to a player's current position, then stop. */
 export async function comeToPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
+  requireWorldActionLease(signal);
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -126,6 +127,7 @@ export async function comeToPlayer(bot: Bot, playerName: string, signal?: AbortS
 
 /** Keep within follow range of a player, re-pathing as they move. */
 export async function followPlayer(bot: Bot, playerName: string, signal?: AbortSignal): Promise<MovementResult> {
+  requireWorldActionLease(signal);
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -140,19 +142,22 @@ export async function followPlayer(bot: Bot, playerName: string, signal?: AbortS
 }
 
 /** Cancel any active movement goal, including a follow. */
-export function stopFollowing(bot: Bot): MovementResult {
+export function stopFollowing(bot: Bot, signal?: AbortSignal): MovementResult {
+  requireWorldActionLease(signal);
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }
 
 /** Stop in place wherever the bot currently is. */
-export function waitHere(bot: Bot): MovementResult {
+export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
+  requireWorldActionLease(signal);
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
 }
 
 /** Navigate to the configured home location. */
 export async function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal): Promise<MovementResult> {
+  requireWorldActionLease(signal);
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -174,6 +179,7 @@ export async function goHome(bot: Bot, home: HomeLocation, signal?: AbortSignal)
 
 /** Navigate to an arbitrary location in the current dimension. */
 export async function travelTo(bot: Bot, location: Location, signal?: AbortSignal): Promise<MovementResult> {
+  requireWorldActionLease(signal);
   const self: Entity | null = bot.entity;
   if (!self) return { ok: false, status: "not_ready" };
   getMovements(bot);
@@ -235,6 +241,7 @@ export async function raceTrip(
   trip: Promise<TravelWaitResult>,
   options: TravelWaitOptions,
 ): Promise<TravelWaitResult> {
+  requireWorldActionLease(options.signal);
   const { promise: nap, resolve: resolveNap } = Promise.withResolvers<TravelWaitResult>();
   const removeAbort = stopOnAbort(bot, options.signal);
   const poll = setInterval(() => {
@@ -272,6 +279,7 @@ export async function raceTrip(
  * persisted home Y to the real ground once the bot is on the column.
  */
 export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+  requireWorldActionLease(options.signal);
   const self: Entity | null = bot.entity;
   if (!self) return { status: "not_ready" };
   if (options.dimension) {
@@ -302,6 +310,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
  * the blocking primitive for skills that must be *somewhere* before acting.
  */
 export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+  requireWorldActionLease(options.signal);
   const self: Entity | null = bot.entity;
   if (!self) return { status: "not_ready" };
   if (options.dimension) {

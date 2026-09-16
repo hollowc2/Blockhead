@@ -3,7 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -108,14 +108,15 @@ export async function collectBlocks(
   logSkip?: (block: Block, err: unknown) => void,
   signal?: AbortSignal,
 ): Promise<number> {
+  requireWorldActionLease(signal);
   const before = countHeld();
   let skipped = 0;
   for (const block of ordered) {
     throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
     try {
-      await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), () => {
-        void bot.collectBlock.cancelTask();
+      await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), async () => {
+        await bot.collectBlock.cancelTask();
       }, signal);
     } catch (err) {
       // An aborted primitive must never advance to another target. The old
@@ -192,6 +193,7 @@ export function findPlacementSpot(
  * item could not be equipped or the placement produced no block.
  */
 export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal): Promise<Block | null> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   try {
     await bot.equip(item, "hand");

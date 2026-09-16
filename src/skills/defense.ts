@@ -245,15 +245,15 @@ export class DefenseRunner {
     }
 
     try {
-      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(hostile), () => {
-        void bot.pvp.stop();
+      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(hostile), async () => {
+        await bot.pvp.stop();
       }, this.signals?.signal);
     } catch (err) {
-      void bot.pvp.stop();
+      await bot.pvp.stop();
       if (Date.now() > deadline) return { ok: false, reason: "defense budget exceeded" };
       return { ok: false, reason: `could not kill the ${hostile.name ?? "hostile"}: ${String(err)}` };
     } finally {
-      void bot.pvp.stop();
+      await bot.pvp.stop();
     }
     return { ok: true, killed: hostile.name ?? "hostile" };
   }

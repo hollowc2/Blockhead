@@ -613,14 +613,14 @@ export class GatherFoodRunner {
     }
 
     try {
-      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(mob), () => {
-        void bot.pvp.stop();
+      await withTimeout(KILL_TIMEOUT_MS, bot.pvp.attack(mob), async () => {
+        await bot.pvp.stop();
       }, this.signals?.signal);
     } catch (err) {
-      void bot.pvp.stop();
+      await bot.pvp.stop();
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
     } finally {
-      void bot.pvp.stop();
+      await bot.pvp.stop();
     }
 
     const loot = await this.collectLoot();
@@ -634,8 +634,8 @@ export class GatherFoodRunner {
     const drops = lootDropsNear(bot, LOOT_RADIUS);
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
-      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => {
-        void bot.collectBlock.cancelTask();
+      await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
+        await bot.collectBlock.cancelTask();
       }, this.signals?.signal);
     } catch (err) {
       return { ok: false, reason: `could not collect drops: ${String(err)}` };
@@ -662,8 +662,8 @@ export class GatherFoodRunner {
     if (targets.length > 0) {
       this.opts.logger.info({ blocks: targets.map((b) => b.name), radius }, "gather_food foraging");
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
+        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+          await bot.collectBlock.cancelTask();
         }, this.signals?.signal);
         blocks = targets.length;
       } catch (err) {
@@ -674,8 +674,8 @@ export class GatherFoodRunner {
     const drops = foodDropsNear(bot, radius);
     if (drops.length > 0) {
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
+        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(drops, { ignoreNoPath: true }), async () => {
+          await bot.collectBlock.cancelTask();
         }, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ err: String(err) }, "gather_food drop pickup failed");

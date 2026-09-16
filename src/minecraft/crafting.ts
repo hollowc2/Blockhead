@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Recipe } from "prismarine-recipe";
 import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { observedDelta } from "../status/deltas.js";
 
 /**
@@ -52,6 +52,7 @@ export function recipeUsable(bot: Bot, recipe: Recipe, times: number): boolean {
  * table recipes (mineflayer activates it to open the crafting window).
  */
 export async function craftItem(bot: Bot, name: string, options: CraftOptions = {}): Promise<CraftResult> {
+  requireWorldActionLease(options.signal);
   throwIfAborted(options.signal);
   const times = options.times ?? 1;
   const id = itemId(bot, name);
@@ -84,6 +85,7 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
  * owned log type so mixed inventories are handled.
  */
 export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const initial = countPlanks(bot);
   let planks = initial;
@@ -120,6 +122,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
  * sticks are carried.
  */
 export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
+  requireWorldActionLease(signal);
   throwIfAborted(signal);
   const initial = countSticks(bot);
   if (initial >= targetTotal) return failure("stick", "craft request made no inventory change (target already satisfied)");

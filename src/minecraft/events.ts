@@ -309,12 +309,12 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     logger.error({ err }, "bot error");
   });
 
-  bot.on("end", (reason) => {
+  bot.on("end", async (reason) => {
     // The end event is the earliest reliable disconnect edge. Interrupt and
     // stop session primitives here as well as in the connection supervisor so
     // a pathfinder/plugin cannot continue while reconnect teardown waits.
     ctx.scheduler.requestCancel();
-    void stopWorldPrimitives(bot);
+    await stopWorldPrimitives(bot);
     logger.info({ reason }, "disconnected");
   });
 }

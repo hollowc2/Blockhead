@@ -575,8 +575,8 @@ export class BaseBuilderRunner {
 
       const before = have;
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), () => {
-          void bot.collectBlock.cancelTask();
+        await withTimeout(COLLECT_TIMEOUT_MS, bot.collectBlock.collect(targets, { ignoreNoPath: true }), async () => {
+          await bot.collectBlock.cancelTask();
         }, this.signals?.signal);
       } catch (err) {
         return { ok: false, reason: `could not collect logs: ${String(err)}` };

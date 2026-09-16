@@ -3,7 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
 import { findItem } from "./inventory.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic smelting primitives. Slot mechanics stay inside mineflayer's
@@ -38,6 +38,7 @@ const DEFAULT_SMELT_TIMEOUT_MS = 120_000;
  * output slot to fill, and takes the result into the inventory.
  */
 export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOptions): Promise<SmeltResult> {
+  requireWorldActionLease(options.signal);
   throwIfAborted(options.signal);
   const outputId = itemId(bot, options.outputName);
   if (outputId === null) {

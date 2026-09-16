@@ -151,7 +151,6 @@ export class TaskDispatcher {
       if (Date.now() - last > PROGRESS_STALL_TIMEOUT_MS) {
         this.opts.logger.warn({ taskId: task.id, phase: task.phase ?? null, progressFingerprint: task.progressFingerprint ?? null }, "task progress watchdog requested cancellation");
         this.opts.scheduler.requestCancel();
-        void stopWorldPrimitives(this.opts.bot);
       }
     }, PROGRESS_POLL_MS);
     progressTimer.unref?.();
@@ -161,7 +160,6 @@ export class TaskDispatcher {
           // Cancellation is propagated first. The scheduler keeps the lease
           // until the original Mineflayer operation settles below.
           this.opts.scheduler.requestCancel();
-          void stopWorldPrimitives(this.opts.bot);
           reject(new Error(`skill execution timed out after ${SKILL_TIMEOUT_MS}ms`));
         }, SKILL_TIMEOUT_MS);
       });
