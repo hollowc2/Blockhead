@@ -2067,6 +2067,7 @@ async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?
     clearTimeout(timeoutHandle);
     signal?.removeEventListener("abort", abort);
     if (onTimeout) await onTimeout();
+    await awaited;
     throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new Error(`operation timed out after ${timeoutMs}ms`);
   }
   clearTimeout(timeoutHandle);

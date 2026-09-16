@@ -207,6 +207,9 @@ export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onT
     clearTimeout(timeoutHandle);
     signal?.removeEventListener("abort", abortHandler);
     if (onTimeout) await onTimeout();
+    // Cancellation is only a request. Keep the plugin promise observed and
+    // settled before returning ownership to the scheduler.
+    await awaited;
     throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new Error(`operation timed out after ${timeoutMs}ms`);
   }
   clearTimeout(timeoutHandle);
