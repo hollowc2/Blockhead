@@ -87,7 +87,7 @@ backoff. Session listeners and runners are rebuilt per connection attempt.
 
 ## Signal and settlement contract
 
-Every leased adapter validates the active lease even when a caller supplies an
+Every leased mutation adapter validates the active lease even when a caller supplies an
 explicit signal, checks that signal before the Mineflayer call, invokes the
 lease's session policy hook at the last safe point, and checks the signal again
 after its promise settles. If a caller omits a signal, the adapter derives the
