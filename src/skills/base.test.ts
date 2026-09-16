@@ -230,4 +230,8 @@ test("stationSlotSpot returns a slot only when its cell is air with solid floor"
   world[`${CX - 1},${FY},${CZ + 1}`] = "solid"; // occupied table slot
   assert.equal(stationSlotSpot(stubBot(world), HOME, "crafting_table"), null);
   assert.notEqual(stationSlotSpot(stubBot(world), HOME, "furnace"), null);
+
+  const occupyingBot = stubBot(airWorld());
+  (occupyingBot as unknown as Bot).entity = { position: new Vec3(CX - 1, FY, CZ + 1) } as never;
+  assert.equal(stationSlotSpot(occupyingBot, HOME, "crafting_table"), null);
 });

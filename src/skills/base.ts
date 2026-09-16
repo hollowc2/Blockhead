@@ -308,6 +308,10 @@ export function freeChestSlotSpot(bot: Bot, home: HomeLocation): PlacementSpot |
 export function stationSlotSpot(bot: Bot, home: HomeLocation, kind: "crafting_table" | "furnace"): PlacementSpot | null {
   const layout = baseLayoutFor(home);
   const slot = kind === "crafting_table" ? layout.tableSlot : layout.furnaceSlot;
+  // Mineflayer cannot place a block into the cell occupied by the player.
+  // This matters after a restart when the bot may spawn directly on the
+  // station slot; let callers use their nearby fallback instead.
+  if (bot.entity?.position.floored().equals(slot)) return null;
   const cell = bot.blockAt(slot);
   if (cell !== null && !isAir(cell)) return null;
   const below = bot.blockAt(slot.offset(0, -1, 0));

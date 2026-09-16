@@ -45,8 +45,8 @@ import {
   findBlockNear,
   findBlocksNear,
   findPlacementSpot,
-  hasAirNeighbor,
   isAir,
+  isSolid,
   isRawLog,
   placeItemAt,
 } from "../minecraft/world.js";
@@ -189,8 +189,8 @@ export interface BootstrapRunnerOptions {
 
 /**
  * Bootstrap state machine (spec section 7). Executes the Phase 5.6 stages
- * HOME -> WOOD -> CRAFTING -> STONE_TOOLS -> FOOD -> WOOL -> BED -> STORAGE
- * -> FURNACE -> FUEL -> TORCHES -> IRON -> IRON_TOOLS deterministically,
+ * HOME -> WOOD -> CRAFTING -> STONE_TOOLS -> FOOD -> STORAGE -> FURNACE
+ * -> FUEL -> TORCHES -> WOOL -> BED -> IRON -> IRON_TOOLS deterministically,
  * persisting each completed stage (spec 7.2: resumable after restart) and
  * emitting typed bus events. IRON gathers exposed ore opportunistically
  * (never blocking bootstrap); IRON_TOOLS smelts it and upgrades the kit when
@@ -211,6 +211,9 @@ export class BootstrapRunner {
   /** When the food-hunt status was last announced, to throttle retry spam. */
   private lastHuntAnnounceAt: number | null = null;
   private signal: AbortSignal | null = null;
+  /** The session-level lease controller, so disconnect can release it. */
+  private controller: AbortController | null = null;
+  private activeRun: Promise<void> | null = null;
 
   constructor(private readonly opts: BootstrapRunnerOptions) {}
 
@@ -235,8 +238,33 @@ export class BootstrapRunner {
 
   /** Drive the state machine from where it last stopped. Idempotent. */
   async run(): Promise<void> {
+    // A retry/resume hook can fire while the prior run is still waiting on a
+    // world-action lease. Share that run instead of queuing a duplicate owner.
+    if (this.activeRun !== null) return this.activeRun;
+    const controller = new AbortController();
+    this.controller = controller;
+    const run = this.runOnce(controller);
+    this.activeRun = run;
+    try {
+      await run;
+    } finally {
+      if (this.activeRun === run) this.activeRun = null;
+      if (this.controller === controller) this.controller = null;
+    }
+  }
+
+  /** Cancel and await any in-flight bootstrap before its bot session is torn down. */
+  async stop(): Promise<void> {
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.controller?.abort(new Error("bootstrap session ended"));
+    await this.activeRun?.catch(() => undefined);
+  }
+
+  private async runOnce(controller: AbortController): Promise<void> {
     if (this.opts.scheduler !== undefined) {
-      const controller = new AbortController();
       try {
         await this.opts.scheduler.runWorldAction(
           `bootstrap:${this.worldId ?? "unknown"}`,
@@ -252,12 +280,10 @@ export class BootstrapRunner {
             onCancel: () => stopWorldPrimitives(this.opts.bot), onRecovery: () => stopWorldPrimitives(this.opts.bot),
           },
         );
-      } finally {
-        controller.abort(new Error("bootstrap settled"));
-      }
+      } finally { controller.abort(new Error("bootstrap settled")); }
       return;
     }
-    await this.runLeased();
+    await this.runLeased(controller.signal);
   }
 
   private async runLeased(signal?: AbortSignal): Promise<void> {
@@ -299,6 +325,10 @@ export class BootstrapRunner {
         const baseline = itemsSummary(this.opts.bot);
         const outcome = await this.executeWithRetries(stage);
         if (!outcome.ok) {
+          if (stage === BootstrapStage.WOOL || stage === BootstrapStage.BED) {
+            this.deferOptionalStage(stage, outcome.reason, baseline);
+            continue;
+          }
           this.failStage(stage, outcome.reason);
           this.scheduleRetry();
           return;
@@ -1034,8 +1064,7 @@ export class BootstrapRunner {
       // mixed colors together. Repair that state in place before attempting
       // the color-specific bed recipe.
       if (maxWoolColorCount(bot) < WOOL_TARGET) {
-        const wool = await this.stageWool();
-        if (!wool.ok) return wool;
+        return { ok: false, reason: "bed deferred: no three matching wool blocks available" };
       }
       // Modern registries only know colored beds, and each color's recipe
       // demands matching wool ("red_bed" always wants red_wool, etc.); the
@@ -1375,6 +1404,16 @@ export class BootstrapRunner {
 
     const table = await this.ensureTableAtHome();
     if (table === null) return null;
+
+    // Bootstrap stages are persisted across deaths/restarts, but inventory is
+    // not.  A bot can resume at FURNACE with the table intact and no pickaxe;
+    // repair the wooden kit before gathering the eight cobblestone needed for
+    // the furnace.
+    const wooden = await this.ensureWoodenKit(table);
+    if (!wooden.ok) {
+      this.opts.logger.warn({ reason: wooden.reason }, "furnace: could not restore wooden kit");
+      return null;
+    }
     const stone = await this.gatherCobblestone(FURNACE_COBBLE_TARGET);
     if (!stone.ok) return null;
     const furnace = await this.craftAtTable("furnace", table);
@@ -1413,10 +1452,22 @@ export class BootstrapRunner {
     const config = this.opts.config.bootstrap;
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
     const region = this.opts.state.protectedRegion;
+    const home = this.opts.state.home;
 
     let have = countLogs(bot);
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < targetTotal; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
       const positions = findBlocksNear(bot, isRawLog, radius, 24);
+      this.opts.logger.info({
+        radius,
+        found: positions.length,
+        positions: positions.map((position) => ({
+          x: position.x,
+          y: position.y,
+          z: position.z,
+          distance: Number(bot.entity?.position.distanceTo(position).toFixed(1)),
+          name: bot.blockAt(position)?.name,
+        })),
+      }, "logs: scan");
       if (positions.length === 0) continue;
       const outside = region ? positions.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : positions;
       const inside = region ? positions.filter((v) => regionContains(region, { x: v.x, y: v.y, z: v.z })) : [];
@@ -1435,6 +1486,57 @@ export class BootstrapRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
       );
       have = countLogs(bot);
+    }
+
+    // A radius scan only sees loaded chunks. When a wiped/restarted bot has
+    // no local trees, walk a short rotating outward patrol, then return home
+    // before the caller places or uses a station. This is the same render-
+    // distance escape used by the bootstrap hunt, but bounded so log repair
+    // cannot strand the bot indefinitely.
+    if (have < targetTotal && home !== null) {
+      let travelled = false;
+      for (let leg = 1; leg <= HUNT_OUTWARD_LEGS && have < targetTotal; leg++) {
+        const [dx, dz] = HUNT_OUTWARD_DIRS[(leg - 1) % HUNT_OUTWARD_DIRS.length]!;
+        const waypoint = {
+          x: Math.round(home.x + dx * HUNT_OUTWARD_STEP * leg),
+          y: Math.floor(bot.entity?.position.y ?? home.y),
+          z: Math.round(home.z + dz * HUNT_OUTWARD_STEP * leg),
+        };
+        const travel = await travelAndWait(bot, waypoint, {
+          dimension: home.dimension,
+          timeoutMs: HUNT_OUTWARD_LEG_TIMEOUT_MS,
+        });
+        if (travel.status !== "arrived" && travel.status !== "already_there") {
+          this.opts.logger.warn({ leg, waypoint, travel }, "logs: outward repair leg unreachable");
+          continue;
+        }
+        travelled = true;
+        const positions = findBlocksNear(bot, isRawLog, baseRadius, 24);
+        const ordered = positions
+          .map((v) => bot.blockAt(v))
+          .filter((block) => block !== null);
+        if (ordered.length > 0) {
+          await collectBlocks(
+            bot,
+            ordered,
+            () => countLogs(bot),
+            targetTotal,
+            () => {},
+            COLLECT_TIMEOUT_MS,
+            (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+          );
+          have = countLogs(bot);
+        }
+      }
+      if (travelled) {
+        const returned = await travelHomeAndWait(bot, home, {
+          dimension: home.dimension,
+          timeoutMs: TRAVEL_TIMEOUT_MS,
+        });
+        if (returned.status !== "arrived" && returned.status !== "already_there") {
+          this.opts.logger.warn({ returned }, "logs: could not return home after outward repair");
+        }
+      }
     }
 
     have = countLogs(bot);
@@ -1487,7 +1589,7 @@ export class BootstrapRunner {
     let have = countFuelItems(bot);
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < needed; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
       const positions = findBlocksNear(bot, isCoalOre, radius, STONE_CANDIDATES);
-      const exposed = positions.filter((position) => hasAirNeighbor(bot, position));
+      const exposed = positions.filter((position) => hasStandableMiningFace(bot, position));
       const targets = exposed.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) {
         this.announce(`No exposed coal within ${radius} blocks. Expanding search.`);
@@ -1529,7 +1631,7 @@ export class BootstrapRunner {
     let have = countItem(bot, "raw_iron");
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < needed; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
       const positions = findBlocksNear(bot, isIronOre, radius, STONE_CANDIDATES);
-      const exposed = positions.filter((position) => hasAirNeighbor(bot, position));
+      const exposed = positions.filter((position) => hasStandableMiningFace(bot, position));
       const targets = exposed.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) {
         this.announce(`No exposed iron within ${radius} blocks. Expanding search.`);
@@ -1682,6 +1784,12 @@ export class BootstrapRunner {
 
     const needSticks = needPickaxe || needAxe ? 4 : 0;
     const planksTarget = countPlanks(bot) + (needPickaxe ? 3 : 0) + (needAxe ? 3 : 0) + (needSticks > 0 ? 2 : 0);
+    const totalPlanks = countPlanks(bot) + countLogs(bot) * 4;
+    if (totalPlanks < planksTarget) {
+      const neededLogs = Math.ceil((planksTarget - totalPlanks) / 4);
+      const logs = await this.ensureLogs(neededLogs);
+      if (!logs.ok) return { ok: false, reason: logs.reason };
+    }
     const planks = await craftPlanks(bot, planksTarget, this.signal ?? undefined);
     if (!planks.ok) return { ok: false, reason: planks.reason };
     const sticks = await craftSticks(bot, countSticks(bot) + needSticks, this.signal ?? undefined);
@@ -1709,7 +1817,7 @@ export class BootstrapRunner {
       // findBlocks sees every block in the loaded chunks (including buried
       // stone); keep only world-facing candidates the bot can actually reach.
       const positions = findBlocksNear(bot, isCobbleStone, radius, STONE_CANDIDATES);
-      const exposed = positions.filter((position) => hasAirNeighbor(bot, position));
+      const exposed = positions.filter((position) => hasStandableMiningFace(bot, position));
       const targets = exposed.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) {
         this.announce(`No reachable stone within ${radius} blocks. Expanding search.`);
@@ -1828,7 +1936,19 @@ export class BootstrapRunner {
     this.opts.bus.emit("bootstrap.complete", {
       completedStages: BOOTSTRAP_STAGES.filter((stage) => stage !== BootstrapStage.NORMAL_OPERATION),
     });
-    this.announce("Bootstrap complete: home, tools (wood/stone/iron), food, bed, storage, furnace, fuel, and torches are ready — entering normal operation.");
+    this.announce("Bootstrap complete: home, tools, food, storage, furnace, fuel, and torches are ready — entering normal operation; bed remains optional.");
+  }
+
+  /** Optional sheep/bed work must not block core autonomous operation. */
+  private deferOptionalStage(stage: BootstrapStage, reason: string, baseline: Record<string, number>): void {
+    const worldId = this.worldId;
+    if (worldId === null) return;
+    const note = `Deferred optional ${stage}: ${reason}`;
+    this.recordStageSkillSuccess(stage, note, baseline);
+    this.opts.stages.save(worldId, stage);
+    this.opts.bus.emit("bootstrap.stage", { stage, note });
+    this.opts.logger.warn({ stage, reason }, "optional bootstrap stage deferred; continuing");
+    if (stage === BootstrapStage.WOOL) this.announce("No sheep found; continuing without a bed for now.");
   }
 
   /**
@@ -1896,6 +2016,17 @@ function isCobbleStone(block: Block | null): boolean {
  * can actually walk on, which is what every home-anchored stage needs.
  */
 function groundLevelAt(bot: Bot, x: number, z: number): number | null {
+  // In a vertical shaft or an otherwise open column, scanning from the world
+  // ceiling finds the lowest bedrock/deepslate floor rather than the surface
+  // the bot is actually standing on. When the bot is already on this column,
+  // prefer its valid standing level so nearby exposed blocks remain reachable.
+  const self = bot.entity;
+  if (self !== null) {
+    const feet = self.position.floored();
+    if (feet.x === x && feet.z === z && isAir(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0)))) {
+      return feet.y;
+    }
+  }
   for (let y = 255; y >= 0; y--) {
     const block = bot.blockAt(new Vec3(x, y, z));
     if (block === null) return null; // column not loaded yet
@@ -1911,6 +2042,18 @@ function isDiggableGround(block: Block | null): boolean {
   if (name === "bedrock" || name === "water" || name === "lava") return false;
   if (/[a-z_]+_log$/.test(name) || name === "leaves") return false;
   return true;
+}
+
+/** True when the bot can stand beside a block with room to swing a tool. */
+function hasStandableMiningFace(bot: Bot, position: Vec3): boolean {
+  const faces: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dz] of faces) {
+    const feet = position.offset(dx, 0, dz);
+    const head = feet.offset(0, 1, 0);
+    const floor = feet.offset(0, -1, 0);
+    if (isAir(bot.blockAt(feet)) && isAir(bot.blockAt(head)) && isSolid(bot.blockAt(floor))) return true;
+  }
+  return false;
 }
 
 /** A diagonal cardinal direction whose front corner is diggable. */

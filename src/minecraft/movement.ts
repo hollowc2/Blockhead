@@ -281,6 +281,8 @@ const HOME_LEG_LENGTH = 48;
 
 /** How often the travel loop re-checks `shouldAbort`. */
 const ABORT_POLL_MS = 250;
+/** Do not hold the world-action lease forever if pathfinder ignores stop(). */
+const TRIP_SETTLE_GRACE_MS = 2_000;
 
 /**
  * Race a pathfinder trip against the wall-clock timeout and the cooperative
@@ -310,9 +312,12 @@ export async function raceTrip(
     if (winner.status === "timed_out" || winner.status === "aborted") {
       bot.pathfinder.stop();
       // Stopping the pathfinder is only a cancellation request. Mineflayer's
-      // goto promise may settle later, and the scheduler lease must remain
-      // owned until that promise has actually settled.
-      await trip.catch(() => undefined);
+      // goto promise may settle later. Give it a short grace period, but do
+      // not let a broken/stale pathfinder hold the scheduler lease forever.
+      await Promise.race([
+        trip.catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, TRIP_SETTLE_GRACE_MS)),
+      ]);
     }
     return winner;
   } finally {

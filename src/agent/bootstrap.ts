@@ -31,12 +31,13 @@ export const BOOTSTRAP_STAGE_ORDER: readonly BootstrapStage[] = [
   BootstrapStage.CRAFTING,
   BootstrapStage.STONE_TOOLS,
   BootstrapStage.FOOD,
-  BootstrapStage.WOOL,
-  BootstrapStage.BED,
   BootstrapStage.STORAGE,
   BootstrapStage.FURNACE,
   BootstrapStage.FUEL,
   BootstrapStage.TORCHES,
+  // Wool and a bed are useful but not load-bearing for autonomous operation.
+  BootstrapStage.WOOL,
+  BootstrapStage.BED,
   BootstrapStage.IRON,
   BootstrapStage.IRON_TOOLS,
   BootstrapStage.NORMAL_OPERATION,
@@ -44,8 +45,8 @@ export const BOOTSTRAP_STAGE_ORDER: readonly BootstrapStage[] = [
 
 /**
  * Stages implemented by this build (Phase 5.6: HOME -> WOOD -> CRAFTING ->
- * STONE_TOOLS -> FOOD -> WOOL -> BED -> STORAGE -> FURNACE -> FUEL ->
- * TORCHES -> IRON -> IRON_TOOLS). NORMAL_OPERATION is the terminal marker,
+ * STONE_TOOLS -> FOOD -> STORAGE -> FURNACE -> FUEL -> TORCHES -> WOOL ->
+ * BED -> IRON -> IRON_TOOLS). NORMAL_OPERATION is the terminal marker,
  * not an executable stage; persisting it signals bootstrap is done.
  */
 export const BOOTSTRAP_STAGES: readonly BootstrapStage[] = [
@@ -54,12 +55,12 @@ export const BOOTSTRAP_STAGES: readonly BootstrapStage[] = [
   BootstrapStage.CRAFTING,
   BootstrapStage.STONE_TOOLS,
   BootstrapStage.FOOD,
-  BootstrapStage.WOOL,
-  BootstrapStage.BED,
   BootstrapStage.STORAGE,
   BootstrapStage.FURNACE,
   BootstrapStage.FUEL,
   BootstrapStage.TORCHES,
+  BootstrapStage.WOOL,
+  BootstrapStage.BED,
   BootstrapStage.IRON,
   BootstrapStage.IRON_TOOLS,
 ];

@@ -257,4 +257,12 @@ export const MIGRATIONS: readonly string[] = [
       created_at TEXT NOT NULL
   );
   `,
+  // v15: core survival infrastructure must not wait for the optional bed.
+  // Older worlds that stopped at wool/bed need to replay the core stages in
+  // the new order; those stages are idempotent and repair missing structures.
+  `
+  UPDATE bootstrap_state
+     SET stage = 'food', attempts = 0, last_failure_code = NULL, retry_at = NULL
+   WHERE stage IN ('wool', 'bed');
+  `,
 ];

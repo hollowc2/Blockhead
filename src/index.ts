@@ -394,6 +394,11 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
 
   await onEnded;
 
+  // Bootstrap is session-scoped but the scheduler/world lease is process-
+  // scoped. Release the old session's bootstrap lease before reconnecting;
+  // otherwise every queued task on the new bot can wait behind bootstrap:1.
+  await bootstrap.stop();
+
   // Request cancellation before session resources are torn down. The active
   // task remains leased until its dispatcher promise settles.
   scheduler.requestCancel();
