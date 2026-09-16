@@ -195,6 +195,30 @@ test("replacing a goal cancels the superseded goal's queued steps only", () => {
   }
 });
 
+test("replacing a goal cancels its paused step before it can resume", () => {
+  const h = newHarness();
+  try {
+    const first = h.manager.start(newGen({ description: "first" }));
+    const oldPaused = enqueueGoalStep(h.scheduler, first.id);
+    assert.equal(h.scheduler.claim()?.id, oldPaused.id);
+    const interruptingUser = h.scheduler.enqueue({
+      type: "collect_resource",
+      priority: TaskPriority.FOREGROUND,
+      source: "user",
+      objective: "Gather urgent logs.",
+      parameters: { resource: "oak_log", quantity: 1 },
+    });
+    h.scheduler.claim();
+    assert.equal(h.scheduler.settleInterrupted()?.id, interruptingUser.id);
+    assert.equal(oldPaused.status, TaskStatus.PAUSED);
+
+    h.manager.start(newGen({ description: "second" }));
+    assert.equal(oldPaused.status, TaskStatus.CANCELLED);
+  } finally {
+    h.close();
+  }
+});
+
 test("replacing a goal cooperatively cancels the superseded goal's active run", () => {
   const h = newHarness();
   try {
