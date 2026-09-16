@@ -23,6 +23,31 @@ test("world actions serialize and a cancelled waiter never acquires the lease", 
   assert.equal(executor.activeOwner, null);
 });
 
+test("duplicate owner identities are rejected while active and pending", async () => {
+  const executor = new WorldActionExecutor();
+  const firstController = new AbortController();
+  const first = executor.run("same-owner", firstController.signal, async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await assert.rejects(
+    executor.run("same-owner", new AbortController().signal, async () => undefined),
+    /already active or pending/,
+  );
+  firstController.abort(new Error("done"));
+  await assert.rejects(first, /done/);
+  assert.equal(executor.activeOwner, null);
+});
+
+test("empty owner identities are rejected before mutation", async () => {
+  const executor = new WorldActionExecutor();
+  let mutated = false;
+  await assert.rejects(
+    executor.run("   ", new AbortController().signal, async () => { mutated = true; }),
+    /owner must be non-empty/,
+  );
+  assert.equal(mutated, false);
+});
+
 test("a failed world action releases ownership and cleanup stops every primitive", async () => {
   const executor = new WorldActionExecutor();
   await assert.rejects(executor.run("broken", new AbortController().signal, async () => {

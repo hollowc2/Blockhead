@@ -17,6 +17,7 @@ import type { AgentDecision } from "../llm/schemas.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { GoalManager } from "../agent/goals.js";
+import { stopWorldPrimitives } from "../agent/world-actions.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -309,6 +310,11 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
   });
 
   bot.on("end", (reason) => {
+    // The end event is the earliest reliable disconnect edge. Interrupt and
+    // stop session primitives here as well as in the connection supervisor so
+    // a pathfinder/plugin cannot continue while reconnect teardown waits.
+    ctx.scheduler.requestCancel();
+    void stopWorldPrimitives(bot);
     logger.info({ reason }, "disconnected");
   });
 }

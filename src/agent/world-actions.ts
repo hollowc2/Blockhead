@@ -40,6 +40,7 @@ export class WorldActionExecutor {
   get diagnostics(): WorldActionDiagnostics { return { owner: this.owner, pending: this.waiters.length, cancelled: this.cancelled, startedAt: this.startedAt }; }
 
   async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options: WorldActionOptions = {}): Promise<T> {
+    if (owner.trim() === "") return Promise.reject(new Error("world action owner must be non-empty"));
     const lease = await this.acquire(owner, signal);
     const controller = new AbortController();
     let cancelled = false;
@@ -69,7 +70,10 @@ export class WorldActionExecutor {
       let result: T;
       try { result = await actionPromise; }
       catch (error) { actionError = error; throw error; }
-      if (cancelled) throw abortError(cancelReason);
+      // A primitive is not considered successful if cancellation raced its
+      // final await. This prevents a stale operation from reporting success
+      // and allowing its caller to advance to another mutation.
+      throwIfAborted(controller.signal);
       return result;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
@@ -91,6 +95,9 @@ export class WorldActionExecutor {
 
   private acquire(owner: string, signal: AbortSignal): Promise<WorldActionLease> {
     if (signal.aborted) return Promise.reject(abortError(signal.reason));
+    if (this.owner === owner || this.waiters.some((waiter) => waiter.owner === owner)) {
+      return Promise.reject(new Error(`world action owner already active or pending: ${owner}`));
+    }
     if (this.owner === null) {
       this.owner = owner;
       return Promise.resolve({ owner, signal, acknowledged: Promise.resolve() });
