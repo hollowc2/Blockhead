@@ -23,9 +23,11 @@ export interface PathSummary { status: string; destination: Position | null; dis
 export interface RecentEvent { at: string; kind: string; message: string }
 export interface RecentFailure { at: string; kind: string; message: string }
 export interface RecentChatEntry { at: string; sender: string; message: string }
+export interface DangerSummary { score: number; nearestHostile: { type: string; distance: number } | null; hostileCount: number }
 
 export interface DashboardSnapshot {
   schema: 1;
+  process: { startedAt: string; uptimeSeconds: number };
   connection: BotConnectionInfo;
   self: SelfSummary;
   goal: GoalSummary | null;
@@ -33,7 +35,8 @@ export interface DashboardSnapshot {
   action: ActionLabel;
   background: BackgroundActivity;
   stockpiles: StockpileSummary | null;
-  inventory: InventorySummary;
+  inventory: InventorySummary | null;
+  danger: DangerSummary | null;
   llmLastCall: LlmLastCallSummary;
   path: PathSummary | null;
   recentEvents: readonly RecentEvent[];

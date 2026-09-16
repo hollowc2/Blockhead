@@ -164,7 +164,7 @@ function inventorySuffix(payload: unknown): string {
   const inventory = (payload as { inventory?: unknown })?.inventory;
   if (!inventory || typeof inventory !== "object") return "";
   const total = Object.values(inventory as Record<string, unknown>).reduce(
-    (sum, value) => sum + (typeof value === "number" && Number.isFinite(value) ? value : 0),
+    (sum: number, value) => sum + (typeof value === "number" && Number.isFinite(value) ? value : 0),
     0,
   );
   return total === 0 ? " (carrying nothing)" : ` (carrying ${total} item${total === 1 ? "" : "s"})`;

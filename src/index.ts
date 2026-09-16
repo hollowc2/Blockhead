@@ -59,6 +59,8 @@ import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
 import { ConnectionStateMachine } from "./agent/connection-state.js";
 import { stopWorldPrimitives } from "./agent/world-actions.js";
+import { EventHistory } from "./dashboard/event-history.js";
+import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -67,6 +69,7 @@ const connectionState = new ConnectionStateMachine();
 // connection attempt; the DB, scheduler, and memory are opened once so a long
 // server outage does not reopen SQLite and re-run migrations on every retry.
 const bus = new EventBus();
+const eventHistory = new EventHistory({ bus });
 const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
@@ -175,6 +178,23 @@ interface Session {
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
 
+// Phase 1 dashboard telemetry is process-lifetime and read-only. It is
+// constructed now so future dashboard transports can consume the same
+// reconnect-safe snapshot without owning or mutating agent services.
+const dashboardTelemetry = new DashboardTelemetryCollector({
+  config,
+  startedAtMs: processStartedAt,
+  bot: () => session?.bot ?? null,
+  maintenance: () => session?.maintenance ?? null,
+  hostile: () => session?.hostile ?? null,
+  state,
+  scheduler,
+  goals: () => goals,
+  decider,
+  client,
+  eventHistory,
+});
+
 // Phase 12 (spec 33): the development dashboard runs for the whole process,
 // across connect attempts, and reads session state through getters. It owns
 // the terminal only when stdout is a TTY and the config allows it.
@@ -214,7 +234,10 @@ statusServer = new StatusServer({
 });
 if (config.status?.enabled ?? true) statusServer.start();
 
-process.on("exit", () => taskOutcomes.dispose());
+process.on("exit", () => {
+  taskOutcomes.dispose();
+  eventHistory.dispose();
+});
 
 // Phase 8: bootstrap yielded to user work resumes when that work settles —
 // the runner is idempotent and resumes from the persisted stage boundary.
