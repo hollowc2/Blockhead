@@ -13,6 +13,22 @@ function blockPoint(block: { position?: { x: number; y: number; z: number }; nam
   return block.position;
 }
 
+type BoundWindow = { __worldMutationPoint?: { x: number; y: number; z: number }; __worldMutationBlockName?: string };
+
+function bindWindow(window: object, block: { position?: { x: number; y: number; z: number }; name?: string }): void {
+  const bound = window as BoundWindow;
+  bound.__worldMutationPoint = blockPoint(block);
+  bound.__worldMutationBlockName = block.name;
+}
+
+function windowPoint(window: object): { x: number; y: number; z: number } | undefined {
+  return (window as BoundWindow).__worldMutationPoint;
+}
+
+function windowBlockName(window: object): string | undefined {
+  return (window as BoundWindow).__worldMutationBlockName;
+}
+
 /** Small, lease-bound adapters for Mineflayer mutations with no higher-level orchestration. */
 export async function equipItem(bot: Bot, item: Item, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
@@ -87,6 +103,7 @@ export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "container", blockPoint(block), block.name);
   const window = await bot.openContainer(block);
+  bindWindow(window, block);
   throwIfAborted(signal);
   return window;
 }
@@ -94,7 +111,7 @@ export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal
 /** Deposit through a container adapter; Mineflayer itself has no AbortSignal parameter. */
 export async function deposit(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "container");
+  beforeMutation(lease, "container", windowPoint(window), windowBlockName(window));
   await window.deposit(itemType, metadata, count);
   throwIfAborted(signal);
 }
@@ -102,7 +119,7 @@ export async function deposit(window: ContainerWindow, itemType: number, metadat
 /** Withdraw through a container adapter; Mineflayer itself has no AbortSignal parameter. */
 export async function withdraw(window: ContainerWindow, itemType: number, metadata: number | null, count: number | null, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "container");
+  beforeMutation(lease, "container", windowPoint(window), windowBlockName(window));
   await window.withdraw(itemType, metadata, count);
   throwIfAborted(signal);
 }
@@ -127,6 +144,7 @@ export async function openFurnace(bot: Bot, block: Block, signal?: AbortSignal):
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "smelt", blockPoint(block), block.name);
   const window = await bot.openFurnace(block);
+  bindWindow(window, block);
   throwIfAborted(signal);
   return window;
 }
@@ -134,21 +152,21 @@ export async function openFurnace(bot: Bot, block: Block, signal?: AbortSignal):
 /** Furnace fuel/input/output adapters retain signal checks around plugin calls. */
 export async function putFuel(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "smelt");
+  beforeMutation(lease, "smelt", windowPoint(window), windowBlockName(window));
   await window.putFuel(itemType, metadata, count);
   throwIfAborted(signal);
 }
 
 export async function putInput(window: Furnace, itemType: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "smelt");
+  beforeMutation(lease, "smelt", windowPoint(window), windowBlockName(window));
   await window.putInput(itemType, metadata, count);
   throwIfAborted(signal);
 }
 
 export async function takeOutput(window: Furnace, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "smelt");
+  beforeMutation(lease, "smelt", windowPoint(window), windowBlockName(window));
   await window.takeOutput();
   throwIfAborted(signal);
 }
