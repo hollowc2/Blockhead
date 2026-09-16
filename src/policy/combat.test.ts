@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MinecraftConfigSchema, type MinecraftConfig } from "../config/schema.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, HOSTILE_MOB_NAMES, isHumanTarget, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
 
 function config(allowPvp = false): MinecraftConfig {
   return MinecraftConfigSchema.parse({
@@ -37,4 +37,15 @@ test("spec 25: the hunt schema can never contain a human target", () => {
   assert.equal(HOSTILE_MOB_NAMES.has("player"), false);
   const union = new Set([...ANIMAL_MOB_NAMES, ...HOSTILE_MOB_NAMES]);
   assert.equal(union.has("player"), false);
+});
+
+test("combat success requires an observed defeated or removed target", () => {
+  const target = { id: 7, health: 20, isValid: true } as any;
+  const bot = { entities: { 7: target } } as any;
+  assert.equal(combatOutcomeObserved(bot, target), false);
+  target.health = 0;
+  assert.equal(combatOutcomeObserved(bot, target), true);
+  target.health = 20;
+  delete bot.entities[7];
+  assert.equal(combatOutcomeObserved(bot, target), true);
 });

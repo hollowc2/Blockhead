@@ -13,7 +13,7 @@ import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -622,6 +622,9 @@ export class GatherFoodRunner {
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
     } finally {
       await pvpStop(bot, this.signals?.signal);
+    }
+    if (!combatOutcomeObserved(bot, mob)) {
+      return { ok: false, reason: `attack settled without an observed defeat of the ${mob.name ?? "animal"}` };
     }
 
     const loot = await this.collectLoot();

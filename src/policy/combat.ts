@@ -1,3 +1,5 @@
+import type { Bot } from "mineflayer";
+import type { Entity } from "prismarine-entity";
 import type { MinecraftConfig } from "../config/schema.js";
 
 /**
@@ -98,4 +100,15 @@ export function attackTargetAllowed(targetType: string | null | undefined, confi
 export function targetNameIsHuman(name: string | null | undefined): boolean {
   if (name === null || name === undefined) return false;
   return name === "player" || name === "human" || name.endsWith("_player");
+}
+
+/**
+ * Observed combat settlement: plugin promise settlement alone only means the
+ * attack loop stopped. A kill is credited only when the server reports the
+ * target dead/invalid or no longer tracks it.
+ */
+export function combatOutcomeObserved(bot: Bot, target: Entity): boolean {
+  const current = (target as Entity & { health?: number; isValid?: boolean });
+  if (current.isValid === false || (typeof current.health === "number" && current.health <= 0)) return true;
+  return bot.entities !== undefined && target.id !== undefined && bot.entities[target.id] === undefined;
 }

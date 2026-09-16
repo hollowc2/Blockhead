@@ -9,7 +9,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { attackTargetAllowed, isHumanTarget, HOSTILE_MOB_NAMES } from "../policy/combat.js";
+import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, HOSTILE_MOB_NAMES } from "../policy/combat.js";
 import { checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -255,6 +255,9 @@ export class DefenseRunner {
       return { ok: false, reason: `could not kill the ${hostile.name ?? "hostile"}: ${String(err)}` };
     } finally {
       await pvpStop(bot, this.signals?.signal);
+    }
+    if (!combatOutcomeObserved(bot, hostile)) {
+      return { ok: false, reason: `attack settled without an observed defeat of the ${hostile.name ?? "hostile"}` };
     }
     return { ok: true, killed: hostile.name ?? "hostile" };
   }
