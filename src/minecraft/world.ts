@@ -4,7 +4,7 @@ import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
-import { cancelCollection, collectBlockOperation } from "./primitives.js";
+import { cancelCollection, collectBlockOperation, equipItem, placeBlock } from "./primitives.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -197,14 +197,14 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
   requireWorldActionLease(signal);
   throwIfAborted(signal);
   try {
-    await bot.equip(item, "hand");
+    await equipItem(bot, item, signal);
     throwIfAborted(signal);
   } catch (err) {
     throwIfAborted(signal);
     return null;
   }
   try {
-    await bot.placeBlock(spot.reference, spot.face);
+    await placeBlock(bot, spot.reference, spot.face, signal);
     throwIfAborted(signal);
   } catch (err) {
     throwIfAborted(signal);

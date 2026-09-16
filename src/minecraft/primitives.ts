@@ -17,6 +17,13 @@ export async function equipToolForBlock(bot: Bot, block: Parameters<NonNullable<
   throwIfAborted(signal);
 }
 
+/** Lease-bound placement adapters; callers must not invoke Bot.equip/placeBlock directly. */
+export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock"]>[0], face: Parameters<Bot["placeBlock"]>[1], signal?: AbortSignal): Promise<void> {
+  signal ??= requireWorldActionLease(signal).signal;
+  await bot.placeBlock(reference, face);
+  throwIfAborted(signal);
+}
+
 export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
   signal ??= requireWorldActionLease(signal).signal;
   await bot.dig(block);
