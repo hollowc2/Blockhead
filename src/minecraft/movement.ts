@@ -195,6 +195,7 @@ export interface TravelWaitOptions {
    * instead of waiting out the travel timeout.
    */
   shouldAbort?: () => boolean;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
@@ -214,7 +215,7 @@ async function raceTrip(
 ): Promise<TravelWaitResult> {
   const { promise: nap, resolve: resolveNap } = Promise.withResolvers<TravelWaitResult>();
   const poll = setInterval(() => {
-    if (options.shouldAbort?.() === true) resolveNap({ status: "aborted" });
+    if (options.signal?.aborted || options.shouldAbort?.() === true) resolveNap({ status: "aborted" });
   }, ABORT_POLL_MS);
   const timer = setTimeout(
     () => resolveNap({ status: "timed_out" }),
@@ -222,6 +223,7 @@ async function raceTrip(
   );
 
   try {
+    if (options.signal?.aborted) return { status: "aborted" };
     const winner = await Promise.race([trip, nap]);
     if (winner.status === "timed_out" || winner.status === "aborted") {
       bot.pathfinder.stop();
@@ -250,6 +252,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     if (current !== expected) return { status: "wrong_dimension" };
   }
   if (!bot.registry) return { status: "not_ready" };
+  if (options.signal?.aborted) return { status: "aborted" };
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
 
@@ -279,6 +282,7 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
     if (current !== expected) return { status: "wrong_dimension" };
   }
   if (!bot.registry) return { status: "not_ready" };
+  if (options.signal?.aborted) return { status: "aborted" };
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
 

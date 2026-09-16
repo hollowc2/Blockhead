@@ -192,19 +192,25 @@ export function sleep(ms: number): Promise<void> {
  * Race `promise` against a wall-clock timeout. On timeout the optional hook
  * runs first (e.g. to cancel an in-flight plugin task) and an Error is thrown.
  */
-export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void): Promise<T> {
+export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void, signal?: AbortSignal): Promise<T> {
   const awaited = promise.then(
     (value) => ({ ok: true, value } as const),
     (error) => ({ ok: false, error: String(error) } as const),
   );
   const { promise: timer, resolve: resolveTimer } = Promise.withResolvers<{ timedOut: true }>();
-  setTimeout(() => resolveTimer({ timedOut: true }), timeoutMs);
+  const timeoutHandle = setTimeout(() => resolveTimer({ timedOut: true }), timeoutMs);
+  const abortHandler = (): void => resolveTimer({ timedOut: true });
+  signal?.addEventListener("abort", abortHandler, { once: true });
 
   const winner = await Promise.race([awaited, timer]);
   if (winner && typeof winner === "object" && "timedOut" in winner) {
+    clearTimeout(timeoutHandle);
+    signal?.removeEventListener("abort", abortHandler);
     if (onTimeout) onTimeout();
-    throw new Error(`operation timed out after ${timeoutMs}ms`);
+    throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new Error(`operation timed out after ${timeoutMs}ms`);
   }
+  clearTimeout(timeoutHandle);
+  signal?.removeEventListener("abort", abortHandler);
   if (winner.ok) return winner.value;
   throw new Error(winner.error);
 }

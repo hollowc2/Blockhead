@@ -1,0 +1,79 @@
+/** Scheduler-owned serialization and common cancellation helpers for Mineflayer. */
+export interface WorldActionLease { readonly owner: string; readonly signal: AbortSignal; }
+
+interface Waiter {
+  owner: string; signal: AbortSignal;
+  resolve: (lease: WorldActionLease) => void;
+  reject: (error: Error) => void;
+  onAbort: () => void;
+}
+
+export class WorldActionExecutor {
+  private owner: string | null = null;
+  private readonly waiters: Waiter[] = [];
+  get activeOwner(): string | null { return this.owner; }
+  get pendingCount(): number { return this.waiters.length; }
+
+  async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>): Promise<T> {
+    const lease = await this.acquire(owner, signal);
+    try { return await action(lease); } finally { this.release(lease); }
+  }
+
+  assertAvailable(): void {
+    if (this.owner !== null) throw new Error(`world action still owned by ${this.owner}`);
+  }
+
+  private acquire(owner: string, signal: AbortSignal): Promise<WorldActionLease> {
+    if (signal.aborted) return Promise.reject(abortError(signal.reason));
+    if (this.owner === null) { this.owner = owner; return Promise.resolve({ owner, signal }); }
+    return new Promise((resolve, reject) => {
+      const waiter: Waiter = { owner, signal, resolve, reject, onAbort: () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        reject(abortError(signal.reason));
+      }};
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
+  }
+
+  private release(lease: WorldActionLease): void {
+    if (lease.owner !== this.owner) return;
+    this.owner = null;
+    while (this.waiters.length > 0) {
+      const next = this.waiters.shift()!;
+      next.signal.removeEventListener("abort", next.onAbort);
+      if (next.signal.aborted) { next.reject(abortError(next.signal.reason)); continue; }
+      this.owner = next.owner;
+      next.resolve({ owner: next.owner, signal: next.signal });
+      return;
+    }
+  }
+}
+
+export function abortError(reason: unknown): Error {
+  const error = reason instanceof Error ? reason : new Error(reason === undefined ? "operation aborted" : String(reason));
+  error.name = "AbortError";
+  return error;
+}
+
+export function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError(signal.reason);
+}
+
+/** Best-effort shutdown for every long-lived primitive used by the agent. */
+export async function stopWorldPrimitives(bot: {
+  pathfinder?: { stop?: () => void; setGoal?: (goal: null) => void };
+  collectBlock?: { cancelTask?: () => Promise<void> | void };
+  pvp?: { stop?: () => void | Promise<void> };
+  currentWindow?: unknown;
+}): Promise<void> {
+  try { bot.pathfinder?.stop?.(); } catch { /* best effort */ }
+  try { bot.pathfinder?.setGoal?.(null); } catch { /* best effort */ }
+  try { await bot.collectBlock?.cancelTask?.(); } catch { /* best effort */ }
+  try { await bot.pvp?.stop?.(); } catch { /* best effort */ }
+  try {
+    const window = bot.currentWindow as { close?: () => Promise<void> | void } | null | undefined;
+    await window?.close?.();
+  } catch { /* best effort */ }
+}

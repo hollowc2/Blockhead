@@ -234,4 +234,14 @@ export const MIGRATIONS: readonly string[] = [
   CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_live_work_key
     ON tasks(work_key) WHERE work_key IS NOT NULL AND status IN ('queued','active','paused','blocked');
   `,
+  // v13: crash-cut-point metadata for bootstrap and death reconciliation.
+  `
+  ALTER TABLE bootstrap_state ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE bootstrap_state ADD COLUMN last_failure_code TEXT;
+  ALTER TABLE bootstrap_state ADD COLUMN retry_at INTEGER;
+  ALTER TABLE death_events ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'recorded';
+  ALTER TABLE death_events ADD COLUMN respawned_at TEXT;
+  ALTER TABLE death_events ADD COLUMN recovery_task_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_death_events_lifecycle ON death_events(world_id, lifecycle, id);
+  `,
 ];

@@ -57,8 +57,10 @@ import { registerMemoryTools } from "./tools/memory.js";
 import { TaskOutcomeTracker } from "./status/outcomes.js";
 import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
+import { ConnectionStateMachine } from "./agent/connection-state.js";
 
 const config = loadConfig("config/minecraft.yaml");
+const connectionState = new ConnectionStateMachine();
 
 // Process-lifetime services. Only the bot session (below) is rebuilt per
 // connection attempt; the DB, scheduler, and memory are opened once so a long
@@ -253,6 +255,7 @@ process.on("SIGTERM", () => shutdown(0));
  * connection ends. Returns whether CobbleBob ever reached spawn.
  */
 async function runSession(): Promise<"spawned" | "never-connected"> {
+  connectionState.transition("CONNECTING");
   const bot = createCobbleBob(config);
   let spawned = false;
   const onEnded = new Promise<void>((resolve) => {
@@ -364,6 +367,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
+    connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {
       logger.error({ err: String(err) }, "supervised bootstrap run failed");
     });
@@ -374,6 +378,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
       void dispatcher.execute(scheduler.active);
     }
     scheduler.activateNext();
+    connectionState.transition("READY");
+    connectionState.markStable();
   });
 
   await onEnded;
@@ -381,6 +387,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Request cancellation before session resources are torn down. The active
   // task remains leased until its dispatcher promise settles.
   scheduler.requestCancel();
+  if (connectionState.state === "READY" || connectionState.state === "SPAWNED") connectionState.transition("INTERRUPTING");
 
   // Connection is over (never connected, or the game dropped us): tear down
   // the session-bound wiring so the next attempt starts clean. A graceful
@@ -391,14 +398,14 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   dispatcher.dispose();
   session = null;
   currentBootstrap = null;
+  if (connectionState.state === "INTERRUPTING") connectionState.transition("REINITIALIZING");
+  if (connectionState.state !== "DISCONNECTED") connectionState.transition("DISCONNECTED");
   return spawned ? "spawned" : "never-connected";
 }
 
 /** Backoff between connect attempts, capped at one probe per minute. */
-const RETRY_DELAY_MS: readonly number[] = [5_000, 10_000, 20_000, 40_000, 60_000];
 function retryDelayMs(attempt: number): number {
-  // The clamp keeps the index inside the array, so the element is always set.
-  return RETRY_DELAY_MS[Math.min(attempt - 1, RETRY_DELAY_MS.length - 1)]!;
+  return connectionState.failureDelayMs();
 }
 
 const sleep = (ms: number): Promise<void> => {

@@ -20,6 +20,7 @@ export interface LlmClientOptions {
 
 const MODEL_ID_PENDING = "local-model";
 const ModelsSchema = z.object({ data: z.array(z.object({ id: z.string().min(1) })).min(1) });
+let requestTail: Promise<void> = Promise.resolve();
 
 export class LlamaClient {
   private readonly baseUrl: string;
@@ -87,6 +88,21 @@ export class LlamaClient {
   }
 
   async complete(messages: LlmMessage[]): Promise<string> {
+    // llama.cpp is a single local model. Serialize requests process-wide so a
+    // chat command cannot interleave with an autonomous decision.
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => { release = resolve; });
+    const previous = requestTail;
+    requestTail = requestTail.then(() => turn);
+    await previous;
+    try {
+      return await this.completeSerialized(messages);
+    } finally {
+      release();
+    }
+  }
+
+  private async completeSerialized(messages: LlmMessage[]): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
@@ -102,6 +118,7 @@ export class LlamaClient {
             ? "http_error"
             : "network_error";
         this.noteFailure({ kind, error: error.message });
+        if (isModelError(error)) this.modelId = null;
         this.onFailure?.({ kind, attempt: attempt + 1, error: error.message });
         if (attempt < this.maxRetries && isRetryable(error)) {
           const base = Math.min(5000, 250 * 2 ** attempt);
@@ -141,6 +158,10 @@ export class LlamaClient {
     this.modelId = parsed.data[0]!.id;
     return this.modelId;
   }
+}
+
+function isModelError(error: Error): boolean {
+  return /HTTP (400|404)/.test(error.message) || error.message.includes("model") && error.message.includes("not found");
 }
 
 function isRetryable(error: Error): boolean {

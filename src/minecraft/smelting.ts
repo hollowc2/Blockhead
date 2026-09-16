@@ -3,6 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
 import { findItem } from "./inventory.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic smelting primitives. Slot mechanics stay inside mineflayer's
@@ -24,6 +25,7 @@ export interface SmeltOptions {
   times: number;
   /** Wall-clock budget for one smelt pass. */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /** How often the output slot is polled while a pass runs. */
@@ -36,6 +38,7 @@ const DEFAULT_SMELT_TIMEOUT_MS = 120_000;
  * output slot to fill, and takes the result into the inventory.
  */
 export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOptions): Promise<SmeltResult> {
+  throwIfAborted(options.signal);
   const outputId = itemId(bot, options.outputName);
   if (outputId === null) {
     return { ok: false, reason: `unknown item '${options.outputName}'` };
@@ -44,6 +47,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   const window = await bot.openFurnace(furnaceBlock);
   try {
     for (let pass = 0; pass < options.times; pass++) {
+      throwIfAborted(options.signal);
       const input = findItem(bot, options.inputName);
       if (input === null) return { ok: false, reason: `no ${options.inputName} to smelt` };
       const fuel = findItem(bot, options.fuelName);
@@ -52,10 +56,11 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
       await window.putFuel(fuel.type, null, 1);
       await window.putInput(input.type, null, 1);
 
-      const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS);
+      const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, options.signal);
       if (!done) return { ok: false, reason: "smelting timed out" };
       try {
         await window.takeOutput();
+        throwIfAborted(options.signal);
       } catch (err) {
         return { ok: false, reason: `could not take smelted item: ${String(err)}` };
       }
@@ -67,9 +72,10 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
 }
 
 /** Poll the furnace's output slot (index 2) until it holds `outputId` or the budget runs out. */
-async function awaitOutput(window: Furnace, outputId: number, timeoutMs: number): Promise<boolean> {
+async function awaitOutput(window: Furnace, outputId: number, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    throwIfAborted(signal);
     const output = window.slots[2];
     if (output !== null && output !== undefined && output.type === outputId) return true;
     await sleep(SMELT_POLL_MS);

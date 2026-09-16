@@ -29,6 +29,8 @@ import type { BaseBuilderRunner, BaseResumeState } from "../skills/base.js";
 import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
+import { stopWorldPrimitives } from "./world-actions.js";
+import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
 
@@ -107,14 +109,24 @@ export class TaskDispatcher {
   /** Run the skill for an ACTIVE task and settle it. Boot entry point too. */
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
-    const run = this.runSkill(task);
+    const signals = this.opts.scheduler.signalsFor(task);
+    const run = typeof this.opts.scheduler.runWorldAction === "function"
+      ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task))
+      : this.runSkill(task);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const progressTimer = setInterval(() => {
+      heartbeat(this.opts.logger, this.opts.bot, {
+        task,
+        primitive: task.phase ?? task.type,
+        leaseOwner: task.id,
+        connectionState: this.opts.bot.entity === null ? "DISCONNECTED" : "READY",
+        pathfinderState: this.opts.bot.pathfinder?.goal ? "active" : "idle",
+      });
       const last = task.lastProgressAt === undefined ? Date.now() : Date.parse(task.lastProgressAt);
       if (Date.now() - last > PROGRESS_STALL_TIMEOUT_MS) {
         this.opts.logger.warn({ taskId: task.id, phase: task.phase ?? null, progressFingerprint: task.progressFingerprint ?? null }, "task progress watchdog requested cancellation");
         this.opts.scheduler.requestCancel();
-        this.opts.bot.pathfinder?.stop?.();
+        void stopWorldPrimitives(this.opts.bot);
       }
     }, PROGRESS_POLL_MS);
     progressTimer.unref?.();
@@ -124,7 +136,7 @@ export class TaskDispatcher {
           // Cancellation is propagated first. The scheduler keeps the lease
           // until the original Mineflayer operation settles below.
           this.opts.scheduler.requestCancel();
-          this.opts.bot.pathfinder?.stop?.();
+          void stopWorldPrimitives(this.opts.bot);
           reject(new Error(`skill execution timed out after ${SKILL_TIMEOUT_MS}ms`));
         }, SKILL_TIMEOUT_MS);
       });
@@ -168,6 +180,7 @@ export class TaskDispatcher {
         }
       }
     } finally {
+      await stopWorldPrimitives(this.opts.bot);
       if (timer !== undefined) clearTimeout(timer);
       clearInterval(progressTimer);
     }
@@ -439,6 +452,7 @@ export class TaskDispatcher {
         timeoutMs: INTERRUPT_MOVE_TIMEOUT_MS,
         range: 3,
         shouldAbort,
+        signal: signals.signal,
       });
       if (travel.status === "aborted") {
         return { ok: false, status: "interrupted", message: "interrupted before arrival" };
@@ -462,6 +476,7 @@ export class TaskDispatcher {
       dimension: home.dimension,
       timeoutMs: GO_HOME_TIMEOUT_MS,
       shouldAbort,
+      signal: signals.signal,
     });
     if (travel.status === "aborted") {
       return { ok: false, status: "interrupted", message: "interrupted en route home" };
@@ -504,6 +519,7 @@ export class TaskDispatcher {
     const travel = await travelAndWait(this.opts.bot, destination, {
       timeoutMs: GO_HOME_TIMEOUT_MS,
       shouldAbort,
+      signal: signals.signal,
     });
     if (travel.status === "aborted") {
       return { ok: false, status: "interrupted", message: "interrupted en route" };
@@ -542,6 +558,7 @@ export class TaskDispatcher {
     const outbound = await travelAndWait(this.opts.bot, { x: waypoint.x, y: standingY, z: waypoint.z }, {
       timeoutMs: GO_HOME_TIMEOUT_MS,
       shouldAbort,
+      signal: signals.signal,
     });
     if (outbound.status === "aborted") {
       return { ok: false, status: "interrupted", message: "interrupted exploring" };
@@ -554,6 +571,7 @@ export class TaskDispatcher {
         dimension: home.dimension,
         timeoutMs: GO_HOME_TIMEOUT_MS,
         shouldAbort,
+        signal: signals.signal,
       });
       if (inbound.status === "aborted") {
         return { ok: false, status: "interrupted", message: "interrupted returning from explore" };

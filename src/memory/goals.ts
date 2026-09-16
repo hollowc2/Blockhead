@@ -1,5 +1,6 @@
 import { GoalStatus, type Goal, type SuccessCriterion } from "../agent/goal.js";
 import type { AppDatabase } from "./database.js";
+import { logger } from "../logger.js";
 
 interface GoalRow {
   id: string;
@@ -73,7 +74,7 @@ export class GoalsRepository {
 
   get(id: string): Goal | null {
     const row = this.db.sql.prepare(`${SELECT_GOAL} WHERE id = ?`).get(id) as GoalRow | undefined;
-    return row ? toGoal(row) : null;
+    return row ? this.safeGoal(row) : null;
   }
 
   /** The single live goal, or null. There is at most one active goal at a time. */
@@ -81,18 +82,31 @@ export class GoalsRepository {
     const row = this.db.sql
       .prepare(`${SELECT_GOAL} WHERE status = ? LIMIT 1`)
       .get(GoalStatus.ACTIVE) as GoalRow | undefined;
-    return row ? toGoal(row) : null;
+    return row ? this.safeGoal(row) : null;
+  }
+
+  private safeGoal(row: GoalRow): Goal | null {
+    try {
+      return toGoal(row);
+    } catch (error) {
+      this.db.sql.prepare("UPDATE goals SET status = ?, note = ?, ended_at = ? WHERE id = ? AND status = ?")
+        .run(GoalStatus.CANCELLED, `quarantined malformed persisted goal: ${String(error)}`, new Date().toISOString(), row.id, row.status);
+      logger.error({ goalId: row.id, error: String(error) }, "malformed persisted goal quarantined");
+      return null;
+    }
   }
 }
 
 function toGoal(row: GoalRow): Goal {
-  const results = JSON.parse(row.recent_results_json) as Goal["recentResults"];
+  const criteria = JSON.parse(row.success_criteria_json) as unknown;
+  const results = JSON.parse(row.recent_results_json) as unknown;
+  if (!Array.isArray(criteria) || !Array.isArray(results)) throw new Error("goal JSON fields must be arrays");
   return {
     id: row.id,
     description: row.description,
     source: row.source as Goal["source"],
     status: row.status as GoalStatus,
-    successCriteria: JSON.parse(row.success_criteria_json) as SuccessCriterion[],
+    successCriteria: criteria as SuccessCriterion[],
     currentStep: row.current_step ?? null,
     recentResults: Array.isArray(results) ? results : [],
     note: row.note ?? undefined,

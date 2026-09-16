@@ -3,6 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -105,10 +106,12 @@ export async function collectBlocks(
   announce: (message: string) => void,
   timeoutMs: number,
   logSkip?: (block: Block, err: unknown) => void,
+  signal?: AbortSignal,
 ): Promise<number> {
   const before = countHeld();
   let skipped = 0;
   for (const block of ordered) {
+    throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
     try {
       await withTimeout(timeoutMs, bot.collectBlock.collect(block, { ignoreNoPath: true }), () => {
@@ -184,14 +187,17 @@ export function findPlacementSpot(
  * with at that cell (the caller verifies the desired type), or null when the
  * item could not be equipped or the placement produced no block.
  */
-export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot): Promise<Block | null> {
+export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal): Promise<Block | null> {
+  throwIfAborted(signal);
   try {
     await bot.equip(item, "hand");
+    throwIfAborted(signal);
   } catch {
     return null;
   }
   try {
     await bot.placeBlock(spot.reference, spot.face);
+    throwIfAborted(signal);
   } catch {
     return null;
   }

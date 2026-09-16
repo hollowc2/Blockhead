@@ -352,10 +352,16 @@ export async function transferItem(
     logger.warn({ item: itemName }, "no item id for transfer");
     return { moved: 0 };
   }
+  let sourceBefore = 0;
+  let sourceAfter = 0;
+  let destinationBefore = 0;
+  let destinationAfter = 0;
   try {
     const source = await bot.openContainer(from);
     try {
+      sourceBefore = source.containerCount(itemId, null);
       await source.withdraw(itemId, null, count);
+      sourceAfter = source.containerCount(itemId, null);
     } finally {
       await source.close();
     }
@@ -366,7 +372,9 @@ export async function transferItem(
   try {
     const target = await bot.openContainer(to);
     try {
+      destinationBefore = target.containerCount(itemId, null);
       await target.deposit(itemId, null, count);
+      destinationAfter = target.containerCount(itemId, null);
     } finally {
       await target.close();
     }
@@ -374,16 +382,8 @@ export async function transferItem(
     logger.warn({ err: String(err), item: itemName }, "transfer deposit failed");
     return { moved: 0 };
   }
-  try {
-    const source = await bot.openContainer(from);
-    try {
-      const remaining = source.containerCount(itemId, null);
-      return { moved: Math.max(0, count - remaining) };
-    } finally {
-      await source.close();
-    }
-  } catch (err) {
-    // The transfer succeeded; the follow-up read is best-effort only.
-    return { moved: count };
-  }
+  // A transfer is successful only for the intersection of the source delta
+  // and destination delta. This handles partial deposits and pre-existing
+  // stacks without ever crediting a requested amount optimistically.
+  return { moved: Math.max(0, Math.min(count, sourceBefore - sourceAfter, destinationAfter - destinationBefore)) };
 }

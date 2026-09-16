@@ -1,7 +1,8 @@
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Recipe } from "prismarine-recipe";
-import { bareName, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
+import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
+import { throwIfAborted } from "../agent/world-actions.js";
 
 /**
  * Deterministic crafting primitives. Recipes come from minecraft-data through
@@ -19,6 +20,7 @@ export interface CraftOptions {
   times?: number;
   /** The placed crafting table block; required by table recipes. */
   craftingTable?: Block;
+  signal?: AbortSignal;
 }
 
 export function failure(name: string, reason: string): CraftResult {
@@ -49,6 +51,7 @@ export function recipeUsable(bot: Bot, recipe: Recipe, times: number): boolean {
  * table recipes (mineflayer activates it to open the crafting window).
  */
 export async function craftItem(bot: Bot, name: string, options: CraftOptions = {}): Promise<CraftResult> {
+  throwIfAborted(options.signal);
   const times = options.times ?? 1;
   const id = itemId(bot, name);
   if (id === null) return failure(name, `unknown item '${name}'`);
@@ -61,8 +64,11 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
   }
 
   try {
+    const before = countItem(bot, name);
     await bot.craft(recipe, times, table);
-    return { ok: true, name, crafted: times };
+    throwIfAborted(options.signal);
+    const crafted = Math.max(0, countItem(bot, name) - before);
+    return crafted > 0 ? { ok: true, name, crafted } : failure(name, "craft completed without an output delta");
   } catch (err) {
     return failure(name, String(err));
   }
@@ -73,7 +79,8 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
  * are carried. Each craft converts one log into four planks; recipes run per
  * owned log type so mixed inventories are handled.
  */
-export async function craftPlanks(bot: Bot, targetTotal: number): Promise<CraftResult> {
+export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
+  throwIfAborted(signal);
   const initial = countPlanks(bot);
   let planks = initial;
   if (planks >= targetTotal) return { ok: true, name: "planks", crafted: 0 };
@@ -89,6 +96,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number): Promise<CraftR
     const times = Math.min(craftsNeeded, logCount);
     try {
       await bot.craft(recipe, times);
+      throwIfAborted(signal);
     } catch (err) {
       return failure(planksForLog(logName), String(err));
     }
@@ -104,7 +112,8 @@ export async function craftPlanks(bot: Bot, targetTotal: number): Promise<CraftR
  * Craft sticks (two planks make four sticks) until at least `targetTotal`
  * sticks are carried.
  */
-export async function craftSticks(bot: Bot, targetTotal: number): Promise<CraftResult> {
+export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortSignal): Promise<CraftResult> {
+  throwIfAborted(signal);
   const initial = countSticks(bot);
   if (initial >= targetTotal) return { ok: true, name: "stick", crafted: 0 };
 
@@ -116,6 +125,7 @@ export async function craftSticks(bot: Bot, targetTotal: number): Promise<CraftR
   const times = Math.ceil((targetTotal - initial) / 4);
   try {
     await bot.craft(recipe, times);
+    throwIfAborted(signal);
     return { ok: true, name: "stick", crafted: countSticks(bot) - initial };
   } catch (err) {
     return failure("stick", String(err));

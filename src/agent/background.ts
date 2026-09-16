@@ -290,7 +290,10 @@ export class BackgroundManager {
       }
     }
 
-    const snapshot = await this.opts.maintenance.check();
+    // Probes are world reads and container repair can mutate the world. They
+    // use the same scheduler lease as foreground tasks, closing the race
+    // between an idle tick and a task becoming active.
+    const snapshot = await this.worldProbe(() => this.opts.maintenance.check());
 
     // Phase 8 (spec 5.4): a stockpile below its survival floor is a crisis —
     // escalate to MAINTENANCE priority and preempt whatever is running, even
@@ -373,6 +376,15 @@ export class BackgroundManager {
       this.lastDecisionAt = now;
       await this.deterministicFallback(snapshot);
     }
+  }
+
+  private async worldProbe<T>(work: () => Promise<T>): Promise<T> {
+    const run = (this.opts.scheduler as Scheduler & {
+      runWorldAction?: <R>(owner: string, signal: AbortSignal, action: () => Promise<R>) => Promise<R>;
+    }).runWorldAction;
+    if (typeof run !== "function") return work();
+    const controller = new AbortController();
+    return run.call(this.opts.scheduler, "background-probe", controller.signal, work) as Promise<T>;
   }
 
   /**
