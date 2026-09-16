@@ -31,7 +31,6 @@ import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
-import { withTimeout } from "../skills/skill-library.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
@@ -39,6 +38,9 @@ const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
 const GO_HOME_TIMEOUT_MS = 120_000;
 /** Upper bound for any skill, including plugins that fail to settle. */
 const SKILL_TIMEOUT_MS = 10 * 60_000;
+/** A task may run longer than this, but must publish a checkpoint/progress. */
+const PROGRESS_STALL_TIMEOUT_MS = 2 * 60_000;
+const PROGRESS_POLL_MS = 5_000;
 
 export interface TaskDispatcherOptions {
   bus: EventBus;
@@ -105,8 +107,38 @@ export class TaskDispatcher {
   /** Run the skill for an ACTIVE task and settle it. Boot entry point too. */
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
+    const run = this.runSkill(task);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const progressTimer = setInterval(() => {
+      const last = task.lastProgressAt === undefined ? Date.now() : Date.parse(task.lastProgressAt);
+      if (Date.now() - last > PROGRESS_STALL_TIMEOUT_MS) {
+        this.opts.logger.warn({ taskId: task.id, phase: task.phase ?? null, progressFingerprint: task.progressFingerprint ?? null }, "task progress watchdog requested cancellation");
+        this.opts.scheduler.requestCancel();
+        this.opts.bot.pathfinder?.stop?.();
+      }
+    }, PROGRESS_POLL_MS);
+    progressTimer.unref?.();
     try {
-      const result = await withTimeout(SKILL_TIMEOUT_MS, this.runSkill(task));
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          // Cancellation is propagated first. The scheduler keeps the lease
+          // until the original Mineflayer operation settles below.
+          this.opts.scheduler.requestCancel();
+          this.opts.bot.pathfinder?.stop?.();
+          reject(new Error(`skill execution timed out after ${SKILL_TIMEOUT_MS}ms`));
+        }, SKILL_TIMEOUT_MS);
+      });
+      let result: SkillResult;
+      try {
+        result = await Promise.race([run, timeout]);
+      } catch (err) {
+        // Never release the active task's ownership while the skill is still
+        // in flight. Await its acknowledgement before settling/replacing.
+        if (String(err).includes("timed out")) {
+          await run.catch(() => undefined);
+        }
+        throw err;
+      }
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id !== task.id) return;
       if (scheduler.interruptPending) {
@@ -125,6 +157,7 @@ export class TaskDispatcher {
         ? `skill execution timed out after ${SKILL_TIMEOUT_MS}ms`
         : `execution threw: ${String(err)}`;
       this.opts.logger.error({ err: String(err), taskId: task.id }, "task execution threw");
+      if (timer !== undefined) clearTimeout(timer);
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id === task.id) {
         if (scheduler.interruptPending) scheduler.settleInterrupted();
@@ -134,6 +167,9 @@ export class TaskDispatcher {
           scheduler.failActive(message);
         }
       }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      clearInterval(progressTimer);
     }
   }
 

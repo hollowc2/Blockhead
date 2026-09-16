@@ -209,6 +209,7 @@ export async function withdrawFromHomeChest(
     logger.warn({ item: itemName }, "no item id for withdraw");
     return { withdrawn: 0 };
   }
+  const before = countItem(bot, itemName);
   try {
     const container = await bot.openContainer(chest);
     try {
@@ -220,7 +221,10 @@ export async function withdrawFromHomeChest(
     logger.warn({ err: String(err), item: itemName }, "chest withdraw failed");
     return { withdrawn: 0 };
   }
-  return { withdrawn: Math.min(count, countItem(bot, itemName)) };
+  // Mineflayer inventory totals include items already carried. Report only
+  // the transfer delta, otherwise an already-held stack is mistaken for a
+  // successful chest withdrawal.
+  return { withdrawn: Math.max(0, Math.min(count, countItem(bot, itemName) - before)) };
 }
 
 // --- Phase 11: storage measurement and organization primitives ---

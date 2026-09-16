@@ -211,7 +211,9 @@ process.on("exit", () => taskOutcomes.dispose());
 // the runner is idempotent and resumes from the persisted stage boundary.
 const resumeBootstrapIfPending = (): void => {
   if (currentBootstrap !== null && currentBootstrap.currentStage !== null) {
-    void currentBootstrap.run();
+    void currentBootstrap.run().catch((err: unknown) => {
+      logger.error({ err: String(err) }, "supervised bootstrap resume failed");
+    });
   }
 };
 bus.on("task.completed", resumeBootstrapIfPending);
@@ -362,7 +364,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
-    void bootstrap.run();
+    void bootstrap.run().catch((err: unknown) => {
+      logger.error({ err: String(err) }, "supervised bootstrap run failed");
+    });
     // Phase 8: with the world available, resume a rehydrated ACTIVE task
     // (crashed mid-skill) from its persisted resume state, then reclaim the
     // queue so paused user work continues.
@@ -373,6 +377,10 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   });
 
   await onEnded;
+
+  // Request cancellation before session resources are torn down. The active
+  // task remains leased until its dispatcher promise settles.
+  scheduler.requestCancel();
 
   // Connection is over (never connected, or the game dropped us): tear down
   // the session-bound wiring so the next attempt starts clean. A graceful
@@ -401,21 +409,15 @@ const sleep = (ms: number): Promise<void> => {
   return promise;
 };
 
-// Connect loop. A refused/unreachable first connect (server down or not yet
-// up) is retried in-process with backoff instead of crash-looping through
-// the supervisor; an unexpected disconnect after spawn still exits non-zero
-// so a supervisor restarts a fresh process.
+// Connect loop. Initial failures and post-login disconnects share one
+// supervised backoff loop; process-lifetime state survives server restarts.
 let attempt = 0;
 while (!shuttingDown) {
   attempt += 1;
   const outcome = await runSession();
   if (shuttingDown) break;
   if (outcome === "spawned") {
-    // Was in-game and got disconnected without a graceful quit.
-    tui.stop();
-    db.close();
-    closeLogs();
-    process.exit(1);
+    logger.warn({ attempt }, "Minecraft connection ended; reconnecting with backoff");
   }
   const delayMs = retryDelayMs(attempt);
   logger.warn(

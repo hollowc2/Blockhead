@@ -29,6 +29,9 @@ export type InterruptReason = "pause" | "cancel";
  */
 export interface TaskSignals {
   checkpoint(state?: object): boolean;
+  /** Native cancellation signal for Mineflayer/plugin adapters. */
+  readonly signal: AbortSignal;
+  readonly cancelled: boolean;
 }
 
 /**
@@ -60,6 +63,7 @@ export class Scheduler {
 
   /** Interrupt that the active task's executor must settle once its run returns. */
   private interrupt: InterruptReason | null = null;
+  private activeController: AbortController | null = null;
 
   /** Stable birth order of every live task (newest first among ties). */
   private seq = 0;
@@ -78,8 +82,26 @@ export class Scheduler {
   /** Rehydrate live tasks from the database. Call once at startup. */
   loadFromPersistence(): void {
     for (const task of this.tasks.loadUnfinished()) {
+      if (!Object.values(TaskStatus).includes(task.status)) {
+        task.status = TaskStatus.FAILED;
+        task.lastError = "quarantined malformed persisted task status";
+        task.completedAt = new Date().toISOString();
+        this.tasks.update(task);
+        logger.error({ taskId: task.id }, "malformed persisted task quarantined");
+        continue;
+      }
       if (task.status === TaskStatus.ACTIVE) {
-        this.activeTask = task;
+        // Crash recovery must retain one and only one owner. Any additional
+        // ACTIVE row is parked for explicit resumption instead of being
+        // silently orphaned by overwriting the active reference.
+        if (this.activeTask === null) this.activeTask = task;
+        else {
+          task.status = TaskStatus.PAUSED;
+          task.lastError = "duplicate active task quarantined during restart";
+          this.tasks.update(task);
+          this.queue.push(task);
+          logger.error({ taskId: task.id, activeTaskId: this.activeTask.id }, "duplicate active task quarantined");
+        }
       } else {
         this.queue.push(task);
         if (task.status === TaskStatus.PAUSED) {
@@ -120,12 +142,23 @@ export class Scheduler {
 
   /** Create and persist a new queued task. */
   enqueue(input: NewTask): Task {
+    const workKey = input.workKey ?? (input.source === "background" || input.source === "director" || input.source === "maintenance" || input.source === "goal"
+      ? `${input.source}:${input.source === "goal" ? String(input.parameters?.goalId ?? "") + ":" : ""}${actionFingerprint(input.type, input.parameters ?? {})}` : undefined);
+    if (workKey !== undefined) {
+      const existing = this.queue.find((task) => task.workKey === workKey && task.status !== TaskStatus.COMPLETED && task.status !== TaskStatus.FAILED && task.status !== TaskStatus.CANCELLED)
+        ?? (this.activeTask?.workKey === workKey ? this.activeTask : null)
+        ?? this.tasks.findLiveByWorkKey(workKey);
+      if (existing !== null) return existing;
+    }
     const task: Task = {
       ...input,
       id: randomUUID(),
       status: TaskStatus.QUEUED,
       createdAt: new Date().toISOString(),
       parameters: input.parameters ?? {},
+      workKey,
+      attempts: 0,
+      lastProgressAt: new Date().toISOString(),
     };
     this.order.set(task.id, ++this.seq);
     this.tasks.create(task);
@@ -211,8 +244,11 @@ export class Scheduler {
     }
     this.removeQueued(task);
     this.activeTask = task;
+    this.activeController = new AbortController();
     task.status = TaskStatus.ACTIVE;
     task.startedAt = new Date().toISOString();
+    task.attempts = (task.attempts ?? 0) + 1;
+    task.lastProgressAt = new Date().toISOString();
     this.tasks.update(task);
     this.bus.emit("task.activated", { task });
     logger.info({ taskId: task.id, type: task.type }, "task activated");
@@ -227,6 +263,7 @@ export class Scheduler {
   requestPause(): void {
     if (this.activeTask === null) return;
     if (this.interrupt === null) this.interrupt = "pause";
+    this.activeController?.abort(new Error("task paused"));
     logger.info({ taskId: this.activeTask.id }, "pause requested for active task");
   }
 
@@ -237,6 +274,7 @@ export class Scheduler {
   requestCancel(): void {
     if (this.activeTask === null) return;
     this.interrupt = "cancel";
+    this.activeController?.abort(new Error("task cancelled"));
     logger.info({ taskId: this.activeTask.id }, "cancel requested for active task");
   }
 
@@ -248,10 +286,18 @@ export class Scheduler {
   signalsFor(task: Task): TaskSignals {
     return {
       checkpoint: (state): boolean => {
-        if (this.activeTask !== task) return true;
+        if (this.activeTask !== task) return false;
+        task.lastProgressAt = new Date().toISOString();
+        if (state && typeof state === "object") {
+          const record = state as Record<string, unknown>;
+          task.phase = typeof record.phase === "string" ? record.phase : task.phase;
+          task.progressFingerprint = JSON.stringify(state);
+        }
         this.checkpoint(state);
         return this.interrupt === null;
       },
+      signal: this.activeController?.signal ?? AbortSignal.abort(),
+      get cancelled() { return this.signal.aborted; },
     };
   }
 
@@ -282,6 +328,7 @@ export class Scheduler {
 
     if (reason === "cancel") {
       this.activeTask = null;
+      this.activeController = null;
       task.status = TaskStatus.CANCELLED;
       task.completedAt = new Date().toISOString();
       this.tasks.update(task);
@@ -290,6 +337,7 @@ export class Scheduler {
       return this.activateNext();
     } else {
       this.activeTask = null;
+      this.activeController = null;
       task.status = TaskStatus.PAUSED;
       task.pauseSequence = ++this.pausedSeq;
       this.pausedAt.set(task.id, task.pauseSequence);
@@ -308,6 +356,8 @@ export class Scheduler {
     const task = this.activeTask;
     if (!task) return null;
     this.activeTask = null;
+    this.activeController?.abort(new Error("task completed"));
+    this.activeController = null;
     task.status = TaskStatus.COMPLETED;
     task.completedAt = new Date().toISOString();
     this.tasks.update(task);
@@ -321,6 +371,8 @@ export class Scheduler {
     const task = this.activeTask;
     if (!task) return null;
     this.activeTask = null;
+    this.activeController?.abort(new Error("task failed"));
+    this.activeController = null;
     task.status = TaskStatus.FAILED;
     task.lastError = lastError;
     task.completedAt = new Date().toISOString();

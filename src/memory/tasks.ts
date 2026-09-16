@@ -17,12 +17,18 @@ interface TaskRow {
   started_at: string | null;
   completed_at: string | null;
   pause_sequence: number | null;
+  work_key: string | null;
+  phase: string | null;
+  progress_fingerprint: string | null;
+  last_progress_at: string | null;
+  attempts: number | null;
 }
 
 const SELECT_TASK = `
   SELECT id, type, priority, source, objective, parameters_json,
          status, resume_state_json, parent_task_id, interrupted_task_id,
-         last_error, created_at, started_at, completed_at, pause_sequence
+         last_error, created_at, started_at, completed_at, pause_sequence,
+         work_key, phase, progress_fingerprint, last_progress_at, attempts
   FROM tasks`;
 
 const UNFINISHED = `
@@ -41,8 +47,9 @@ export class TasksRepository {
         `INSERT INTO tasks
            (id, type, priority, source, objective, parameters_json, status,
             resume_state_json, parent_task_id, interrupted_task_id, last_error,
-            created_at, started_at, completed_at, pause_sequence)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, started_at, completed_at, pause_sequence,
+            work_key, phase, progress_fingerprint, last_progress_at, attempts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -60,6 +67,11 @@ export class TasksRepository {
         task.startedAt ?? null,
         task.completedAt ?? null,
         task.pauseSequence ?? null,
+        task.workKey ?? null,
+        task.phase ?? null,
+        task.progressFingerprint ?? null,
+        task.lastProgressAt ?? null,
+        task.attempts ?? 0,
       );
   }
 
@@ -69,7 +81,8 @@ export class TasksRepository {
         `UPDATE tasks SET
            priority = ?, source = ?, objective = ?, parameters_json = ?,
            status = ?, resume_state_json = ?, parent_task_id = ?,
-           interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?
+           interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?,
+           work_key = ?, phase = ?, progress_fingerprint = ?, last_progress_at = ?, attempts = ?
          WHERE id = ?`,
       )
       .run(
@@ -85,6 +98,11 @@ export class TasksRepository {
         task.startedAt ?? null,
         task.completedAt ?? null,
         task.pauseSequence ?? null,
+        task.workKey ?? null,
+        task.phase ?? null,
+        task.progressFingerprint ?? null,
+        task.lastProgressAt ?? null,
+        task.attempts ?? 0,
         task.id,
       );
   }
@@ -105,6 +123,11 @@ export class TasksRepository {
       .prepare(`${SELECT_TASK} ${UNFINISHED} ORDER BY created_at`)
       .all() as TaskRow[];
     return rows.map(toTask);
+  }
+
+  findLiveByWorkKey(workKey: string): Task | null {
+    const row = this.db.sql.prepare(`${SELECT_TASK} WHERE work_key = ? AND status NOT IN ('completed','failed','cancelled') LIMIT 1`).get(workKey) as TaskRow | undefined;
+    return row ? toTask(row) : null;
   }
 
   /**
@@ -149,9 +172,9 @@ function toTask(row: TaskRow): Task {
     priority: row.priority as TaskPriority,
     source: row.source as Task["source"],
     objective: row.objective,
-    parameters: JSON.parse(row.parameters_json) as Record<string, unknown>,
+    parameters: parseJson(row.parameters_json, {}),
     status: row.status as TaskStatus,
-    resumeState: row.resume_state_json ? (JSON.parse(row.resume_state_json) as object) : undefined,
+    resumeState: row.resume_state_json ? parseJson(row.resume_state_json, {}) : undefined,
     parentTaskId: row.parent_task_id ?? undefined,
     interruptedTaskId: row.interrupted_task_id ?? undefined,
     lastError: row.last_error ?? undefined,
@@ -159,7 +182,16 @@ function toTask(row: TaskRow): Task {
     startedAt: row.started_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
     pauseSequence: row.pause_sequence ?? undefined,
+    workKey: row.work_key ?? undefined,
+    phase: row.phase ?? undefined,
+    progressFingerprint: row.progress_fingerprint ?? undefined,
+    lastProgressAt: row.last_progress_at ?? undefined,
+    attempts: row.attempts ?? 0,
   };
+}
+
+function parseJson<T>(raw: string, fallback: T): T {
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
 function jsonOrNull(value: object | undefined): string | null {

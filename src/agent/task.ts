@@ -41,6 +41,11 @@ export interface Task {
   interruptedTaskId?: string;
   resumeState?: object;
   lastError?: string;
+  workKey?: string;
+  phase?: string;
+  progressFingerprint?: string;
+  lastProgressAt?: string;
+  attempts?: number;
 }
 
 /** Task inputs before the system assigns identity and lifecycle fields. */

@@ -224,4 +224,14 @@ export const MIGRATIONS: readonly string[] = [
       ON tasks(COALESCE(completed_at, created_at) DESC)
       WHERE status IN ('completed', 'failed', 'blocked', 'cancelled');
   `,
+  // v12: durable logical work identity and generic progress metadata.
+  `
+  ALTER TABLE tasks ADD COLUMN work_key TEXT;
+  ALTER TABLE tasks ADD COLUMN phase TEXT;
+  ALTER TABLE tasks ADD COLUMN progress_fingerprint TEXT;
+  ALTER TABLE tasks ADD COLUMN last_progress_at TEXT;
+  ALTER TABLE tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_live_work_key
+    ON tasks(work_key) WHERE work_key IS NOT NULL AND status IN ('queued','active','paused','blocked');
+  `,
 ];
