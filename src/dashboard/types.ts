@@ -1,7 +1,6 @@
 import type { GoalStatus, GoalSource, SuccessCriterion } from "../agent/goal.js";
 import type { StockpileKind } from "../agent/maintenance.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
-import type { LlmActivity } from "../llm/decider.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -20,6 +19,22 @@ export interface StockpileSummary { levels: Record<StockpileKind, number>; targe
 export interface InventoryItemSummary { name: string; count: number }
 export interface InventorySummary { items: readonly InventoryItemSummary[]; totalItems: number }
 export interface LlmLastCallSummary { at: string | null; latencyMs: number | null; tool: string | null; rationale: string | null }
+export type LlmDecisionType = "owner_instruction" | "background_director" | "goal_decision";
+export type LlmActivityState = "thinking" | "working" | "idle" | "not_called" | "disconnected";
+export interface LlmFailureSummary { at: string; kind: string; error: string }
+export interface LlmActivity {
+  state: LlmActivityState;
+  thinking: boolean;
+  decisionType: LlmDecisionType | null;
+  thinkingStartedAt: string | null;
+  thinkingDurationMs: number | null;
+  model: string | null;
+  endpoint: string | null;
+  lastAction: string | null;
+  lastRationale: string | null;
+  lastLatencyMs: number | null;
+  lastFailure: LlmFailureSummary | null;
+}
 export interface PathSummary { status: string; destination: Position | null; distance: number | null }
 export interface RecentEvent { at: string; kind: string; message: string }
 export interface RecentFailure { at: string; kind: string; message: string }

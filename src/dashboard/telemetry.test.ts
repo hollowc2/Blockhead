@@ -72,6 +72,58 @@ test("handles missing optional services and serializes as JSON", () => {
   const parsed = JSON.parse(JSON.stringify(snapshot)) as typeof snapshot;
   deepStrictEqual(parsed, snapshot);
   equal(snapshot.llmLastCall.at, null);
+  deepStrictEqual(snapshot.llmActivity, {
+    state: "disconnected", thinking: false, decisionType: null, thinkingStartedAt: null, thinkingDurationMs: null,
+    model: null, endpoint: null, lastAction: null, lastRationale: null, lastLatencyMs: null, lastFailure: null,
+  });
+});
+
+test("exposes an active thinking decision and duration", () => {
+  const snapshot = new DashboardTelemetryCollector(source({
+    nowMs: () => 5_000,
+    decider: { activity: { thinking: true, callType: "background_director", startedAt: "1970-01-01T00:00:02.000Z" }, lastCall: null } as never,
+    client: { modelName: "local-model", endpoint: "http://llm", lastFailure: null } as never,
+  })).snapshot();
+
+  deepStrictEqual(snapshot.llmActivity, {
+    state: "thinking", thinking: true, decisionType: "background_director",
+    thinkingStartedAt: "1970-01-01T00:00:02.000Z", thinkingDurationMs: 3_000,
+    model: "local-model", endpoint: "http://llm", lastAction: null, lastRationale: null, lastLatencyMs: null, lastFailure: null,
+  });
+});
+
+test("distinguishes a successful idle model from a model that has not been called", () => {
+  const client = { modelName: "local-model", endpoint: "http://llm", lastFailure: null } as never;
+  const notCalled = new DashboardTelemetryCollector(source({ client, decider: { activity: { thinking: false, callType: null, startedAt: null }, lastCall: null } as never })).snapshot();
+  equal(notCalled.llmActivity.state, "not_called");
+
+  const idle = new DashboardTelemetryCollector(source({
+    client,
+    decider: {
+      activity: { thinking: false, callType: null, startedAt: null },
+      lastCall: { at: 1_000, latencyMs: 250, tool: "respond", rationale: "safe", success: true, error: null },
+    } as never,
+  })).snapshot();
+  deepStrictEqual(idle.llmActivity, {
+    state: "idle", thinking: false, decisionType: null, thinkingStartedAt: null, thinkingDurationMs: null,
+    model: "local-model", endpoint: "http://llm", lastAction: "respond", lastRationale: "safe", lastLatencyMs: 250, lastFailure: null,
+  });
+});
+
+test("preserves concise failure metadata without prompts or raw responses", () => {
+  const snapshot = new DashboardTelemetryCollector(source({
+    scheduler: { active: { id: "task-1", type: "wait", priority: 20, source: "system", objective: "Wait", parameters: {}, status: "active", createdAt: "now" }, queued: [] } as never,
+    decider: {
+      activity: { thinking: false, callType: null, startedAt: null },
+      lastCall: { at: 1_000, latencyMs: 400, tool: "unknown", rationale: null, success: false, error: "connection refused" },
+    } as never,
+    client: { modelName: "local-model", endpoint: "http://llm", lastFailure: { at: 2_000, kind: "network_error", error: "connection refused" } } as never,
+  })).snapshot();
+
+  deepStrictEqual(snapshot.llmActivity.lastFailure, { at: "1970-01-01T00:00:02.000Z", kind: "network_error", error: "connection refused" });
+  equal(snapshot.llmActivity.state, "working");
+  ok(!("prompt" in snapshot.llmActivity));
+  ok(!("response" in snapshot.llmActivity));
 });
 
 test("does not mutate source state while projecting", () => {

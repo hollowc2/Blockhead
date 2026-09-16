@@ -1,8 +1,8 @@
 import type { Goal } from "../agent/goal.js";
 import type { StockpileSnapshot } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
-import type { LlmCallRecord } from "../llm/decider.js";
-import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, LlmLastCallSummary } from "./types.js";
+import type { LlmActivity as DeciderLlmActivity, LlmCallRecord } from "../llm/decider.js";
+import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, LlmActivity, LlmDecisionType, LlmFailureSummary, LlmLastCallSummary } from "./types.js";
 
 export interface PositionInput { x: number; y: number; z: number }
 
@@ -40,4 +40,40 @@ export function projectStockpiles(snapshot: StockpileSnapshot | null | undefined
 export function projectLlmLastCall(call: LlmCallRecord | null | undefined): LlmLastCallSummary {
   if (call === null || call === undefined) return { at: null, latencyMs: null, tool: null, rationale: null };
   return { at: new Date(call.at).toISOString(), latencyMs: call.latencyMs, tool: call.tool, rationale: call.rationale ?? null };
+}
+
+export function projectLlmActivity(input: {
+  activity: DeciderLlmActivity | null | undefined;
+  call: LlmCallRecord | null | undefined;
+  client: { modelName: string; endpoint: string; lastFailure: { at: number; kind: string; error: string } | null } | null | undefined;
+  working: boolean;
+  nowMs: number;
+}): LlmActivity {
+  const activity = input.activity ?? { thinking: false, callType: null, startedAt: null };
+  const thinking = activity.thinking && activity.startedAt !== null;
+  const thinkingStartedAt = thinking ? activity.startedAt : null;
+  const thinkingDurationMs = thinkingStartedAt === null ? null : Math.max(0, input.nowMs - Date.parse(thinkingStartedAt));
+  const lastFailure = input.client?.lastFailure ?? (input.call?.success === false && input.call.error !== null
+    ? { at: input.call.at, kind: "decision_error", error: input.call.error }
+    : null);
+  const state = input.client === null || input.client === undefined
+    ? "disconnected"
+    : thinking
+      ? "thinking"
+      : input.call === null || input.call === undefined
+        ? "not_called"
+        : input.working ? "working" : "idle";
+  return {
+    state,
+    thinking,
+    decisionType: activity.callType as LlmDecisionType | null,
+    thinkingStartedAt,
+    thinkingDurationMs,
+    model: input.client?.modelName ?? null,
+    endpoint: input.client?.endpoint ?? null,
+    lastAction: input.call?.tool ?? null,
+    lastRationale: input.call?.rationale ?? null,
+    lastLatencyMs: input.call?.latencyMs ?? null,
+    lastFailure: lastFailure === null ? null : { at: new Date(lastFailure.at).toISOString(), kind: lastFailure.kind, error: lastFailure.error } satisfies LlmFailureSummary,
+  };
 }

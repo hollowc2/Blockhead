@@ -18,6 +18,7 @@ import {
   projectStockpiles,
   projectTask,
   projectLlmLastCall,
+  projectLlmActivity,
 } from "./projections.js";
 import type { DashboardSnapshot } from "./types.js";
 
@@ -110,7 +111,13 @@ export class DashboardTelemetryCollector {
       inventory,
       danger,
       llmLastCall: projectLlmLastCall(lastCall),
-      llmActivity: this.source.decider?.activity ?? { thinking: false, callType: null, startedAt: null },
+      llmActivity: projectLlmActivity({
+        activity: this.source.decider?.activity,
+        call: lastCall,
+        client: this.source.decider === undefined || this.source.decider === null ? null : this.source.client,
+        working: activeTask !== null,
+        nowMs: now,
+      }),
       path: null,
       recentEvents: this.source.eventHistory.recentEvents().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
       recentFailures: this.source.eventHistory.recentFailures().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
