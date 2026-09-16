@@ -9,6 +9,7 @@ import {
   nextBootstrapStage,
 } from "../agent/bootstrap.js";
 import type { AgentState } from "../agent/state.js";
+import type { Scheduler } from "../agent/scheduler.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { BootstrapRepository } from "../memory/bootstrap.js";
@@ -52,6 +53,7 @@ import {
 import { regionContains } from "../minecraft/protection.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
+import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -171,6 +173,8 @@ export interface BootstrapRunnerOptions {
   storage: StorageRepository;
   skills: SkillsRepository;
   logger: Logger;
+  /** Scheduler boundary for bootstrap's Mineflayer work. */
+  scheduler?: Scheduler;
   /**
    * Phase 8: polled between stages. When it returns true the run yields at
    * the very next stage boundary — progress is already persisted, so a later
@@ -203,6 +207,7 @@ export class BootstrapRunner {
   private startupAnnounced = false;
   /** When the food-hunt status was last announced, to throttle retry spam. */
   private lastHuntAnnounceAt: number | null = null;
+  private signal: AbortSignal | null = null;
 
   constructor(private readonly opts: BootstrapRunnerOptions) {}
 
@@ -227,6 +232,24 @@ export class BootstrapRunner {
 
   /** Drive the state machine from where it last stopped. Idempotent. */
   async run(): Promise<void> {
+    if (this.opts.scheduler !== undefined) {
+      const controller = new AbortController();
+      try {
+        await this.opts.scheduler.runWorldAction(
+          `bootstrap:${this.worldId ?? "unknown"}`,
+          controller.signal,
+          () => this.runLeased(controller.signal),
+          { onCancel: () => stopWorldPrimitives(this.opts.bot), onRecovery: () => stopWorldPrimitives(this.opts.bot) },
+        );
+      } finally {
+        controller.abort(new Error("bootstrap settled"));
+      }
+      return;
+    }
+    await this.runLeased();
+  }
+
+  private async runLeased(signal?: AbortSignal): Promise<void> {
     if (this.running || this.worldId === null) return;
     if (this.currentStage === null) return; // already finished
     if (this.opts.bot.entity === null) {
@@ -236,6 +259,7 @@ export class BootstrapRunner {
 
     this.running = true;
     this.startedAt = Date.now();
+    this.signal = signal ?? null;
     try {
       let started = false;
       while (true) {
@@ -245,6 +269,7 @@ export class BootstrapRunner {
           this.opts.logger.info({ stage }, "bootstrap yielding to higher-priority work; resuming later");
           return;
         }
+        throwIfAborted(this.signal ?? undefined);
         if (!BOOTSTRAP_STAGES.includes(stage)) {
           // The next stage belongs to a later phase (or is NORMAL_OPERATION):
           // stay quiet if this session did nothing, otherwise wrap up the
@@ -271,6 +296,7 @@ export class BootstrapRunner {
       }
     } finally {
       this.running = false;
+      this.signal = null;
     }
   }
 
@@ -296,11 +322,12 @@ export class BootstrapRunner {
   private async executeWithRetries(stage: BootstrapStage): Promise<StageOutcome> {
     let last: StageOutcome = { ok: false, reason: "no attempt ran" };
     for (let attempt = 1; attempt <= STAGE_ATTEMPTS; attempt++) {
+      throwIfAborted(this.signal ?? undefined);
       last = await this.executeStage(stage);
       if (last.ok) return last;
       if (attempt < STAGE_ATTEMPTS) {
         this.opts.logger.warn({ stage, attempt, reason: last.reason }, "bootstrap stage attempt failed; retrying");
-        await sleep(RETRY_DELAY_MS);
+        await sleep(RETRY_DELAY_MS, this.signal ?? undefined);
       }
     }
     return last;
@@ -2007,9 +2034,17 @@ function lootDropsNear(bot: Bot, radius: number): Entity[] {
   return drops;
 }
 
-function sleep(ms: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  const cleanup = (): void => signal?.removeEventListener("abort", abort);
+  const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+  const abort = (): void => {
+    clearTimeout(timer);
+    cleanup();
+    reject(new Error("bootstrap sleep aborted"));
+  };
+  if (signal !== undefined) signal.addEventListener("abort", abort, { once: true });
   return promise;
 }
 

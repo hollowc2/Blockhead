@@ -276,6 +276,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     state,
     config,
     bus,
+    scheduler,
     stages: bootstrapStages,
     storage,
     skills,
