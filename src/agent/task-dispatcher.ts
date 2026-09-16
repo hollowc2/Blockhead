@@ -30,6 +30,8 @@ import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
 import { stopWorldPrimitives } from "./world-actions.js";
+import type { WorldMutation } from "./world-actions.js";
+import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
@@ -131,6 +133,15 @@ export class TaskDispatcher {
     const signals = this.opts.scheduler.signalsFor(task);
     const run = typeof this.opts.scheduler.runWorldAction === "function"
       ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task), {
+        beforeMutation: (mutation: WorldMutation) => {
+          const point = mutation.point ?? this.opts.bot.entity?.position;
+          if (!point) throw new Error("mutation policy revalidation requires a live bot position");
+          const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, {
+            blockName: mutation.blockName,
+            userRequested: task.source === "user",
+          });
+          if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "mutation rejected by policy");
+        },
         // Cleanup belongs to the lease, not to the dispatcher finally block:
         // otherwise a rejected plugin can release ownership and let the next
         // task start while the old primitive is still active.

@@ -166,3 +166,16 @@ test("recovery completes before a queued replacement receives ownership", async 
   await assert.rejects(first, /plugin rejected/);
   await second;
 });
+
+test("a lease policy rejection happens before the mutation callback", async () => {
+  const executor = new WorldActionExecutor();
+  let mutated = false;
+  await assert.rejects(executor.run("policy-rejected", new AbortController().signal, async (lease) => {
+    lease.beforeMutation?.({ action: "container", point: { x: 0, y: 64, z: 0 } });
+    mutated = true;
+  }, {
+    beforeMutation: () => { throw new Error("explicit policy rejection"); },
+  }), /explicit policy rejection/);
+  assert.equal(mutated, false);
+  assert.equal(executor.activeOwner, null);
+});

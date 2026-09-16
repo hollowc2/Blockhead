@@ -7,6 +7,15 @@ export interface WorldActionLease {
   readonly signal: AbortSignal;
   /** Primitive acknowledgement: resolves only after the leased action settles. */
   readonly acknowledged: Promise<void>;
+  /** Last-safe-point policy check supplied by the session dispatcher. */
+  readonly beforeMutation?: (mutation: WorldMutation) => void;
+}
+
+export interface WorldMutation {
+  action: string;
+  point?: { x: number; y: number; z: number };
+  blockName?: string;
+  userRequested?: boolean;
 }
 
 const worldActionContext = new AsyncLocalStorage<WorldActionLease>();
@@ -49,6 +58,7 @@ export interface WorldActionOptions {
   onCancel?: () => void | Promise<void>;
   /** Recovery hook for a plugin that ignores cancellation or leaves state open. */
   onRecovery?: (reason: unknown) => void | Promise<void>;
+  beforeMutation?: (mutation: WorldMutation) => void;
 }
 
 export interface WorldActionDiagnostics {
@@ -92,7 +102,7 @@ export class WorldActionExecutor {
     if (signal.aborted) forwardAbort();
     else signal.addEventListener("abort", forwardAbort, { once: true });
     const acknowledged = Promise.withResolvers<void>();
-    const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise };
+    const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise, beforeMutation: options.beforeMutation };
     this.cancelled = false;
     this.startedAt = Date.now();
     const actionPromise = withWorldActionLease(leased, async () => {

@@ -2,6 +2,7 @@ import type { Bot } from "mineflayer";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { ProtectedRegion } from "../minecraft/protection.js";
 import { checkBlockDestruction, checkBlockPlacement } from "./protection.js";
+import { canPerform } from "../minecraft/protection.js";
 import { checkDimensionEntry, checkHealthRetreat, checkLavaEntry, lavaAvoidanceRadius, type SafetyVerdict } from "./safety.js";
 
 export type DangerousAction = "dig" | "place" | "container" | "combat" | "dimension" | "craft" | "smelt";
@@ -24,6 +25,9 @@ export function revalidateAction(
     if (!health.allowed && ["dig", "combat"].includes(action)) return health;
     const lava = checkLavaEntry(bot, point, lavaAvoidanceRadius(config));
     if (!lava.allowed && ["dig", "combat", "place"].includes(action)) return lava;
+  }
+  if (action === "container" && !canPerform("useContainers", region, point)) {
+    return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "container use rejected by protected-region policy" } };
   }
   if (action === "dig") {
     if (options.blockName === undefined) return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "current block state is unavailable" } };
