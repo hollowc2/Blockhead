@@ -62,6 +62,8 @@ import { stopWorldPrimitives } from "./agent/world-actions.js";
 import { EventHistory } from "./dashboard/event-history.js";
 import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
 import { startDashboard } from "./dashboard/lifecycle.js";
+import { ViewerManager } from "./dashboard/viewer.js";
+import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -165,6 +167,13 @@ const taskOutcomes = new TaskOutcomeTracker({ bus });
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
 let dashboardServer: ReturnType<typeof startDashboard> = null;
+const viewerManager = new ViewerManager({
+  enabled: config.dashboard?.viewer_enabled ?? false,
+  port: config.dashboard?.viewer_port ?? 3001,
+  distance: config.dashboard?.viewer_distance ?? 6,
+  adapter: prismarineViewerAdapter,
+  logger,
+});
 
 // The live bot session. `shutdown` and the bootstrap-resume hooks act on the
 // session currently being attempted; between attempts this is null.
@@ -195,6 +204,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   decider,
   client,
   eventHistory,
+  viewer: () => viewerManager.telemetry(),
 });
 
 // Phase 12 (spec 33): the development dashboard runs for the whole process,
@@ -266,8 +276,10 @@ let shuttingDown = false;
 async function shutdown(code: number): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  viewerManager.stop();
   const active = session;
   if (active !== null) {
+    viewerManager.stopFor(active.bot);
     active.background.stop();
     active.hostile.detach();
     scheduler.requestCancel();
@@ -411,6 +423,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
+    void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {
       logger.error({ err: String(err) }, "supervised bootstrap run failed");

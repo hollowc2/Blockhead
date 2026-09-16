@@ -40,11 +40,14 @@ export interface RecentEvent { at: string; kind: string; message: string }
 export interface RecentFailure { at: string; kind: string; message: string }
 export interface RecentChatEntry { at: string; sender: string; message: string }
 export interface DangerSummary { score: number; nearestHostile: { type: string; distance: number } | null; hostileCount: number }
+export type ViewerStatus = "enabled" | "starting" | "running" | "stopped" | "failed";
+export interface ViewerSummary { enabled: boolean; status: ViewerStatus; port: number; distance: number; failure: string | null }
 
 export interface DashboardSnapshot {
   schema: 1;
   process: { startedAt: string; uptimeSeconds: number };
   connection: BotConnectionInfo;
+  viewer: ViewerSummary;
   self: SelfSummary;
   goal: GoalSummary | null;
   task: TaskSummary | null;

@@ -21,6 +21,7 @@ import {
   projectLlmActivity,
 } from "./projections.js";
 import type { DashboardSnapshot } from "./types.js";
+import type { ViewerTelemetry } from "./viewer.js";
 
 /**
  * Read-only inputs for the process-lifetime dashboard collector. Session
@@ -40,6 +41,7 @@ export interface DashboardTelemetrySource {
   decider?: DecisionMaker | null;
   client?: LlamaClient | null;
   eventHistory: EventHistory;
+  viewer?: () => ViewerTelemetry;
 }
 
 /** A process-lifetime, side-effect-free projection of live agent telemetry. */
@@ -62,6 +64,7 @@ export class DashboardTelemetryCollector {
     const activeGoal = this.source.goals()?.active() ?? null;
     const nearestHostile = hostile?.nearest() ?? null;
     const lastCall = this.source.decider?.lastCall ?? null;
+    const viewer = this.source.viewer?.() ?? { enabled: false, status: "stopped" as const, port: 0, distance: 0, failure: null };
 
     const inventory = connected && bot !== null
       ? projectInventory(itemsSummary(bot))
@@ -93,6 +96,7 @@ export class DashboardTelemetryCollector {
           ? null
           : `${this.source.config.server.host}:${this.source.config.server.port}`,
       },
+      viewer,
       self: {
         health: connected ? self.health : null,
         hunger: connected ? self.food : null,

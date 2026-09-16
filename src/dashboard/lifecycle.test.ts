@@ -7,6 +7,7 @@ import type { DashboardSnapshot } from "./types.js";
 const snapshot = (): DashboardSnapshot => ({
   schema: 1, process: { startedAt: "2026-01-01T00:00:00.000Z", uptimeSeconds: 0 },
   connection: { connected: false, player: null, server: null },
+  viewer: { enabled: false, status: "stopped", port: 0, distance: 0, failure: null },
   self: { health: null, hunger: null, position: null, dimension: null, timePhase: null },
   goal: null, task: null, action: { label: "Standing by", taskId: null }, background: { label: "Standing by", taskId: null },
   stockpiles: null, inventory: null, danger: null,
