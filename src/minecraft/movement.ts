@@ -219,7 +219,7 @@ const ABORT_POLL_MS = 250;
  * abort probe. Used by both travel helpers so their interrupt behavior is
  * identical.
  */
-async function raceTrip(
+export async function raceTrip(
   bot: Bot,
   trip: Promise<TravelWaitResult>,
   options: TravelWaitOptions,
@@ -239,6 +239,10 @@ async function raceTrip(
     const winner = await Promise.race([trip, nap]);
     if (winner.status === "timed_out" || winner.status === "aborted") {
       bot.pathfinder.stop();
+      // Stopping the pathfinder is only a cancellation request. Mineflayer's
+      // goto promise may settle later, and the scheduler lease must remain
+      // owned until that promise has actually settled.
+      await trip.catch(() => undefined);
     }
     return winner;
   } finally {
