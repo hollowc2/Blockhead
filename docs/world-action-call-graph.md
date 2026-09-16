@@ -87,7 +87,9 @@ backoff. Session listeners and runners are rebuilt per connection attempt.
 
 ## Signal and settlement contract
 
-Every leased adapter checks the supplied signal before the Mineflayer call and
+Every leased adapter validates the active lease even when a caller supplies an
+explicit signal, checks that signal before the Mineflayer call, invokes the
+lease's session policy hook at the last safe point, and checks the signal again
 after its promise settles. If a caller omits a signal, the adapter derives the
 active lease signal, so bootstrap and older maintenance call sites cannot
 escape cancellation. Container and furnace close are cleanup adapters: they
@@ -103,7 +105,7 @@ The current boundary coverage is:
 
 - one-shot movement, collection, placement, crafting, smelting, digging,
   equipment, tossing, PvP, sleep, eating, and armor mutations have explicit
-  lease-bound adapters and signal checks;
+  lease-bound adapters, policy hooks, and signal checks;
 - timeout cancellation hooks are awaitable, and the shared timeout helper
   observes plugin settlement before returning; dispatcher cancellation,
   replacement, timeout, and disconnect cleanup await the lease acknowledgement;
@@ -114,6 +116,8 @@ The current boundary coverage is:
 - crafting, smelting, placement, and recovery production chains pass their
   task signal explicitly at the call sites; adapters still reject missing or
   already-aborted signals when called by compatibility/maintenance code;
+  the dispatcher supplies the session policy hook, which rejects a mutation
+  before the Mineflayer call;
 - teardown is a named, per-bot serialized adapter. It is the only unleased
   Mineflayer mutation boundary and runs dynamic-goal invalidation, pathfinder
   stop/goal clear, collectblock cancellation, PvP stop, and current-window
@@ -158,9 +162,11 @@ The following direct calls remain, with their reason:
   the Mineflayer API and have the settlement limitation above.
 - `src/minecraft/world.ts`: no direct dangerous Mineflayer mutation remains;
   placement delegates to the adapters in `src/minecraft/primitives.ts`.
-- `src/minecraft/crafting.ts` and `src/minecraft/smelting.ts`: craft and
-  furnace calls — explicit lease/signal adapters; furnace close is awaited
-  cleanup. Recipe discovery and inventory reads are observations.
+- `src/minecraft/crafting.ts`: recipe discovery and inventory reads are
+  observations; recipe mutation delegates to `craftRecipe` in
+  `src/minecraft/primitives.ts`.
+- `src/minecraft/smelting.ts`: furnace mutation delegates to the furnace
+  adapters in `src/minecraft/primitives.ts`; furnace close is awaited cleanup.
 - `src/minecraft/events.ts` and skill announcement methods: `bot.chat` —
   protocol announcements intentionally outside the world-action lease and
   governed by chat throttles where skill-generated.
