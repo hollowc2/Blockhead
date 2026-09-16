@@ -398,6 +398,10 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // task remains leased until its dispatcher promise settles.
   scheduler.requestCancel();
   await dispatcher.waitForIdle();
+  // The end event requests cleanup concurrently; await the same serialized
+  // adapter here so reconnect cannot detach the session before windows and
+  // movement/combat/collection plugins have actually stopped.
+  await stopWorldPrimitives(bot);
   if (connectionState.state === "READY" || connectionState.state === "SPAWNED") connectionState.transition("INTERRUPTING");
 
   // Connection is over (never connected, or the game dropped us): tear down
