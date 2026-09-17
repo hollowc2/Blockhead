@@ -4,61 +4,128 @@
 
 # Blockhead — CobbleBob, an autonomous Minecraft companion
 
-A TypeScript/Mineflayer bot whose decisions come from a local LLM (llama.cpp).
-Three strict layers:
+Blockhead is an experimental TypeScript/Mineflayer agent that joins a private
+Minecraft Java server as CobbleBob. A local llama.cpp model interprets owner
+chat and chooses from registered high-level tools; deterministic skills and
+Mineflayer code perform the actual work.
 
-1. **LLM tool layer** — the model only picks registered high-level tools
-   (`src/tools/`). It never controls movement, pathfinding, inventory slots,
-   or combat directly.
-2. **Skill layer** — deterministic multi-step runners (`src/skills/`: collect,
-   hunt, ensure_item, craft/smelt, defense, storage, death recovery) that
-   handle the mechanics and record SkillSuccess entries in SQLite.
-3. **Primitive layer** — mineflayer plugins + thin wrappers (`src/minecraft/`).
+The project is currently a working end-to-end prototype, not a production
+Minecraft bot. The autonomous loop, persistent tasks and goals, bootstrap and
+stockpile maintenance, safety policy, memory, dashboard, and live world viewer
+are implemented and under active development.
 
-The scheduler (`src/agent/scheduler.ts`) owns priority, pause/resume, and
-preemption; the policy layer (`src/policy/`) hard-vetoes unsafe proposals
-(protected regions, health retreats, straight-down digs, lava entry, player
-attacks, unauthorized dimensions) with structured error codes.
+## Architecture
 
-## Run
+The execution boundary is deliberately narrow:
 
-### 1. Start the local model (llama.cpp server)
-
-```bash
-npm run llm            # or any llama.cpp server on http://127.0.0.1:8080
+```text
+owner chat / background director
+            ↓
+LLM decision → validated high-level tool → scheduler/task lease
+                                              ↓
+                                    deterministic skill
+                                              ↓
+                               Mineflayer world primitives
 ```
 
-The default model is a small GGUF (e.g. Qwen3 8B, 4-bit). Point
-`llm.base_url` in `config/minecraft.yaml` at your server.
+- `src/llm/` talks to the local llama.cpp HTTP server and validates decisions.
+- `src/tools/` registers the only high-level actions the model may select.
+- `src/agent/` owns scheduling, task dispatch, persistent goals, bootstrap,
+  background maintenance, connection recovery, and watchdogs.
+- `src/skills/` implements deterministic multi-step work such as resource
+  collection, food gathering, storage, base building, combat/defense, torch
+  production, delivery, and death recovery.
+- `src/policy/` applies hard safety rules before dangerous actions.
+- `src/memory/` persists tasks, goals, locations, storage, deaths, actions, and
+  skill history in SQLite.
+- `src/dashboard/` exposes read-only telemetry and a session-scoped Minecraft
+  viewer. The browser cannot control the bot.
 
-### 2. Configure the world
+Safety/self-maintenance has priority over owner work, which has priority over
+background work. Background maintenance keeps wood, food, fuel, and torches at
+configured targets; an LLM director chooses optional idle work when survival
+floors are healthy, with deterministic fallback behavior when the model is
+unavailable.
 
-Edit `config/minecraft.yaml`: server host/port, the `home` coordinate, and
-`agent.owner`. All keys are Zod-validated against `src/config/schema.ts` at
-startup; sections are documented in the file (agent/behavior, minecraft,
-policy, bootstrap/background, items).
+## Current capabilities
 
-### 3. Run the bot
+- Persistent scheduler with queued, active, paused, blocked, completed, failed,
+  and cancelled tasks.
+- Resumable bootstrap from home through tools, food, bed, storage, furnace,
+  fuel, torches, and opportunistic iron.
+- Resource gathering, hunting/food collection, crafting and smelting, storage
+  organization, delivery, navigation, defense, death recovery, and bounded
+  base construction.
+- Protected-home, health, lava, dimension, PvP, inventory, path, and timeout
+  safeguards.
+- Persistent autonomous goals and an anti-loop watchdog for repeatedly failing
+  actions.
+- Structured logs, terminal dashboard, local SQLite state, and reconnect-safe
+  operation.
+
+## Run locally
+
+Requirements: Node.js 20+, a reachable Minecraft Java server, and a local
+llama.cpp server.
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Start llama.cpp, or use another compatible OpenAI-style local endpoint:
+
+   ```bash
+   npm run llm
+   ```
+
+3. Edit [`config/minecraft.yaml`](config/minecraft.yaml). At minimum, set the
+   Minecraft server, username, owner, home coordinates, and `llm.base_url`.
+
+4. Start CobbleBob:
+
+   ```bash
+   npm start
+   ```
+
+On first connection, the bot resumes or runs its persisted bootstrap. State is
+stored in `data/blockhead.db`; application logs are written under `logs/`.
+
+## Dashboard and viewer
+
+The read-only dashboard is enabled by default and listens on `0.0.0.0:3000`:
+
+- `http://<host>:3000/` — live dashboard
+- `http://<host>:3000/api/state` — JSON snapshot
+- `ws://<host>:3000/ws` — snapshot stream
+- `http://<host>:3000/health` — health check
+
+When a Minecraft session is connected, the viewer is available on port 3001
+using the dashboard as its WebSocket proxy. Configure both services under the
+`dashboard` section. Disable the dashboard with `dashboard.enabled: false`.
+
+The older local status endpoint defaults to `127.0.0.1:8155`; it provides a
+small machine-readable process/task health snapshot.
+
+## Tests and type checking
 
 ```bash
-npm install
-npm start
+npm test
+npm run typecheck
 ```
 
-CobbleBob connects (retrying with backoff), runs bootstrap on first spawn
-(home → wood → tools → food → bed → storage → furnace → fuel → torches →
-iron), then maintains stockpiles in the background and answers the owner's
-chat instructions through the LLM.
+## Deployment
 
-## Tests
+For the Maia systemd deployment, updates, logs, and rollback-safe operations,
+see [`docs/deployment-maia.md`](docs/deployment-maia.md). The example unit is
+at [`deploy/blockhead.service.example`](deploy/blockhead.service.example).
 
-```bash
-npm test               # unit tests (node:test)
-npm run typecheck      # strict TypeScript
-```
+Additional design notes and call graphs are in [`docs/`](docs/).
 
-## Prompts
+## Configuration and prompts
 
-`prompts/system.md`, `prompts/decision.md`, and `prompts/idle-proposal.md`
-are loaded at startup (with built-in fallbacks) — keep them short and strict
-for local models.
+The single configuration file is [`config/minecraft.yaml`](config/minecraft.yaml)
+and is validated with Zod at startup. Prompt assets live in [`prompts/`](prompts/)
+and have built-in fallbacks, so local model behavior can be tuned without
+changing the TypeScript decision pipeline.
