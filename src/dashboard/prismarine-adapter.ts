@@ -13,7 +13,7 @@ export const prismarineViewerAdapter: ViewerAdapter = {
     const viewerOptions = {
       port: viewerPort,
       viewDistance: options.viewDistance,
-      firstPerson: true,
+      firstPerson: false,
     } as Parameters<typeof prismarineViewer>[1] & { firstPerson: boolean };
     prismarineViewer(bot, viewerOptions);
     const viewer = (bot as Bot & { viewer?: ViewerHandle }).viewer;
