@@ -64,6 +64,43 @@ export function parseDeterministicBuildCommand(instruction: string): Determinist
     || /^(please )?build (a |the )?(standard )?base$/.test(instruction)) {
     return { tool: "build_base", args: {} };
   }
+
+  // Common owner phrasing gets a bounded, LLM-independent blueprint. The
+  // model still handles unusual designs, but ordinary requests should not
+  // depend on it remembering every required dimension argument.
+  const simpleShape = instruction.match(/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?(house|home|cabin|shelter|room|wall|tower|pyramid)(?: (?:at|from) (owner|current|home))?$/);
+  if (simpleShape) {
+    const requested = simpleShape[1]!;
+    const shape = ["house", "home", "cabin", "shelter"].includes(requested) ? "room" : requested;
+    const defaults: Record<string, { width: number; height: number; length: number }> = {
+      room: { width: 7, height: 4, length: 7 },
+      wall: { width: 7, height: 3, length: 1 },
+      tower: { width: 5, height: 8, length: 5 },
+      pyramid: { width: 7, height: 4, length: 7 },
+    };
+    const dimensions = defaults[shape]!;
+    return {
+      tool: "build_structure",
+      args: { shape, ...dimensions, material: "planks", anchor: simpleShape[2] ?? "owner" },
+    };
+  }
+
+  const compact = instruction.match(/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?(room|house|home|cabin|shelter|wall|tower|pyramid) (\d+)\s*x\s*(\d+)\s*x\s*(\d+)(?: (?:at|from) (owner|current|home))?$/);
+  if (compact) {
+    const shape = ["house", "home", "cabin", "shelter"].includes(compact[1]!) ? "room" : compact[1]!;
+    return {
+      tool: "build_structure",
+      args: {
+        shape,
+        width: Number(compact[2]),
+        height: Number(compact[3]),
+        length: Number(compact[4]),
+        material: "planks",
+        anchor: compact[5] ?? "owner",
+      },
+    };
+  }
+
   const match = instruction.match(/^(?:(?:please )?build (?:a )?(room|wall|tower|pyramid)(?: shaped)?(?: like a (room|wall|tower|pyramid))?|i want a stockpile shed shaped like a (room|wall|tower|pyramid)) (\d+) wide (\d+) tall (\d+) long(?: (?:from|at) (owner|current|home))?$/);
   if (!match) return null;
   const shape = (match[3] ?? match[2] ?? match[1])!;

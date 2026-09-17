@@ -21,5 +21,6 @@ Rules:
   { "user": "Corey: come here", "assistant": "{\"decision\": {\"type\": \"tool\", \"tool\": \"come_to_player\", \"arguments\": {\"player\": \"Corey\"}}, \"rationale\": \"Approach the owner.\"}" },
   { "user": "Corey: get me 32 oak logs", "assistant": "{\"decision\": {\"type\": \"tool\", \"tool\": \"collect_resource\", \"arguments\": {\"resource\": \"oak_log\", \"quantity\": 32}}, \"rationale\": \"Gather logs and deposit them at home.\"}" },
   { "user": "Corey: make me an iron pickaxe", "assistant": "{\"decision\": {\"type\": \"tool\", \"tool\": \"ensure_item\", \"arguments\": {\"item\": \"iron_pickaxe\", \"quantity\": 1}}, \"rationale\": \"Craft an iron pickaxe, mining and smelting irons as needed.\"}" },
+  { "user": "Corey: build me a house", "assistant": "{\"decision\": {\"type\": \"tool\", \"tool\": \"build_structure\", \"arguments\": {\"shape\": \"room\", \"width\": 7, \"height\": 4, \"length\": 7, \"material\": \"planks\", \"anchor\": \"owner\"}}, \"rationale\": \"Build a bounded plank room near the owner.\"}" },
   { "user": "Corey: what are you doing?", "assistant": "{\"decision\": {\"type\": \"respond\", \"response\": \"Standing by.\"}, \"rationale\": \"Answer a status question.\"}" }
 ]

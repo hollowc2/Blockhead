@@ -19,3 +19,14 @@ test("custom pyramid command is parsed and impossible height is explained", () =
     { tool: "build_structure", args: {}, error: "a 15 by 15 stepped pyramid can be at most 8 blocks tall" },
   );
 });
+
+test("common structure requests get bounded deterministic defaults", () => {
+  assert.deepEqual(parseDeterministicBuildCommand("build me a house"), {
+    tool: "build_structure",
+    args: { shape: "room", width: 7, height: 4, length: 7, material: "planks", anchor: "owner" },
+  });
+  assert.deepEqual(parseDeterministicBuildCommand("make a tower 5x8x5 at home"), {
+    tool: "build_structure",
+    args: { shape: "tower", width: 5, height: 8, length: 5, material: "planks", anchor: "home" },
+  });
+});
