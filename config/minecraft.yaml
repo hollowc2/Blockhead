@@ -51,8 +51,8 @@ server:
 
 home:
   dimension: overworld
-  x: 0
-  y: 64
+  x: -46
+  y: 84
   z: 0
   protected_size_x: 100
   protected_size_z: 100
