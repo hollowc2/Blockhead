@@ -14,13 +14,14 @@ export interface ViewerTelemetry {
 export interface ViewerHandle { close(): void }
 
 export interface ViewerAdapter {
-  start(bot: Bot, options: { port: number; viewDistance: number }): ViewerHandle | Promise<ViewerHandle>;
+  start(bot: Bot, options: { port: number; viewDistance: number; dashboardPort: number }): ViewerHandle | Promise<ViewerHandle>;
 }
 
 export interface ViewerManagerOptions {
   enabled: boolean;
   port: number;
   distance: number;
+  dashboardPort: number;
   adapter: ViewerAdapter;
   logger?: Pick<Logger, "warn">;
 }
@@ -58,7 +59,7 @@ export class ViewerManager {
     this.activeBot = bot;
     this.state = { ...this.state, status: "starting", failure: null };
     try {
-      const handle = await this.options.adapter.start(bot, { port: this.options.port, viewDistance: this.options.distance });
+      const handle = await this.options.adapter.start(bot, { port: this.options.port, viewDistance: this.options.distance, dashboardPort: this.options.dashboardPort });
       if (this.activeBot !== bot) {
         handle.close();
         return;

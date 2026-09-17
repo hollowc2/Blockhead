@@ -171,6 +171,7 @@ const viewerManager = new ViewerManager({
   enabled: config.dashboard?.viewer_enabled ?? false,
   port: config.dashboard?.viewer_port ?? 3001,
   distance: config.dashboard?.viewer_distance ?? 6,
+  dashboardPort: config.dashboard?.port ?? 3000,
   adapter: prismarineViewerAdapter,
   logger,
 });

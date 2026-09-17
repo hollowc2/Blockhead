@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CobbleBob Live Viewer</title>
+  <link rel="stylesheet" href="/viewer-shell.css">
+</head>
+<body>
+  <main>
+    <header><div><p class="eyebrow">BLOCKHEAD / COBBLEBOB</p><h1>Live Minecraft View</h1></div><div id="connection" class="status">Connecting…</div></header>
+    <section class="viewer-card"><iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe></section>
+    <section class="stats-card">
+      <div class="stats-grid">
+        <div><span>Health</span><strong id="health">—</strong></div>
+        <div><span>Hunger</span><strong id="hunger">—</strong></div>
+        <div><span>Position</span><strong id="position">—</strong></div>
+        <div><span>Dimension</span><strong id="dimension">—</strong></div>
+        <div><span>Time</span><strong id="time">—</strong></div>
+        <div><span>Action</span><strong id="action">—</strong></div>
+      </div>
+      <div class="details"><div><b>Goal</b><span id="goal">—</span></div><div><b>Task</b><span id="task">—</span></div><div><b>LLM</b><span id="llm">—</span></div><div><b>Viewer</b><span id="viewerStatus">—</span></div></div>
+    </section>
+  </main>
+  <script src="/viewer-shell.js" defer></script>
+</body>
+</html>

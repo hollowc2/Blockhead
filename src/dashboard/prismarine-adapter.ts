@@ -2,15 +2,25 @@ import { mineflayer as prismarineViewer } from "prismarine-viewer";
 import { createServer } from "node:net";
 import type { Bot } from "mineflayer";
 import type { ViewerAdapter, ViewerHandle } from "./viewer.js";
+import { ViewerShellServer } from "./viewer-shell.js";
 
 /** Production adapter for the documented prismarine-viewer Mineflayer API. */
 export const prismarineViewerAdapter: ViewerAdapter = {
   async start(bot: Bot, options) {
     await assertPortAvailable(options.port);
-    prismarineViewer(bot, { ...options, firstPerson: false });
+    const viewerPort = options.port + 1;
+    await assertPortAvailable(viewerPort);
+    prismarineViewer(bot, { port: viewerPort, viewDistance: options.viewDistance, firstPerson: false });
     const viewer = (bot as Bot & { viewer?: ViewerHandle }).viewer;
     if (viewer === undefined) throw new Error("viewer did not attach to bot");
-    return viewer;
+    const shell = new ViewerShellServer({ host: "0.0.0.0", port: options.port, viewerPort, statsPort: options.dashboardPort });
+    try {
+      await shell.start();
+    } catch (error) {
+      viewer.close();
+      throw error;
+    }
+    return { close: () => { shell.stop(); viewer.close(); } };
   },
 };
 
