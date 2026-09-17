@@ -1,5 +1,6 @@
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { connect as connectTcp } from "node:net";
+import type { Duplex } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
@@ -119,7 +120,7 @@ export class ViewerShellServer {
     request.pipe(upstream);
   }
 
-  private handleUpgrade(request: IncomingMessage, socket: NodeJS.WritableStream, head: Buffer): void {
+  private handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     const viewerSocket = pathname === "/viewer/socket.io" || pathname.startsWith("/viewer/socket.io/");
     const directSocket = pathname === "/socket.io" || pathname.startsWith("/socket.io/");

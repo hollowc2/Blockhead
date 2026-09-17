@@ -8,7 +8,7 @@ type FakeBot = EventEmitter & Bot;
 function bot(): FakeBot { return new EventEmitter() as unknown as FakeBot; }
 
 function harness(adapter: ViewerAdapter, enabled = true): ViewerManager {
-  return new ViewerManager({ enabled, port: 3001, distance: 6, adapter });
+  return new ViewerManager({ enabled, port: 3001, distance: 6, dashboardPort: 3002, adapter });
 }
 
 test("starts once for a spawned session and closes only for that session", async () => {
@@ -17,7 +17,7 @@ test("starts once for a spawned session and closes only for that session", async
   const handles: Array<ViewerHandle & { closeCalls: number }> = [];
   const manager = harness({ start: (boundBot, options) => {
     assert.equal(boundBot, first);
-    assert.deepEqual(options, { port: 3001, viewDistance: 6 });
+    assert.deepEqual(options, { port: 3001, viewDistance: 6, dashboardPort: 3002 });
     const handle = { closeCalls: 0, close() { this.closeCalls += 1; } };
     handles.push(handle);
     return handle;
