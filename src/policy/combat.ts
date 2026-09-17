@@ -61,6 +61,23 @@ export const HOSTILE_MOB_NAMES: ReadonlySet<string> = new Set([
   "endermite",
 ]);
 
+/**
+ * Mineflayer normally exposes the minecraft-data name as `entity.name`, but
+ * protocol/plugin combinations have also supplied a namespaced or
+ * differently-cased `name`, with the useful canonical value in `mobType`.
+ * Keep target selection tolerant of those representations.
+ */
+export function canonicalMobName(entity: { name?: string | null; mobType?: string | null }): string {
+  const raw = entity.name || entity.mobType || "";
+  const withoutNamespace = raw.includes(":") ? raw.slice(raw.lastIndexOf(":") + 1) : raw;
+  return withoutNamespace.toLowerCase();
+}
+
+/** Ignore entity records that have already been invalidated or killed. */
+export function isLiveMob(entity: { type?: string | null; isValid?: boolean; health?: number }): boolean {
+  return entity.type === "mob" && entity.isValid !== false && !(typeof entity.health === "number" && entity.health <= 0);
+}
+
 /** True when the target is a human player entity ("player" type). */
 export function isHumanTarget(entityType: string | null | undefined): boolean {
   return entityType === "player";

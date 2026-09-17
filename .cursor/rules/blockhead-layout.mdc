@@ -1,0 +1,21 @@
+---
+description: Blockhead host layout and live-operation boundaries
+alwaysApply: true
+---
+
+# Blockhead host layout
+
+- **Zeus** is the development workstation and normal Blockhead checkout.
+- **Maia** runs the live Blockhead/CobbleBob bot and its local `llama.cpp`
+  model. The shared checkout is `/mnt/Repos/Games/Blockhead`.
+- **Eros** runs the Minecraft Java server. CobbleBob connects to Eros on
+  port `25565`.
+
+When checking CobbleBob, inspect Maia for the bot process and logs, and inspect
+Eros separately for Minecraft server health. Do not conclude that CobbleBob is
+offline merely because the Minecraft server is healthy, or vice versa.
+
+Treat Maia's bot as live: read-only checks are safe, but restarting the bot or
+changing live services requires Corey’s explicit approval.
+
+The fuller deployment reference is `docs/deployment-maia.md`.

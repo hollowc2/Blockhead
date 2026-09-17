@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MinecraftConfigSchema, type MinecraftConfig } from "../config/schema.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, isLiveMob, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
 
 function config(allowPvp = false): MinecraftConfig {
   return MinecraftConfigSchema.parse({
@@ -48,4 +48,12 @@ test("combat success requires an observed defeated or removed target", () => {
   target.health = 20;
   delete bot.entities[7];
   assert.equal(combatOutcomeObserved(bot, target), true);
+});
+
+test("mob detection accepts namespaced/cased metadata and ignores stale entities", () => {
+  assert.equal(canonicalMobName({ name: "minecraft:CHICKEN" }), "chicken");
+  assert.equal(canonicalMobName({ name: "", mobType: "Chicken" }), "chicken");
+  assert.equal(isLiveMob({ type: "mob", isValid: true, health: 10 }), true);
+  assert.equal(isLiveMob({ type: "mob", isValid: false, health: 10 }), false);
+  assert.equal(isLiveMob({ type: "mob", isValid: true, health: 0 }), false);
 });

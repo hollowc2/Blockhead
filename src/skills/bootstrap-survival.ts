@@ -58,6 +58,7 @@ import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
 import type { WorldMutation } from "../agent/world-actions.js";
 import { revalidateAction } from "../policy/action-boundary.js";
+import { canonicalMobName, isLiveMob } from "../policy/combat.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -2119,8 +2120,8 @@ function nearestHuntableMob(bot: Bot, maxDistance: number): Entity | null {
   let best: Entity | null = null;
   let bestDistance = Infinity;
   for (const entity of Object.values(bot.entities)) {
-    const name = entity.name ?? "";
-    if (entity.type !== "mob" || HUNT_MOB_NAMES[name] !== true) continue;
+    const name = canonicalMobName(entity);
+    if (!isLiveMob(entity) || HUNT_MOB_NAMES[name] !== true) continue;
     const distance = self.position.distanceTo(entity.position);
     if (distance <= maxDistance && distance < bestDistance) {
       best = entity;

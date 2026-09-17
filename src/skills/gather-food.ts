@@ -13,7 +13,7 @@ import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget } from "../policy/combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, isLiveMob } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -202,8 +202,8 @@ function nearestMatchingMob(bot: Bot, maxDistance: number, matches: (name: strin
   let best: Entity | null = null;
   let bestDistance = Infinity;
   for (const entity of Object.values(bot.entities)) {
-    const name = entity.name ?? "";
-    if (entity.type !== "mob" || !matches(name)) continue;
+    const name = canonicalMobName(entity);
+    if (!isLiveMob(entity) || !matches(name)) continue;
     const distance = self.position.distanceTo(entity.position);
     if (distance <= maxDistance && distance < bestDistance) {
       best = entity;
