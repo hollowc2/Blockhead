@@ -56,6 +56,27 @@ function normalizeInstruction(message: string): string {
     .trim();
 }
 
+interface DeterministicBuildCommand { tool: "build_base" | "build_structure"; args: Record<string, unknown>; error?: string; }
+
+/** Small, explicit owner-command rail that remains available while the LLM is down. */
+export function parseDeterministicBuildCommand(instruction: string): DeterministicBuildCommand | null {
+  if (/^(please )?build (a |the )?(standard )?(stockpile )?shed$/.test(instruction)
+    || /^(please )?build (a |the )?(standard )?base$/.test(instruction)) {
+    return { tool: "build_base", args: {} };
+  }
+  const match = instruction.match(/^(?:(?:please )?build (?:a )?(room|wall|tower|pyramid)(?: shaped)?(?: like a (room|wall|tower|pyramid))?|i want a stockpile shed shaped like a (room|wall|tower|pyramid)) (\d+) wide (\d+) tall (\d+) long(?: (?:from|at) (owner|current|home))?$/);
+  if (!match) return null;
+  const shape = (match[3] ?? match[2] ?? match[1])!;
+  const width = Number(match[4]);
+  const height = Number(match[5]);
+  const length = Number(match[6]);
+  const anchor = match[7] ?? "owner";
+  if (shape === "pyramid" && height > Math.ceil(Math.min(width, length) / 2)) {
+    return { tool: "build_structure", args: {}, error: `a ${width} by ${length} stepped pyramid can be at most ${Math.ceil(Math.min(width, length) / 2)} blocks tall` };
+  }
+  return { tool: "build_structure", args: { shape, width, height, length, material: "planks", anchor } };
+}
+
 /**
  * Human-readable kick reason. Mineflayer hands the parsed protocol compound
  * ({"type":"compound","value":{"translate":{"type":"string","value":"disconnect.spam"}}}),
@@ -284,6 +305,19 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
       return;
     }
 
+    const directBuild = parseDeterministicBuildCommand(instruction);
+    if (directBuild !== null) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      if (directBuild.error) {
+        bot.chat(`I can't build that: ${directBuild.error}.`);
+        return;
+      }
+      const reply = runTool(bot, config, ctx, directBuild.tool, directBuild.args);
+      if (reply) bot.chat(reply);
+      else bot.chat("I couldn't start that build because its dimensions, anchor, or material are not allowed.");
+      return;
+    }
+
     try {
       const decision = await ctx.decider.decide(
         { from: username, instruction },
@@ -313,7 +347,7 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     // The end event is the earliest reliable disconnect edge. Interrupt and
     // stop session primitives here as well as in the connection supervisor so
     // a pathfinder/plugin cannot continue while reconnect teardown waits.
-    ctx.scheduler.requestCancel();
+    ctx.scheduler.requestPause();
     await stopWorldPrimitives(bot);
     logger.info({ reason }, "disconnected");
   });

@@ -79,6 +79,7 @@ const REQUIRED_TOOLS = [
   "inspect_area",
   "register_storage",
   "build_base",
+  "build_structure",
   "collect_resource",
   "come_to_player",
   "follow_player",
@@ -128,6 +129,9 @@ test("tool schemas reject malformed arguments with Zod", () => {
     ["remember_location", {}],
     ["forget_location", { name: "" }],
     ["register_storage", { category: "nonsense" }],
+    ["build_structure", { shape: "pyramid", width: 15, height: 15, length: 15, material: "planks", anchor: "owner" }],
+    ["build_structure", { shape: "wall", width: 8, height: 4, length: 3, material: "planks", anchor: "current" }],
+    ["build_structure", { shape: "room", width: 8, height: 4, length: 8, material: "diamond_block", anchor: "home" }],
   ];
   for (const [tool, args] of cases) {
     assert.throws(() => registry.validateArgs(tool, args), `${tool} should reject ${JSON.stringify(args)}`);
@@ -148,6 +152,7 @@ test("tool schemas accept their documented shapes", () => {
     ["retrieve_items", { items: [{ item: "iron_ingot", quantity: 4 }] }, "items"],
     ["defend_self", {}, "defend_self"],
     ["defend_player", { player: "Corey" }, "player"],
+    ["build_structure", { shape: "pyramid", width: 15, height: 8, length: 15, material: "planks", anchor: "owner" }, "shape"],
     ["hunt", { entity_type: "sheep", quantity: 3 }, "sheep"],
     ["hunt_target", { entity_type: "skeleton" }, "skeleton"],
     ["gather_food", { quantity: 8 }, "8"],

@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { followPlayer, raceTrip } from "./movement.js";
+import { followPlayer, raceTrip, travelHomeAndWait } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -55,4 +55,28 @@ test("a replaced follow goal cannot be stopped by the stale goal signal", async 
   assert.equal(calls.length, beforeStaleAbort);
   await stopWorldPrimitives(bot);
   assert.deepEqual(calls, ["goal", "stop", "clear", "goal", "stop", "clear"]);
+});
+
+test("home navigation recognizes the GoalNear boundary without routing forever", async () => {
+  const registry = minecraftData("1.21.11");
+  let gotoCalls = 0;
+  const bot = {
+    registry,
+    game: { dimension: "overworld" },
+    entity: { position: new Vec3(-43.5, -35, 0.5) },
+    collectBlock: {},
+    pathfinder: {
+      setMovements: () => undefined,
+      goto: async () => { gotoCalls += 1; },
+      stop: () => undefined,
+    },
+  } as any;
+
+  const controller = new AbortController();
+  const result = await new WorldActionExecutor().run("home-boundary", controller.signal, () =>
+    travelHomeAndWait(bot, { x: -46, y: 84, z: 0, dimension: "overworld" }, { signal: controller.signal }),
+  );
+
+  assert.deepEqual(result, { status: "already_there" });
+  assert.equal(gotoCalls, 0);
 });

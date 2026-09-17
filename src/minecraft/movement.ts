@@ -34,7 +34,11 @@ export interface HomeLocation extends Location {
 /** Distance (in blocks) at which a destination counts as reached. */
 export const ARRIVE_RANGE = 2;
 /** GoalNear can settle a fraction outside the nominal horizontal radius. */
-const HOME_ARRIVAL_GRACE = 0.5;
+// Entity coordinates are block-centred (.5) while configured anchors are
+// commonly integer block coordinates. A bot at (-43.5, 0.5) relative to
+// home (-46, 0) is 2.55 blocks away even though GoalNear(2) considers its
+// occupied block within range. Cover that coordinate convention explicitly.
+const HOME_ARRIVAL_GRACE = 0.75;
 /** Distance kept from the player while following. */
 const FOLLOW_RANGE = 3;
 
@@ -376,10 +380,18 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   if (signal.aborted) return { status: "aborted" };
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
+  const arrivalRange = range + HOME_ARRIVAL_GRACE;
 
   const p = self.position;
   const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
-  if (initialDistance <= range + HOME_ARRIVAL_GRACE) {
+  if (initialDistance <= arrivalRange) {
+    logger.info({
+      position: p,
+      configuredHome: home,
+      currentDimension: bot.game.dimension ?? "",
+      horizontalDistance: Number(initialDistance.toFixed(3)),
+      arrivalRange,
+    }, "home arrival recognized by horizontal anchor");
     return { status: "already_there" };
   }
 
@@ -391,14 +403,14 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
   let distance = initialDistance;
   let legNumber = 0;
-  while (distance > range) {
+  while (distance > arrivalRange) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
     legNumber += 1;
     const leg = Math.min(HOME_LEG_LENGTH, distance);
     const fraction = leg / distance;
-    const finalLeg = distance <= HOME_LEG_LENGTH + range;
+    const finalLeg = distance <= HOME_LEG_LENGTH + arrivalRange;
     const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
     const goal: Location = {
       x: current.position.x + (home.x - current.position.x) * fraction,
@@ -408,7 +420,16 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { status: "timed_out" };
     const legTimeout = Math.min(remaining, HOME_LEG_TIMEOUT_MS);
-    logger.info({ leg: legNumber, start: current.position, goal, distance: Number(distance.toFixed(1)), timeoutMs: legTimeout }, "home route leg");
+    logger.info({
+      leg: legNumber,
+      start: current.position,
+      goal,
+      configuredHome: home,
+      currentDimension: bot.game.dimension ?? "",
+      horizontalDistance: Number(distance.toFixed(3)),
+      arrivalRange,
+      timeoutMs: legTimeout,
+    }, "home route leg");
     const trip = bot.pathfinder
       .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
       .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
@@ -420,8 +441,25 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     if (result.status !== "arrived" && result.status !== "already_there") return result;
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
+    const previousDistance = distance;
     distance = Math.hypot(after.position.x - home.x, after.position.z - home.z);
-    if (distance <= range + HOME_ARRIVAL_GRACE) return { status: "arrived" };
+    if (distance <= arrivalRange) return { status: "arrived" };
+    // GoalNear may resolve successfully at its own geometric boundary while
+    // floating-point position leaves us a hair outside that same boundary.
+    // Never turn that into a hot loop of immediately-successful route legs.
+    if (previousDistance - distance < 0.01) {
+      logger.warn({
+        leg: legNumber,
+        position: after.position,
+        configuredHome: home,
+        currentDimension: bot.game.dimension ?? "",
+        horizontalDistance: Number(distance.toFixed(3)),
+        arrivalRange,
+      }, "home route made no progress");
+      return distance <= arrivalRange + 0.01
+        ? { status: "arrived" }
+        : { status: "failed", error: `home route made no progress at horizontal distance ${distance.toFixed(2)}` };
+    }
   }
   return { status: "arrived" };
 }

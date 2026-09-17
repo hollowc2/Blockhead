@@ -12,6 +12,7 @@ import {
   freeChestSlotSpot,
   measureStructure,
   stationSlotSpot,
+  simpleStructureCells,
   type BaseLayout,
 } from "./base.js";
 
@@ -234,4 +235,24 @@ test("stationSlotSpot returns a slot only when its cell is air with solid floor"
   const occupyingBot = stubBot(airWorld());
   (occupyingBot as unknown as Bot).entity = { position: new Vec3(CX - 1, FY, CZ + 1) } as never;
   assert.equal(stationSlotSpot(occupyingBot, HOME, "crafting_table"), null);
+});
+
+test("simple structure blueprints are bounded and deterministic", () => {
+  const origin = { x: 0, y: 64, z: 0, dimension: "overworld" };
+  const wall = simpleStructureCells({ shape: "wall", width: 5, height: 3, length: 1, material: "planks", anchor: "current", origin });
+  assert.equal(wall.length, 15);
+  assert.deepEqual(wall[0], new Vec3(0, 64, 0));
+  assert.deepEqual(wall.at(-1), new Vec3(4, 66, 0));
+
+  const pyramid = simpleStructureCells({ shape: "pyramid", width: 15, height: 8, length: 15, material: "planks", anchor: "owner", origin });
+  assert.ok(pyramid.length > 0);
+  assert.ok(pyramid.every((cell) => cell.y >= 64 && cell.y <= 71));
+  assert.throws(
+    () => simpleStructureCells({ shape: "pyramid", width: 15, height: 9, length: 15, material: "planks", anchor: "owner", origin }),
+    /height 9 exceeds 8/,
+  );
+  assert.throws(
+    () => simpleStructureCells({ shape: "room", width: 16, height: 3, length: 4, material: "planks", anchor: "home", origin }),
+    /width\/length 1-15/,
+  );
 });

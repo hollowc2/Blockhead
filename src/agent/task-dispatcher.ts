@@ -25,7 +25,7 @@ import { expeditionThreshold } from "../skills/expedition.js";
 import type { GatherFoodRunner, GatherFoodResumeState } from "../skills/gather-food.js";
 import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
 import type { OrganizeResumeState, OrganizeStorageRunner } from "../skills/organize-storage.js";
-import type { BaseBuilderRunner, BaseResumeState } from "../skills/base.js";
+import type { BaseBuilderRunner, BaseResumeState, SimpleStructureSpec } from "../skills/base.js";
 import type { UtilityRunner } from "../skills/utility.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
@@ -45,6 +45,8 @@ const SKILL_TIMEOUT_MS = 10 * 60_000;
 /** A task may run longer than this, but must publish a checkpoint/progress. */
 const PROGRESS_STALL_TIMEOUT_MS = 2 * 60_000;
 const PROGRESS_POLL_MS = 5_000;
+/** A repeatedly disconnected autonomous action must eventually yield/back off. */
+const MAX_BACKGROUND_RESUME_ATTEMPTS = 3;
 
 export interface TaskDispatcherOptions {
   bus: EventBus;
@@ -248,6 +250,15 @@ export class TaskDispatcher {
 
   private async runSkill(task: Task): Promise<SkillResult> {
     const signals: TaskSignals = this.opts.scheduler.signalsFor(task);
+    if (task.source !== "user" && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
+      return {
+        ok: false,
+        status: "failed",
+        errorCode: "NOT_READY",
+        message: `autonomous action abandoned after ${task.attempts} interrupted attempts; waiting for cooldown or owner direction`,
+        retryable: true,
+      };
+    }
     switch (task.type) {
       case "collect_resource": {
         const resource = String(task.parameters.resource ?? "");
@@ -439,6 +450,13 @@ export class TaskDispatcher {
           signals,
           resumeState: task.resumeState as BaseResumeState | undefined,
         });
+      case "build_structure": {
+        const params = task.parameters as unknown as SimpleStructureSpec;
+        return this.opts.buildBase.runSimple(params, {
+          signals,
+          resumeState: task.resumeState as BaseResumeState | undefined,
+        });
+      }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");
         if (!STORAGE_CATEGORIES.includes(category as (typeof STORAGE_CATEGORIES)[number])) {

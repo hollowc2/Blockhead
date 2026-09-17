@@ -196,6 +196,8 @@ export interface CollectRunOptions {
    * never touch the protected region's structures.
    */
   userRequested?: boolean;
+  /** Keep gathered items carried for a composing skill instead of depositing. */
+  deliver?: boolean;
 }
 
 /** Abort reasons the outer loop breaks on (spec 27 stages 10, 11, and 12). */
@@ -226,6 +228,7 @@ export class CollectResourceRunner {
   private currentQuantity = 0;
   /** Whether the current run was explicitly requested by the owner (policy). */
   private userRequested = false;
+  private deliver = true;
 
   /** Phase 9: expedition lifecycle for the current run (spec 12). */
   private readonly expedition: ExpeditionTracker;
@@ -263,6 +266,7 @@ export class CollectResourceRunner {
     this.currentResource = bareName(resource);
     this.currentQuantity = quantity;
     this.userRequested = options.userRequested === true;
+    this.deliver = options.deliver !== false;
     try {
       return await this.execute(resource, quantity);
     } finally {
@@ -348,7 +352,7 @@ export class CollectResourceRunner {
     // exactly as the player asked.
     const home = this.opts.state.home;
     const sameDimension = home !== null && normalizeDimension(bot.game.dimension ?? "") === home.dimension;
-    if (sameDimension) {
+    if (sameDimension && this.deliver) {
       const returned = await this.returnHome();
       if (this.stopRequested) return this.interrupted(data);
       if (returned.status !== "arrived" && returned.status !== "already_there") {

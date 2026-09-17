@@ -283,7 +283,9 @@ async function shutdown(code: number): Promise<void> {
     viewerManager.stopFor(active.bot);
     active.background.stop();
     active.hostile.detach();
-    scheduler.requestCancel();
+    // A service restart is operational, not an owner cancellation. Persist
+    // the active task as paused so the next process can resume it.
+    scheduler.requestPause();
     await active.dispatcher.waitForIdle();
     await stopWorldPrimitives(active.bot);
   }
@@ -373,7 +375,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // places the missing cells. Chests, the table, and the furnace land on its
   // blueprint slots, so the stockpile grows at one centralized location
   // instead of a scatter pile at the home column.
-  const buildBase = new BaseBuilderRunner({ bot, state, config, bus, skills, logger });
+  const buildBase = new BaseBuilderRunner({ bot, state, config, bus, skills, logger, collect });
 
   // Phase 10: death recovery (spec 26). A death is recorded (site, dimension,
   // time) and ordinary work pauses; on respawn an EMERGENCY-priority task runs
@@ -449,7 +451,10 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
 
   // Request cancellation before session resources are torn down. The active
   // task remains leased until its dispatcher promise settles.
-  scheduler.requestCancel();
+  // A network disconnect is not an owner cancellation. Park the active task
+  // with its persisted resume state so the next session can continue it.
+  // Process shutdown has its own explicit cancellation path.
+  scheduler.requestPause();
   await dispatcher.waitForIdle();
   // The end event requests cleanup concurrently; await the same serialized
   // adapter here so reconnect cannot detach the session before windows and

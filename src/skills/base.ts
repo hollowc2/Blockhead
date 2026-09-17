@@ -8,8 +8,9 @@ import type { TaskSignals } from "../agent/scheduler.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
+import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { travelHomeAndWait } from "../minecraft/movement.js";
+import { travelAndWait, travelHomeAndWait, type Location } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import { countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
@@ -329,6 +330,8 @@ export interface BaseBuilderOptions {
   /** Skill success records (spec 20.2). */
   skills: SkillsRepository;
   logger: Logger;
+  /** Shared expedition gatherer used when the build needs raw logs. */
+  collect: CollectResourceRunner;
 }
 
 export interface BaseBuildData {
@@ -346,6 +349,62 @@ export interface BaseBuildData {
 /** Progress persisted as the task's resume state (Phase 8). */
 export interface BaseResumeState {
   interruptions: number;
+  phase?: string;
+  placed?: number;
+  total?: number;
+}
+
+export type SimpleStructureShape = "room" | "wall" | "tower" | "pyramid";
+export interface SimpleStructureSpec {
+  shape: SimpleStructureShape;
+  width: number;
+  height: number;
+  length: number;
+  material: "planks";
+  anchor: "owner" | "current" | "home";
+  origin: HomeLocation;
+}
+
+export const MAX_SIMPLE_STRUCTURE_BLOCKS = 1024;
+
+/** Generate only bounded, deterministic cells; no model-provided coordinates. */
+export function simpleStructureCells(spec: SimpleStructureSpec): Vec3[] {
+  const { width, height, length } = spec;
+  if (![width, height, length].every(Number.isInteger)
+    || width < 1 || width > 15 || length < 1 || length > 15 || height < 1 || height > 12) {
+    throw new Error("dimensions must be whole numbers: width/length 1-15 and height 1-12");
+  }
+  if (spec.material !== "planks") throw new Error("material must be the approved 'planks' family");
+  if (spec.shape === "wall" && length !== 1) throw new Error("wall length must be 1; width controls its span");
+  if (spec.shape === "pyramid") {
+    if (width % 2 === 0 || length % 2 === 0) throw new Error("pyramid width and length must be odd");
+    const maxHeight = Math.ceil(Math.min(width, length) / 2);
+    if (height > maxHeight) throw new Error(`pyramid height ${height} exceeds ${maxHeight} for that footprint`);
+  }
+
+  const ox = Math.floor(spec.origin.x);
+  const oy = Math.floor(spec.origin.y);
+  const oz = Math.floor(spec.origin.z);
+  const cells: Vec3[] = [];
+  const addRing = (x0: number, z0: number, w: number, l: number, y: number): void => {
+    for (let x = x0; x < x0 + w; x++) {
+      for (let z = z0; z < z0 + l; z++) {
+        if (x === x0 || x === x0 + w - 1 || z === z0 || z === z0 + l - 1) cells.push(new Vec3(x, y, z));
+      }
+    }
+  };
+  if (spec.shape === "wall") {
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) cells.push(new Vec3(ox + x, oy + y, oz));
+  } else if (spec.shape === "pyramid") {
+    for (let y = 0; y < height; y++) addRing(ox + y, oz + y, width - y * 2, length - y * 2, oy + y);
+  } else {
+    for (let y = 0; y < height; y++) addRing(ox, oz, width, length, oy + y);
+    // Rooms and towers get a deterministic flat roof.
+    for (let z = 0; z < length; z++) for (let x = 0; x < width; x++) cells.push(new Vec3(ox + x, oy + height, oz + z));
+  }
+  const unique = [...new Map(cells.map((cell) => [cellKey(cell), cell])).values()];
+  if (unique.length > MAX_SIMPLE_STRUCTURE_BLOCKS) throw new Error(`blueprint has ${unique.length} blocks; maximum is ${MAX_SIMPLE_STRUCTURE_BLOCKS}`);
+  return unique;
 }
 
 export interface BaseRunOptions {
@@ -398,6 +457,91 @@ export class BaseBuilderRunner {
     this.stopRequested = false;
     try {
       return await this.execute();
+    } finally {
+      this.running = false;
+      this.signals = null;
+    }
+  }
+
+  /** Build a validated simple blueprint persisted in a build_structure task. */
+  async runSimple(spec: SimpleStructureSpec, options: BaseRunOptions = {}): Promise<SkillResult<BaseBuildData>> {
+    if (this.running) return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "another build is already running" };
+    this.running = true;
+    this.signals = options.signals ?? null;
+    this.interruptions = options.resumeState?.interruptions ?? 0;
+    this.stopRequested = false;
+    const data: BaseBuildData = { missingBefore: 0, placedWalls: 0, placedRoof: 0, doorPlaced: false, remaining: 0, interruptions: this.interruptions };
+    try {
+      let cells: Vec3[];
+      try { cells = simpleStructureCells(spec); }
+      catch (err) { return this.fail(data, "NOT_READY", String(err instanceof Error ? err.message : err)); }
+      if (this.opts.bot.entity === null) return this.fail(data, "NOT_READY", "bot is not spawned");
+      const currentDimension = String(this.opts.bot.game.dimension ?? "").replace(/^minecraft:/, "");
+      if (currentDimension !== spec.origin.dimension.replace(/^minecraft:/, "")) {
+        return this.fail(data, "PATH_UNREACHABLE", `structure is anchored in dimension '${spec.origin.dimension}'`);
+      }
+      this.signals?.checkpoint({ interruptions: this.interruptions, phase: "traveling", placed: options.resumeState?.placed ?? 0, total: cells.length });
+      const approach: Location = { x: spec.origin.x - 2, y: spec.origin.y, z: spec.origin.z - 2 };
+      const travel = await travelAndWait(this.opts.bot, approach, {
+        dimension: spec.origin.dimension,
+        timeoutMs: TRAVEL_TIMEOUT_MS,
+        range: 3,
+        shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
+      });
+      if (this.stopRequested) return this.interrupted(data);
+      if (travel.status !== "arrived" && travel.status !== "already_there") {
+        return this.fail(data, "PATH_UNREACHABLE", `could not reach structure anchor: ${travel.status}`);
+      }
+
+      const blocked = cells.filter((cell) => {
+        const block = this.opts.bot.blockAt(cell);
+        return block === null || (!isAir(block) && !isPlanksItemName(block.name));
+      });
+      if (blocked.length > 0) {
+        const first = blocked[0]!;
+        return this.fail(data, "NOT_READY", `${blocked.length} blueprint cells are unloaded or occupied; first blocked cell is ${first.x},${first.y},${first.z}`);
+      }
+      let missing = cells.filter((cell) => isAir(this.opts.bot.blockAt(cell)));
+      data.missingBefore = missing.length;
+      if (missing.length === 0) {
+        const message = `${spec.shape} is already complete (${cells.length} blocks).`;
+        this.announce(message);
+        return { ok: true, status: "completed", data, message };
+      }
+      if (missing.length > countPlanks(this.opts.bot)) {
+        const shortfall = missing.length - countPlanks(this.opts.bot);
+        const logsNeeded = Math.max(0, Math.ceil(shortfall / 4) - countLogs(this.opts.bot));
+        if (logsNeeded > 0) {
+          const gathered = await this.gatherLogs(logsNeeded);
+          if (this.stopRequested) return this.interrupted(data);
+          if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
+        }
+        const crafted = await craftPlanks(this.opts.bot, missing.length, this.signals?.signal);
+        if (!crafted.ok) return this.fail(data, "INSUFFICIENT_MATERIALS", crafted.reason);
+      }
+
+      const placed = new Set<string>();
+      let completed = cells.length - missing.length;
+      for (const cell of missing) {
+        this.checkInterrupt({ phase: "placing", placed: completed, total: cells.length });
+        if (this.stopRequested) return this.interrupted(data);
+        const plank = findPlanksItem(this.opts.bot);
+        if (plank === null) break;
+        if (await placeAtCell(this.opts.bot, plank, cell, placed, this.signals?.signal) !== null) {
+          placed.add(cellKey(cell));
+          data.placedWalls += 1;
+          completed += 1;
+          this.signals?.checkpoint({ interruptions: this.interruptions, phase: "placing", placed: completed, total: cells.length });
+        }
+      }
+      missing = cells.filter((cell) => isAir(this.opts.bot.blockAt(cell)));
+      data.remaining = missing.length;
+      const message = missing.length === 0
+        ? `Finished ${spec.shape}: ${cells.length} blocks at ${Math.floor(spec.origin.x)}, ${Math.floor(spec.origin.y)}, ${Math.floor(spec.origin.z)}.`
+        : `${spec.shape} partially built: placed ${data.placedWalls}; ${missing.length}/${cells.length} blocks remain.`;
+      this.announce(message);
+      return { ok: true, status: missing.length === 0 ? "completed" : "partial", data, message };
     } finally {
       this.running = false;
       this.signals = null;
@@ -563,43 +707,24 @@ export class BaseBuilderRunner {
    */
   private async gatherLogs(targetTotal: number): Promise<{ ok: true; have: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const config = this.opts.config.bootstrap;
-    const baseRadius = config?.search_radius ?? LOG_SEARCH_RADIUS;
-
-    let have = countLogs(bot);
-    for (
-      let radius = baseRadius;
-      radius <= MAX_LOG_SEARCH_RADIUS && have < targetTotal;
-      radius = Math.min(radius * 2, MAX_LOG_SEARCH_RADIUS + 1)
-    ) {
-      this.checkInterrupt();
-      if (this.stopRequested) return { ok: false, reason: "interrupted" };
-      const positions = findBlocksNear(bot, isRawLog, radius, CANDIDATES_PER_RADIUS);
-      const targets = positions.map((v) => bot.blockAt(v)).filter((block) => block !== null);
-      if (targets.length === 0) continue;
-
-      const before = have;
-      try {
-        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
-          await cancelCollection(bot);
-        }, this.signals?.signal);
-      } catch (err) {
-        return { ok: false, reason: `could not collect logs: ${String(err)}` };
-      }
-      have = countLogs(bot);
-      if (have <= before) continue;
-    }
-
-    have = countLogs(bot);
-    if (have < targetTotal) return { ok: false, reason: `only ${have}/${targetTotal} logs found nearby` };
-    return { ok: true, have };
+    this.checkInterrupt();
+    if (this.stopRequested) return { ok: false, reason: "interrupted" };
+    const gathered = await this.opts.collect.run("oak_log", targetTotal, {
+      signals: this.signals ?? undefined,
+      userRequested: true,
+      deliver: false,
+    });
+    if (this.stopRequested) return { ok: false, reason: "interrupted" };
+    const have = countLogs(bot);
+    if (have >= targetTotal) return { ok: true, have };
+    return { ok: false, reason: gathered.message ?? `only ${have}/${targetTotal} logs gathered` };
   }
 
   // --- Phase 8 cooperative interrupt plumbing (mirrors organize-storage) ---
 
-  private checkInterrupt(): void {
+  private checkInterrupt(progress: Partial<BaseResumeState> = {}): void {
     if (this.stopRequested || this.signals === null) return;
-    const payload: BaseResumeState = { interruptions: this.interruptions + 1 };
+    const payload: BaseResumeState = { interruptions: this.interruptions + 1, ...progress };
     if (!this.signals.checkpoint(payload)) {
       this.stopRequested = true;
       this.interruptions += 1;
