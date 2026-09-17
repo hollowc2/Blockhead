@@ -10,7 +10,12 @@ export const prismarineViewerAdapter: ViewerAdapter = {
     await assertPortAvailable(options.port);
     const viewerPort = options.port + 1;
     await assertPortAvailable(viewerPort);
-    prismarineViewer(bot, { port: viewerPort, viewDistance: options.viewDistance, firstPerson: false });
+    const viewerOptions = {
+      port: viewerPort,
+      viewDistance: options.viewDistance,
+      firstPerson: true,
+    } as Parameters<typeof prismarineViewer>[1] & { firstPerson: boolean };
+    prismarineViewer(bot, viewerOptions);
     const viewer = (bot as Bot & { viewer?: ViewerHandle }).viewer;
     if (viewer === undefined) throw new Error("viewer did not attach to bot");
     const shell = new ViewerShellServer({ host: "0.0.0.0", port: options.port, viewerPort, statsPort: options.dashboardPort });
