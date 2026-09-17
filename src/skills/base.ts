@@ -12,7 +12,7 @@ import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import { travelAndWait, travelHomeAndWait, type Location } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
-import { countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
+import { bareName, countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
   collectBlocks,
   findBlockNear,
@@ -728,7 +728,18 @@ export class BaseBuilderRunner {
     const bot = this.opts.bot;
     this.checkInterrupt();
     if (this.stopRequested) return { ok: false, reason: "interrupted" };
-    const gathered = await this.opts.collect.run("oak_log", targetTotal, {
+    // Structures accept the whole approved plank family. Do not force the
+    // resource runner to search for oak when another wood species is already
+    // available nearby (or is the only tree type in the area).
+    const carriedPlank = bot.inventory.items().find((item) => isPlanksItemName(item.name));
+    const carriedWood = carriedPlank === undefined
+      ? null
+      : `${bareName(carriedPlank.name).replace(/_planks$/, "")}_log`;
+    const nearbyLog = findBlocksNear(bot, isRawLog, MAX_LOG_SEARCH_RADIUS, 1)
+      .map((position) => bot.blockAt(position))
+      .find((block): block is Block => block !== null);
+    const logType = carriedWood ?? nearbyLog?.name ?? "oak_log";
+    const gathered = await this.opts.collect.run(logType, targetTotal, {
       signals: this.signals ?? undefined,
       userRequested: true,
       deliver: false,
