@@ -9,6 +9,15 @@ const SHELL_HTML = fileURLToPath(new URL("./public/viewer-shell.html", import.me
 const SHELL_CSS = fileURLToPath(new URL("./public/viewer-shell.css", import.meta.url));
 const SHELL_JS = fileURLToPath(new URL("./public/viewer-shell.js", import.meta.url));
 
+export function viewerTargetPath(requestUrl: string): string {
+  return requestUrl === "/viewer" ? "/" : requestUrl.slice("/viewer".length);
+}
+
+export function isViewerSocketPath(pathname: string): boolean {
+  return pathname === "/viewer/socket.io" || pathname.startsWith("/viewer/socket.io/") ||
+    pathname === "/socket.io" || pathname.startsWith("/socket.io/");
+}
+
 export interface ViewerShellOptions {
   host: string;
   port: number;
@@ -56,6 +65,13 @@ export class ViewerShellServer {
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (isViewerSocketPath(pathname) && (request.method === "GET" || request.method === "POST")) {
+      const targetPath = pathname.startsWith("/viewer/")
+        ? viewerTargetPath(request.url ?? pathname)
+        : request.url ?? pathname;
+      this.proxy(request, response, this.options.viewerPort, targetPath);
+      return;
+    }
     if (request.method !== "GET") {
       response.writeHead(405, { allow: "GET" });
       response.end("method not allowed");
@@ -78,12 +94,7 @@ export class ViewerShellServer {
       return;
     }
     if (pathname === "/viewer" || pathname.startsWith("/viewer/")) {
-      const targetPath = pathname === "/viewer" ? "/" : pathname.slice("/viewer".length);
-      this.proxy(request, response, this.options.viewerPort, targetPath);
-      return;
-    }
-    if (pathname.startsWith("/socket.io/")) {
-      this.proxy(request, response, this.options.viewerPort, request.url ?? pathname);
+      this.proxy(request, response, this.options.viewerPort, viewerTargetPath(request.url ?? pathname));
       return;
     }
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -109,7 +120,10 @@ export class ViewerShellServer {
       method: request.method,
       headers: { ...request.headers, host: `127.0.0.1:${port}` },
     }, (upstreamResponse) => {
-      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+      response.writeHead(upstreamResponse.statusCode ?? 502, {
+        ...upstreamResponse.headers,
+        "cache-control": "no-store",
+      });
       upstreamResponse.pipe(response);
     });
     upstream.once("error", (error) => {
