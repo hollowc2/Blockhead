@@ -121,12 +121,15 @@ export class ViewerShellServer {
 
   private handleUpgrade(request: IncomingMessage, socket: NodeJS.WritableStream, head: Buffer): void {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (!pathname.startsWith("/socket.io/")) {
+    const viewerSocket = pathname === "/viewer/socket.io" || pathname.startsWith("/viewer/socket.io/");
+    const directSocket = pathname === "/socket.io" || pathname.startsWith("/socket.io/");
+    if (!viewerSocket && !directSocket) {
       socket.destroy();
       return;
     }
     const upstream = connectTcp(this.options.viewerPort, "127.0.0.1", () => {
-      const target = `GET ${request.url ?? pathname} HTTP/1.1\r\n` +
+      const upstreamPath = viewerSocket ? (request.url ?? pathname).slice("/viewer".length) : (request.url ?? pathname);
+      const target = `GET ${upstreamPath} HTTP/1.1\r\n` +
         Object.entries(request.headers).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value ?? ""}\r\n`).join("") +
         "\r\n";
       upstream.write(target);
