@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
+    "canvas": "^3.2.3",
+    "express": "^5.2.1",
     "minecraft-data": "^3.90.0",
     "mineflayer": "^4.39.0",
     "mineflayer-armor-manager": "^2.0.1",
@@ -38,6 +40,7 @@
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "canvas@3.2.3": true
   }
 }
