@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type * as Pathfinder from "mineflayer-pathfinder";
+import { Vec3 } from "vec3";
 import { logger } from "../logger.js";
 import { registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
@@ -32,6 +33,8 @@ export interface HomeLocation extends Location {
 
 /** Distance (in blocks) at which a destination counts as reached. */
 export const ARRIVE_RANGE = 2;
+/** GoalNear can settle a fraction outside the nominal horizontal radius. */
+const HOME_ARRIVAL_GRACE = 0.5;
 /** Distance kept from the player while following. */
 const FOLLOW_RANGE = 3;
 
@@ -278,11 +281,35 @@ const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
 
 /** Keep long home routes from turning into one expensive, fragile A* search. */
 const HOME_LEG_LENGTH = 48;
+/** Give each route leg a bounded budget so one bad leg cannot consume the trip. */
+const HOME_LEG_TIMEOUT_MS = 60_000;
+/** A buried bot should use the surface as a transit corridor when possible. */
+const SURFACE_SCAN_UP = 128;
+const SURFACE_SCAN_DOWN = 32;
 
 /** How often the travel loop re-checks `shouldAbort`. */
 const ABORT_POLL_MS = 250;
 /** Do not hold the world-action lease forever if pathfinder ignores stop(). */
 const TRIP_SETTLE_GRACE_MS = 2_000;
+
+/**
+ * Find a plausible standing Y in the currently loaded column. This is only a
+ * route hint: unloaded columns return the fallback and the pathfinder remains
+ * responsible for validating the actual path.
+ */
+function surfaceStandingY(bot: Bot, x: number, z: number, fallback: number): number {
+  const currentY = Math.floor(bot.entity?.position.y ?? fallback);
+  const minY = currentY - SURFACE_SCAN_DOWN;
+  const maxY = currentY + SURFACE_SCAN_UP;
+  let highestSolid = -Infinity;
+  for (let y = minY; y <= maxY; y++) {
+    const block = bot.blockAt(new Vec3(Math.floor(x), y, Math.floor(z)));
+    if (block?.boundingBox !== "block") continue;
+    const above = bot.blockAt(new Vec3(Math.floor(x), y + 1, Math.floor(z)));
+    if (above?.name === "air") highestSolid = y;
+  }
+  return Number.isFinite(highestSolid) ? highestSolid + 1 : fallback;
+}
 
 /**
  * Race a pathfinder trip against the wall-clock timeout and the cooperative
@@ -352,37 +379,49 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
 
   const p = self.position;
   const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
-  if (initialDistance <= range) {
+  if (initialDistance <= range + HOME_ARRIVAL_GRACE) {
     return { status: "already_there" };
   }
 
   // A long GoalNear can make mineflayer-pathfinder spend the entire timeout
   // planning through unloaded or difficult terrain. Break it into bounded
-  // horizontal legs; refresh Y after every leg because the ground elevation
-  // may change substantially on the way home.
+  // horizontal legs. For transit legs, prefer the local surface altitude so a
+  // bot that is deep underground does not attempt a 200-block cave crossing;
+  // preserve home.y for the final approach because storage may be underground.
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
   let distance = initialDistance;
+  let legNumber = 0;
   while (distance > range) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
+    legNumber += 1;
     const leg = Math.min(HOME_LEG_LENGTH, distance);
     const fraction = leg / distance;
+    const finalLeg = distance <= HOME_LEG_LENGTH + range;
+    const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
     const goal: Location = {
       x: current.position.x + (home.x - current.position.x) * fraction,
-      y: Math.floor(current.position.y),
+      y: finalLeg ? Math.floor(home.y) : transitY,
       z: current.position.z + (home.z - current.position.z) * fraction,
     };
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { status: "timed_out" };
+    const legTimeout = Math.min(remaining, HOME_LEG_TIMEOUT_MS);
+    logger.info({ leg: legNumber, start: current.position, goal, distance: Number(distance.toFixed(1)), timeoutMs: legTimeout }, "home route leg");
     const trip = bot.pathfinder
       .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
       .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-    const result = await raceTrip(bot, trip, { ...options, timeoutMs: remaining, signal });
+    const result = await raceTrip(bot, trip, { ...options, timeoutMs: legTimeout, signal });
+    if (result.status === "timed_out" && !finalLeg && Date.now() < deadline) {
+      logger.warn({ leg: legNumber, distance: Number(distance.toFixed(1)) }, "home route leg timed out; retrying from current position");
+      continue;
+    }
     if (result.status !== "arrived" && result.status !== "already_there") return result;
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
     distance = Math.hypot(after.position.x - home.x, after.position.z - home.z);
+    if (distance <= range + HOME_ARRIVAL_GRACE) return { status: "arrived" };
   }
   return { status: "arrived" };
 }

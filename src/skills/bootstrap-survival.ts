@@ -74,7 +74,8 @@ const TRENCH_STEP_TIMEOUT_MS = 60_000;
 /** Wall-clock budget for one block-collection pass. */
 const COLLECT_TIMEOUT_MS = 240_000;
 /** Wall-clock budget for one home trip. */
-const TRAVEL_TIMEOUT_MS = 120_000;
+// Allow recovery from deep spawn points and long surface routes.
+const TRAVEL_TIMEOUT_MS = 300_000;
 /** Food items (raw + cooked meat) the FOOD stage aims to carry (spec 10 reserve). */
 const FOOD_ITEM_TARGET = 8;
 /** Passive mobs the FOOD stage hunts (spec 11: cow, pig, sheep, chicken). */

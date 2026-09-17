@@ -35,7 +35,9 @@ import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, 
 // --- deterministic policy constants ---
 
 /** Wall-clock budget for one home trip. */
-const TRAVEL_TIMEOUT_MS = 120_000;
+// Home returns may include an underground-to-surface transit leg before the
+// final approach to a buried storage room.
+const TRAVEL_TIMEOUT_MS = 300_000;
 /** Passive mobs the hunt targets (spec 11: cow, pig, sheep, chicken). */
 export const HUNT_MOB_NAMES: Record<string, true> = {
   cow: true,
