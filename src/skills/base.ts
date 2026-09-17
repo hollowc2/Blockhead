@@ -472,26 +472,45 @@ export class BaseBuilderRunner {
     this.stopRequested = false;
     const data: BaseBuildData = { missingBefore: 0, placedWalls: 0, placedRoof: 0, doorPlaced: false, remaining: 0, interruptions: this.interruptions };
     try {
+      // A `current` anchor is intentionally resolved when the task starts,
+      // not when chat enqueues it. A foreground request may wait behind an
+      // interrupt or a world-action cleanup, so the position captured by the
+      // chat handler can already be stale by the time this runner owns the
+      // bot. Staying at the task-start position also avoids an unnecessary
+      // path back through terrain that may have changed meanwhile.
+      const effectiveSpec: SimpleStructureSpec = spec.anchor === "current" && this.opts.bot.entity !== null
+        ? {
+          ...spec,
+          origin: {
+            x: this.opts.bot.entity.position.x,
+            y: this.opts.bot.entity.position.y,
+            z: this.opts.bot.entity.position.z,
+            dimension: String(this.opts.bot.game.dimension ?? spec.origin.dimension).replace(/^minecraft:/, ""),
+          },
+        }
+        : spec;
       let cells: Vec3[];
-      try { cells = simpleStructureCells(spec); }
+      try { cells = simpleStructureCells(effectiveSpec); }
       catch (err) { return this.fail(data, "NOT_READY", String(err instanceof Error ? err.message : err)); }
       if (this.opts.bot.entity === null) return this.fail(data, "NOT_READY", "bot is not spawned");
       const currentDimension = String(this.opts.bot.game.dimension ?? "").replace(/^minecraft:/, "");
-      if (currentDimension !== spec.origin.dimension.replace(/^minecraft:/, "")) {
-        return this.fail(data, "PATH_UNREACHABLE", `structure is anchored in dimension '${spec.origin.dimension}'`);
+      if (currentDimension !== effectiveSpec.origin.dimension.replace(/^minecraft:/, "")) {
+        return this.fail(data, "PATH_UNREACHABLE", `structure is anchored in dimension '${effectiveSpec.origin.dimension}'`);
       }
       this.signals?.checkpoint({ interruptions: this.interruptions, phase: "traveling", placed: options.resumeState?.placed ?? 0, total: cells.length });
-      const approach: Location = { x: spec.origin.x - 2, y: spec.origin.y, z: spec.origin.z - 2 };
-      const travel = await travelAndWait(this.opts.bot, approach, {
-        dimension: spec.origin.dimension,
-        timeoutMs: TRAVEL_TIMEOUT_MS,
-        range: 3,
-        shouldAbort: this.travelAbort,
-        signal: this.signals?.signal,
-      });
-      if (this.stopRequested) return this.interrupted(data);
-      if (travel.status !== "arrived" && travel.status !== "already_there") {
-        return this.fail(data, "PATH_UNREACHABLE", `could not reach structure anchor: ${travel.status}`);
+      if (effectiveSpec.anchor !== "current") {
+        const approach: Location = { x: effectiveSpec.origin.x - 2, y: effectiveSpec.origin.y, z: effectiveSpec.origin.z - 2 };
+        const travel = await travelAndWait(this.opts.bot, approach, {
+          dimension: effectiveSpec.origin.dimension,
+          timeoutMs: TRAVEL_TIMEOUT_MS,
+          range: 3,
+          shouldAbort: this.travelAbort,
+          signal: this.signals?.signal,
+        });
+        if (this.stopRequested) return this.interrupted(data);
+        if (travel.status !== "arrived" && travel.status !== "already_there") {
+          return this.fail(data, "PATH_UNREACHABLE", `could not reach structure anchor: ${travel.status}`);
+        }
       }
 
       const blocked = cells.filter((cell) => {
