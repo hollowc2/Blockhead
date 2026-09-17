@@ -188,9 +188,17 @@ export function sleep(ms: number): Promise<void> {
   return promise;
 }
 
+/** Distinguishes a wall-clock timeout from a normal operation rejection. */
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
+
 /**
  * Race `promise` against a wall-clock timeout. On timeout the optional hook
- * runs first (e.g. to cancel an in-flight plugin task) and an Error is thrown.
+ * runs first and the original operation is observed before returning control.
  */
 export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void | Promise<void>, signal?: AbortSignal): Promise<T> {
   const awaited = promise.then(
@@ -210,7 +218,7 @@ export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onT
     // Cancellation is only a request. Keep the plugin promise observed and
     // settled before returning ownership to the scheduler.
     await awaited;
-    throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new Error(`operation timed out after ${timeoutMs}ms`);
+    throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new TimeoutError(`operation timed out after ${timeoutMs}ms`);
   }
   clearTimeout(timeoutHandle);
   signal?.removeEventListener("abort", abortHandler);
@@ -219,7 +227,7 @@ export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onT
     return winner.value;
   }
   if (signal?.aborted) throw new DOMException("operation aborted", "AbortError");
-  throw new Error(winner.error);
+  throw winner.error;
 }
 
 /**
