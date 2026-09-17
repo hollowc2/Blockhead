@@ -7,7 +7,7 @@ import type { ViewerAdapter, ViewerHandle } from "./viewer.js";
 export const prismarineViewerAdapter: ViewerAdapter = {
   async start(bot: Bot, options) {
     await assertPortAvailable(options.port);
-    prismarineViewer(bot, options);
+    prismarineViewer(bot, { ...options, firstPerson: true });
     const viewer = (bot as Bot & { viewer?: ViewerHandle }).viewer;
     if (viewer === undefined) throw new Error("viewer did not attach to bot");
     return viewer;
