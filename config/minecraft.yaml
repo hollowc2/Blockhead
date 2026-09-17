@@ -70,10 +70,9 @@ bootstrap:
   wood_logs: 8
   search_radius: 48
   # Furthest radius gather_food expands to (and patrols to) before giving
-  # up. Bigger than the default 256 so far-away animals, villages, and
-  # crop fields are reachable; the expedition threshold still gates other
-  # gather skills.
-  hunt_max_radius: 1024
+  # up. Keep this bounded so a failed search cannot send CobbleBob hundreds
+  # of blocks from home into terrain the bot has not safely mapped.
+  hunt_max_radius: 128
   cobblestone: 12
   stone_sword: true
   food_items: 8

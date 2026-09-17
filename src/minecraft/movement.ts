@@ -399,7 +399,9 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   // planning through unloaded or difficult terrain. Break it into bounded
   // horizontal legs. For transit legs, prefer the local surface altitude so a
   // bot that is deep underground does not attempt a 200-block cave crossing;
-  // preserve home.y for the final approach because storage may be underground.
+  // Use the current column's surface altitude for every transit leg. A stale
+  // persisted home Y can be below the terrain (or in the void), and asking
+  // pathfinder to finish at that altitude makes recovery routes unsafe.
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
   let distance = initialDistance;
   let legNumber = 0;
@@ -414,7 +416,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
     const goal: Location = {
       x: current.position.x + (home.x - current.position.x) * fraction,
-      y: finalLeg ? Math.floor(home.y) : transitY,
+      y: transitY,
       z: current.position.z + (home.z - current.position.z) * fraction,
     };
     const remaining = deadline - Date.now();

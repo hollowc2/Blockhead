@@ -2044,7 +2044,10 @@ function groundLevelAt(bot: Bot, x: number, z: number): number | null {
       return feet.y;
     }
   }
-  for (let y = 255; y >= 0; y--) {
+  // Minecraft 1.18+ worlds extend below Y=0. Scanning only 0..255 can miss
+  // the actual surface and incorrectly persist the bot's current altitude as
+  // home, which sends later routes toward an invalid vertical coordinate.
+  for (let y = 319; y >= -64; y--) {
     const block = bot.blockAt(new Vec3(x, y, z));
     if (block === null) return null; // column not loaded yet
     if (isDiggableGround(block)) return y + 1;

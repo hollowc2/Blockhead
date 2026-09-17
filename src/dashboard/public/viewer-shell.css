@@ -7,8 +7,9 @@ h1 { margin: 0; font-size: clamp(1.2rem, 2vw, 1.8rem); }
 .eyebrow { margin: 0 0 5px; color: #8aa4d6; font-size: .72rem; letter-spacing: .16em; }
 .status { border: 1px solid #35517f; border-radius: 999px; color: #9fc1ff; padding: 7px 12px; font-size: .8rem; }
 .viewer-card, .stats-card { border: 1px solid #293b62; border-radius: 12px; background: #10182b; box-shadow: 0 16px 50px #0005; overflow: hidden; }
-.viewer-card { height: min(68vh, 760px); min-height: 400px; }
+.viewer-card { height: min(68vh, 760px); min-height: 400px; position: relative; }
 iframe { width: 100%; height: 100%; border: 0; display: block; background: #add8e6; }
+.viewer-help { position: absolute; left: 12px; bottom: 12px; padding: 7px 10px; border: 1px solid #ffffff2b; border-radius: 7px; background: #0b1020c9; color: #cbd7ef; font-size: .72rem; pointer-events: none; }
 .stats-card { margin-top: 14px; padding: 16px; }
 .stats-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .stats-grid div, .details div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
