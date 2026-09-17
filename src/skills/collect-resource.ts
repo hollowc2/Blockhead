@@ -13,7 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, itemsSummary } from "../mi
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, isRawLog } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -564,8 +564,16 @@ export class CollectResourceRunner {
 
       const found = findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS)
         .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`));
-      const outside = region ? found.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : found;
-      let candidates = outside.length > 0 ? outside : found;
+      // A matching block can be visible in the world scan while still being
+      // completely buried. Such a position is not a useful collection site:
+      // pathfinder cannot reach the block to start a dig, producing repeated
+      // NoPath/Digging aborted failures. Only target exposed blocks here.
+      const reachableSurface = found.filter((position) => {
+        const block = bot.blockAt(position);
+        return block !== null && hasAirNeighbor(bot, block.position);
+      });
+      const outside = region ? reachableSurface.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : reachableSurface;
+      let candidates = outside.length > 0 ? outside : reachableSurface;
       // Spec 8.2 policy: structural blocks inside the protected home region are
       // only gathered with an explicit owner request. Natural terrain (trees,
       // stone, ores) stays available to the bot's own rails.
@@ -657,6 +665,7 @@ export class CollectResourceRunner {
       const targets = findBlocksNear(bot, (block) => blockMatchesResource(block, bare), GATHER_RADIUS, GATHER_BLOCKS_PER_PASS)
         .map((v) => bot.blockAt(v))
         .filter((block) => block !== null)
+        .filter((block) => hasAirNeighbor(bot, block.position))
         // Spec 34: never dig straight down blindly — a target directly beneath
         // the feet is skipped; the bot digs sideways instead.
         .filter((block) => self === null || !isStraightDownTarget(block.position, self.position));
