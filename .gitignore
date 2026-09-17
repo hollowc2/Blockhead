@@ -6,4 +6,4 @@ logs/
 data/
 node_modules
 node_modules.incomplete-*/
-node_modules.symlink-old-*/
+node_modules.symlink-old-*
