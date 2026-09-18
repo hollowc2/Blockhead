@@ -22,6 +22,7 @@ export enum BootstrapStage {
   IRON = "iron",
   IRON_TOOLS = "iron_tools",
   NORMAL_OPERATION = "normal_operation",
+  BLOCKED = "blocked",
 }
 
 /** Canonical stage order; persistence stores the last completed stage. */

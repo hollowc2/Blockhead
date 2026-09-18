@@ -108,6 +108,7 @@ export async function collectBlocks(
   timeoutMs: number,
   logSkip?: (block: Block, err: unknown) => void,
   signal?: AbortSignal,
+  failedTargets?: Set<string>,
 ): Promise<number> {
   requireWorldActionLease(signal);
   const before = countHeld();
@@ -115,6 +116,8 @@ export async function collectBlocks(
   for (const block of ordered) {
     throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
+    const targetKey = `${String(bot.game.dimension ?? "unknown").replace(/^minecraft:/, "")}:${block.position.x},${block.position.y},${block.position.z}`;
+    if (failedTargets?.has(targetKey)) continue;
     try {
       await withTimeout(timeoutMs, collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
@@ -125,6 +128,7 @@ export async function collectBlocks(
       // could keep acting after a replacement task acquired the lease.
       throwIfAborted(signal);
       skipped++;
+      failedTargets?.add(targetKey);
       logSkip?.(block, err);
       continue;
     }
@@ -196,6 +200,7 @@ export function findPlacementSpot(
 export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal): Promise<Block | null> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
+  const inventoryBefore = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
   try {
     await equipItem(bot, item, signal);
     throwIfAborted(signal);
@@ -210,5 +215,19 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     throwIfAborted(signal);
     return null;
   }
-  return bot.blockAt(spot.position);
+  // placeBlock resolves when the placement packet is accepted; the block
+  // cache can lag behind by several ticks. Poll briefly for the authoritative
+  // block update before declaring a valid placement a failure.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    throwIfAborted(signal);
+    const placed = bot.blockAt(spot.position);
+    const inventoryAfter = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
+    if (placed !== null && placed.name !== "air") return placed;
+    if (attempt < 5) await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    // A delayed inventory packet is observable independently of the block
+    // cache; keep polling rather than treating the accepted mutation as lost.
+    void inventoryBefore;
+    void inventoryAfter;
+  }
+  return null;
 }

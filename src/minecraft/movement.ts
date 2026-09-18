@@ -384,12 +384,15 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
 
   const p = self.position;
   const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
-  if (initialDistance <= arrivalRange) {
+  const homeSurfaceY = surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
+  const verticallyAtHome = Math.abs(p.y - homeSurfaceY) <= 3;
+  if (initialDistance <= arrivalRange && verticallyAtHome) {
     logger.info({
       position: p,
       configuredHome: home,
       currentDimension: bot.game.dimension ?? "",
       horizontalDistance: Number(initialDistance.toFixed(3)),
+      homeSurfaceY,
       arrivalRange,
     }, "home arrival recognized by horizontal anchor");
     return { status: "already_there" };
@@ -405,18 +408,20 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
   let distance = initialDistance;
   let legNumber = 0;
-  while (distance > arrivalRange) {
+  let noProgressLegs = 0;
+  while (distance > arrivalRange || Math.abs((bot.entity?.position.y ?? homeSurfaceY) - homeSurfaceY) > 3) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
     legNumber += 1;
-    const leg = Math.min(HOME_LEG_LENGTH, distance);
-    const fraction = leg / distance;
-    const finalLeg = distance <= HOME_LEG_LENGTH + arrivalRange;
+    const verticalOnly = distance <= arrivalRange;
+    const leg = verticalOnly ? 0 : Math.min(HOME_LEG_LENGTH, distance);
+    const fraction = verticalOnly ? 1 : leg / distance;
+    const finalLeg = verticalOnly || distance <= HOME_LEG_LENGTH + arrivalRange;
     const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
     const goal: Location = {
       x: current.position.x + (home.x - current.position.x) * fraction,
-      y: transitY,
+      y: finalLeg ? homeSurfaceY : transitY,
       z: current.position.z + (home.z - current.position.z) * fraction,
     };
     const remaining = deadline - Date.now();
@@ -444,21 +449,29 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
     const previousDistance = distance;
+    const previousY = current.position.y;
     distance = Math.hypot(after.position.x - home.x, after.position.z - home.z);
-    if (distance <= arrivalRange) return { status: "arrived" };
+    const verticalDistance = Math.abs(after.position.y - homeSurfaceY);
+    if (distance <= arrivalRange && verticalDistance <= 3) return { status: "arrived" };
     // GoalNear may resolve successfully at its own geometric boundary while
     // floating-point position leaves us a hair outside that same boundary.
     // Never turn that into a hot loop of immediately-successful route legs.
-    if (previousDistance - distance < 0.01) {
+    const horizontalDelta = previousDistance - distance;
+    const verticalDelta = Math.abs(previousY - after.position.y);
+    if (horizontalDelta < 0.01 && verticalDelta < 0.05) noProgressLegs += 1;
+    else noProgressLegs = 0;
+    logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), verticalDelta: Number(verticalDelta.toFixed(3)), noProgressLegs }, "home route progress");
+    if (noProgressLegs >= 2) {
       logger.warn({
         leg: legNumber,
         position: after.position,
         configuredHome: home,
         currentDimension: bot.game.dimension ?? "",
         horizontalDistance: Number(distance.toFixed(3)),
+        verticalDistance: Number(verticalDistance.toFixed(3)),
         arrivalRange,
       }, "home route made no progress");
-      return distance <= arrivalRange + 0.01
+      return distance <= arrivalRange + 0.01 && verticalDistance <= 3
         ? { status: "arrived" }
         : { status: "failed", error: `home route made no progress at horizontal distance ${distance.toFixed(2)}` };
     }

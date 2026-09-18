@@ -217,6 +217,9 @@ export class BootstrapRunner {
   /** The session-level lease controller, so disconnect can release it. */
   private controller: AbortController | null = null;
   private activeRun: Promise<void> | null = null;
+  /** Failed block targets are retained across retries of the current stage. */
+  private readonly failedTargets = new Set<string>();
+  private readonly failedMobIds = new Set<number>();
 
   constructor(private readonly opts: BootstrapRunnerOptions) {}
 
@@ -333,12 +336,20 @@ export class BootstrapRunner {
             continue;
           }
           this.failStage(stage, outcome.reason);
-          this.scheduleRetry();
+          const worldId = this.worldId;
+          if (worldId !== null) {
+            this.opts.stages.recordFailure(worldId, `${stage}: ${outcome.reason}`, Date.now() + BOOTSTRAP_RETRY_MS, STAGE_ATTEMPTS);
+            this.opts.stages.markBlocked(worldId, `${stage}: ${outcome.reason}`);
+          }
+          this.opts.logger.error({ stage, reason: outcome.reason, action: "TERMINAL_BLOCK" }, "bootstrap exhausted stage attempt budget");
           return;
         }
         this.completeStage(stage, outcome.message, baseline);
       }
     } finally {
+      // Food acquisition temporarily disables auto-eat so the reserve is
+      // durable; restore the session policy even when a stage throws.
+      this.opts.bot.autoEat.enableAuto();
       this.running = false;
       this.signal = null;
     }
@@ -366,8 +377,11 @@ export class BootstrapRunner {
   private async executeWithRetries(stage: BootstrapStage): Promise<StageOutcome> {
     let last: StageOutcome = { ok: false, reason: "no attempt ran" };
     for (let attempt = 1; attempt <= STAGE_ATTEMPTS; attempt++) {
+      const startedAt = Date.now();
+      this.opts.logger.info({ stage, attempt, completed: this.completedStage, inventory: itemsSummary(this.opts.bot) }, "BOOTSTRAP phase start");
       throwIfAborted(this.signal ?? undefined);
       last = await this.executeStage(stage);
+      this.opts.logger.info({ stage, attempt, elapsedMs: Date.now() - startedAt, ok: last.ok, reason: last.ok ? undefined : last.reason }, "BOOTSTRAP phase settled");
       if (last.ok) return last;
       if (attempt < STAGE_ATTEMPTS) {
         this.opts.logger.warn({ stage, attempt, reason: last.reason }, "bootstrap stage attempt failed; retrying");
@@ -576,6 +590,8 @@ export class BootstrapRunner {
         (msg) => this.announce(msg),
         COLLECT_TIMEOUT_MS,
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+        undefined,
+        this.failedTargets,
       );
       have = countLogs(bot);
       this.opts.logger.warn({ radius, gained, skipped: ordered.length - gained, have }, "wood collect pass finished");
@@ -839,23 +855,29 @@ export class BootstrapRunner {
     const bot = this.opts.bot;
     const config = this.opts.config.bootstrap;
     const target = config?.food_items ?? FOOD_ITEM_TARGET;
-    // Eat as soon as anything edible exists (plugin is idempotent).
-    bot.autoEat.enableAuto();
+    // Build a durable reserve first. Auto-eat may consume a drop between the
+    // loot sweep and the inventory read, making a successful hunt look like a
+    // failed stage. Re-enable it at every terminal exit below.
+    bot.autoEat.disableAuto();
+    const finish = (outcome: StageOutcome): StageOutcome => {
+      bot.autoEat.enableAuto();
+      return outcome;
+    };
 
     let have = countFoodItems(bot);
-    if (have >= target) return { ok: true, message: `Already carrying ${have} food items.` };
+    if (have >= target) return finish({ ok: true, message: `Already carrying ${have} food items.` });
 
     let home = this.opts.state.home;
-    if (home === null) return { ok: false, reason: "no home coordinate configured" };
+    if (home === null) return finish({ ok: false, reason: "no home coordinate configured" });
 
     const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
-      if (!await this.ensureReachableHome("food")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      if (!await this.ensureReachableHome("food")) return finish({ ok: false, reason: "home unreachable; keeping persisted home" });
       home = this.opts.state.home;
-      if (home === null) return { ok: false, reason: "no home coordinate configured" };
+      if (home === null) return finish({ ok: false, reason: "no home coordinate configured" });
     }
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
@@ -883,7 +905,7 @@ export class BootstrapRunner {
       // only recovery a starving bot can reach alone.
       if (leg > 0 && bot.health <= HUNT_MIN_HEALTH) {
         const recovered = await recoverLowHealth(bot);
-        if (!recovered.ok) return { ok: false, reason: recovered.reason };
+        if (!recovered.ok) return finish({ ok: false, reason: recovered.reason });
       }
       if (leg > 0 && homeForLegs !== null) {
         const dirIndex = (leg - 1) % HUNT_OUTWARD_DIRS.length;
@@ -918,7 +940,7 @@ export class BootstrapRunner {
         // the only self-recoverable path (auto-eat heals off the meat).
         if (bot.health <= HUNT_MIN_HEALTH && nearestHuntableMob(bot, radius) === null) {
           const recovered = await recoverLowHealth(bot);
-          if (!recovered.ok) return { ok: false, reason: recovered.reason };
+          if (!recovered.ok) return finish({ ok: false, reason: recovered.reason });
         }
         const mob = nearestHuntableMob(bot, radius);
         if (mob === null) {
@@ -934,7 +956,7 @@ export class BootstrapRunner {
 
         const before = countFoodItems(bot);
         const kill = await this.killMob(mob);
-        if (!kill.ok) return { ok: false, reason: kill.reason };
+        if (!kill.ok) return finish({ ok: false, reason: kill.reason });
         kills += 1;
         have = countFoodItems(bot);
         if (have <= before) {
@@ -946,8 +968,8 @@ export class BootstrapRunner {
     }
 
     have = countFoodItems(bot);
-    if (have < target) return { ok: false, reason: `only ${have}/${target} food found nearby` };
-    return { ok: true, message: `Hunted ${kills} animal${kills === 1 ? "" : "s"}; ${have} food items ready.` };
+    if (have < target) return finish({ ok: false, reason: `only ${have}/${target} food found nearby` });
+    return finish({ ok: true, message: `Hunted ${kills} animal${kills === 1 ? "" : "s"}; ${have} food items ready.` });
   }
 
   // --- sheep / bed (Phase 5.4) ---
@@ -1018,11 +1040,11 @@ export class BootstrapRunner {
 
       let foundHere = false;
       for (let radius = baseRadius; radius <= maxRadius && have < target && !foundHere; radius = Math.min(radius * 2, maxRadius + 1)) {
-        if (bot.health <= HUNT_MIN_HEALTH && nearestSheep(bot, radius) === null) {
+        if (bot.health <= HUNT_MIN_HEALTH && nearestSheep(bot, radius, this.failedMobIds) === null) {
           const recovered = await recoverLowHealth(bot);
           if (!recovered.ok) return { ok: false, reason: recovered.reason };
         }
-        const sheep = nearestSheep(bot, radius);
+        const sheep = nearestSheep(bot, radius, this.failedMobIds);
         if (sheep === null) {
           if (leg === 0) {
             this.announce(
@@ -1036,7 +1058,11 @@ export class BootstrapRunner {
 
         const before = maxWoolColorCount(bot);
         const kill = await this.killMob(sheep);
-        if (!kill.ok) return { ok: false, reason: kill.reason };
+        if (!kill.ok) {
+          this.failedMobIds.add(sheep.id);
+          this.opts.logger.warn({ entityId: sheep.id, target: sheep.position, reason: kill.reason }, "bootstrap hunt target blacklisted");
+          return { ok: false, reason: kill.reason };
+        }
         kills += 1;
         have = maxWoolColorCount(bot);
         if (have <= before) {
@@ -1502,6 +1528,8 @@ export class BootstrapRunner {
         () => {},
         COLLECT_TIMEOUT_MS,
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+        undefined,
+        this.failedTargets,
       );
       have = countLogs(bot);
     }
@@ -1542,6 +1570,8 @@ export class BootstrapRunner {
             () => {},
             COLLECT_TIMEOUT_MS,
             (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+            undefined,
+            this.failedTargets,
           );
           have = countLogs(bot);
         }
@@ -1623,6 +1653,8 @@ export class BootstrapRunner {
         (msg) => this.announce(msg),
         COLLECT_TIMEOUT_MS,
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+        undefined,
+        this.failedTargets,
       );
       have = countFuelItems(bot);
       if (have <= before) {
@@ -1665,6 +1697,8 @@ export class BootstrapRunner {
         (msg) => this.announce(msg),
         COLLECT_TIMEOUT_MS,
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+        undefined,
+        this.failedTargets,
       );
       have = countItem(bot, "raw_iron");
       if (have <= before) {
@@ -1746,6 +1780,8 @@ export class BootstrapRunner {
     const bot = this.opts.bot;
     const self = bot.entity;
     if (self === null) return { ok: false, reason: "bot is not spawned" };
+    const foodBefore = countFoodItems(bot);
+    this.opts.logger.info({ target: mob.name, entityId: mob.id, position: mob.position, foodBefore }, "bootstrap hunt target selected");
 
     const approach = await travelAndWait(bot, mob.position, {
       timeoutMs: KILL_TIMEOUT_MS,
@@ -1775,15 +1811,25 @@ export class BootstrapRunner {
       await pvpStop(bot, this.signal ?? undefined);
     }
 
+    // Entity updates are asynchronous relative to the pvp promise. Give the
+    // server a short bounded window before the first sweep, then reconcile the
+    // inventory after collection.
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
     const loot = await this.collectLoot();
     if (!loot.ok) return { ok: false, reason: loot.reason };
+    const foodAfter = countFoodItems(bot);
+    this.opts.logger.info({ target: mob.name, entityId: mob.id, dropsSeen: loot.items, foodBefore, foodAfter, foodDelta: foodAfter - foodBefore, autoEatEnabled: false }, "bootstrap hunt loot reconciled");
     return { ok: true, name: mob.name ?? "animal" };
   }
 
   /** Pick up every loot drop within `LOOT_RADIUS` of the bot; returns the count swept. */
   private async collectLoot(): Promise<{ ok: true; items: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const drops = lootDropsNear(bot, LOOT_RADIUS);
+    let drops = lootDropsNear(bot, LOOT_RADIUS);
+    if (drops.length === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+      drops = lootDropsNear(bot, LOOT_RADIUS);
+    }
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
       await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signal ?? undefined), () => cancelCollection(bot), this.signal ?? undefined);
@@ -1851,6 +1897,8 @@ export class BootstrapRunner {
         (msg) => this.announce(msg),
         COLLECT_TIMEOUT_MS,
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
+        undefined,
+        this.failedTargets,
       );
       have = countItem(bot, "cobblestone");
       if (have <= before) {
@@ -1924,6 +1972,8 @@ export class BootstrapRunner {
     this.opts.stages.save(worldId, stage);
     this.opts.bus.emit("bootstrap.stage", { stage, note: message });
     this.opts.logger.info({ stage, note: message }, "bootstrap stage complete");
+    this.failedTargets.clear();
+    this.failedMobIds.clear();
   }
 
   private failStage(stage: BootstrapStage, reason: string): void {
@@ -2168,13 +2218,13 @@ export function maxWoolColorCount(bot: Bot): number {
 }
 
 /** Nearest sheep within `maxDistance` of the bot, or null. */
-function nearestSheep(bot: Bot, maxDistance: number): Entity | null {
+function nearestSheep(bot: Bot, maxDistance: number, failedIds?: Set<number>): Entity | null {
   const self = bot.entity;
   if (self === null) return null;
   let best: Entity | null = null;
   let bestDistance = Infinity;
   for (const entity of Object.values(bot.entities)) {
-    if (entity.type !== "mob" || entity.name !== "sheep") continue;
+    if (!isLiveMob(entity) || canonicalMobName(entity) !== "sheep" || failedIds?.has(entity.id)) continue;
     const distance = self.position.distanceTo(entity.position);
     if (distance <= maxDistance && distance < bestDistance) {
       best = entity;

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { logger } from "../logger.js";
 
 /** Scheduler-owned serialization and common cancellation helpers for Mineflayer. */
 export interface WorldActionLease {
@@ -68,6 +69,8 @@ export interface WorldActionDiagnostics {
   startedAt: number | null;
 }
 
+const RECOVERY_GRACE_MS = 5_000;
+
 interface Waiter {
   owner: string; signal: AbortSignal;
   resolve: (lease: WorldActionLease) => void;
@@ -109,11 +112,25 @@ export class WorldActionExecutor {
       throwIfAborted(controller.signal);
       return action(leased);
     });
-    const timeout = options.timeoutMs === undefined ? undefined : setTimeout(() => cancel(new Error("world action lease timed out")), options.timeoutMs);
+    // Always observe a late plugin settlement. The race below is the terminal
+    // boundary; actionPromise is intentionally not awaited after it wins.
+    void actionPromise.catch(() => undefined);
+    const timeoutMs = options.timeoutMs;
+    const timeout = timeoutMs === undefined ? undefined : setTimeout(() => cancel(new Error("world action lease timed out")), timeoutMs);
     let actionError: unknown = null;
     try {
       let result: T;
-      try { result = await actionPromise; }
+      try {
+        if (timeoutMs === undefined) {
+          result = await actionPromise;
+        } else {
+          const timeoutResult = new Promise<never>((_, reject) => {
+            const handle = setTimeout(() => reject(new Error("world action lease timed out")), timeoutMs);
+            void actionPromise.then(() => clearTimeout(handle), () => clearTimeout(handle));
+          });
+          result = await Promise.race([actionPromise, timeoutResult]);
+        }
+      }
       catch (error) { actionError = error; throw error; }
       // A primitive is not considered successful if cancellation raced its
       // final await. This prevents a stale operation from reporting success
@@ -125,7 +142,16 @@ export class WorldActionExecutor {
       signal.removeEventListener("abort", forwardAbort);
       if (cancelled || actionError !== null) {
         await cancellationCleanup;
-        await Promise.resolve(options.onRecovery?.(cancelReason ?? actionError)).catch(() => undefined);
+        await Promise.race([
+          Promise.resolve(options.onRecovery?.(cancelReason ?? actionError)).catch(() => undefined),
+          new Promise<void>((resolve) => setTimeout(resolve, RECOVERY_GRACE_MS)),
+        ]);
+        if (actionError !== null) {
+          // The plugin may still be running after the lease is released. The
+          // recovery hook is responsible for stopping primitives/quarantining
+          // the session; this log makes that unsafe boundary explicit.
+          logger.error({ owner, elapsedMs: this.startedAt === null ? null : Date.now() - this.startedAt, recovery: "bounded" }, "world action recovery completed without awaiting plugin settlement");
+        }
       }
       acknowledged.resolve();
       this.release(leased);

@@ -64,7 +64,7 @@ export class AgentState {
    * from config when nothing is stored yet. Idempotent; call once at startup.
    */
   boot(): void {
-    const worldKey = this.config.server.world_key || "default";
+    const worldKey = this.config.server.world_key;
     const world = this.locations.getOrCreateWorld(this.serverKey, worldKey);
     this._worldId = world.id;
 

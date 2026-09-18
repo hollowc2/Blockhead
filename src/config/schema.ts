@@ -6,7 +6,10 @@ export const MinecraftConfigSchema = z.object({
     port: z.number().int().positive().default(25565),
     username: z.string(),
     /** Distinguishes worlds on the same server (memory identity). */
-    world_key: z.string().default("default"),
+    // A server address is not a world identity: servers commonly replace the
+    // level without changing host/port. Require the owner to name each world
+    // explicitly so completed bootstrap state cannot silently carry over.
+    world_key: z.string().min(1),
   }),
   /** Agent identity and the trusted owner who may issue LLM-routed commands. */
   agent: z

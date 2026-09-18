@@ -45,6 +45,7 @@ llm:
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:
+  world_key: main
   host: eros
   port: 25565
   username: CobbleBob

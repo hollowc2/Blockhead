@@ -198,7 +198,9 @@ export class TimeoutError extends Error {
 
 /**
  * Race `promise` against a wall-clock timeout. On timeout the optional hook
- * runs first and the original operation is observed before returning control.
+ * runs first. The original operation is observed, but is never awaited after
+ * the deadline: Mineflayer plugins are third-party promises and some ignore
+ * cancellation forever.
  */
 export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onTimeout?: () => void | Promise<void>, signal?: AbortSignal): Promise<T> {
   const awaited = promise.then(
@@ -214,10 +216,17 @@ export async function withTimeout<T>(timeoutMs: number, promise: Promise<T>, onT
   if (winner && typeof winner === "object" && "timedOut" in winner) {
     clearTimeout(timeoutHandle);
     signal?.removeEventListener("abort", abortHandler);
-    if (onTimeout) await onTimeout();
-    // Cancellation is only a request. Keep the plugin promise observed and
-    // settled before returning ownership to the scheduler.
-    await awaited;
+    if (onTimeout) {
+      // Cleanup is best-effort too. A broken plugin must not turn its cleanup
+      // hook into a second, unbounded timeout.
+      await Promise.race([
+        Promise.resolve(onTimeout()).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
+      ]);
+    }
+    // Keep the late result observed so it cannot become an unhandled
+    // rejection, but deliberately do not await it.
+    void awaited.catch(() => undefined);
     throw signal?.aborted ? new DOMException("operation aborted", "AbortError") : new TimeoutError(`operation timed out after ${timeoutMs}ms`);
   }
   clearTimeout(timeoutHandle);

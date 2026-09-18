@@ -48,14 +48,20 @@ export class BootstrapRepository {
       .run(worldId, stage, new Date().toISOString());
   }
 
-  recordFailure(worldId: number, code: string, retryAt: number): void {
+  recordFailure(worldId: number, code: string, retryAt: number, increment = 1): void {
     const current = this.getState(worldId);
     this.db.sql.prepare(`
       INSERT INTO bootstrap_state (world_id, stage, updated_at, attempts, last_failure_code, retry_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(world_id) DO UPDATE SET attempts = excluded.attempts,
         last_failure_code = excluded.last_failure_code, retry_at = excluded.retry_at, updated_at = excluded.updated_at
-    `).run(worldId, current.stage ?? "home", new Date().toISOString(), current.attempts + 1, code, retryAt);
+    `).run(worldId, current.stage ?? "home", new Date().toISOString(), current.attempts + increment, code, retryAt);
+  }
+
+  /** Terminal stage marker; retains the failure metadata for diagnosis. */
+  markBlocked(worldId: number, code: string): void {
+    this.db.sql.prepare("UPDATE bootstrap_state SET stage = ?, last_failure_code = ?, retry_at = NULL, updated_at = ? WHERE world_id = ?")
+      .run(BootstrapStage.BLOCKED, code, new Date().toISOString(), worldId);
   }
 }
 
