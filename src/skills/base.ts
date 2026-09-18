@@ -25,6 +25,7 @@ import {
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
+import { isCreativeMode } from "../minecraft/mode.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -63,6 +64,10 @@ const MAX_LOG_SEARCH_RADIUS = 256;
 const CANDIDATES_PER_RADIUS = 24;
 /** Scan radius for an already-placed home crafting table (door recipe). */
 const TABLE_SCAN_RADIUS = 16;
+const CREATIVE_GIVE_TIMEOUT_MS = 5_000;
+/** Mineflayer cannot place a block from arbitrarily far away. */
+const SIMPLE_BUILD_PLACE_REACH = 4.5;
+const SIMPLE_BUILD_APPROACH_RANGE = 2.5;
 
 // --- pure layout (unit-tested) ---
 
@@ -171,6 +176,35 @@ function findPlanksItem(bot: Bot): Item | null {
     if (isPlanksItemName(item.name)) return item;
   }
   return null;
+}
+
+/** Creative mode has a catalog, not a normal carried inventory. */
+async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, signal?: AbortSignal): Promise<Item | null> {
+  const count = (): number => bot.inventory.items()
+    .filter((item) => bareName(item.name) === itemName)
+    .reduce((total, item) => total + item.count, 0);
+  const first = (): Item | null => bot.inventory.items().find((item) => bareName(item.name) === itemName) ?? null;
+  if (count() >= quantity) return first();
+  const username = bot.username.replace(/[^A-Za-z0-9_]/g, "");
+  if (username === "") return null;
+  const deadline = Date.now() + CREATIVE_GIVE_TIMEOUT_MS;
+  let requested = false;
+  let requestedAtCount = count();
+  while (Date.now() < deadline) {
+    if (signal?.aborted) return null;
+    const missing = quantity - count();
+    if (missing <= 0) return first();
+    if (!requested) {
+      bot.chat(`/give ${username} ${itemName} ${Math.min(64, missing)}`);
+      requested = true;
+      requestedAtCount = count();
+    }
+    if (count() > requestedAtCount) {
+      requested = false;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return count() >= quantity ? first() : null;
 }
 
 // --- measurement (structure completeness) ---
@@ -528,7 +562,12 @@ export class BaseBuilderRunner {
         this.announce(message);
         return { ok: true, status: "completed", data, message };
       }
-      if (missing.length > countPlanks(this.opts.bot)) {
+      if (isCreativeMode(this.opts.bot)) {
+        const supplied = await ensureCreativeItem(this.opts.bot, "oak_planks", missing.length, this.signals?.signal);
+        if (supplied === null) {
+          return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide enough oak planks");
+        }
+      } else if (missing.length > countPlanks(this.opts.bot)) {
         const shortfall = missing.length - countPlanks(this.opts.bot);
         const logsNeeded = Math.max(0, Math.ceil(shortfall / 4) - countLogs(this.opts.bot));
         if (logsNeeded > 0) {
@@ -542,20 +581,33 @@ export class BaseBuilderRunner {
 
       const placed = new Set<string>();
       let completed = cells.length - missing.length;
+      let placedThisPass = 0;
       for (const cell of missing) {
         this.checkInterrupt({ phase: "placing", placed: completed, total: cells.length });
         if (this.stopRequested) return this.interrupted(data);
-        const plank = findPlanksItem(this.opts.bot);
+        const plank = isCreativeMode(this.opts.bot)
+          ? await ensureCreativeItem(this.opts.bot, "oak_planks", 1, this.signals?.signal)
+          : findPlanksItem(this.opts.bot);
         if (plank === null) break;
+        // A blueprint can be much larger than Mineflayer's placement reach.
+        // Reposition on the same X/Z column before trying a distant cell;
+        // otherwise the old implementation silently completed a partial pass
+        // while the bot appeared to stand idle at the initial corner.
+        await this.moveWithinSimpleBuildReach(cell);
+        if (this.stopRequested) return this.interrupted(data);
         if (await placeAtCell(this.opts.bot, plank, cell, placed, this.signals?.signal) !== null) {
           placed.add(cellKey(cell));
           data.placedWalls += 1;
+          placedThisPass += 1;
           completed += 1;
           this.signals?.checkpoint({ interruptions: this.interruptions, phase: "placing", placed: completed, total: cells.length });
         }
       }
       missing = cells.filter((cell) => isAir(this.opts.bot.blockAt(cell)));
       data.remaining = missing.length;
+      if (placedThisPass === 0 && missing.length > 0) {
+        return this.fail(data, "NOT_READY", `could not place any of the ${missing.length} remaining ${spec.shape} blocks from the current area`);
+      }
       const message = missing.length === 0
         ? `Finished ${spec.shape}: ${cells.length} blocks at ${Math.floor(spec.origin.x)}, ${Math.floor(spec.origin.y)}, ${Math.floor(spec.origin.z)}.`
         : `${spec.shape} partially built: placed ${data.placedWalls}; ${missing.length}/${cells.length} blocks remain.`;
@@ -564,6 +616,32 @@ export class BaseBuilderRunner {
     } finally {
       this.running = false;
       this.signals = null;
+    }
+  }
+
+  /** Move close enough to a simple-build target for a placement packet. */
+  private async moveWithinSimpleBuildReach(cell: Vec3): Promise<void> {
+    const bot = this.opts.bot;
+    const self = bot.entity;
+    if (self === null) return;
+    const distance = Math.hypot(self.position.x - cell.x, self.position.y - cell.y, self.position.z - cell.z);
+    if (distance <= SIMPLE_BUILD_PLACE_REACH) return;
+
+    const approach: Location = {
+      x: cell.x,
+      y: Math.floor(self.position.y),
+      z: cell.z,
+    };
+    const travel = await travelAndWait(bot, approach, {
+      dimension: String(bot.game.dimension ?? "overworld").replace(/^minecraft:/, ""),
+      timeoutMs: TRAVEL_TIMEOUT_MS,
+      range: SIMPLE_BUILD_APPROACH_RANGE,
+      shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
+    });
+    if (this.stopRequested) return;
+    if (travel.status !== "arrived" && travel.status !== "already_there") {
+      this.opts.logger.warn({ cell, status: travel.status }, "simple build could not reach placement area");
     }
   }
 
@@ -628,7 +706,12 @@ export class BaseBuilderRunner {
     }
 
     // 1. Planks for every missing wall, roof cell, and the door recipe.
-    if (before.planksNeeded > countPlanks(bot)) {
+    if (isCreativeMode(bot)) {
+      const supplied = await ensureCreativeItem(bot, "oak_planks", before.planksNeeded, this.signals?.signal);
+      if (supplied === null) {
+        return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide enough oak planks");
+      }
+    } else if (before.planksNeeded > countPlanks(bot)) {
       const shortfall = before.planksNeeded - countPlanks(bot);
       const logsNeeded = Math.max(0, Math.ceil(shortfall / 4) - countLogs(bot));
       if (logsNeeded > 0) {
@@ -645,8 +728,11 @@ export class BaseBuilderRunner {
     // crafting table; without one the door waits for the next run (bootstrap
     // re-establishes the table, and the probe keeps reporting the gap).
     if (before.doorMissing && findDoorItem(bot) === null) {
+      if (isCreativeMode(bot)) await ensureCreativeItem(bot, "oak_door", 1, this.signals?.signal);
       const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
-      if (table !== null) {
+      if (findDoorItem(bot) !== null) {
+        // Creative mode supplied the door directly.
+      } else if (table !== null) {
         const door = await craftItem(bot, "oak_door", { craftingTable: table, signal: this.signals?.signal });
         if (!door.ok) {
           this.opts.logger.warn({ reason: door.reason }, "build_base: could not craft a door; leaving the gap");
@@ -676,7 +762,9 @@ export class BaseBuilderRunner {
         this.checkInterrupt();
         if (this.stopRequested) break;
         if (!isAir(bot.blockAt(cell))) continue;
-        const plank = findPlanksItem(bot);
+        const plank = isCreativeMode(bot)
+          ? await ensureCreativeItem(bot, "oak_planks", 1, this.signals?.signal)
+          : findPlanksItem(bot);
         if (plank === null) break;
         const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);
         if (block !== null) {
