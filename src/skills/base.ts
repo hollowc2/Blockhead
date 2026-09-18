@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
+import prismarineItem from "prismarine-item";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
@@ -64,7 +65,6 @@ const MAX_LOG_SEARCH_RADIUS = 256;
 const CANDIDATES_PER_RADIUS = 24;
 /** Scan radius for an already-placed home crafting table (door recipe). */
 const TABLE_SCAN_RADIUS = 16;
-const CREATIVE_GIVE_TIMEOUT_MS = 5_000;
 /** Mineflayer cannot place a block from arbitrarily far away. */
 const SIMPLE_BUILD_PLACE_REACH = 4.5;
 const SIMPLE_BUILD_APPROACH_RANGE = 2.5;
@@ -178,31 +178,33 @@ function findPlanksItem(bot: Bot): Item | null {
   return null;
 }
 
-/** Creative mode has a catalog, not a normal carried inventory. */
+/** Creative mode has a catalog; put requested items into usable inventory slots. */
 async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, signal?: AbortSignal): Promise<Item | null> {
   const count = (): number => bot.inventory.items()
     .filter((item) => bareName(item.name) === itemName)
     .reduce((total, item) => total + item.count, 0);
   const first = (): Item | null => bot.inventory.items().find((item) => bareName(item.name) === itemName) ?? null;
   if (count() >= quantity) return first();
-  const username = bot.username.replace(/[^A-Za-z0-9_]/g, "");
-  if (username === "") return null;
-  const deadline = Date.now() + CREATIVE_GIVE_TIMEOUT_MS;
-  let requested = false;
-  let requestedAtCount = count();
-  while (Date.now() < deadline) {
+  const creative = bot.creative;
+  const itemDefinition = bot.registry.itemsByName[itemName];
+  if (creative === undefined || itemDefinition === undefined) return null;
+
+  const ItemConstructor = prismarineItem(bot.registry);
+  // Prefer an existing matching stack, then an empty hotbar slot so the next
+  // equip operation can use it immediately. Fill additional empty slots when
+  // a large blueprint needs more than one stack.
+  const hotbarSlots = Array.from({ length: 9 }, (_, slot) => slot);
+  const emptySlots = hotbarSlots.filter((slot) => bot.inventory.slots[slot] === null);
+  for (const slot of emptySlots) {
     if (signal?.aborted) return null;
     const missing = quantity - count();
     if (missing <= 0) return first();
-    if (!requested) {
-      bot.chat(`/give ${username} ${itemName} ${Math.min(64, missing)}`);
-      requested = true;
-      requestedAtCount = count();
+    const item = new ItemConstructor(itemDefinition.id, Math.min(64, missing));
+    try {
+      await creative.setInventorySlot(slot, item);
+    } catch {
+      return null;
     }
-    if (count() > requestedAtCount) {
-      requested = false;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return count() >= quantity ? first() : null;
 }
