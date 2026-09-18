@@ -934,7 +934,7 @@ export class CollectResourceRunner {
 
   private fail(
     data: CollectResourceData,
-    errorCode: Extract<SkillErrorCode, "NOT_READY" | "INVALID_RESOURCE" | "TOOL_REQUIRED">,
+    errorCode: Extract<SkillErrorCode, "NOT_READY" | "INVALID_RESOURCE" | "TOOL_REQUIRED" | "INSUFFICIENT_MATERIALS">,
     reason: string,
   ): SkillResult<CollectResourceData> {
     this.opts.bus.emit("resource.gather.failed", { resource: data.resource, quantity: data.quantity, reason });
