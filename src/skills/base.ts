@@ -194,7 +194,8 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
   // Prefer an existing matching stack, then an empty hotbar slot so the next
   // equip operation can use it immediately. Fill additional empty slots when
   // a large blueprint needs more than one stack.
-  const hotbarSlots = Array.from({ length: 9 }, (_, slot) => slot);
+  // Mineflayer's player inventory uses 36-44 for the nine hotbar slots.
+  const hotbarSlots = Array.from({ length: 9 }, (_, slot) => 36 + slot);
   const emptySlots = hotbarSlots.filter((slot) => bot.inventory.slots[slot] === null);
   for (const slot of emptySlots) {
     if (signal?.aborted) return null;

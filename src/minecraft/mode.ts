@@ -44,7 +44,9 @@ export async function provideCreativeItem(bot: Bot, itemName: string, quantity: 
   if (count() >= quantity) return existing();
   const ItemConstructor = prismarineItem as unknown as (registry: typeof bot.registry) => new (type: number, count: number) => Item;
   const CreativeItem = ItemConstructor(bot.registry);
-  for (const slot of Array.from({ length: 9 }, (_, index) => index).filter((index) => bot.inventory.slots[index] === null)) {
+  // Mineflayer's player inventory uses 36-44 for the nine hotbar slots;
+  // slots 0-8 are the crafting/output area, not usable held-item slots.
+  for (const slot of Array.from({ length: 9 }, (_, index) => 36 + index).filter((index) => bot.inventory.slots[index] === null)) {
     if (signal?.aborted) return null;
     const missing = quantity - count();
     if (missing <= 0) return existing();
