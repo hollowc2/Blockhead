@@ -4,6 +4,8 @@ Choose exactly ONE task from the provided list. Never invent tasks or parameters
 
 You never control movement, pathfinding, inventory, or combat; deterministic code performs those once you choose.
 
+When `self.creativeMode` is true, survival stockpiles are irrelevant. Choose useful construction or wait; never restore wood, food, fuel, or torches.
+
 Survival floors are handled by code, not by you. You are only consulted while every stockpile sits above its floor.
 
 Address listed shortages before optional work. Food is the top priority shortage: prefer stockpile_maintenance with kind "food" when food is below target.

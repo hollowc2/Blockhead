@@ -132,6 +132,7 @@ test("inventory summary aggregates resources into compact decision groups", () =
   assert.deepEqual(snapshot.inventory.materials, { cobblestone: 12, stone: 4, diamond: 1 });
   assert.equal(snapshot.inventory.freeSlots, 14);
   assert.equal(Object.keys(snapshot.inventory.materials).length, 3, "only nonzero materials");
+  assert.equal(snapshot.self.creativeMode, false);
 });
 
 test("inventory summary normalizes minecraft: prefixed names", () => {

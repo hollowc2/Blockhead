@@ -64,6 +64,7 @@ import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
 import { startDashboard } from "./dashboard/lifecycle.js";
 import { ViewerManager } from "./dashboard/viewer.js";
 import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
+import { enableCreativeFlight } from "./minecraft/mode.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -426,6 +427,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
+    if (enableCreativeFlight(bot)) logger.info("creative mode detected; flight enabled");
     void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {

@@ -18,6 +18,7 @@ import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
 import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
+import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import {
   ChatThrottle,
   expansionMessage,
@@ -311,6 +312,15 @@ export class CollectResourceRunner {
     const anchor = self.position.floored();
     let carried = countItem(bot, carriedName);
     let remaining = Math.max(0, quantity - carried);
+    // Creative players do not need to search the world for a requested
+    // material. Supplying the item here also prevents the old survival path
+    // from announcing that logs are unavailable while building in the air.
+    if (isCreativeMode(bot) && remaining > 0) {
+      const supplied = await provideCreativeItem(bot, carriedName, quantity, this.signals?.signal);
+      if (supplied === null) return this.fail(data, "INSUFFICIENT_MATERIALS", "creative inventory is unavailable");
+      carried = countItem(bot, carriedName);
+      remaining = Math.max(0, quantity - carried);
+    }
     if (remaining === 0) {
       this.opts.logger.info({ resource: bare, quantity }, "already carrying the requested quantity; going straight to delivery");
     }

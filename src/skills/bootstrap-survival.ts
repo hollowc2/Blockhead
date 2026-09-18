@@ -34,6 +34,7 @@ import {
   type CraftResult,
 } from "../minecraft/crafting.js";
 import type { Item } from "prismarine-item";
+import { isCreativeMode } from "../minecraft/mode.js";
 import { smeltItems } from "../minecraft/smelting.js";
 import {
   ARRIVE_RANGE,
@@ -297,6 +298,14 @@ export class BootstrapRunner {
     if (this.currentStage === null) return; // already finished
     if (this.opts.bot.entity === null) {
       this.opts.logger.warn("bootstrap deferred: bot not spawned yet");
+      return;
+    }
+
+    if (isCreativeMode(this.opts.bot)) {
+      if (this.currentStage !== BootstrapStage.NORMAL_OPERATION) {
+        this.opts.logger.info("creative mode detected; skipping survival bootstrap");
+        if (this.worldId !== null) this.opts.stages.save(this.worldId, BootstrapStage.NORMAL_OPERATION);
+      }
       return;
     }
 

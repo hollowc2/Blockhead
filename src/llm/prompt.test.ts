@@ -19,7 +19,7 @@ function success(name: string, parameters: Record<string, unknown>): SkillSucces
 }
 
 const SNAPSHOT: StateSnapshot = {
-  self: { position: { x: 0, y: 64, z: 0 }, dimension: "overworld", health: 20, hunger: 50 },
+  self: { position: { x: 0, y: 64, z: 0 }, dimension: "overworld", health: 20, hunger: 50, creativeMode: false },
   task: { active: null, progress: null, lastError: null },
   nearby: { players: [] },
   inventory: {

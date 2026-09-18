@@ -23,6 +23,7 @@ import type { TasksRepository } from "../memory/tasks.js";
 import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import { findHomeChest } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
+import { isCreativeMode } from "../minecraft/mode.js";
 
 /**
  * Phase 7/13: the background coordinator (spec section 4.3). This is
@@ -235,6 +236,16 @@ export class BackgroundManager {
 
     // --- deterministic gates: only act from spawned, post-bootstrap idle. ---
     if (bot.entity === null) return;
+    if (isCreativeMode(bot)) {
+      // A survival task may have been rehydrated before the mode update was
+      // observed. Creative mode makes those tasks both unnecessary and
+      // harmful: cancel them so they cannot preempt an owner's build.
+      if (scheduler.active !== null && scheduler.active.source !== "user") scheduler.requestCancel();
+      for (const task of [...scheduler.queued]) {
+        if (task.source !== "user") scheduler.cancel(task.id);
+      }
+      return;
+    }
     if (bootstrap.completedStage !== BootstrapStage.NORMAL_OPERATION) return;
     if (this.opts.maintenance.isBusy() || this.opts.organizeStorage.isRunning || this.opts.buildBase.isRunning) return;
 

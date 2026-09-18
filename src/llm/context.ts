@@ -6,6 +6,7 @@ import { FOOD_ITEM_NAMES } from "../skills/gather-food.js";
 import { criterionLabel, type Goal } from "../agent/goal.js";
 import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
+import { isCreativeMode } from "../minecraft/mode.js";
 
 /** The chat that triggered a decision. */
 export interface DecisionInput {
@@ -26,6 +27,7 @@ export interface StateSnapshot {
     dimension: string | null;
     health: number;
     hunger: number;
+    creativeMode: boolean;
   };
   task: {
     active: string | null;
@@ -343,6 +345,7 @@ export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): Stat
       dimension: self.dimension,
       health: self.health,
       hunger: self.food,
+      creativeMode: isCreativeMode(ctx.bot),
     },
     task: {
       active: active?.objective ?? null,

@@ -5,6 +5,7 @@ import type * as Pathfinder from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { logger } from "../logger.js";
 import { registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { enableCreativeFlight, isCreativeMode } from "./mode.js";
 
 // Node's cjs-module-lexer fails to detect the `goals` named export of this CJS
 // package, so named ESM imports would resolve to undefined at runtime.
@@ -378,6 +379,16 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   }
   if (!bot.registry) return { status: "not_ready" };
   if (signal.aborted) return { status: "aborted" };
+  if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
+    try {
+      enableCreativeFlight(bot);
+      await bot.creative.flyTo(new Vec3(home.x, home.y, home.z));
+      return signal.aborted ? { status: "aborted" } : { status: "arrived" };
+    } catch (error) {
+      logger.warn({ error: String(error), home }, "creative flight home failed");
+      return { status: "failed", error: String(error) };
+    }
+  }
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
   const arrivalRange = range + HOME_ARRIVAL_GRACE;
@@ -496,6 +507,16 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
   }
   if (!bot.registry) return { status: "not_ready" };
   if (signal.aborted) return { status: "aborted" };
+  if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
+    try {
+      enableCreativeFlight(bot);
+      await bot.creative.flyTo(new Vec3(location.x, location.y, location.z));
+      return signal.aborted ? { status: "aborted" } : { status: "arrived" };
+    } catch (error) {
+      logger.warn({ error: String(error), location }, "creative flight failed");
+      return { status: "failed", error: String(error) };
+    }
+  }
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
 
