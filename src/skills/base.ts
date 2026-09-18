@@ -648,6 +648,24 @@ export class BaseBuilderRunner {
     const distance = Math.hypot(self.position.x - cell.x, self.position.y - cell.y, self.position.z - cell.z);
     if (distance <= SIMPLE_BUILD_PLACE_REACH) return;
 
+    // Ground-level approaches work for the first wall layer, but leave a
+    // creative builder too far below the upper walls and roof. Fly to the
+    // block's elevation (one block below the target) before placing it.
+    if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
+      const travel = await travelAndWait(bot, { x: cell.x, y: cell.y - 1, z: cell.z }, {
+        dimension: String(bot.game.dimension ?? "overworld").replace(/^minecraft:/, ""),
+        timeoutMs: TRAVEL_TIMEOUT_MS,
+        range: 1.5,
+        shouldAbort: this.travelAbort,
+        signal: this.signals?.signal,
+      });
+      if (this.stopRequested) return;
+      if (travel.status !== "arrived" && travel.status !== "already_there") {
+        this.opts.logger.warn({ cell, status: travel.status }, "creative build could not reach placement elevation");
+      }
+      return;
+    }
+
     const approach: Location = {
       x: cell.x,
       y: Math.floor(self.position.y),
