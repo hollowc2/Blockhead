@@ -668,7 +668,10 @@ export class BaseBuilderRunner {
 
     const approach: Location = {
       x: cell.x,
-      y: Math.floor(self.position.y),
+      // Build bottom-up: the block below the target is either terrain or an
+      // already-placed lower layer, giving pathfinder a climbable standing
+      // position for upper walls and the roof without creative flight.
+      y: cell.y - 1,
       z: cell.z,
     };
     const travel = await travelAndWait(bot, approach, {
