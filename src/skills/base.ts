@@ -11,7 +11,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { travelAndWait, travelHomeAndWait, type Location } from "../minecraft/movement.js";
+import { travelAndWait, travelHomeAndWait, type Location, type TravelWaitResult } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import { bareName, countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
@@ -189,7 +189,8 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
   const itemDefinition = bot.registry.itemsByName[itemName];
   if (creative === undefined || itemDefinition === undefined) return null;
 
-  const ItemConstructor = prismarineItem(bot.registry);
+  const ItemConstructor = prismarineItem as unknown as (registry: typeof bot.registry) => new (type: number, count: number) => Item;
+  const CreativeItem = ItemConstructor(bot.registry);
   // Prefer an existing matching stack, then an empty hotbar slot so the next
   // equip operation can use it immediately. Fill additional empty slots when
   // a large blueprint needs more than one stack.
@@ -199,7 +200,7 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
     if (signal?.aborted) return null;
     const missing = quantity - count();
     if (missing <= 0) return first();
-    const item = new ItemConstructor(itemDefinition.id, Math.min(64, missing));
+    const item = new CreativeItem(itemDefinition.id, Math.min(64, missing));
     try {
       await creative.setInventorySlot(slot, item);
     } catch {
@@ -536,13 +537,7 @@ export class BaseBuilderRunner {
       this.signals?.checkpoint({ interruptions: this.interruptions, phase: "traveling", placed: options.resumeState?.placed ?? 0, total: cells.length });
       if (effectiveSpec.anchor !== "current") {
         const approach: Location = { x: effectiveSpec.origin.x - 2, y: effectiveSpec.origin.y, z: effectiveSpec.origin.z - 2 };
-        const travel = await travelAndWait(this.opts.bot, approach, {
-          dimension: effectiveSpec.origin.dimension,
-          timeoutMs: TRAVEL_TIMEOUT_MS,
-          range: 3,
-          shouldAbort: this.travelAbort,
-          signal: this.signals?.signal,
-        });
+        const travel = await this.travelToSimpleAnchor(approach, effectiveSpec.origin.dimension);
         if (this.stopRequested) return this.interrupted(data);
         if (travel.status !== "arrived" && travel.status !== "already_there") {
           return this.fail(data, "PATH_UNREACHABLE", `could not reach structure anchor: ${travel.status}`);
@@ -619,6 +614,29 @@ export class BaseBuilderRunner {
       this.running = false;
       this.signals = null;
     }
+  }
+
+  /** Creative players can fly directly; pathfinder is unreliable in void/sky builds. */
+  private async travelToSimpleAnchor(approach: Location, dimension: string): Promise<TravelWaitResult> {
+    const bot = this.opts.bot;
+    if (isCreativeMode(bot) && bot.creative !== undefined) {
+      if (this.signals?.signal.aborted) return { status: "aborted" };
+      try {
+        await bot.creative.flyTo(new Vec3(approach.x, approach.y, approach.z));
+        if (this.signals?.signal.aborted || this.stopRequested) return { status: "aborted" };
+        return { status: "arrived" };
+      } catch (error) {
+        this.opts.logger.warn({ error: String(error), approach }, "creative flight to structure anchor failed");
+        return { status: "failed", error: String(error) };
+      }
+    }
+    return travelAndWait(bot, approach, {
+      dimension,
+      timeoutMs: TRAVEL_TIMEOUT_MS,
+      range: 3,
+      shouldAbort: this.travelAbort,
+      signal: this.signals?.signal,
+    });
   }
 
   /** Move close enough to a simple-build target for a placement packet. */
