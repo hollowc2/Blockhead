@@ -203,7 +203,7 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
   // slots; restricting this to 36-44 made multi-material designs fail before
   // placing their first block. Slots 9-44 are the main inventory + hotbar.
   const usableSlots = Array.from({ length: 36 }, (_, index) => 9 + index);
-  const emptySlots = usableSlots.filter((slot) => bot.inventory.slots[slot] === null);
+  const emptySlots = usableSlots.filter((slot) => bot.inventory.slots[slot] == null);
   for (const slot of emptySlots) {
     if (signal?.aborted) return null;
     const missing = quantity - count();
@@ -211,6 +211,10 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
     const item = new CreativeItem(itemDefinition.id, Math.min(64, missing));
     try {
       await creative.setInventorySlot(slot, item);
+      // The server's inventory update may arrive after setInventorySlot()
+      // resolves. Return the item we just placed instead of requiring the
+      // client-side inventory mirror to have updated synchronously.
+      return item;
     } catch {
       return null;
     }
