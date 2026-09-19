@@ -14,6 +14,7 @@ import {
   measureStructure,
   stationSlotSpot,
   simpleStructureCells,
+  simpleStructureDoorCells,
   type BaseLayout,
 } from "./base.js";
 
@@ -256,6 +257,15 @@ test("simple structure blueprints are bounded and deterministic", () => {
     () => simpleStructureCells({ shape: "room", width: 16, height: 3, length: 4, material: "planks", anchor: "home", origin }),
     /width\/length 1-15/,
   );
+});
+
+test("room blueprints reserve a two-block centered doorway", () => {
+  const origin = { x: 0, y: 64, z: 0, dimension: "overworld" };
+  const spec = { shape: "room" as const, width: 7, height: 4, length: 7, material: "planks" as const, anchor: "current" as const, origin };
+  assert.deepEqual(simpleStructureDoorCells(spec), [new Vec3(3, 64, 6), new Vec3(3, 65, 6)]);
+  const cells = simpleStructureCells(spec);
+  assert.ok(!cells.some((cell) => cell.equals(new Vec3(3, 64, 6)) || cell.equals(new Vec3(3, 65, 6))));
+  assert.equal(cells.length + simpleStructureDoorCells(spec).length, 145);
 });
 
 test("placement reach is checked from the bot eye to the reference face", () => {

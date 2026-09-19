@@ -348,6 +348,17 @@ function creativePlacementApproaches(cell: Vec3): Vec3[] {
   ];
 }
 
+/** A room/house gets a centered, two-block doorway on its front (+Z) wall. */
+export function simpleStructureDoorCells(spec: SimpleStructureSpec): Vec3[] {
+  if (spec.shape !== "room" || spec.width < 3 || spec.length < 1 || spec.height < 2) return [];
+  const ox = Math.floor(spec.origin.x);
+  const oy = Math.floor(spec.origin.y);
+  const oz = Math.floor(spec.origin.z);
+  const x = ox + Math.floor(spec.width / 2);
+  const z = oz + spec.length - 1;
+  return [new Vec3(x, oy, z), new Vec3(x, oy + 1, z)];
+}
+
 /**
  * The nearest free stockpile chest slot (air cell with a solid floor), or
  * null when every slot is occupied. Storage creation and the home-chest
@@ -467,7 +478,10 @@ export function simpleStructureCells(spec: SimpleStructureSpec): Vec3[] {
     // Rooms and towers get a deterministic flat roof.
     for (let z = 0; z < length; z++) for (let x = 0; x < width; x++) cells.push(new Vec3(ox + x, oy + height, oz + z));
   }
-  const unique = [...new Map(cells.map((cell) => [cellKey(cell), cell])).values()];
+  const doorKeys = new Set(simpleStructureDoorCells(spec).map(cellKey));
+  const unique = [...new Map(cells.map((cell) => [cellKey(cell), cell])).entries()]
+    .filter(([key]) => !doorKeys.has(key))
+    .map(([, cell]) => cell);
   if (unique.length > MAX_SIMPLE_STRUCTURE_BLOCKS) throw new Error(`blueprint has ${unique.length} blocks; maximum is ${MAX_SIMPLE_STRUCTURE_BLOCKS}`);
   return unique;
 }
@@ -557,6 +571,9 @@ export class BaseBuilderRunner {
       let cells: Vec3[];
       try { cells = simpleStructureCells(effectiveSpec); }
       catch (err) { return this.fail(data, "NOT_READY", String(err instanceof Error ? err.message : err)); }
+      const doorCells = simpleStructureDoorCells(effectiveSpec);
+      const targetCells = [...cells, ...doorCells];
+      const doorKeySet = new Set(doorCells.map(cellKey));
       if (this.opts.bot.entity === null) return this.fail(data, "NOT_READY", "bot is not spawned");
       const currentDimension = String(this.opts.bot.game.dimension ?? "").replace(/^minecraft:/, "");
       if (currentDimension !== effectiveSpec.origin.dimension.replace(/^minecraft:/, "")) {
@@ -572,10 +589,13 @@ export class BaseBuilderRunner {
         }
       }
 
-      let blocked = cells.filter((cell) => {
+      const blockedTarget = (cell: Vec3): boolean => {
         const block = this.opts.bot.blockAt(cell);
-        return block === null || (!isAir(block) && !isPlanksItemName(block.name));
-      });
+        if (block === null) return true;
+        if (doorKeySet.has(cellKey(cell))) return !isAir(block) && !isDoorBlock(block);
+        return !isAir(block) && !isPlanksItemName(block.name);
+      };
+      let blocked = targetCells.filter(blockedTarget);
       // A requested creative build owns its blueprint cells. Clear trees,
       // dirt, stone, or remnants of a previous structure in those cells so
       // one obstruction cannot abort the entire build. Unloaded cells remain
@@ -586,19 +606,17 @@ export class BaseBuilderRunner {
           if (obstruction === null || isAir(obstruction)) continue;
           await digBlock(this.opts.bot, obstruction, this.signals?.signal);
         }
-        blocked = cells.filter((cell) => {
-          const block = this.opts.bot.blockAt(cell);
-          return block === null || (!isAir(block) && !isPlanksItemName(block.name));
-        });
+        blocked = targetCells.filter(blockedTarget);
       }
       if (blocked.length > 0) {
         const first = blocked[0]!;
         return this.fail(data, "NOT_READY", `${blocked.length} blueprint cells are unloaded or occupied; first blocked cell is ${first.x},${first.y},${first.z}`);
       }
       let missing = cells.filter((cell) => isAir(this.opts.bot.blockAt(cell)));
+      const missingDoors = doorCells.filter((cell) => !isDoorBlock(this.opts.bot.blockAt(cell)));
       data.missingBefore = missing.length;
-      if (missing.length === 0) {
-        const message = `${spec.shape} is already complete (${cells.length} blocks).`;
+      if (missing.length === 0 && missingDoors.length === 0) {
+        const message = `${spec.shape} is already complete (${targetCells.length} blocks).`;
         this.announce(message);
         return { ok: true, status: "completed", data, message };
       }
@@ -606,6 +624,9 @@ export class BaseBuilderRunner {
         const supplied = await ensureCreativeItem(this.opts.bot, "oak_planks", missing.length, this.signals?.signal);
         if (supplied === null) {
           return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide enough oak planks");
+        }
+        if (missingDoors.length > 0 && await ensureCreativeItem(this.opts.bot, "oak_door", 1, this.signals?.signal) === null) {
+          return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide an oak door");
         }
       } else if (missing.length > countPlanks(this.opts.bot)) {
         const shortfall = missing.length - countPlanks(this.opts.bot);
@@ -633,11 +654,13 @@ export class BaseBuilderRunner {
         // Reposition on the same X/Z column before trying a distant cell;
         // otherwise the old implementation silently completed a partial pass
         // while the bot appeared to stand idle at the initial corner.
-        if (!await this.moveWithinSimpleBuildReach(cell)) {
-          return this.fail(data, "PATH_UNREACHABLE", `placement cell ${cell.x},${cell.y},${cell.z} is unreachable within creative flight timeout`);
+        let placedBlock: Block | null = null;
+        for (let attempt = 0; attempt < 5 && placedBlock === null; attempt++) {
+          if (!await this.moveWithinSimpleBuildReach(cell, attempt)) continue;
+          if (this.stopRequested) return this.interrupted(data);
+          placedBlock = await placeAtCell(this.opts.bot, plank, cell, placed, this.signals?.signal);
         }
-        if (this.stopRequested) return this.interrupted(data);
-        if (await placeAtCell(this.opts.bot, plank, cell, placed, this.signals?.signal) !== null) {
+        if (placedBlock !== null) {
           placed.add(cellKey(cell));
           data.placedWalls += 1;
           placedThisPass += 1;
@@ -645,14 +668,32 @@ export class BaseBuilderRunner {
           this.signals?.checkpoint({ interruptions: this.interruptions, phase: "placing", placed: completed, total: cells.length });
         }
       }
-      missing = cells.filter((cell) => isAir(this.opts.bot.blockAt(cell)));
+      // Doors are placed after the shell so the upper half always has a
+      // lower-half support block. Survival mode leaves the doorway open when
+      // no door item is available; creative mode supplies it directly.
+      if (doorCells.length > 0) {
+        const doorItem = this.opts.bot.inventory.items().find((item) => bareName(item.name) === "oak_door") ?? null;
+        if (doorItem !== null) {
+          for (const cell of doorCells) {
+            if (isDoorBlock(this.opts.bot.blockAt(cell))) continue;
+            for (let attempt = 0; attempt < 5; attempt++) {
+              if (!await this.moveWithinSimpleBuildReach(cell, attempt)) continue;
+              if (await placeAtCell(this.opts.bot, doorItem, cell, placed, this.signals?.signal) !== null) break;
+            }
+          }
+        }
+      }
+      missing = targetCells.filter((cell) => {
+        const block = this.opts.bot.blockAt(cell);
+        return doorKeySet.has(cellKey(cell)) ? !isDoorBlock(block) : isAir(block);
+      });
       data.remaining = missing.length;
       if (placedThisPass === 0 && missing.length > 0) {
         return this.fail(data, "NOT_READY", `could not place any of the ${missing.length} remaining ${spec.shape} blocks from the current area`);
       }
       const message = missing.length === 0
         ? `Finished ${spec.shape}: ${cells.length} blocks at ${Math.floor(spec.origin.x)}, ${Math.floor(spec.origin.y)}, ${Math.floor(spec.origin.z)}.`
-        : `${spec.shape} partially built: placed ${data.placedWalls}; ${missing.length}/${cells.length} blocks remain.`;
+        : `${spec.shape} partially built: placed ${data.placedWalls}; ${missing.length}/${targetCells.length} blocks remain.`;
       this.announce(message);
       return { ok: true, status: missing.length === 0 ? "completed" : "partial", data, message };
     } finally {
@@ -678,7 +719,7 @@ export class BaseBuilderRunner {
   }
 
   /** Move close enough to a simple-build target for a placement packet. */
-  private async moveWithinSimpleBuildReach(cell: Vec3): Promise<boolean> {
+  private async moveWithinSimpleBuildReach(cell: Vec3, approachIndex = 0): Promise<boolean> {
     const bot = this.opts.bot;
     const self = bot.entity;
     if (self === null) return false;
@@ -689,16 +730,16 @@ export class BaseBuilderRunner {
     // creative builder too far below the upper walls and roof. Fly to the
     // block's elevation (one block below the target) before placing it.
     if (isCreativeMode(bot) && bot.creative !== undefined) {
-      for (const destination of creativePlacementApproaches(cell)) {
-        if (this.signals?.signal.aborted || this.stopRequested) return false;
-        const travel = await creativeFlyToAndWait(bot, destination, { timeoutMs: CREATIVE_FLIGHT_TIMEOUT_MS, signal: this.signals?.signal });
-        if (travel.status === "aborted" || this.stopRequested) return false;
-        const arrived = bot.entity !== null && bot.entity.position.distanceTo(destination) <= SIMPLE_BUILD_PLACE_REACH;
-        if (arrived && (travel.status === "arrived" || travel.status === "already_there")) {
-          return true;
-        }
-        this.opts.logger.warn({ cell, destination, status: travel.status, distance: bot.entity?.position.distanceTo(destination) }, "creative build approach failed; trying another side");
+      const approaches = creativePlacementApproaches(cell);
+      const destination = approaches[approachIndex % approaches.length]!;
+      if (this.signals?.signal.aborted || this.stopRequested) return false;
+      const travel = await creativeFlyToAndWait(bot, destination, { timeoutMs: CREATIVE_FLIGHT_TIMEOUT_MS, signal: this.signals?.signal });
+      if (travel.status === "aborted" || this.stopRequested) return false;
+      const arrived = bot.entity !== null && bot.entity.position.distanceTo(destination) <= SIMPLE_BUILD_PLACE_REACH;
+      if (arrived && (travel.status === "arrived" || travel.status === "already_there")) {
+        return true;
       }
+      this.opts.logger.warn({ cell, destination, status: travel.status, distance: bot.entity?.position.distanceTo(destination), approachIndex }, "creative build approach failed; trying another side");
       return false;
     }
 
