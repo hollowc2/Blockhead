@@ -262,6 +262,69 @@ export type TravelWaitResult =
   | { status: "arrived" | "already_there" | "not_ready" | "wrong_dimension" | "timed_out" | "aborted" }
   | { status: "failed"; error: string };
 
+const CREATIVE_FLIGHT_STEP = 0.5;
+const CREATIVE_FLIGHT_TICK_MS = 50;
+const CREATIVE_FLIGHT_REACH = 0.75;
+
+type ClientPositionBot = Bot & {
+  _client?: { write: (packet: string, data: Record<string, unknown>) => void };
+};
+
+/**
+ * Move a creative bot without Mineflayer's creative.flyTo promise.
+ *
+ * creative.flyTo optimistically mutates bot.entity.position and waits for a
+ * `move` event. Mineflayer physics does not emit/send that event while the
+ * current block is unloaded, which is common in void-like or deep builds.
+ * Send the same position packets explicitly and use the observed local
+ * entity position only as the bounded step/arrival state. No synthetic event
+ * is used to settle the operation.
+ */
+export async function creativeFlyToAndWait(
+  bot: Bot,
+  location: Location,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<TravelWaitResult> {
+  const lease = requireWorldActionLease(options.signal);
+  const signal = options.signal ?? lease.signal;
+  const self = bot.entity;
+  const client = (bot as ClientPositionBot)._client;
+  if (!self || client === undefined) return { status: "not_ready" };
+  if (signal.aborted) return { status: "aborted" };
+
+  enableCreativeFlight(bot);
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
+  const destination = new Vec3(location.x, location.y, location.z);
+  const stop = (): void => bot.creative?.stopFlying?.();
+  try {
+    while (true) {
+      if (signal.aborted) return { status: "aborted" };
+      const current = bot.entity;
+      if (!current) return { status: "not_ready" };
+      const distance = current.position.distanceTo(destination);
+      if (distance <= CREATIVE_FLIGHT_REACH) return { status: "arrived" };
+      if (Date.now() >= deadline) return { status: "timed_out" };
+
+      const step = Math.min(CREATIVE_FLIGHT_STEP, distance);
+      const next = current.position.plus(destination.minus(current.position).scaled(step / distance));
+      current.position = next;
+      const packet = bot.supportFeature("positionPacketHasBitflags")
+        ? { x: next.x, y: next.y, z: next.z, flags: { onGround: false, hasHorizontalCollision: false } }
+        : { x: next.x, y: next.y, z: next.z, onGround: false };
+      client.write("position", packet);
+
+      await new Promise<void>((resolve) => {
+        let timer: NodeJS.Timeout;
+        const abort = (): void => { clearTimeout(timer); signal.removeEventListener("abort", abort); resolve(); };
+        timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, CREATIVE_FLIGHT_TICK_MS);
+        signal.addEventListener("abort", abort, { once: true });
+      });
+    }
+  } finally {
+    stop();
+  }
+}
+
 export interface TravelWaitOptions {
   /** Expected dimension; a mismatch aborts before any movement starts. */
   dimension?: string;
@@ -304,6 +367,7 @@ const TRIP_SETTLE_GRACE_MS = 2_000;
  */
 function surfaceStandingY(bot: Bot, x: number, z: number, fallback: number): number {
   const currentY = Math.floor(bot.entity?.position.y ?? fallback);
+  if (typeof bot.blockAt !== "function") return currentY;
   const minY = currentY - SURFACE_SCAN_DOWN;
   const maxY = currentY + SURFACE_SCAN_UP;
   let highestSolid = -Infinity;
@@ -380,14 +444,7 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   if (!bot.registry) return { status: "not_ready" };
   if (signal.aborted) return { status: "aborted" };
   if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
-    try {
-      enableCreativeFlight(bot);
-      await bot.creative.flyTo(new Vec3(home.x, home.y, home.z));
-      return signal.aborted ? { status: "aborted" } : { status: "arrived" };
-    } catch (error) {
-      logger.warn({ error: String(error), home }, "creative flight home failed");
-      return { status: "failed", error: String(error) };
-    }
+    return creativeFlyToAndWait(bot, home, { timeoutMs: options.timeoutMs, signal });
   }
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;
@@ -508,14 +565,7 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
   if (!bot.registry) return { status: "not_ready" };
   if (signal.aborted) return { status: "aborted" };
   if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
-    try {
-      enableCreativeFlight(bot);
-      await bot.creative.flyTo(new Vec3(location.x, location.y, location.z));
-      return signal.aborted ? { status: "aborted" } : { status: "arrived" };
-    } catch (error) {
-      logger.warn({ error: String(error), location }, "creative flight failed");
-      return { status: "failed", error: String(error) };
-    }
+    return creativeFlyToAndWait(bot, location, { timeoutMs: options.timeoutMs, signal });
   }
   getMovements(bot);
   const range = options.range ?? ARRIVE_RANGE;

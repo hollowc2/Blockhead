@@ -10,6 +10,7 @@ import {
   baseLayoutFor,
   DOOR_PLANK_COST,
   freeChestSlotSpot,
+  isPlacementWithinReach,
   measureStructure,
   stationSlotSpot,
   simpleStructureCells,
@@ -255,4 +256,12 @@ test("simple structure blueprints are bounded and deterministic", () => {
     () => simpleStructureCells({ shape: "room", width: 16, height: 3, length: 4, material: "planks", anchor: "home", origin }),
     /width\/length 1-15/,
   );
+});
+
+test("placement reach is checked from the bot eye to the reference face", () => {
+  const bot = { entity: { position: new Vec3(0, 64, 0) } } as unknown as Bot;
+  const reference = { position: new Vec3(0, 64, 0) } as Block;
+  assert.equal(isPlacementWithinReach(bot, reference, new Vec3(0, 1, 0)), true);
+  const distant = { position: new Vec3(0, 64, 6) } as Block;
+  assert.equal(isPlacementWithinReach(bot, distant, new Vec3(0, 1, 0)), false);
 });

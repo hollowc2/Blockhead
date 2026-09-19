@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { followPlayer, raceTrip, travelHomeAndWait } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, raceTrip, travelHomeAndWait } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -79,4 +79,45 @@ test("home navigation recognizes the GoalNear boundary without routing forever",
 
   assert.deepEqual(result, { status: "already_there" });
   assert.equal(gotoCalls, 0);
+});
+
+test("creative flight sends packets and detects arrival without a move event", async () => {
+  const packets: Array<{ x: number; y: number; z: number }> = [];
+  const bot = {
+    entity: { position: new Vec3(0, -60, 0) },
+    creative: { startFlying: () => undefined, stopFlying: () => undefined },
+    _client: { write: (_name: string, packet: { x: number; y: number; z: number }) => packets.push(packet) },
+    supportFeature: () => true,
+    physics: { gravity: 0 },
+  } as any;
+  const controller = new AbortController();
+  const result = await new WorldActionExecutor().run("creative-arrival", controller.signal, () =>
+    creativeFlyToAndWait(bot, { x: 2, y: -56, z: 0 }, { timeoutMs: 1_000, signal: controller.signal }),
+  );
+  assert.deepEqual(result, { status: "arrived" });
+  assert.ok(packets.length > 0);
+  assert.ok(bot.entity.position.distanceTo(new Vec3(2, -56, 0)) <= 0.75);
+});
+
+test("creative flight has a bounded timeout and cancellation", async () => {
+  const bot = {
+    entity: { position: new Vec3(0, -60, 0) },
+    creative: { startFlying: () => undefined, stopFlying: () => undefined },
+    _client: { write: () => undefined },
+    supportFeature: () => true,
+    physics: { gravity: 0 },
+  } as any;
+  const timeoutController = new AbortController();
+  const timedOut = await new WorldActionExecutor().run("creative-timeout", timeoutController.signal, () =>
+    creativeFlyToAndWait(bot, { x: 100, y: -60, z: 0 }, { timeoutMs: 110, signal: timeoutController.signal }),
+  );
+  assert.deepEqual(timedOut, { status: "timed_out" });
+
+  const leaseController = new AbortController();
+  const cancelController = new AbortController();
+  const cancelled = new WorldActionExecutor().run("creative-cancel", leaseController.signal, () =>
+    creativeFlyToAndWait(bot, { x: 100, y: -60, z: 0 }, { timeoutMs: 1_000, signal: cancelController.signal }),
+  );
+  setTimeout(() => cancelController.abort(), 10);
+  assert.deepEqual(await cancelled, { status: "aborted" });
 });

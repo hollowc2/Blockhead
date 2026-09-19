@@ -11,7 +11,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { travelAndWait, travelHomeAndWait, type Location, type TravelWaitResult } from "../minecraft/movement.js";
+import { creativeFlyToAndWait, travelAndWait, travelHomeAndWait, type Location, type TravelWaitResult } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import { bareName, countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
@@ -26,7 +26,7 @@ import {
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
-import { enableCreativeFlight, isCreativeMode } from "../minecraft/mode.js";
+import { isCreativeMode } from "../minecraft/mode.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -303,10 +303,19 @@ function findReferenceFor(bot: Bot, cell: Vec3, placed: ReadonlySet<string>): Pi
     const neighbor = cell.offset(dx, dy, dz);
     const block = bot.blockAt(neighbor);
     if (block === null) continue;
-    if (!isSolid(block) && !placed.has(cellKey(neighbor))) continue;
+    // Creative placement requires an authoritative solid reference. Preserve
+    // the survival builder's existing placed-marker fallback for compatibility
+    // with its delayed block-cache updates.
+    if (!isSolid(block) && !(placed.has(cellKey(neighbor)) && !isCreativeMode(bot))) continue;
     return { reference: block, face: new Vec3(-dx, -dy, -dz) };
   }
   return null;
+}
+
+/** Conservative client-side reach check matching the block interaction ray. */
+export function isPlacementWithinReach(bot: Bot, reference: Block, face: Vec3): boolean {
+  const eye = bot.entity?.position.offset(0, 1.62, 0);
+  return eye !== undefined && eye.distanceTo(reference.position.plus(face.scaled(0.5))) <= SIMPLE_BUILD_PLACE_REACH;
 }
 
 /**
@@ -317,6 +326,7 @@ function findReferenceFor(bot: Bot, cell: Vec3, placed: ReadonlySet<string>): Pi
 async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet<string>, signal?: AbortSignal): Promise<Block | null> {
   const support = findReferenceFor(bot, cell, placed);
   if (support === null) return null;
+  if (isCreativeMode(bot) && !isPlacementWithinReach(bot, support.reference, support.face)) return null;
   const spot: PlacementSpot = { position: cell, ...support };
   const placedBlock = await placeItemAt(bot, item, spot, signal);
   return placedBlock !== null && !isAir(placedBlock) ? placedBlock : null;
@@ -592,7 +602,9 @@ export class BaseBuilderRunner {
         // Reposition on the same X/Z column before trying a distant cell;
         // otherwise the old implementation silently completed a partial pass
         // while the bot appeared to stand idle at the initial corner.
-        await this.moveWithinSimpleBuildReach(cell);
+        if (!await this.moveWithinSimpleBuildReach(cell)) {
+          return this.fail(data, "PATH_UNREACHABLE", `placement cell ${cell.x},${cell.y},${cell.z} is unreachable within creative flight timeout`);
+        }
         if (this.stopRequested) return this.interrupted(data);
         if (await placeAtCell(this.opts.bot, plank, cell, placed, this.signals?.signal) !== null) {
           placed.add(cellKey(cell));
@@ -623,14 +635,7 @@ export class BaseBuilderRunner {
     const bot = this.opts.bot;
     if (isCreativeMode(bot) && bot.creative !== undefined) {
       if (this.signals?.signal.aborted) return { status: "aborted" };
-      try {
-        await bot.creative.flyTo(new Vec3(approach.x, approach.y, approach.z));
-        if (this.signals?.signal.aborted || this.stopRequested) return { status: "aborted" };
-        return { status: "arrived" };
-      } catch (error) {
-        this.opts.logger.warn({ error: String(error), approach }, "creative flight to structure anchor failed");
-        return { status: "failed", error: String(error) };
-      }
+      return creativeFlyToAndWait(bot, approach, { timeoutMs: TRAVEL_TIMEOUT_MS, signal: this.signals?.signal });
     }
     return travelAndWait(bot, approach, {
       dimension,
@@ -642,44 +647,27 @@ export class BaseBuilderRunner {
   }
 
   /** Move close enough to a simple-build target for a placement packet. */
-  private async moveWithinSimpleBuildReach(cell: Vec3): Promise<void> {
+  private async moveWithinSimpleBuildReach(cell: Vec3): Promise<boolean> {
     const bot = this.opts.bot;
     const self = bot.entity;
-    if (self === null) return;
+    if (self === null) return false;
     const distance = Math.hypot(self.position.x - cell.x, self.position.y - cell.y, self.position.z - cell.z);
-    if (distance <= SIMPLE_BUILD_PLACE_REACH) return;
+    if (distance <= SIMPLE_BUILD_PLACE_REACH) return true;
 
     // Ground-level approaches work for the first wall layer, but leave a
     // creative builder too far below the upper walls and roof. Fly to the
     // block's elevation (one block below the target) before placing it.
     if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
-      if (this.signals?.signal.aborted || this.stopRequested) return;
-      enableCreativeFlight(bot);
       const destination = new Vec3(cell.x, cell.y - 1, cell.z);
-      try {
-        // Creative flight is deterministic and does not need pathfinder. The
-        // old implementation routed this through travelAndWait, which uses
-        // pathfinder and could leave a creative build stuck between cells.
-        // Mineflayer's flyTo can also wait forever for a final `move` event;
-        // bound it and nudge that event during cleanup so one bad flight
-        // cannot hold the whole task lease indefinitely.
-        await withTimeout(
-          CREATIVE_FLIGHT_TIMEOUT_MS,
-          bot.creative.flyTo(destination),
-          () => {
-            bot.creative.stopFlying?.();
-            bot.emit("move", bot.entity.position);
-          },
-          this.signals?.signal,
-        );
-      } catch (error) {
-        if (this.signals?.signal.aborted || this.stopRequested) return;
-        const distance = bot.entity.position.distanceTo(destination);
-        if (distance > SIMPLE_BUILD_PLACE_REACH) {
-          this.opts.logger.warn({ cell, distance, error: String(error) }, "creative build could not reach placement elevation");
-        }
+      if (this.signals?.signal.aborted || this.stopRequested) return false;
+      const travel = await creativeFlyToAndWait(bot, destination, { timeoutMs: CREATIVE_FLIGHT_TIMEOUT_MS, signal: this.signals?.signal });
+      if (travel.status === "aborted" || this.stopRequested) return false;
+      const arrived = bot.entity !== null && bot.entity.position.distanceTo(destination) <= SIMPLE_BUILD_PLACE_REACH;
+      if (!arrived || (travel.status !== "arrived" && travel.status !== "already_there")) {
+        this.opts.logger.warn({ cell, destination, status: travel.status, distance: bot.entity?.position.distanceTo(destination) }, "creative build could not reach placement area");
+        return false;
       }
-      return;
+      return true;
     }
 
     const approach: Location = {
@@ -697,10 +685,13 @@ export class BaseBuilderRunner {
       shouldAbort: this.travelAbort,
       signal: this.signals?.signal,
     });
-    if (this.stopRequested) return;
+    if (this.stopRequested) return false;
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       this.opts.logger.warn({ cell, status: travel.status }, "simple build could not reach placement area");
     }
+    // Preserve the survival builder's existing placement fallback; creative
+    // flight is the path that requires an explicit arrival guarantee.
+    return true;
   }
 
   /** Lightweight background probe: is the stockpile shed incomplete? */
