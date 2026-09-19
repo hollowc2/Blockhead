@@ -1,189 +1,121 @@
-# Deploy Blockhead on Maia
+# Blockhead on Maia
 
-This runbook keeps Blockhead independent of an SSH session, terminal, or tmux.
+This is the current Maia layout. There are two Blockhead paths, but only one
+running service:
 
-- **Zeus** is the development workstation.
-- **Maia** runs Blockhead and the local `llama.cpp` server.
-- **Eros** runs the Minecraft server.
+```text
+/mnt/Repos/Games/Blockhead                 source checkout + live state
+  config/minecraft.yaml                    configuration
+  data/blockhead.db                        SQLite state
+  logs/                                     application logs
 
-The service is deliberately not containerized. systemd owns the Blockhead
-process and reconnects it after an unexpected process failure.
+/home/corey/.local/share/blockhead-runtime  local runtime copy
+  src/                                      code executed by the service
+  node_modules/                             runtime dependencies
 
-## Prerequisites
-
-On Maia, provide:
-
-- Node.js 20 or newer and npm.
-- A stable checkout path, used below as `/srv/blockhead` (choose another
-  absolute path if preferred).
-- A service account that owns or can write the checkout's `data/` and `logs/`
-  directories. The example unit uses `blockhead`; change `User=` and `Group=`
-  if using another account.
-- A configured `config/minecraft.yaml`, including the Eros address and the
-  local LLM URL. The application loads this file relative to its working
-  directory.
-- A running llama.cpp server on Maia, normally at `127.0.0.1:8080`, and a
-  reachable Minecraft server on Eros.
-
-The repository's production command is `npm start`, which runs `tsx
-src/index.ts`. There is no separate build step.
-
-## Install or update the checkout
-
-Choose a path that will not change between updates, then install dependencies
-as the service account:
-
-```bash
-sudo install -d -o blockhead -g blockhead /srv/blockhead
-sudo -u blockhead git clone <repository-url> /srv/blockhead
-cd /srv/blockhead
-sudo -u blockhead npm ci
-sudo -u blockhead mkdir -p data logs
+systemd --user: blockhead.service           keeps the bot running
 ```
 
-If the checkout already exists, update it and reinstall only when the lockfile
-changes:
+The source checkout is NFS-mounted on Maia. The runtime copy is local to Maia
+so the bot does not execute code or dependencies directly from NFS. The
+service's working directory remains the source checkout, so relative paths for
+configuration, SQLite, and logs resolve there.
+
+Minecraft runs on Eros. The local `llama.cpp` server runs on Maia, normally at
+`127.0.0.1:8080`.
+
+## Check the live installation
+
+Run these on Maia:
 
 ```bash
-cd /srv/blockhead
-sudo -u blockhead git pull --ff-only
-sudo -u blockhead npm ci
+systemctl --user status blockhead.service
+systemctl --user cat blockhead.service
+readlink -f /mnt/Repos/Games/Blockhead
+ls -ld /home/corey/.local/share/blockhead-runtime
 ```
 
-Edit `/srv/blockhead/config/minecraft.yaml` and verify its `server`, `home`,
-`agent.owner`, and `llm.base_url` values before starting the service.
+The service should show a drop-in at:
 
-## Deploy from Zeus with the script
+```text
+~/.config/systemd/user/blockhead.service.d/runtime.conf
+```
 
-Once the checkout and systemd unit are installed on Maia, run the deployment
-from the repository checkout on Zeus:
+That drop-in sets:
+
+```ini
+WorkingDirectory=/mnt/Repos/Games/Blockhead
+ExecStart=%h/.local/share/blockhead-runtime/node_modules/.bin/tsx %h/.local/share/blockhead-runtime/src/index.ts
+```
+
+Do not use `/srv/blockhead`, a system-level `blockhead.service`, tmux, or
+`nohup`. Those belong to older deployment attempts and are not the active
+installation.
+
+## Update the bot
+
+Update the source checkout first, then copy the code to the local runtime and
+restart the user service. Do this from Maia so the source and runtime paths are
+unambiguous:
 
 ```bash
-./scripts/deploy-maia
+cd /mnt/Repos/Games/Blockhead
+git pull --ff-only
+npm ci
+npm run typecheck
+npm test
+
+rsync -a --delete \
+  --exclude node_modules \
+  --exclude data \
+  --exclude logs \
+  /mnt/Repos/Games/Blockhead/ \
+  /home/corey/.local/share/blockhead-runtime/
+
+cd /home/corey/.local/share/blockhead-runtime
+npm ci
+systemctl --user daemon-reload
+systemctl --user restart blockhead.service
+systemctl --user status --no-pager blockhead.service
 ```
 
-The script connects to Maia over SSH, refuses a dirty remote working tree,
-updates the configured branch with `git pull --ff-only`, runs `npm ci`,
-`npm run typecheck`, and `npm test`, then restarts the service and prints its
-status. It stops immediately on failure, so a failed install, typecheck, or
-test does not restart the working service. It never discards local changes.
+`data/` and `logs/` are deliberately excluded from the runtime sync. They
+belong to the source checkout because that is the service working directory.
+Never run a second Blockhead process from the source checkout.
 
-Defaults can be overridden with environment variables near the invocation:
+For a quick status check after an update:
 
 ```bash
-SSH_HOST=maia REMOTE_REPO=/srv/blockhead SERVICE_NAME=blockhead \\
-  DEPLOY_BRANCH=main ./scripts/deploy-maia
+systemctl --user is-active blockhead.service
+journalctl --user -u blockhead.service -n 100 --no-pager
+tail -n 100 /mnt/Repos/Games/Blockhead/logs/blockhead.log
 ```
 
-The defaults are `maia`, `/srv/blockhead`, `blockhead`, and `main`,
-respectively. If the checkout is dirty or the branch cannot be advanced
-fast-forward-only, fix that condition on Maia and rerun the script; it will
-not reset, clean, or overwrite the checkout.
+The service is user-owned, so use `systemctl --user` and
+`journalctl --user`; do not add `sudo`.
 
-To follow Blockhead logs remotely while deploying:
+## Stop or restart
 
 ```bash
-ssh maia 'journalctl -u blockhead -f'
+systemctl --user stop blockhead.service
+systemctl --user start blockhead.service
+systemctl --user restart blockhead.service
 ```
 
-Use `sudo` inside the command if Maia's journal permissions require it.
-
-## Find npm and install the unit
-
-Run this as the same account that will run Blockhead:
-
-```bash
-sudo -u blockhead sh -lc 'command -v npm'
-```
-
-Copy the printed absolute path. Do not assume it is `/usr/bin/npm`: npm may be
-installed by nvm, fnm, Volta, or another Node version manager. systemd does not
-load an interactive shell profile, so a version-manager installation must be
-usable from a non-interactive service environment; otherwise install Node/npm
-system-wide or use an absolute path that is available to the service account.
-
-Copy the example unit, then replace these placeholders in the copy:
-
-- `User=` and `Group=` with the service account.
-- `WorkingDirectory=` with the checkout root, for example `/srv/blockhead`.
-- `ExecStart=` with the absolute npm path followed by `start`, for example
-  `/usr/local/bin/npm start`.
-
-```bash
-sudo cp deploy/blockhead.service.example /etc/systemd/system/blockhead.service
-sudoedit /etc/systemd/system/blockhead.service
-sudo systemd-analyze verify /etc/systemd/system/blockhead.service
-sudo systemctl daemon-reload
-sudo systemctl enable blockhead.service
-sudo systemctl start blockhead.service
-```
-
-`WorkingDirectory` is important: `config/minecraft.yaml`,
-`data/blockhead.db`, `logs/blockhead.log`, and
-`logs/blockhead-debug.jsonl` are resolved from it. The service does not change
-those application paths or introduce a second configuration mechanism.
-
-The example waits for `network-online.target`. This only orders startup after
-network initialization; Blockhead itself also retries an initially unavailable
-Eros connection with backoff. Keep the llama.cpp server as a separate process
-or service and make sure its URL matches the YAML configuration.
-
-## Operate the service
-
-Use these commands on Maia:
-
-```bash
-sudo systemctl start blockhead.service
-sudo systemctl stop blockhead.service
-sudo systemctl restart blockhead.service
-sudo systemctl status blockhead.service
-sudo systemctl is-active blockhead.service
-sudo systemctl is-enabled blockhead.service
-```
-
-Follow the service journal:
-
-```bash
-sudo journalctl -u blockhead.service -f
-sudo journalctl -u blockhead.service -n 200 --no-pager
-```
-
-Blockhead also writes application files under the checkout:
-
-```bash
-less /srv/blockhead/logs/blockhead.log
-less /srv/blockhead/logs/blockhead-debug.jsonl
-```
-
-To stop it intentionally, use `systemctl stop`, not `kill -9`. Blockhead
-handles SIGTERM/SIGINT as a clean shutdown and exits with status 0. The unit's
-`Restart=on-failure` therefore does not start it again after an intentional
-stop. If Blockhead has already spawned in Minecraft and then disconnects
-unexpectedly, it exits status 1; systemd starts a fresh process after five
-seconds. This is the expected recovery path for an unexpected Minecraft
-connection loss.
-
-Because systemd is the parent process, Blockhead continues running after SSH
-disconnect, terminal logout, or tmux closure. No tmux session is required.
+The unit is enabled for the user session and restarts after a process failure.
+Stopping it intentionally is safe; do not use `kill -9` or start a replacement
+with `nohup`.
 
 ## Troubleshooting
 
-- **`status=203/EXEC` or npm not found:** rerun `command -v npm` as the service
-  account and put that absolute path in `ExecStart`. Check that its Node/npm
-  installation does not depend on an interactive shell profile.
-- **Config or SQLite errors:** check `WorkingDirectory`, confirm the checkout
-  contains `config/minecraft.yaml`, and ensure the service account can write
-  `data/` and `logs/`.
-- **Unit starts but no Minecraft connection:** inspect `journalctl` for the
-  `spawned` or retry messages, verify DNS/routing to Eros, and check the
-  `server.host` and `server.port` values in the YAML. Initial connection
-  failures are retried in-process, so systemd may correctly show the unit as
-  active while it waits for Eros.
-- **LLM decisions fail:** confirm the llama.cpp server is running on Maia and
-  that `llm.base_url` points to it. The Blockhead unit does not start or
-  supervise llama.cpp.
-- **Unit changes are ignored:** run `sudo systemctl daemon-reload` after
-  editing the installed unit, then use `restart`.
-- **Repeated abnormal restarts:** inspect the journal and the two application
-  log files before changing the restart policy. A configuration exception will
-  also be an on-failure exit and should be fixed rather than hidden.
+- **Service is inactive:** run `systemctl --user status blockhead.service` and
+  inspect `journalctl --user -u blockhead.service`.
+- **Wrong code is running:** compare the runtime copy with the source checkout,
+  then repeat the `rsync` and `npm ci` steps above.
+- **Config, database, or log errors:** verify that the service working directory
+  is `/mnt/Repos/Games/Blockhead` and that `config/minecraft.yaml`, `data/`, and
+  `logs/` exist there.
+- **No Minecraft connection:** check the Eros host and port in
+  `config/minecraft.yaml`.
+- **LLM failures:** verify that Maia's `llama.cpp` server is running and that
+  `llm.base_url` points to it.

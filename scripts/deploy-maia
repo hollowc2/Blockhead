@@ -1,56 +1,52 @@
 #!/bin/sh
-# Deploy Blockhead from Zeus to Maia.
-# Override SSH_HOST, REMOTE_REPO, SERVICE_NAME, or DEPLOY_BRANCH as needed.
+# Update the Maia runtime from the shared source checkout.
+# Override SSH_HOST, SOURCE_REPO, RUNTIME_DIR, or SERVICE_NAME as needed.
 
 set -eu
 
 SSH_HOST=${SSH_HOST:-maia}
-REMOTE_REPO=${REMOTE_REPO:-/srv/blockhead}
-SERVICE_NAME=${SERVICE_NAME:-blockhead}
-DEPLOY_BRANCH=${DEPLOY_BRANCH:-main}
+SOURCE_REPO=${SOURCE_REPO:-/mnt/Repos/Games/Blockhead}
+RUNTIME_DIR=${RUNTIME_DIR:-/home/corey/.local/share/blockhead-runtime}
+SERVICE_NAME=${SERVICE_NAME:-blockhead.service}
 
-printf 'Deploying %s branch %s to %s (%s)\n' \
-  "$REMOTE_REPO" "$DEPLOY_BRANCH" "$SSH_HOST" "$SERVICE_NAME"
+printf 'Updating %s on %s from %s\n' \
+  "$RUNTIME_DIR" "$SSH_HOST" "$SOURCE_REPO"
 
-ssh "$SSH_HOST" sh -s -- "$REMOTE_REPO" "$SERVICE_NAME" "$DEPLOY_BRANCH" <<'REMOTE_SCRIPT'
+ssh "$SSH_HOST" sh -s -- "$SOURCE_REPO" "$RUNTIME_DIR" "$SERVICE_NAME" <<'REMOTE_SCRIPT'
 set -eu
 
-repo=$1
-service=$2
-branch=$3
+source_repo=$1
+runtime_dir=$2
+service=$3
 
-printf 'Checking checkout: %s\n' "$repo"
-cd -- "$repo"
+cd -- "$source_repo"
 git rev-parse --show-toplevel >/dev/null
-status=$(git status --porcelain)
-if [ -n "$status" ]; then
-  printf '%s\n' "Refusing deployment: Maia checkout has local changes." >&2
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  printf '%s\n' 'Refusing deployment: source checkout has tracked changes.' >&2
   git status --short >&2
   exit 1
 fi
 
-
-current_branch=$(git branch --show-current)
-if [ "$current_branch" != "$branch" ]; then
-  printf 'Refusing deployment: checkout is on %s, expected %s.\n' \
-    "${current_branch:-detached HEAD}" "$branch" >&2
-  exit 1
-fi
-
-printf 'Updating branch with fast-forward-only pull...\n'
-git pull --ff-only origin "$branch"
-
-printf 'Installing dependencies with npm ci...\n'
+printf '%s\n' 'Installing and checking source checkout...'
 npm ci
-
-printf 'Running typecheck...\n'
 npm run typecheck
-
-printf 'Running tests...\n'
 npm test
 
-printf 'Restarting %s...\n' "$service"
-sudo systemctl restart "$service"
-printf 'Service status:\n'
-sudo systemctl status --no-pager "$service"
+printf 'Syncing runtime copy: %s\n' "$runtime_dir"
+mkdir -p -- "$runtime_dir"
+rsync -a --delete \
+  --exclude .git \
+  --exclude node_modules \
+  --exclude data \
+  --exclude logs \
+  "$source_repo/" "$runtime_dir/"
+
+cd -- "$runtime_dir"
+npm ci
+
+printf 'Restarting user service: %s\n' "$service"
+systemctl --user daemon-reload
+systemctl --user restart "$service"
+systemctl --user status --no-pager "$service"
 REMOTE_SCRIPT

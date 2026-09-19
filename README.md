@@ -117,9 +117,8 @@ npm run typecheck
 
 ## Deployment
 
-For the Maia systemd deployment, updates, logs, and rollback-safe operations,
-see [`docs/deployment-maia.md`](docs/deployment-maia.md). The example unit is
-at [`deploy/blockhead.service.example`](deploy/blockhead.service.example).
+For the actual Maia layout, update procedure, and service commands, see
+[`docs/deployment-maia.md`](docs/deployment-maia.md).
 
 Additional design notes and call graphs are in [`docs/`](docs/).
 

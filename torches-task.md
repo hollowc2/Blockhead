@@ -2,11 +2,11 @@
 
 ## Context
 
-CobbleBob (Blockhead) runs on host `maia` (192.168.0.210); the repo at
-`/mnt/Repos/Games/Blockhead` is NFS-shared, so code edits are live on the
-bot host. The bot runs `npm start` (tsx on `src/index.ts`) as a detached
-process; any change requires restarting it (`pkill -f "tsx src/index.ts"`,
-then `cd /mnt/Repos/Games/Blockhead && nohup npm start >> logs/blockhead-console.log 2>&1 &`).
+CobbleBob (Blockhead) runs on Maia. The source checkout at
+`/mnt/Repos/Games/Blockhead` is NFS-shared and is also the service working
+directory. The bot is supervised by the per-user `systemd` unit
+`blockhead.service`; use the commands in [`docs/deployment-maia.md`](docs/deployment-maia.md)
+to inspect or restart it. Do not use `nohup` or start a second copy.
 State persists to `data/blockhead.db` (SQLite, migrations in src/memory/migrations.ts).
 
 Baseline commit: `4b5c808`. Do not rebase or rewrite history.
