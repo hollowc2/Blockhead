@@ -38,7 +38,7 @@ function layout(): BaseLayout {
 }
 
 /** A stub bot whose world map marks specific cells; everything else unloaded. */
-function stubBot(map: Record<string, "air" | "solid" | "chest" | "oak_door">): Bot {
+function stubBot(map: Record<string, "air" | "solid" | "planks" | "chest" | "oak_door">): Bot {
   const key = (v: Vec3): string => `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}`;
   return {
     blockAt: (v: Vec3): Block | null => {
@@ -49,6 +49,8 @@ function stubBot(map: Record<string, "air" | "solid" | "chest" | "oak_door">): B
           return { name: "air", boundingBox: "empty" } as Block;
         case "oak_door":
           return { name: "oak_door", boundingBox: "block" } as Block;
+        case "planks":
+          return { name: "oak_planks", boundingBox: "block" } as Block;
         default:
           return { name: "stone", boundingBox: "block" } as Block;
       }
@@ -56,8 +58,8 @@ function stubBot(map: Record<string, "air" | "solid" | "chest" | "oak_door">): B
   } as unknown as Bot;
 }
 
-const airWorld = (): Record<string, "air" | "solid" | "chest" | "oak_door"> => {
-  const world: Record<string, "air" | "solid" | "chest" | "oak_door"> = {};
+const airWorld = (): Record<string, "air" | "solid" | "planks" | "chest" | "oak_door"> => {
+  const world: Record<string, "air" | "solid" | "planks" | "chest" | "oak_door"> = {};
   const l = layout();
   // Mark every layout cell itself as air first; the below-solid pass must
   // not clobber a layout cell (top wall cells sit directly above bottom
@@ -181,9 +183,10 @@ test("measurement: a virgin pad needs 46 wall + 49 roof + 6 door = 101 planks", 
 test("measurement: a complete shell needs no work", () => {
   const world = airWorld();
   const l = layout();
-  for (const cell of l.wallCells) world[`${cell.x},${cell.y},${cell.z}`] = "solid";
-  for (const cell of l.roofCells) world[`${cell.x},${cell.y},${cell.z}`] = "solid";
+  for (const cell of l.wallCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
+  for (const cell of l.roofCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
   world[`${l.doorCells[0]!.x},${l.doorCells[0]!.y},${l.doorCells[0]!.z}`] = "oak_door";
+  world[`${l.doorCells[1]!.x},${l.doorCells[1]!.y},${l.doorCells[1]!.z}`] = "oak_door";
   const m = measureStructure(stubBot(world), l);
   assert.equal(m.missingWalls, 0);
   assert.equal(m.missingRoof, 0);
@@ -197,12 +200,28 @@ test("measurement: a partial build counts only what is still air", () => {
   const l = layout();
   // The whole bottom wall layer is up; roof, top wall, and door are not.
   for (const cell of l.wallCells.filter((c) => c.y === FY)) {
-    world[`${cell.x},${cell.y},${cell.z}`] = "solid";
+    world[`${cell.x},${cell.y},${cell.z}`] = "planks";
   }
   const m = measureStructure(stubBot(world), l);
   assert.equal(m.missingWalls, 23);
   assert.equal(m.missingRoof, 49);
   assert.equal(m.planksNeeded, 23 + 49 + DOOR_PLANK_COST);
+});
+
+test("measurement detects wrong non-air materials instead of treating them as complete", () => {
+  const world = airWorld();
+  const l = layout();
+  for (const cell of l.wallCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
+  for (const cell of l.roofCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
+  world[`${l.doorCells[0]!.x},${l.doorCells[0]!.y},${l.doorCells[0]!.z}`] = "oak_door";
+  world[`${l.doorCells[1]!.x},${l.doorCells[1]!.y},${l.doorCells[1]!.z}`] = "oak_door";
+  world[`${l.wallCells[0]!.x},${l.wallCells[0]!.y},${l.wallCells[0]!.z}`] = "chest";
+  const m = measureStructure(stubBot(world), l);
+  assert.equal(m.missingWalls, 0);
+  assert.equal(m.missingRoof, 0);
+  assert.equal(m.doorMissing, false);
+  assert.equal(m.blocked, 1);
+  assert.equal(m.needsWork, true);
 });
 
 test("freeChestSlotSpot fills center first, then the outer slots, then none", () => {

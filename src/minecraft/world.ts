@@ -197,7 +197,18 @@ export function findPlacementSpot(
  * with at that cell (the caller verifies the desired type), or null when the
  * item could not be equipped or the placement produced no block.
  */
-export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal): Promise<Block | null> {
+export interface PlacementObservation {
+  attempt: number;
+  block: Block | null;
+  inventoryCount: number;
+}
+
+export interface PlaceItemAtOptions {
+  onPlaceAccepted?: () => void;
+  onPoll?: (observation: PlacementObservation) => void;
+}
+
+export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal, options?: PlaceItemAtOptions): Promise<Block | null> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
   const inventoryBefore = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
@@ -208,12 +219,18 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     throwIfAborted(signal);
     return null;
   }
+  let placementError: unknown = null;
   try {
     await placeBlock(bot, spot.reference, spot.face, signal, { x: spot.position.x, y: spot.position.y, z: spot.position.z }, item.name);
+    options?.onPlaceAccepted?.();
     throwIfAborted(signal);
   } catch (err) {
     throwIfAborted(signal);
-    return null;
+    // Mineflayer can reject after the server has accepted the interaction.
+    // Continue polling the target so an eventual authoritative update is not
+    // mistaken for a lost placement; callers can then retry only if it is
+    // still not the expected block.
+    placementError = err;
   }
   // placeBlock resolves when the placement packet is accepted; the block
   // cache can lag behind by several ticks. Poll briefly for the authoritative
@@ -222,6 +239,7 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     throwIfAborted(signal);
     const placed = bot.blockAt(spot.position);
     const inventoryAfter = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
+    options?.onPoll?.({ attempt, block: placed, inventoryCount: inventoryAfter });
     if (placed !== null && placed.name !== "air") return placed;
     if (attempt < 5) await new Promise<void>((resolve) => setTimeout(resolve, 150));
     // A delayed inventory packet is observable independently of the block
@@ -229,5 +247,6 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     void inventoryBefore;
     void inventoryAfter;
   }
+  void placementError;
   return null;
 }
