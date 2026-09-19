@@ -25,7 +25,7 @@ import {
   type PlacementSpot,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
-import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation, digBlock } from "../minecraft/primitives.js";
 import { isCreativeMode } from "../minecraft/mode.js";
 
 /**
@@ -68,7 +68,7 @@ const TABLE_SCAN_RADIUS = 16;
 /** Mineflayer cannot place a block from arbitrarily far away. */
 const SIMPLE_BUILD_PLACE_REACH = 4.5;
 const SIMPLE_BUILD_APPROACH_RANGE = 2.5;
-const CREATIVE_FLIGHT_TIMEOUT_MS = 5_000;
+const CREATIVE_FLIGHT_TIMEOUT_MS = 8_000;
 
 // --- pure layout (unit-tested) ---
 
@@ -333,6 +333,22 @@ async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet
 }
 
 /**
+ * Creative flight does not need a scaffold, but one exact destination is
+ * fragile around unloaded chunks and server collision corrections. These
+ * points keep the placement reference inside the interaction radius while
+ * approaching from several horizontal sides and from above.
+ */
+function creativePlacementApproaches(cell: Vec3): Vec3[] {
+  return [
+    new Vec3(cell.x, cell.y + 2, cell.z),
+    new Vec3(cell.x + 3, cell.y + 1, cell.z),
+    new Vec3(cell.x - 3, cell.y + 1, cell.z),
+    new Vec3(cell.x, cell.y + 1, cell.z + 3),
+    new Vec3(cell.x, cell.y + 1, cell.z - 3),
+  ];
+}
+
+/**
  * The nearest free stockpile chest slot (air cell with a solid floor), or
  * null when every slot is occupied. Storage creation and the home-chest
  * restore route their chests here, so the stockpile grows at its
@@ -556,10 +572,25 @@ export class BaseBuilderRunner {
         }
       }
 
-      const blocked = cells.filter((cell) => {
+      let blocked = cells.filter((cell) => {
         const block = this.opts.bot.blockAt(cell);
         return block === null || (!isAir(block) && !isPlanksItemName(block.name));
       });
+      // A requested creative build owns its blueprint cells. Clear trees,
+      // dirt, stone, or remnants of a previous structure in those cells so
+      // one obstruction cannot abort the entire build. Unloaded cells remain
+      // blocked because destroying an unknown block is unsafe.
+      if (isCreativeMode(this.opts.bot)) {
+        for (const cell of blocked) {
+          const obstruction = this.opts.bot.blockAt(cell);
+          if (obstruction === null || isAir(obstruction)) continue;
+          await digBlock(this.opts.bot, obstruction, this.signals?.signal);
+        }
+        blocked = cells.filter((cell) => {
+          const block = this.opts.bot.blockAt(cell);
+          return block === null || (!isAir(block) && !isPlanksItemName(block.name));
+        });
+      }
       if (blocked.length > 0) {
         const first = blocked[0]!;
         return this.fail(data, "NOT_READY", `${blocked.length} blueprint cells are unloaded or occupied; first blocked cell is ${first.x},${first.y},${first.z}`);
@@ -657,17 +688,18 @@ export class BaseBuilderRunner {
     // Ground-level approaches work for the first wall layer, but leave a
     // creative builder too far below the upper walls and roof. Fly to the
     // block's elevation (one block below the target) before placing it.
-    if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
-      const destination = new Vec3(cell.x, cell.y - 1, cell.z);
-      if (this.signals?.signal.aborted || this.stopRequested) return false;
-      const travel = await creativeFlyToAndWait(bot, destination, { timeoutMs: CREATIVE_FLIGHT_TIMEOUT_MS, signal: this.signals?.signal });
-      if (travel.status === "aborted" || this.stopRequested) return false;
-      const arrived = bot.entity !== null && bot.entity.position.distanceTo(destination) <= SIMPLE_BUILD_PLACE_REACH;
-      if (!arrived || (travel.status !== "arrived" && travel.status !== "already_there")) {
-        this.opts.logger.warn({ cell, destination, status: travel.status, distance: bot.entity?.position.distanceTo(destination) }, "creative build could not reach placement area");
-        return false;
+    if (isCreativeMode(bot) && bot.creative !== undefined) {
+      for (const destination of creativePlacementApproaches(cell)) {
+        if (this.signals?.signal.aborted || this.stopRequested) return false;
+        const travel = await creativeFlyToAndWait(bot, destination, { timeoutMs: CREATIVE_FLIGHT_TIMEOUT_MS, signal: this.signals?.signal });
+        if (travel.status === "aborted" || this.stopRequested) return false;
+        const arrived = bot.entity !== null && bot.entity.position.distanceTo(destination) <= SIMPLE_BUILD_PLACE_REACH;
+        if (arrived && (travel.status === "arrived" || travel.status === "already_there")) {
+          return true;
+        }
+        this.opts.logger.warn({ cell, destination, status: travel.status, distance: bot.entity?.position.distanceTo(destination) }, "creative build approach failed; trying another side");
       }
-      return true;
+      return false;
     }
 
     const approach: Location = {
