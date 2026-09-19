@@ -200,7 +200,12 @@ async function executeDecision(bot: Bot, config: MinecraftConfig, ctx: AgentCont
 
 export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger, ctx: AgentContext): void {
   bot.once("login", () => {
-    logger.info({ username: bot.username }, "logged in");
+    const runtime = bot as Bot & { version?: string; _client?: { version?: string; protocolVersion?: number } };
+    logger.info({
+      username: bot.username,
+      serverVersion: runtime.version ?? runtime._client?.version ?? "unknown",
+      protocolVersion: runtime._client?.protocolVersion ?? null,
+    }, "logged in");
   });
 
   bot.once("spawn", () => {

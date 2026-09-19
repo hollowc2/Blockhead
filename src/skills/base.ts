@@ -1,7 +1,6 @@
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
-import prismarineItem from "prismarine-item";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
@@ -26,7 +25,7 @@ import {
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation, digBlock } from "../minecraft/primitives.js";
-import { isCreativeMode } from "../minecraft/mode.js";
+import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import type { BuildingDesign } from "../building/schema.js";
 import { compileBuildingDesign, type Blueprint } from "../building/compiler.js";
 import { DEFAULT_BUILDING_LIMITS } from "../building/validation.js";
@@ -185,41 +184,11 @@ function findPlanksItem(bot: Bot): Item | null {
   return null;
 }
 
-/** Creative mode has a catalog; put requested items into usable inventory slots. */
-async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, signal?: AbortSignal): Promise<Item | null> {
-  const count = (): number => bot.inventory.items()
-    .filter((item) => bareName(item.name) === itemName)
-    .reduce((total, item) => total + item.count, 0);
-  const first = (): Item | null => bot.inventory.items().find((item) => bareName(item.name) === itemName) ?? null;
-  if (count() >= quantity) return first();
-  const creative = bot.creative;
-  const itemDefinition = bot.registry.itemsByName[itemName];
-  if (creative === undefined || itemDefinition === undefined) return null;
-
-  const ItemConstructor = prismarineItem as unknown as (registry: typeof bot.registry) => new (type: number, count: number) => Item;
-  const CreativeItem = ItemConstructor(bot.registry);
-  // Prefer an existing matching stack, then any usable player-inventory slot.
-  // Creative bots often have a full hotbar but plenty of empty main-inventory
-  // slots; restricting this to 36-44 made multi-material designs fail before
-  // placing their first block. Slots 9-44 are the main inventory + hotbar.
-  const usableSlots = Array.from({ length: 36 }, (_, index) => 9 + index);
-  const emptySlots = usableSlots.filter((slot) => bot.inventory.slots[slot] == null);
-  for (const slot of emptySlots) {
-    if (signal?.aborted) return null;
-    const missing = quantity - count();
-    if (missing <= 0) return first();
-    const item = new CreativeItem(itemDefinition.id, Math.min(64, missing));
-    try {
-      await creative.setInventorySlot(slot, item);
-      // The server's inventory update may arrive after setInventorySlot()
-      // resolves. Return the item we just placed instead of requiring the
-      // client-side inventory mirror to have updated synchronously.
-      return item;
-    } catch {
-      return null;
-    }
-  }
-  return count() >= quantity ? first() : null;
+/** Shared creative provisioning adapter; callers never receive an unconfirmed local Item. */
+async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, signal: AbortSignal | undefined, log: Logger, approvedMaterials?: readonly string[]): Promise<Item | null> {
+  const result = await provideCreativeItem(bot, itemName, quantity, signal, approvedMaterials === undefined ? undefined : { approvedMaterials });
+  if (!result.ok) log.warn({ ...result.diagnostics }, "creative material provisioning failed");
+  return result.ok ? result.item : null;
 }
 
 // --- measurement (structure completeness) ---
@@ -758,11 +727,11 @@ export class BaseBuilderRunner {
         return { ok: true, status: "completed", data, message };
       }
       if (isCreativeMode(this.opts.bot)) {
-        const supplied = await ensureCreativeItem(this.opts.bot, "oak_planks", missingPlanks().length, this.signals?.signal);
+        const supplied = await ensureCreativeItem(this.opts.bot, "oak_planks", missingPlanks().length, this.signals?.signal, this.opts.logger);
         if (supplied === null) {
           return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide enough oak planks");
         }
-        if (missingDoors().length > 0 && await ensureCreativeItem(this.opts.bot, "oak_door", 1, this.signals?.signal) === null) {
+        if (missingDoors().length > 0 && await ensureCreativeItem(this.opts.bot, "oak_door", 1, this.signals?.signal, this.opts.logger) === null) {
           return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide an oak door");
         }
       } else if (missingPlanks().length > countPlanks(this.opts.bot)) {
@@ -791,7 +760,7 @@ export class BaseBuilderRunner {
           if (this.stopRequested) return this.interrupted(data);
           if (targetHasExpectedBlock(this.opts.bot.blockAt(cell), false)) continue;
           const plank = isCreativeMode(this.opts.bot)
-            ? await ensureCreativeItem(this.opts.bot, "oak_planks", 1, this.signals?.signal)
+          ? await ensureCreativeItem(this.opts.bot, "oak_planks", 1, this.signals?.signal, this.opts.logger)
             : findPlanksItem(this.opts.bot);
           if (plank === null) break;
           if (await this.placeSimpleTarget(cell, plank, false, placed)) {
@@ -858,7 +827,15 @@ export class BaseBuilderRunner {
         const block = this.opts.bot.blockAt(cell); if (block !== null && block.name.replace(/^minecraft:/, "") === op.material) { data.placed++; continue; }
         if (block !== null && !isAir(block)) { if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${block.name}`, data }; } await digBlock(this.opts.bot, block, this.signals?.signal); }
         let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === op.material) ?? null;
-        if (item === null && isCreativeMode(this.opts.bot)) item = await ensureCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal);
+        if (item === null && isCreativeMode(this.opts.bot)) {
+          const provisioned = await provideCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
+          if (provisioned.ok) item = provisioned.item;
+          else {
+            this.opts.logger.warn({ operationId: op.id, ...provisioned.diagnostics }, "design creative material provisioning failed");
+            data.remaining = blueprint.operations.length - data.placed;
+            return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `I could not obtain ${op.material.replaceAll("_", " ")} from the creative inventory: ${provisioned.diagnostics.finalReason}.`, data };
+          }
+        }
         if (item === null) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${op.material} at operation ${op.id}`, data }; }
         if (await this.placeSimpleTarget(cell, item, op.material.endsWith("door"), new Set<string>(), (candidate) => candidate?.name.replace(/^minecraft:/, "") === op.material)) data.placed++;
         else { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", message: `could not place ${op.material} at ${cell.x},${cell.y},${cell.z}`, data }; }
@@ -884,7 +861,7 @@ export class BaseBuilderRunner {
       for (const name of decoration.itemNames) {
         item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === name) ?? null;
         if (item === null && isCreativeMode(this.opts.bot)) {
-          item = await ensureCreativeItem(this.opts.bot, name, 1, this.signals?.signal);
+          item = await ensureCreativeItem(this.opts.bot, name, 1, this.signals?.signal, this.opts.logger);
         }
         if (item !== null) break;
       }
@@ -1071,7 +1048,7 @@ export class BaseBuilderRunner {
 
     // 1. Planks for every missing wall, roof cell, and the door recipe.
     if (isCreativeMode(bot)) {
-      const supplied = await ensureCreativeItem(bot, "oak_planks", before.planksNeeded, this.signals?.signal);
+      const supplied = await ensureCreativeItem(bot, "oak_planks", before.planksNeeded, this.signals?.signal, this.opts.logger);
       if (supplied === null) {
         return this.fail(data, "INSUFFICIENT_MATERIALS", "creative mode did not provide enough oak planks");
       }
@@ -1092,7 +1069,7 @@ export class BaseBuilderRunner {
     // crafting table; without one the door waits for the next run (bootstrap
     // re-establishes the table, and the probe keeps reporting the gap).
     if (before.doorMissing && findDoorItem(bot) === null) {
-      if (isCreativeMode(bot)) await ensureCreativeItem(bot, "oak_door", 1, this.signals?.signal);
+      if (isCreativeMode(bot)) await ensureCreativeItem(bot, "oak_door", 1, this.signals?.signal, this.opts.logger);
       const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
       if (findDoorItem(bot) !== null) {
         // Creative mode supplied the door directly.
@@ -1127,7 +1104,7 @@ export class BaseBuilderRunner {
         if (this.stopRequested) break;
         if (!isAir(bot.blockAt(cell))) continue;
         const plank = isCreativeMode(bot)
-          ? await ensureCreativeItem(bot, "oak_planks", 1, this.signals?.signal)
+          ? await ensureCreativeItem(bot, "oak_planks", 1, this.signals?.signal, this.opts.logger)
           : findPlanksItem(bot);
         if (plank === null) break;
         const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);

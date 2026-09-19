@@ -317,7 +317,10 @@ export class CollectResourceRunner {
     // from announcing that logs are unavailable while building in the air.
     if (isCreativeMode(bot) && remaining > 0) {
       const supplied = await provideCreativeItem(bot, carriedName, quantity, this.signals?.signal);
-      if (supplied === null) return this.fail(data, "INSUFFICIENT_MATERIALS", "creative inventory is unavailable");
+      if (!supplied.ok) {
+        this.opts.logger.warn({ ...supplied.diagnostics }, "creative material provisioning failed");
+        return this.fail(data, "INSUFFICIENT_MATERIALS", `creative inventory provisioning failed: ${supplied.diagnostics.finalReason}`);
+      }
       carried = countItem(bot, carriedName);
       remaining = Math.max(0, quantity - carried);
     }
