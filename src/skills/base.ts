@@ -66,7 +66,10 @@ const CANDIDATES_PER_RADIUS = 24;
 /** Scan radius for an already-placed home crafting table (door recipe). */
 const TABLE_SCAN_RADIUS = 16;
 /** Mineflayer cannot place a block from arbitrarily far away. */
-const SIMPLE_BUILD_PLACE_REACH = 4.5;
+// The server's creative interaction check is stricter than the target-cell
+// distance used by the old movement guard. Leave a small margin around the
+// reference face so a packet is not rejected at the edge of reach.
+const SIMPLE_BUILD_PLACE_REACH = 4.0;
 const SIMPLE_BUILD_APPROACH_RANGE = 2.5;
 const CREATIVE_FLIGHT_TIMEOUT_MS = 8_000;
 
@@ -392,11 +395,15 @@ async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet
  */
 function creativePlacementApproaches(cell: Vec3): Vec3[] {
   return [
-    new Vec3(cell.x, cell.y + 2, cell.z),
-    new Vec3(cell.x + 3, cell.y + 1, cell.z),
-    new Vec3(cell.x - 3, cell.y + 1, cell.z),
-    new Vec3(cell.x, cell.y + 1, cell.z + 3),
-    new Vec3(cell.x, cell.y + 1, cell.z - 3),
+    // Below the target keeps the eye close to the top face of the support
+    // block. This is the reliable pose for ground-level wall cells.
+    new Vec3(cell.x, cell.y - 1, cell.z),
+    // Level approaches keep a horizontal reference face inside the same
+    // conservative server-side interaction radius.
+    new Vec3(cell.x + 3, cell.y, cell.z),
+    new Vec3(cell.x - 3, cell.y, cell.z),
+    new Vec3(cell.x, cell.y, cell.z + 3),
+    new Vec3(cell.x, cell.y, cell.z - 3),
   ];
 }
 
@@ -796,7 +803,9 @@ export class BaseBuilderRunner {
     const self = bot.entity;
     if (self === null) return { ok: false, status: "no_entity", destination: null };
     const distance = Math.hypot(self.position.x - cell.x, self.position.y - cell.y, self.position.z - cell.z);
-    if (distance <= SIMPLE_BUILD_PLACE_REACH) return { ok: true, status: "already_there", destination: null };
+    const currentSupport = isCreativeMode(bot) ? findReferenceFor(bot, cell, new Set<string>()) : null;
+    const currentReferenceInReach = currentSupport === null || isPlacementWithinReach(bot, currentSupport.reference, currentSupport.face);
+    if (distance <= SIMPLE_BUILD_PLACE_REACH && currentReferenceInReach) return { ok: true, status: "already_there", destination: null };
 
     // Ground-level approaches work for the first wall layer, but leave a
     // creative builder too far below the upper walls and roof. Fly to the
