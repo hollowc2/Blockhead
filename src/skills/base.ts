@@ -26,7 +26,7 @@ import {
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
-import { isCreativeMode } from "../minecraft/mode.js";
+import { enableCreativeFlight, isCreativeMode } from "../minecraft/mode.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -652,16 +652,15 @@ export class BaseBuilderRunner {
     // creative builder too far below the upper walls and roof. Fly to the
     // block's elevation (one block below the target) before placing it.
     if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
-      const travel = await travelAndWait(bot, { x: cell.x, y: cell.y - 1, z: cell.z }, {
-        dimension: String(bot.game.dimension ?? "overworld").replace(/^minecraft:/, ""),
-        timeoutMs: TRAVEL_TIMEOUT_MS,
-        range: 1.5,
-        shouldAbort: this.travelAbort,
-        signal: this.signals?.signal,
-      });
-      if (this.stopRequested) return;
-      if (travel.status !== "arrived" && travel.status !== "already_there") {
-        this.opts.logger.warn({ cell, status: travel.status }, "creative build could not reach placement elevation");
+      if (this.signals?.signal.aborted || this.stopRequested) return;
+      enableCreativeFlight(bot);
+      try {
+        // Creative flight is deterministic and does not need pathfinder. The
+        // old implementation routed this through travelAndWait, which uses
+        // pathfinder and could leave a creative build stuck between cells.
+        await bot.creative.flyTo(new Vec3(cell.x, cell.y - 1, cell.z));
+      } catch (error) {
+        this.opts.logger.warn({ cell, error: String(error) }, "creative build could not reach placement elevation");
       }
       return;
     }
