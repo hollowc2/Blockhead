@@ -68,6 +68,7 @@ const TABLE_SCAN_RADIUS = 16;
 /** Mineflayer cannot place a block from arbitrarily far away. */
 const SIMPLE_BUILD_PLACE_REACH = 4.5;
 const SIMPLE_BUILD_APPROACH_RANGE = 2.5;
+const CREATIVE_FLIGHT_TIMEOUT_MS = 5_000;
 
 // --- pure layout (unit-tested) ---
 
@@ -654,13 +655,29 @@ export class BaseBuilderRunner {
     if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
       if (this.signals?.signal.aborted || this.stopRequested) return;
       enableCreativeFlight(bot);
+      const destination = new Vec3(cell.x, cell.y - 1, cell.z);
       try {
         // Creative flight is deterministic and does not need pathfinder. The
         // old implementation routed this through travelAndWait, which uses
         // pathfinder and could leave a creative build stuck between cells.
-        await bot.creative.flyTo(new Vec3(cell.x, cell.y - 1, cell.z));
+        // Mineflayer's flyTo can also wait forever for a final `move` event;
+        // bound it and nudge that event during cleanup so one bad flight
+        // cannot hold the whole task lease indefinitely.
+        await withTimeout(
+          CREATIVE_FLIGHT_TIMEOUT_MS,
+          bot.creative.flyTo(destination),
+          () => {
+            bot.creative.stopFlying?.();
+            bot.emit("move", bot.entity.position);
+          },
+          this.signals?.signal,
+        );
       } catch (error) {
-        this.opts.logger.warn({ cell, error: String(error) }, "creative build could not reach placement elevation");
+        if (this.signals?.signal.aborted || this.stopRequested) return;
+        const distance = bot.entity.position.distanceTo(destination);
+        if (distance > SIMPLE_BUILD_PLACE_REACH) {
+          this.opts.logger.warn({ cell, distance, error: String(error) }, "creative build could not reach placement elevation");
+        }
       }
       return;
     }
