@@ -820,28 +820,56 @@ export class BaseBuilderRunner {
       if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
       const approach = new Vec3(origin.x - 2, origin.y, origin.z - 2);
       const travel = await this.travelToSimpleAnchor(approach, origin.dimension); if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
-      const done = Number((options.resumeState as { placed?: number } | undefined)?.placed ?? 0);
-      for (let i = 0; i < blueprint.operations.length; i++) {
-        const op = blueprint.operations[i]!; const cell = new Vec3(origin.x + op.x, origin.y + op.y, origin.z + op.z);
-        this.checkInterrupt({ phase: op.phase, placed: i, total: blueprint.operations.length }); if (this.stopRequested) return { ok: true, status: "interrupted", message: "design build paused", data };
-        const block = this.opts.bot.blockAt(cell); if (block !== null && block.name.replace(/^minecraft:/, "") === op.material) { data.placed++; continue; }
-        if (block !== null && !isAir(block)) { if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${block.name}`, data }; } await digBlock(this.opts.bot, block, this.signals?.signal); }
-        let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === op.material) ?? null;
-        if (item === null && isCreativeMode(this.opts.bot)) {
-          const provisioned = await provideCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
-          if (provisioned.ok) item = provisioned.item;
-          else {
-            this.opts.logger.warn({ operationId: op.id, ...provisioned.diagnostics }, "design creative material provisioning failed");
-            data.remaining = blueprint.operations.length - data.placed;
-            return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `I could not obtain ${op.material.replaceAll("_", " ")} from the creative inventory: ${provisioned.diagnostics.finalReason}.`, data };
+      // A single missed placement must not strand a large design. This is
+      // especially common in creative mode when the server corrects flight,
+      // a chunk is still loading, or the first pass has not exposed a usable
+      // neighboring reference block yet. Retry deferred operations in later
+      // passes so the rest of the structure can establish those references.
+      let pending = [...blueprint.operations];
+      const maxPasses = 4;
+      for (let pass = 0; pass < maxPasses && pending.length > 0; pass++) {
+        const retry: Blueprint["operations"] = [];
+        let progress = 0;
+        for (const op of pending) {
+          const cell = new Vec3(origin.x + op.x, origin.y + op.y, origin.z + op.z);
+          this.checkInterrupt({ interruptions: this.interruptions, phase: op.phase, placed: data.placed, total: blueprint.operations.length });
+          if (this.stopRequested) return { ok: true, status: "interrupted", message: "design build paused", data };
+          const block = this.opts.bot.blockAt(cell);
+          if (block !== null && block.name.replace(/^minecraft:/, "") === op.material) { data.placed++; progress++; continue; }
+          if (block !== null && !isAir(block)) {
+            if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) {
+              data.remaining = pending.length;
+              return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${block.name}`, data };
+            }
+            await digBlock(this.opts.bot, block, this.signals?.signal);
           }
+          let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === op.material) ?? null;
+          if (item === null && isCreativeMode(this.opts.bot)) {
+            const provisioned = await provideCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
+            if (provisioned.ok) item = provisioned.item;
+            else {
+              this.opts.logger.warn({ operationId: op.id, ...provisioned.diagnostics }, "design creative material provisioning failed");
+              data.remaining = pending.length;
+              return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `I could not obtain ${op.material.replaceAll("_", " ")} from the creative inventory: ${provisioned.diagnostics.finalReason}.`, data };
+            }
+          }
+          if (item === null) {
+            data.remaining = pending.length;
+            return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${op.material} at operation ${op.id}`, data };
+          }
+          if (await this.placeSimpleTarget(cell, item, op.material.endsWith("door"), new Set<string>(), (candidate) => candidate?.name.replace(/^minecraft:/, "") === op.material)) {
+            data.placed++; progress++;
+          } else {
+            retry.push(op);
+          }
+          if (!this.signals?.checkpoint({ interruptions: this.interruptions, phase: op.phase, placed: data.placed, total: blueprint.operations.length })) return { ok: true, status: "interrupted", message: "design build paused", data };
         }
-        if (item === null) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${op.material} at operation ${op.id}`, data }; }
-        if (await this.placeSimpleTarget(cell, item, op.material.endsWith("door"), new Set<string>(), (candidate) => candidate?.name.replace(/^minecraft:/, "") === op.material)) data.placed++;
-        else { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", message: `could not place ${op.material} at ${cell.x},${cell.y},${cell.z}`, data }; }
-        if (!this.signals?.checkpoint({ interruptions: this.interruptions, phase: op.phase, placed: i + 1, total: blueprint.operations.length })) return { ok: true, status: "interrupted", message: "design build paused", data };
+        pending = retry;
+        if (progress === 0) break;
       }
-      data.remaining = 0; return { ok: true, status: "completed", message: `${design.name} complete (${data.placed} verified blocks)`, data };
+      data.remaining = pending.length;
+      if (pending.length > 0) return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", message: `${design.name} is partially built: ${data.placed}/${blueprint.operations.length} verified blocks; ${pending.length} remain after retries.`, data };
+      return { ok: true, status: "completed", message: `${design.name} complete (${data.placed} verified blocks)`, data };
     } finally { this.running = false; this.signals = null; }
   }
 
