@@ -198,12 +198,12 @@ async function ensureCreativeItem(bot: Bot, itemName: string, quantity: number, 
 
   const ItemConstructor = prismarineItem as unknown as (registry: typeof bot.registry) => new (type: number, count: number) => Item;
   const CreativeItem = ItemConstructor(bot.registry);
-  // Prefer an existing matching stack, then an empty hotbar slot so the next
-  // equip operation can use it immediately. Fill additional empty slots when
-  // a large blueprint needs more than one stack.
-  // Mineflayer's player inventory uses 36-44 for the nine hotbar slots.
-  const hotbarSlots = Array.from({ length: 9 }, (_, slot) => 36 + slot);
-  const emptySlots = hotbarSlots.filter((slot) => bot.inventory.slots[slot] === null);
+  // Prefer an existing matching stack, then any usable player-inventory slot.
+  // Creative bots often have a full hotbar but plenty of empty main-inventory
+  // slots; restricting this to 36-44 made multi-material designs fail before
+  // placing their first block. Slots 9-44 are the main inventory + hotbar.
+  const usableSlots = Array.from({ length: 36 }, (_, index) => 9 + index);
+  const emptySlots = usableSlots.filter((slot) => bot.inventory.slots[slot] === null);
   for (const slot of emptySlots) {
     if (signal?.aborted) return null;
     const missing = quantity - count();
