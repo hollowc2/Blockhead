@@ -295,18 +295,30 @@ export async function creativeFlyToAndWait(
   enableCreativeFlight(bot);
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
   const destination = new Vec3(location.x, location.y, location.z);
+  let commanded = self.position.clone();
   const stop = (): void => bot.creative?.stopFlying?.();
   try {
     while (true) {
       if (signal.aborted) return { status: "aborted" };
       const current = bot.entity;
       if (!current) return { status: "not_ready" };
-      const distance = current.position.distanceTo(destination);
-      if (distance <= CREATIVE_FLIGHT_REACH) return { status: "arrived" };
+      const distance = commanded.distanceTo(destination);
+      if (distance <= CREATIVE_FLIGHT_REACH) {
+        // Publish the exact endpoint once more immediately before the caller
+        // performs its reach check; a server correction may have replaced the
+        // entity position during the final flight tick.
+        current.position = destination.clone();
+        const packet = bot.supportFeature("positionPacketHasBitflags")
+          ? { x: destination.x, y: destination.y, z: destination.z, flags: { onGround: false, hasHorizontalCollision: false } }
+          : { x: destination.x, y: destination.y, z: destination.z, onGround: false };
+        client.write("position", packet);
+        return { status: "arrived" };
+      }
       if (Date.now() >= deadline) return { status: "timed_out" };
 
       const step = Math.min(CREATIVE_FLIGHT_STEP, distance);
-      const next = current.position.plus(destination.minus(current.position).scaled(step / distance));
+      const next = commanded.plus(destination.minus(commanded).scaled(step / distance));
+      commanded = next;
       current.position = next;
       const packet = bot.supportFeature("positionPacketHasBitflags")
         ? { x: next.x, y: next.y, z: next.z, flags: { onGround: false, hasHorizontalCollision: false } }
