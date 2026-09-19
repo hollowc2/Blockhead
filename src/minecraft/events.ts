@@ -355,6 +355,15 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
       return;
     }
 
+    // Camera builds are not part of the bounded architectural vocabulary.
+    // Reject them synchronously so an unsupported request never appears to
+    // stall while waiting for an LLM tool decision.
+    if (/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?camera(?: .*)?$/.test(instruction)) {
+      bot.chat("I can't build cameras yet. I can build rooms, towers, pyramids, and the supported landmark designs.");
+      logger.info({ reply: "unsupported camera build request" }, "chat sent");
+      return;
+    }
+
     const directBuild = parseDeterministicBuildCommand(instruction);
     if (directBuild !== null) {
       ctx.bus.emit("chat.command", { from: username, command: instruction });
@@ -376,6 +385,8 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
       await executeDecision(bot, config, ctx, decision);
     } catch (err) {
       logger.warn({ err: String(err), instruction }, "LLM decision failed");
+      bot.chat("I couldn't process that request right now. Please try a supported build command such as castle, tower, house, or room.");
+      logger.info({ reply: "LLM decision failure fallback" }, "chat sent");
     }
   });
 
