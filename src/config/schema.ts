@@ -56,6 +56,12 @@ export const MinecraftConfigSchema = z.object({
       lava_avoidance_radius: z.number().int().positive().default(4),
     })
     .optional(),
+  building: z.object({
+    max_width: z.number().int().positive().default(64), max_depth: z.number().int().positive().default(64), max_height: z.number().int().positive().default(64),
+    max_operations: z.number().int().positive().default(12000), max_components: z.number().int().positive().default(64), max_anchor_distance: z.number().int().positive().default(128),
+    allowed_materials: z.array(z.string()).default(["cobblestone", "stone_bricks", "smooth_stone", "dark_oak_planks", "oak_planks", "glass", "glass_pane", "iron_bars", "stone", "torch", "lantern", "bookshelf", "chest", "crafting_table", "furnace", "oak_door", "cyan_concrete", "magenta_concrete", "yellow_concrete", "red_carpet", "blue_carpet"]),
+    allow_demolition: z.boolean().default(false),
+  }).optional(),
   /** Serialization boundary for every Mineflayer world mutation. */
   world_actions: z
     .object({

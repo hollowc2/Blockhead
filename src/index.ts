@@ -47,6 +47,7 @@ import { registerBootstrapTools } from "./tools/bootstrap.js";
 import { registerResourceTools } from "./tools/resources.js";
 import { registerStorageTools } from "./tools/storage.js";
 import { registerBaseTools } from "./tools/base.js";
+import { registerBuildDesignTool } from "./tools/build-design.js";
 import { registerAcquisitionTools } from "./tools/acquire.js";
 import { registerFoodTools } from "./tools/food.js";
 import { registerCombatTools } from "./tools/combat.js";
@@ -147,6 +148,7 @@ registerResourceTools(registry, scheduler);
 registerStorageTools(registry, scheduler, storage, locations);
 // Central stockpile base: the shed the chests, table, and furnace stockpile in.
 registerBaseTools(registry, scheduler);
+registerBuildDesignTool(registry, scheduler);
 // Phase 13 (spec 14): the expanded tool set. Handlers enqueue FOREGROUND
 // scheduler tasks exactly like the resource tools; every mechanic stays in
 // deterministic skills. The memory/location tools act on the repository.

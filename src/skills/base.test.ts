@@ -14,6 +14,7 @@ import {
   measureStructure,
   stationSlotSpot,
   simpleStructureCells,
+  simpleStructureDecorations,
   simpleStructureDoorCells,
   type BaseLayout,
 } from "./base.js";
@@ -285,6 +286,17 @@ test("room blueprints reserve a two-block centered doorway", () => {
   const cells = simpleStructureCells(spec);
   assert.ok(!cells.some((cell) => cell.equals(new Vec3(3, 64, 6)) || cell.equals(new Vec3(3, 65, 6))));
   assert.equal(cells.length + simpleStructureDoorCells(spec).length, 145);
+});
+
+test("house decorations are bounded, colorful, and avoid the doorway", () => {
+  const origin = { x: 0, y: 64, z: 0, dimension: "overworld" };
+  const spec = { shape: "room" as const, width: 7, height: 4, length: 7, material: "planks" as const, anchor: "current" as const, origin };
+  const decorations = simpleStructureDecorations(spec);
+  assert.ok(decorations.some((item) => item.itemNames.includes("glass_pane")));
+  assert.ok(decorations.some((item) => item.itemNames.includes("torch")));
+  assert.ok(decorations.some((item) => item.itemNames.includes("red_bed")));
+  assert.ok(decorations.some((item) => item.itemNames.includes("magenta_carpet")));
+  assert.ok(!decorations.some((item) => item.position.equals(new Vec3(3, 64, 6))));
 });
 
 test("placement reach is checked from the bot eye to the reference face", () => {

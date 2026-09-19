@@ -27,6 +27,9 @@ import {
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation, digBlock } from "../minecraft/primitives.js";
 import { isCreativeMode } from "../minecraft/mode.js";
+import type { BuildingDesign } from "../building/schema.js";
+import { compileBuildingDesign, type Blueprint } from "../building/compiler.js";
+import { DEFAULT_BUILDING_LIMITS } from "../building/validation.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -348,7 +351,18 @@ interface PlacementLogContext {
   travelStatus?: string;
 }
 
-async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet<string>, signal?: AbortSignal, context: PlacementLogContext = {}): Promise<Block | null> {
+async function placeAtCell(
+  bot: Bot,
+  item: Item,
+  cell: Vec3,
+  placed: ReadonlySet<string>,
+  signal?: AbortSignal,
+  context: PlacementLogContext = {},
+  expected: (block: Block | null) => boolean = (block) => {
+    const name = item.name.replace(/^minecraft:/, "");
+    return name.endsWith("_door") ? isDoorBlock(block) : isPlanksItemName(block?.name ?? "");
+  },
+): Promise<Block | null> {
   const support = findReferenceFor(bot, cell, placed);
   const before = bot.blockAt(cell);
   const inventoryBefore = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
@@ -379,8 +393,7 @@ async function placeAtCell(bot: Bot, item: Item, cell: Vec3, placed: ReadonlySet
     onPlaceAccepted: () => { placeAccepted = true; },
     onPoll: (observation) => observations.push({ attempt: observation.attempt, block: blockName(observation.block), inventoryCount: observation.inventoryCount }),
   });
-  const expected = item.name.replace(/^minecraft:/, "").endsWith("_door") ? isDoorBlock(placedBlock) : isPlanksItemName(placedBlock?.name ?? "");
-  if (placedBlock !== null && expected) return placedBlock;
+  if (placedBlock !== null && expected(placedBlock)) return placedBlock;
   const after = bot.blockAt(cell);
   const inventoryAfter = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
   context.logger?.warn({ ...baseLog, referenceFaceDistance, placeBlockReturned: placeAccepted, observations, targetAfter: blockName(after), inventoryAfter, finalReason: placedBlock === null ? "placement not observed after polling" : `wrong block observed: ${blockName(placedBlock)}` }, "simple build placement failed");
@@ -475,6 +488,8 @@ export interface BaseBuildData {
   placedWalls: number;
   placedRoof: number;
   doorPlaced: boolean;
+  /** Decorative room items placed during a house build. */
+  decorated: number;
   /** Planks still missing after this run (partial builds resume later). */
   remaining: number;
   /** Exact blueprint coordinates still not verified in the world. */
@@ -500,6 +515,13 @@ export interface SimpleStructureSpec {
   material: "planks";
   anchor: "owner" | "current" | "home";
   origin: HomeLocation;
+}
+
+export interface SimpleStructureDecoration {
+  position: Vec3;
+  itemNames: string[];
+  /** Windows replace a wall plank; the other decorations occupy air. */
+  replaceExisting?: boolean;
 }
 
 export const MAX_SIMPLE_STRUCTURE_BLOCKS = 1024;
@@ -547,12 +569,57 @@ export function simpleStructureCells(spec: SimpleStructureSpec): Vec3[] {
   return unique;
 }
 
+/**
+ * The little house personality pass.  It is deliberately deterministic so a
+ * reconnect resumes the same room rather than inventing a new layout.  The
+ * palette is bright and expressive without making assumptions about the
+ * player's identity: magenta/cyan/blue/yellow accents, plants, books, and
+ * practical furniture make the room feel lived in.
+ */
+export function simpleStructureDecorations(spec: SimpleStructureSpec): SimpleStructureDecoration[] {
+  if (spec.shape !== "room" || spec.width < 5 || spec.length < 5 || spec.height < 3) return [];
+  const ox = Math.floor(spec.origin.x);
+  const oy = Math.floor(spec.origin.y);
+  const oz = Math.floor(spec.origin.z);
+  const decorations: SimpleStructureDecoration[] = [];
+  const add = (x: number, y: number, z: number, itemNames: string[], replaceExisting = false): void => {
+    decorations.push({ position: new Vec3(x, y, z), itemNames, replaceExisting });
+  };
+
+  // Four windows, high enough to preserve the wall's lower trim.
+  add(ox, oy + 1, oz + 2, ["glass_pane", "glass"], true);
+  add(ox + spec.width - 1, oy + 1, oz + 2, ["glass_pane", "glass"], true);
+  add(ox + 1, oy + 1, oz + spec.length - 1, ["glass_pane", "glass"], true);
+  add(ox + spec.width - 2, oy + 1, oz + spec.length - 1, ["glass_pane", "glass"], true);
+
+  // A functional but styled interior: bed, storage, work corner, reading
+  // nook, and a few bright floor accents that read well in any wood species.
+  add(ox + 1, oy, oz + 1, ["red_bed", "blue_bed", "white_bed"]);
+  add(ox + 1, oy, oz + spec.length - 2, ["chest"]);
+  add(ox + 2, oy, oz + spec.length - 2, ["crafting_table"]);
+  add(ox + spec.width - 2, oy, oz + spec.length - 2, ["furnace"]);
+  add(ox + spec.width - 2, oy, oz + 1, ["bookshelf", "bookshelf_block"]);
+  add(ox + 2, oy, oz + 2, ["magenta_carpet", "purple_carpet", "red_carpet"]);
+  add(ox + spec.width - 3, oy, oz + 2, ["cyan_carpet", "blue_carpet", "yellow_carpet"]);
+  add(ox + 2, oy, oz + spec.length - 3, ["flower_pot"]);
+
+  // Torches sit on the floor in open corners, so they work without needing a
+  // special wall-face placement primitive.
+  add(ox + 3, oy, oz + 2, ["torch"]);
+  add(ox + spec.width - 3, oy, oz + 2, ["torch"]);
+  add(ox + 3, oy, oz + spec.length - 3, ["torch"]);
+  add(ox + spec.width - 3, oy, oz + spec.length - 3, ["torch"]);
+  return decorations;
+}
+
 export interface BaseRunOptions {
   /** Cooperative signals from the owning scheduler task; null for unbound runs. */
   signals?: TaskSignals;
   /** Resume state from a paused run of the same task. */
   resumeState?: BaseResumeState;
 }
+
+export interface DesignBuildData { operations: number; placed: number; remaining: number; estimate: Record<string, number>; interruptions: number; }
 
 /**
  * Deterministic `build_base` skill: measure the shed, gather the missing
@@ -610,7 +677,7 @@ export class BaseBuilderRunner {
     this.signals = options.signals ?? null;
     this.interruptions = options.resumeState?.interruptions ?? 0;
     this.stopRequested = false;
-    const data: BaseBuildData = { missingBefore: 0, placedWalls: 0, placedRoof: 0, doorPlaced: false, remaining: 0, interruptions: this.interruptions };
+    const data: BaseBuildData = { missingBefore: 0, placedWalls: 0, placedRoof: 0, doorPlaced: false, decorated: 0, remaining: 0, interruptions: this.interruptions };
     try {
       // A `current` anchor is intentionally resolved when the task starts,
       // not when chat enqueues it. A foreground request may wait behind an
@@ -633,6 +700,7 @@ export class BaseBuilderRunner {
       try { cells = simpleStructureCells(effectiveSpec); }
       catch (err) { return this.fail(data, "NOT_READY", String(err instanceof Error ? err.message : err)); }
       const doorCells = simpleStructureDoorCells(effectiveSpec);
+      const decorations = simpleStructureDecorations(effectiveSpec);
       const targetCells = [...cells, ...doorCells];
       const doorKeySet = new Set(doorCells.map(cellKey));
       if (this.opts.bot.entity === null) return this.fail(data, "NOT_READY", "bot is not spawned");
@@ -678,7 +746,10 @@ export class BaseBuilderRunner {
       const missingDoors = (): Vec3[] => doorCells.filter((cell) => !targetHasExpectedBlock(this.opts.bot.blockAt(cell), true));
       data.missingBefore = missing.length;
       if (missing.length === 0 && missingDoors().length === 0) {
-        const message = `${spec.shape} is already complete (${targetCells.length} blocks).`;
+        const decorated = await this.decorateSimpleRoom(effectiveSpec, decorations, data);
+        const message = decorated > 0
+          ? `${spec.shape} is complete and decorated with ${decorated} house details.`
+          : `${spec.shape} is already complete (${targetCells.length} blocks).`;
         this.announce(message);
         return { ok: true, status: "completed", data, message };
       }
@@ -749,8 +820,9 @@ export class BaseBuilderRunner {
         this.opts.logger.warn({ remaining: data.remainingCells }, "simple build stopped with unverified blueprint cells");
         return this.fail(data, "NOT_READY", `could not place any of the ${missing.length} remaining ${spec.shape} blocks from the current area`);
       }
+      const decorated = await this.decorateSimpleRoom(effectiveSpec, decorations, data);
       const message = missing.length === 0
-        ? `Finished ${spec.shape}: ${cells.length} blocks at ${Math.floor(spec.origin.x)}, ${Math.floor(spec.origin.y)}, ${Math.floor(spec.origin.z)}.`
+        ? `Finished ${spec.shape}: ${cells.length} blocks plus ${decorated} windows, lights, and interior details.`
         : `${spec.shape} partially built: placed ${data.placedWalls}; ${missing.length}/${targetCells.length} blocks remain.`;
       this.announce(message);
       return { ok: true, status: missing.length === 0 ? "completed" : "partial", data, message };
@@ -760,10 +832,94 @@ export class BaseBuilderRunner {
     }
   }
 
-  private async placeSimpleTarget(cell: Vec3, item: Item, door: boolean, placed: ReadonlySet<string>): Promise<boolean> {
+  /** Execute a frozen, validated declarative blueprint using the same lease,
+   * movement, cancellation and authoritative placement path as simple builds. */
+  async runDesign(design: BuildingDesign, origin: HomeLocation, options: BaseRunOptions = {}): Promise<SkillResult<DesignBuildData>> {
+    if (this.running) return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "another build is already running" };
+    this.running = true; this.signals = options.signals ?? null; this.stopRequested = false; this.interruptions = options.resumeState?.interruptions ?? 0;
+    const data: DesignBuildData = { operations: 0, placed: 0, remaining: 0, estimate: {}, interruptions: this.interruptions };
+    try {
+      const limits = { ...DEFAULT_BUILDING_LIMITS, maxWidth: this.opts.config.building?.max_width ?? DEFAULT_BUILDING_LIMITS.maxWidth, maxDepth: this.opts.config.building?.max_depth ?? DEFAULT_BUILDING_LIMITS.maxDepth, maxHeight: this.opts.config.building?.max_height ?? DEFAULT_BUILDING_LIMITS.maxHeight, maxOperations: this.opts.config.building?.max_operations ?? DEFAULT_BUILDING_LIMITS.maxOperations, maxComponents: this.opts.config.building?.max_components ?? DEFAULT_BUILDING_LIMITS.maxComponents, allowedMaterials: this.opts.config.building?.allowed_materials ?? DEFAULT_BUILDING_LIMITS.allowedMaterials, allowDemolition: this.opts.config.building?.allow_demolition ?? false };
+      const home = this.opts.state.home;
+      if (home !== null && origin.dimension.replace(/^minecraft:/, "") === home.dimension.replace(/^minecraft:/, "") && Math.hypot(origin.x - home.x, origin.z - home.z) > (this.opts.config.building?.max_anchor_distance ?? DEFAULT_BUILDING_LIMITS.maxAnchorDistance)) return { ok: false, status: "blocked", errorCode: "ANCHOR_TOO_FAR", message: "design anchor is outside the configured build distance", data };
+      let blueprint: Blueprint; try { blueprint = compileBuildingDesign(design, origin, limits); } catch (err) { return { ok: false, status: "failed", errorCode: "INVALID_DESIGN", message: String(err instanceof Error ? err.message : err), data }; }
+      data.operations = blueprint.operations.length; data.estimate = blueprint.estimates.materials;
+      if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
+      const approach = new Vec3(origin.x - 2, origin.y, origin.z - 2);
+      const travel = await this.travelToSimpleAnchor(approach, origin.dimension); if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
+      const done = Number((options.resumeState as { placed?: number } | undefined)?.placed ?? 0);
+      for (let i = 0; i < blueprint.operations.length; i++) {
+        const op = blueprint.operations[i]!; const cell = new Vec3(origin.x + op.x, origin.y + op.y, origin.z + op.z);
+        this.checkInterrupt({ phase: op.phase, placed: i, total: blueprint.operations.length }); if (this.stopRequested) return { ok: true, status: "interrupted", message: "design build paused", data };
+        const block = this.opts.bot.blockAt(cell); if (block !== null && block.name.replace(/^minecraft:/, "") === op.material) { data.placed++; continue; }
+        if (block !== null && !isAir(block)) { if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${block.name}`, data }; } await digBlock(this.opts.bot, block, this.signals?.signal); }
+        let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === op.material) ?? null;
+        if (item === null && isCreativeMode(this.opts.bot)) item = await ensureCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal);
+        if (item === null) { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${op.material} at operation ${op.id}`, data }; }
+        if (await this.placeSimpleTarget(cell, item, op.material.endsWith("door"), new Set<string>(), (candidate) => candidate?.name.replace(/^minecraft:/, "") === op.material)) data.placed++;
+        else { data.remaining = blueprint.operations.length - data.placed; return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", message: `could not place ${op.material} at ${cell.x},${cell.y},${cell.z}`, data }; }
+        if (!this.signals?.checkpoint({ interruptions: this.interruptions, phase: op.phase, placed: i + 1, total: blueprint.operations.length })) return { ok: true, status: "interrupted", message: "design build paused", data };
+      }
+      data.remaining = 0; return { ok: true, status: "completed", message: `${design.name} complete (${data.placed} verified blocks)`, data };
+    } finally { this.running = false; this.signals = null; }
+  }
+
+  private async decorateSimpleRoom(
+    spec: SimpleStructureSpec,
+    decorations: SimpleStructureDecoration[],
+    data: BaseBuildData,
+  ): Promise<number> {
+    if (spec.shape !== "room") return 0;
+    const placed = new Set<string>();
+    let count = 0;
+    for (const decoration of decorations) {
+      this.checkInterrupt({ phase: "decorating", placed: count, total: decorations.length });
+      if (this.stopRequested) return count;
+      const target = this.opts.bot.blockAt(decoration.position);
+      let item: Item | null = null;
+      for (const name of decoration.itemNames) {
+        item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === name) ?? null;
+        if (item === null && isCreativeMode(this.opts.bot)) {
+          item = await ensureCreativeItem(this.opts.bot, name, 1, this.signals?.signal);
+        }
+        if (item !== null) break;
+      }
+      if (item === null) continue;
+      const expectedName = bareName(item.name);
+      if (target !== null && bareName(target.name) === expectedName) {
+        count += 1;
+        continue;
+      }
+      if (target !== null && !isAir(target)) {
+        if (!decoration.replaceExisting) continue;
+        await digBlock(this.opts.bot, target, this.signals?.signal);
+      }
+      const block = await this.placeSimpleTarget(
+        decoration.position,
+        item,
+        false,
+        placed,
+        (candidate) => candidate !== null && bareName(candidate.name) === expectedName,
+      );
+      if (block !== null) {
+        placed.add(cellKey(decoration.position));
+        count += 1;
+        data.decorated += 1;
+      }
+    }
+    return count;
+  }
+
+  private async placeSimpleTarget(
+    cell: Vec3,
+    item: Item,
+    door: boolean,
+    placed: ReadonlySet<string>,
+    expected: (block: Block | null) => boolean = (block) => targetHasExpectedBlock(block, door),
+  ): Promise<boolean> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const before = this.opts.bot.blockAt(cell);
-      if (targetHasExpectedBlock(before, door)) return true;
+      if (expected(before)) return true;
       const travel = await this.moveWithinSimpleBuildReach(cell, attempt);
       if (!travel.ok) {
         this.opts.logger.warn({ target: { x: cell.x, y: cell.y, z: cell.z }, targetBefore: blockName(before), approachIndex: attempt, destination: travel.destination, travelStatus: travel.status, finalReason: "travel failed" }, "simple build placement failed");
@@ -775,8 +931,8 @@ export class BaseBuilderRunner {
         approachIndex: attempt,
         destination: travel.destination ?? undefined,
         travelStatus: travel.status,
-      });
-      if (placedBlock !== null && targetHasExpectedBlock(this.opts.bot.blockAt(cell), door)) return true;
+      }, expected);
+      if (placedBlock !== null && expected(this.opts.bot.blockAt(cell))) return true;
     }
     return false;
   }
@@ -876,6 +1032,7 @@ export class BaseBuilderRunner {
       placedWalls: 0,
       placedRoof: 0,
       doorPlaced: false,
+      decorated: 0,
       remaining: 0,
       interruptions: this.interruptions,
     };

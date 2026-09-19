@@ -80,6 +80,7 @@ export interface TaskDispatcherOptions {
   logger: Logger;
 }
 
+
 /**
  * Phase 8: binds scheduler tasks to deterministic skill execution. The
  * dispatcher is the single executor — every skill run belongs to exactly one
@@ -457,6 +458,11 @@ export class TaskDispatcher {
           resumeState: task.resumeState as BaseResumeState | undefined,
         });
       }
+      case "build_design": {
+        const params = task.parameters as { design?: unknown; origin?: { x: number; y: number; z: number; dimension: string } };
+        if (!params.design || !params.origin) return { ok: false, status: "failed", errorCode: "INVALID_DESIGN", message: "design task is missing its frozen design or origin" };
+        return this.opts.buildBase.runDesign(params.design as Parameters<BaseBuilderRunner["runDesign"]>[0], params.origin, { signals, resumeState: task.resumeState as BaseResumeState | undefined });
+      }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");
         if (!STORAGE_CATEGORIES.includes(category as (typeof STORAGE_CATEGORIES)[number])) {
@@ -647,4 +653,3 @@ export class TaskDispatcher {
     };
   }
 }
-

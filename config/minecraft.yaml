@@ -102,6 +102,17 @@ policy:
   # Standoff radius kept from known lava while choosing work sites.
   lava_avoidance_radius: 4
 
+# Declarative architecture safety limits. The LLM may propose designs, but the
+# deterministic schema/compiler and world-action policy enforce these bounds.
+building:
+  max_width: 64
+  max_depth: 64
+  max_height: 64
+  max_operations: 12000
+  max_components: 64
+  max_anchor_distance: 128
+  allow_demolition: false
+
 # --- maintenance.yaml: background stockpiles + idle loop (spec 29, 4.3) -----
 # Omitted keys fall back to the schema defaults below.
 background:

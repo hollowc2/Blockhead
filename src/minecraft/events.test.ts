@@ -30,3 +30,12 @@ test("common structure requests get bounded deterministic defaults", () => {
     args: { shape: "tower", width: 5, height: 8, length: 5, material: "planks", anchor: "home" },
   });
 });
+
+test("landmark chat requests use the same validated design tool", () => {
+  assert.deepEqual(parseDeterministicBuildCommand("build the Pentagon"), {
+    tool: "build_design", args: { template: "pentagon_complex", scale: "medium", anchor: "owner" },
+  });
+  assert.deepEqual(parseDeterministicBuildCommand("build a medium Sears Tower-inspired skyscraper"), {
+    tool: "build_design", args: { template: "bundled_tube_skyscraper", scale: "medium", anchor: "owner" },
+  });
+});
