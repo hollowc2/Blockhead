@@ -21,6 +21,9 @@ import { registerNavigationTools } from "./navigation.js";
 import { registerDeliveryTools } from "./delivery.js";
 import { registerUtilityTools } from "./utility.js";
 import { registerMemoryTools } from "./memory.js";
+import { registerBuildDesignTool } from "./build-design.js";
+import { BuildProjectManager } from "../agent/build-projects.js";
+import { BuildProjectsRepository } from "../memory/build-projects.js";
 
 interface Harness {
   registry: ToolRegistry;
@@ -33,6 +36,8 @@ function newHarness(): Harness {
   const bus = new EventBus();
   const tasks = new TasksRepository(db);
   const scheduler = new Scheduler({ bus, tasks });
+  const projects = new BuildProjectsRepository(db);
+  const buildProjectManager = new BuildProjectManager(projects, scheduler, bus);
   const locations = new LocationsRepository(db);
   const storage = new StorageRepository(db);
   const deaths = new DeathEventsRepository(db);
@@ -49,6 +54,7 @@ function newHarness(): Harness {
   registerDeliveryTools(registry, scheduler);
   registerUtilityTools(registry, scheduler, deaths);
   registerMemoryTools(registry, locations);
+  registerBuildDesignTool(registry, scheduler, buildProjectManager);
   return { registry, scheduler };
 }
 
@@ -80,6 +86,7 @@ const REQUIRED_TOOLS = [
   "register_storage",
   "build_base",
   "build_structure",
+  "build_design",
   "collect_resource",
   "come_to_player",
   "follow_player",
@@ -175,6 +182,24 @@ test("unknown tool names are rejected by the registry", () => {
   assert.equal(registry.has("delete_all_furniture"), false);
   assert.equal(registry.has("run_js"), false);
   assert.throws(() => registry.validateArgs("run_js", {}));
+});
+
+test("build_design creates a project slice instead of a legacy long-lived task", () => {
+  const { registry, scheduler } = newHarness();
+  const bot = { entity: null, game: { dimension: "overworld" }, players: {} } as never;
+  const state = { home: { x: 10, y: 64, z: -4, dimension: "overworld" } } as never;
+  const config = { agent: { owner: "Corey" } } as never;
+  const reply = registry.get("build_design")!.handler(
+    { template: "castle", scale: "small", anchor: "home" },
+    { bot, state, config, scheduler } as never,
+  );
+
+  assert.match(String(reply), /^Building Castle at 10,64,-4/);
+  assert.equal(scheduler.active?.type, "build_project_slice");
+  assert.equal(scheduler.active?.executionPolicy, "resumable");
+  assert.equal(scheduler.active?.projectId !== undefined, true);
+  assert.equal(scheduler.active?.projectPhaseId !== undefined, true);
+  assert.equal(scheduler.queued.some((task) => task.type === "build_design"), false);
 });
 
 test("movement tools enqueue scheduler work instead of mutating Mineflayer directly", () => {

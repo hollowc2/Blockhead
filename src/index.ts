@@ -153,7 +153,7 @@ registerResourceTools(registry, scheduler);
 registerStorageTools(registry, scheduler, storage, locations);
 // Central stockpile base: the shed the chests, table, and furnace stockpile in.
 registerBaseTools(registry, scheduler);
-registerBuildDesignTool(registry, scheduler);
+registerBuildDesignTool(registry, scheduler, buildProjectManager);
 // Phase 13 (spec 14): the expanded tool set. Handlers enqueue FOREGROUND
 // scheduler tasks exactly like the resource tools; every mechanic stays in
 // deterministic skills. The memory/location tools act on the repository.
