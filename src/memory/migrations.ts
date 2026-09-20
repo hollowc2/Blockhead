@@ -265,4 +265,74 @@ export const MIGRATIONS: readonly string[] = [
      SET stage = 'food', attempts = 0, last_failure_code = NULL, retry_at = NULL
    WHERE stage IN ('wool', 'bed');
   `,
+  // v16: durable construction projects. Projects freeze the design and
+  // compiled blueprint independently from their scheduler child tasks. The
+  // task columns are nullable so all pre-project tasks remain valid.
+  `
+  CREATE TABLE IF NOT EXISTS build_projects (
+      id TEXT PRIMARY KEY,
+      user_goal TEXT NOT NULL,
+      structure_type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      design_json TEXT NOT NULL,
+      origin_json TEXT NOT NULL,
+      compiler_version TEXT NOT NULL,
+      schema_version TEXT NOT NULL,
+      blueprint_hash TEXT NOT NULL,
+      blueprint_json TEXT NOT NULL,
+      current_phase_id TEXT,
+      required_resources_json TEXT NOT NULL,
+      shortages_json TEXT NOT NULL,
+      resume_state_json TEXT NOT NULL,
+      verification_state_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      last_error TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_build_projects_status_updated
+      ON build_projects(status, updated_at);
+
+  CREATE TABLE IF NOT EXISTS build_project_phases (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      operation_start INTEGER NOT NULL,
+      operation_end INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      verified_operations INTEGER NOT NULL DEFAULT 0,
+      total_operations INTEGER NOT NULL,
+      last_error TEXT,
+      FOREIGN KEY(project_id) REFERENCES build_projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, ordinal),
+      UNIQUE(project_id, label)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_build_project_phases_project_ordinal
+      ON build_project_phases(project_id, ordinal);
+
+  CREATE TABLE IF NOT EXISTS build_project_events (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      phase_id TEXT,
+      task_id TEXT,
+      kind TEXT NOT NULL,
+      details_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES build_projects(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_build_project_events_project_created
+      ON build_project_events(project_id, created_at, id);
+
+  ALTER TABLE tasks ADD COLUMN project_id TEXT;
+  ALTER TABLE tasks ADD COLUMN project_phase_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tasks_project_live
+      ON tasks(project_id, project_phase_id)
+      WHERE project_id IS NOT NULL AND status IN ('queued','active','paused','blocked');
+  `,
 ];

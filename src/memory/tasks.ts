@@ -22,13 +22,16 @@ interface TaskRow {
   progress_fingerprint: string | null;
   last_progress_at: string | null;
   attempts: number | null;
+  project_id: string | null;
+  project_phase_id: string | null;
 }
 
 const SELECT_TASK = `
   SELECT id, type, priority, source, objective, parameters_json,
          status, resume_state_json, parent_task_id, interrupted_task_id,
          last_error, created_at, started_at, completed_at, pause_sequence,
-         work_key, phase, progress_fingerprint, last_progress_at, attempts
+         work_key, phase, progress_fingerprint, last_progress_at, attempts,
+         project_id, project_phase_id
   FROM tasks`;
 
 const UNFINISHED = `
@@ -48,8 +51,9 @@ export class TasksRepository {
            (id, type, priority, source, objective, parameters_json, status,
             resume_state_json, parent_task_id, interrupted_task_id, last_error,
             created_at, started_at, completed_at, pause_sequence,
-            work_key, phase, progress_fingerprint, last_progress_at, attempts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            work_key, phase, progress_fingerprint, last_progress_at, attempts,
+            project_id, project_phase_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -72,6 +76,8 @@ export class TasksRepository {
         task.progressFingerprint ?? null,
         task.lastProgressAt ?? null,
         task.attempts ?? 0,
+        task.projectId ?? null,
+        task.projectPhaseId ?? null,
       );
   }
 
@@ -82,7 +88,8 @@ export class TasksRepository {
            priority = ?, source = ?, objective = ?, parameters_json = ?,
            status = ?, resume_state_json = ?, parent_task_id = ?,
            interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?,
-           work_key = ?, phase = ?, progress_fingerprint = ?, last_progress_at = ?, attempts = ?
+           work_key = ?, phase = ?, progress_fingerprint = ?, last_progress_at = ?, attempts = ?,
+           project_id = ?, project_phase_id = ?
          WHERE id = ?`,
       )
       .run(
@@ -103,6 +110,8 @@ export class TasksRepository {
         task.progressFingerprint ?? null,
         task.lastProgressAt ?? null,
         task.attempts ?? 0,
+        task.projectId ?? null,
+        task.projectPhaseId ?? null,
         task.id,
       );
   }
@@ -206,6 +215,8 @@ function toTask(row: TaskRow): Task {
     progressFingerprint: row.progress_fingerprint ?? undefined,
     lastProgressAt: row.last_progress_at ?? undefined,
     attempts: row.attempts ?? 0,
+    projectId: row.project_id ?? undefined,
+    projectPhaseId: row.project_phase_id ?? undefined,
   };
 }
 
