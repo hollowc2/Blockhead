@@ -501,7 +501,11 @@ export class Scheduler {
     if (this.watchdog === undefined) return;
     for (const task of this.queue) {
       if (task.status !== TaskStatus.BLOCKED) continue;
-      if (this.watchdog.blockFor(actionFingerprint(task.type, task.parameters)) !== null) continue;
+      const fingerprint = actionFingerprint(task.type, task.parameters);
+      // BLOCKED is also used for durable prerequisites (materials, world
+      // repair, owner action). Only watchdog-owned blocks have a cooldown.
+      if (!this.watchdog.tracks(fingerprint)) continue;
+      if (this.watchdog.blockFor(fingerprint) !== null) continue;
       task.status = TaskStatus.QUEUED;
       this.tasks.update(task);
       logger.info({ taskId: task.id }, "anti-loop block expired; task requeued");

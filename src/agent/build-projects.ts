@@ -80,7 +80,8 @@ export class BuildProjectManager {
   /** Rehydrate persisted projects before a bot session starts executing work. */
   rehydrate(): BuildProject[] {
     const restored: BuildProject[] = [];
-    for (const project of this.projects.loadUnfinished()) {
+    for (const loaded of this.projects.loadUnfinished()) {
+      const project = this.reactivateRecoverableFrozenProject(loaded);
       restored.push(project);
       const task = project.status === "active"
         ? this.scheduleNextWork(project.id)
@@ -95,6 +96,37 @@ export class BuildProjectManager {
       }
     }
     return restored;
+  }
+
+  /**
+   * Compiler 1.0 snapshots could replace wall cells with future door/window
+   * operations, leaving the frozen cursor without support. The slice runner
+   * now has an explicit bounded recovery-support mechanism for that exact
+   * shape, so safely unpark such projects without changing their cursor or
+   * claiming any additional verified work.
+   */
+  private reactivateRecoverableFrozenProject(project: BuildProject): BuildProject {
+    if (project.status !== "blocked" || !project.lastError?.includes("no authoritative support block")) return project;
+    const cursor = project.resumeState.currentOperationIndex;
+    const operation = project.blueprint.operations[cursor];
+    if (operation === undefined || !operation.structural) return project;
+    const hasDeferredSupport = project.blueprint.operations.slice(cursor + 1).some((candidate) =>
+      candidate.replaceExisting && candidate.x === operation.x && candidate.y === operation.y - 1 && candidate.z === operation.z);
+    if (!hasDeferredSupport) return project;
+    const phase = this.projects.getPhases(project.id).find((candidate) => candidate.id === project.currentPhaseId);
+    if (phase === undefined || phase.status !== "blocked") return project;
+
+    const now = new Date().toISOString();
+    phase.status = "active";
+    phase.lastError = undefined;
+    project.status = "active";
+    project.lastError = undefined;
+    project.updatedAt = now;
+    this.projects.updatePhase(phase);
+    this.projects.update(project);
+    this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, kind: "frozen_blueprint_recovery", details: { cursor, operationId: operation.id }, createdAt: now });
+    this.scheduler.resumeBlockedByWorkKey(`build-project:${project.id}:${phase.id}`, "frozen blueprint recovery support enabled");
+    return project;
   }
 
   /** Create a frozen project, or resume the live project with the same blueprint. */
@@ -208,9 +240,10 @@ export class BuildProjectManager {
     if (task.type === "build_project_verify") {
       if (result.status === "completed") {
         const verification = data as ProjectVerificationData | undefined;
+        const expectedFinalOperations = finalOperationCount(project.blueprint.operations);
         const passed = verification !== undefined
           && verification.verified === verification.inspected
-          && verification.inspected === project.blueprint.operations.length
+          && verification.inspected === expectedFinalOperations
           && verification.mismatches.length === 0;
         project.verificationState = {
           lastVerifiedAt: now,
@@ -487,7 +520,11 @@ export class BuildProjectManager {
       lastVerifiedOperationId,
     };
     if (data?.verified !== undefined) phase.verifiedOperations = Math.min(phase.totalOperations, data.verified);
-    project.verificationState = { ...project.verificationState, verifiedOperations: this.projects.getPhases(project.id).reduce((sum, item) => sum + item.verifiedOperations, 0) };
+    const phaseTotal = this.projects.getPhases(project.id).reduce((sum, item) => sum + item.verifiedOperations, 0);
+    // Legacy frozen projects can have phase counters that lag their global
+    // cursor. Both values are monotonic evidence, so never let reconciliation
+    // reduce the authoritative completed prefix or omit newly advanced work.
+    project.verificationState = { ...project.verificationState, verifiedOperations: Math.max(project.verificationState.verifiedOperations, cursor, phaseTotal) };
     project.updatedAt = now;
     this.projects.updatePhase(phase);
     this.projects.update(project);
@@ -506,6 +543,10 @@ function asAcquisitionData(value: unknown): AcquisitionOutcomeData | undefined {
 
 function isCompleteSlice(data: SliceOutcomeData | undefined, phase: BuildPhase): boolean {
   return data?.remaining === 0 && (data.verified ?? 0) >= phase.totalOperations;
+}
+
+function finalOperationCount(operations: BuildProject["blueprint"]["operations"]): number {
+  return new Set(operations.map((operation) => `${operation.absolute?.dimension ?? ""}:${operation.absolute?.x ?? operation.x},${operation.absolute?.y ?? operation.y},${operation.absolute?.z ?? operation.z}`)).size;
 }
 
 function toBuildPhase(projectId: string, phase: BlueprintPhase, totalOperations: number, ordinal: number): BuildPhase {

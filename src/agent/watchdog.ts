@@ -239,6 +239,11 @@ export class ActionWatchdog {
     }
   }
 
+  /** Whether a blocked task belongs to this watchdog's cooldown lifecycle. */
+  tracks(action: string): boolean {
+    return this.failures.has(action) || this.blocks.has(action);
+  }
+
   private persist(action: string): void {
     if (this.persistence === undefined) return;
     const failures = this.failures.get(action) ?? 0;

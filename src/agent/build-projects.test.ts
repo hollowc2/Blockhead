@@ -161,7 +161,8 @@ test("all phases schedule final verification and only a clean scan completes the
     assert.equal(projectBeforeVerification.status, "verifying");
     const verification = h.tasks.loadUnfinished().find((candidate) => candidate.type === "build_project_verify");
     assert.ok(verification);
-    assert.equal(manager.settleChildTask(verification, { ok: true, status: "completed", data: { inspected: first.project.blueprint.operations.length, verified: first.project.blueprint.operations.length, mismatches: [] } }), "complete");
+    const finalCells = new Set(first.project.blueprint.operations.map((operation) => `${operation.absolute?.dimension}:${operation.absolute?.x},${operation.absolute?.y},${operation.absolute?.z}`)).size;
+    assert.equal(manager.settleChildTask(verification, { ok: true, status: "completed", data: { inspected: finalCells, verified: finalCells, mismatches: [] } }), "complete");
     assert.equal(h.projects.get(first.project.id)?.status, "completed");
   } finally {
     h.db.close();
@@ -236,6 +237,54 @@ test("an impossible slice operation blocks the project instead of requeueing for
     h.scheduler.blockActive("design operation op-00450 has no authoritative support block");
     assert.equal(h.tasks.loadUnfinished().find((task) => task.id === created.task.id)?.status, TaskStatus.BLOCKED);
     assert.equal(h.scheduler.claim(), null, "a blocked project cannot spin up another slice");
+  } finally {
+    h.db.close();
+  }
+});
+
+test("rehydration safely reactivates a recoverable frozen blueprint at the exact cursor", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    const phase = h.projects.getPhases(created.project.id)[0]!;
+    const project = h.projects.get(created.project.id)!;
+    project.compilerVersion = "1.0.0";
+    project.blueprint.operations[phase.operationStart] = { id: "op-00450", x: 0, y: 2, z: 0, material: "stone_bricks", phase: "structural_shell", replaceExisting: false, structural: true };
+    project.blueprint.operations[project.blueprint.operations.length - 1] = { id: "op-door-upper", x: 0, y: 1, z: 0, material: "oak_door", phase: "doors_windows", replaceExisting: true, structural: false };
+    h.projects.update(project);
+    assert.equal(h.scheduler.claim()?.id, created.task.id);
+    manager.settleChildTask(created.task, { ok: false, status: "blocked", errorCode: "UNSUPPORTED_OPERATION", message: "design operation op-00450 has no authoritative support block", data: { currentOperationIndex: phase.operationStart, verified: 0, remaining: phase.totalOperations } });
+    h.scheduler.blockActive("design operation op-00450 has no authoritative support block");
+
+    const restartedScheduler = new Scheduler({ bus: new EventBus(), tasks: h.tasks });
+    restartedScheduler.loadFromPersistence();
+    const restartedManager = new BuildProjectManager(h.projects, restartedScheduler, new EventBus());
+    restartedManager.rehydrate();
+
+    const recovered = h.projects.get(project.id)!;
+    assert.equal(recovered.status, "active");
+    assert.equal(recovered.resumeState.currentOperationIndex, phase.operationStart);
+    assert.equal(recovered.verificationState.verifiedOperations, 0);
+    assert.equal(restartedScheduler.queued[0]?.status, TaskStatus.QUEUED);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("legacy project progress never regresses behind an advanced global cursor", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    const phase = h.projects.getPhases(created.project.id)[0]!;
+    const project = h.projects.get(created.project.id)!;
+    project.verificationState.verifiedOperations = 7;
+    h.projects.update(project);
+    manager.settleChildTask(created.task, { ok: false, status: "partial", retryable: true, data: { currentOperationIndex: phase.operationStart + 12, verified: 5, remaining: phase.totalOperations - 12 } });
+    const reconciled = h.projects.get(project.id)!;
+    assert.equal(reconciled.resumeState.currentOperationIndex, phase.operationStart + 12);
+    assert.equal(reconciled.verificationState.verifiedOperations, phase.operationStart + 12);
   } finally {
     h.db.close();
   }

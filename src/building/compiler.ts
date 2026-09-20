@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BUILDING_SCHEMA_VERSION, BuildingDesignSchema, type BuildingComponent, type BuildingDesign } from "./schema.js";
 import { DEFAULT_BUILDING_LIMITS, type BuildingLimits } from "./validation.js";
-export const BUILDING_COMPILER_VERSION = "1.0.0";
+export const BUILDING_COMPILER_VERSION = "1.1.0";
 export const DEFAULT_BLUEPRINT_CHUNK_SIZE = 50;
 export type BuildPhase = "foundation" | "structural_shell" | "floors" | "roof" | "doors_windows" | "lighting" | "interior";
 export interface BlueprintOperation { id: string; x: number; y: number; z: number; absolute?: { x: number; y: number; z: number; dimension: string }; material: string; phase: BuildPhase; replaceExisting: boolean; structural: boolean; componentId?: string; }
@@ -14,10 +14,10 @@ export function compileBuildingDesign(design: BuildingDesign, origin: { x: numbe
   // Normalize here as well as at tool boundaries so direct compiler callers
   // retain deterministic IDs for legacy designs that omit them.
   design = BuildingDesignSchema.parse(design);
-  const ops = new Map<string, BlueprintOperation>(); let maxX = 0, maxZ = 0, maxY = 0;
+  const ops = new Map<string, BlueprintOperation>(); const preservedStructural: BlueprintOperation[] = []; let maxX = 0, maxZ = 0, maxY = 0;
   const add = (c: BuildingComponent, x: number, y: number, z: number, phase: BuildPhase, structural = true, material = materialFor(c, design), replaceExisting = false) => {
     const t = { repeat: 1, rotation: 0 as 0, mirror: false, verticalStack: 1, ...(c.transform ?? {}) }; const [rx, rz] = rotate(x + (t.offset?.x ?? 0), z + (t.offset?.z ?? 0), t.rotation, t.mirror); const yy = y + (t.offset?.y ?? 0);
-    for (let rep = 0; rep < t.repeat; rep++) for (let stack = 0; stack < t.verticalStack; stack++) { const px = rx + rep * (c.type === "wall" ? 0 : 0); const pz = rz + rep * (c.type === "wall" ? 0 : 0); const k = key(px, yy + stack, pz); const prior = ops.get(k); if (prior && prior.material !== material && structural) throw new Error(`conflicting components at ${k}`); if (!prior || (!structural && replaceExisting)) ops.set(k, { id: `op-${String(ops.size).padStart(5, "0")}`, x: px, y: yy + stack, z: pz, absolute: { x: origin.x + px, y: origin.y + yy + stack, z: origin.z + pz, dimension: origin.dimension }, material, phase, replaceExisting, structural, componentId: c.id }); maxX = Math.max(maxX, Math.abs(px)); maxZ = Math.max(maxZ, Math.abs(pz)); maxY = Math.max(maxY, yy + stack); }
+    for (let rep = 0; rep < t.repeat; rep++) for (let stack = 0; stack < t.verticalStack; stack++) { const px = rx + rep * (c.type === "wall" ? 0 : 0); const pz = rz + rep * (c.type === "wall" ? 0 : 0); const k = key(px, yy + stack, pz); const prior = ops.get(k); if (prior && prior.material !== material && structural) throw new Error(`conflicting components at ${k}`); if (!structural && replaceExisting && prior?.structural) preservedStructural.push(prior); if (!prior || (!structural && replaceExisting)) ops.set(k, { id: `op-${String(ops.size).padStart(5, "0")}`, x: px, y: yy + stack, z: pz, absolute: { x: origin.x + px, y: origin.y + yy + stack, z: origin.z + pz, dimension: origin.dimension }, material, phase, replaceExisting, structural, componentId: c.id }); maxX = Math.max(maxX, Math.abs(px)); maxZ = Math.max(maxZ, Math.abs(pz)); maxY = Math.max(maxY, yy + stack); }
   };
   const ring = (c: BuildingComponent, w: number, d: number, h: number, ox = 0, oz = 0) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) if (c.type === "cuboid" && c.mode === "solid" || x === 0 || z === 0 || x === w - 1 || z === d - 1) add(c, ox + x, y, oz + z, "structural_shell"); };
   for (const c of design.components) {
@@ -39,7 +39,10 @@ export function compileBuildingDesign(design: BuildingDesign, origin: { x: numbe
     }
   }
   const phases: Record<BuildPhase, number> = { foundation: 0, structural_shell: 1, floors: 2, roof: 3, doors_windows: 4, lighting: 5, interior: 6 };
-  const operations = [...ops.values()].sort((a, b) => phases[a.phase] - phases[b.phase] || a.y - b.y || a.x - b.x || a.z - b.z);
+  // A replacement is a later world transition, not a compile-time overwrite.
+  // Retaining the wall cell lets upper structural layers use it as support;
+  // the door/window operation replaces it only after the shell is complete.
+  const operations = [...preservedStructural, ...ops.values()].sort((a, b) => phases[a.phase] - phases[b.phase] || a.y - b.y || a.x - b.x || a.z - b.z);
   operations.forEach((operation, index) => { operation.id = `op-${String(index).padStart(5, "0")}`; });
   if (operations.length > limits.maxOperations || maxX * 2 + 1 > limits.maxWidth || maxZ * 2 + 1 > limits.maxDepth || maxY + 1 > limits.maxHeight) throw new Error("compiled design exceeds configured building limits");
   const materials: Record<string, number> = {}; for (const op of operations) materials[op.material] = (materials[op.material] ?? 0) + 1;

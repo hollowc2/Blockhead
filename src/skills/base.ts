@@ -866,13 +866,22 @@ export class BaseBuilderRunner {
     let verified = 0;
     for (let index = start; index < end; index += 1) {
       const operation = blueprint.operations[index]!;
+      const superseded = blueprint.operations.slice(index + 1, end).some((candidate) =>
+        (candidate.absolute?.x ?? blueprint.origin.x + candidate.x) === (operation.absolute?.x ?? blueprint.origin.x + operation.x)
+        && (candidate.absolute?.y ?? blueprint.origin.y + candidate.y) === (operation.absolute?.y ?? blueprint.origin.y + operation.y)
+        && (candidate.absolute?.z ?? blueprint.origin.z + candidate.z) === (operation.absolute?.z ?? blueprint.origin.z + operation.z));
+      if (superseded) continue;
       const cell = new Vec3(operation.absolute?.x ?? blueprint.origin.x + operation.x, operation.absolute?.y ?? blueprint.origin.y + operation.y, operation.absolute?.z ?? blueprint.origin.z + operation.z);
       const block = this.opts.bot.blockAt(cell);
       const actual = block === null ? undefined : bareName(block.name);
       if (actual === operation.material) verified += 1;
       else if (mismatches.length < maxMismatchSamples) mismatches.push({ operationId: operation.id, expected: operation.material, actual });
     }
-    return { operationStart: start, operationEnd: end, inspected: end - start, verified, mismatches };
+    const inspected = blueprint.operations.slice(start, end).filter((operation, offset, range) => !range.slice(offset + 1).some((candidate) =>
+      (candidate.absolute?.x ?? blueprint.origin.x + candidate.x) === (operation.absolute?.x ?? blueprint.origin.x + operation.x)
+      && (candidate.absolute?.y ?? blueprint.origin.y + candidate.y) === (operation.absolute?.y ?? blueprint.origin.y + operation.y)
+      && (candidate.absolute?.z ?? blueprint.origin.z + candidate.z) === (operation.absolute?.z ?? blueprint.origin.z + operation.z))).length;
+    return { operationStart: start, operationEnd: end, inspected, verified, mismatches };
   }
 
   /** Execute one bounded, resumable range from an already-frozen blueprint. */
@@ -973,7 +982,17 @@ export class BaseBuilderRunner {
           data.remaining = operationEnd - index;
           return { ok: false, status: "blocked", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${operation.material} at operation ${operation.id}`, data };
         }
-        const placedBlock = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        let placedBlock = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        if (!placedBlock && findReferenceFor(this.opts.bot, cell, placed) === null) {
+          // Frozen compiler-1.0 projects may have deferred door/window cells
+          // where this structural column needs support. Install only that
+          // explicitly-deferred vertical chain, bottom-up, then retry. These
+          // recovery blocks are observed placements but are not counted as
+          // verified blueprint operations; their later replacement ops still
+          // have to be observed independently.
+          const recovered = await this.installDeferredReplacementSupports(blueprint, index, cell, item, operation.material, placed);
+          if (recovered) placedBlock = await this.placeSimpleTarget(cell, item, false, placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        }
         if (!placedBlock) {
           data.firstUnresolvedOperationId = operation.id;
           data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(this.opts.bot.blockAt(cell)?.name ?? "") || undefined });
@@ -995,6 +1014,36 @@ export class BaseBuilderRunner {
       this.running = false;
       this.signals = null;
     }
+  }
+
+  private async installDeferredReplacementSupports(blueprint: Blueprint, operationIndex: number, target: Vec3, item: Item, material: string, placed: Set<string>): Promise<boolean> {
+    const future = blueprint.operations.slice(operationIndex + 1);
+    const supports: Vec3[] = [];
+    let candidate = target.offset(0, -1, 0);
+    for (let depth = 0; depth < 16; depth += 1) {
+      const deferred = future.some((operation) => {
+        const x = operation.absolute?.x ?? blueprint.origin.x + operation.x;
+        const y = operation.absolute?.y ?? blueprint.origin.y + operation.y;
+        const z = operation.absolute?.z ?? blueprint.origin.z + operation.z;
+        return operation.replaceExisting && x === candidate.x && y === candidate.y && z === candidate.z;
+      });
+      if (!deferred) return false;
+      supports.push(candidate);
+      if (findReferenceFor(this.opts.bot, candidate, placed) !== null) break;
+      candidate = candidate.offset(0, -1, 0);
+    }
+    for (const support of supports.reverse()) {
+      const existing = this.opts.bot.blockAt(support);
+      if (bareName(existing?.name ?? "") === material) {
+        placed.add(cellKey(support));
+        continue;
+      }
+      if (existing !== null && !isAir(existing)) return false;
+      const installed = await this.placeSimpleTarget(support, item, false, placed, (block) => bareName(block?.name ?? "") === material);
+      if (!installed) return false;
+      placed.add(cellKey(support));
+    }
+    return supports.length > 0;
   }
 
   /** Compatibility wrapper for callers that still submit a complete design. */

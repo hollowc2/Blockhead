@@ -12,12 +12,12 @@ test("schema accepts composed designs and rejects unsupported primitives", () =>
   assert.equal(BuildingDesignSchema.safeParse({ ...design, components: [{ type: "javascript" }] }).success, false);
 });
 
-test("compiler is deterministic and deduplicates stable coordinates", () => {
+test("compiler is deterministic and deduplicates coordinates within each phase", () => {
   const design = landmarkTemplate("mansion", "small");
   const a = compileBuildingDesign(design, origin);
   const b = compileBuildingDesign(design, origin);
   assert.deepEqual(a.operations, b.operations);
-  assert.equal(new Set(a.operations.map((op) => `${op.x},${op.y},${op.z}`)).size, a.operations.length);
+  assert.equal(new Set(a.operations.map((op) => `${op.phase}:${op.x},${op.y},${op.z}`)).size, a.operations.length);
   assert.ok(a.operations.every((op) => op.id.startsWith("op-")));
 });
 
@@ -35,14 +35,20 @@ test("compiler freezes versions, provenance, absolute targets, hash, and determi
   assert.ok(blueprint.phases!.every((phase) => phase.operationEnd - phase.operationStart <= DEFAULT_BLUEPRINT_CHUNK_SIZE));
 });
 
-test("castle structural operations are ordered bottom-up so each upper cell has a prior in-blueprint support", () => {
+test("castle door replacements retain bottom-up structural support", () => {
   const blueprint = compileBuildingDesign(landmarkTemplate("castle", "small"), origin);
-  const indexByCell = new Map(blueprint.operations.map((operation, index) => [`${operation.x},${operation.y},${operation.z}`, index]));
-  const target = blueprint.operations.find((operation) => operation.id === "op-00450")!;
-  assert.equal(target.x, 0);
-  assert.equal(target.y, 3);
-  assert.equal(target.z, 0);
-  assert.ok((indexByCell.get(`${target.x},${target.y - 1},${target.z}`) ?? Infinity) < blueprint.operations.indexOf(target));
+  const indexByCell = new Map(blueprint.operations.map((operation, index) => [operation, index] as const)
+    .filter(([operation]) => operation.phase === "structural_shell")
+    .map(([operation, index]) => [`${operation.x},${operation.y},${operation.z}`, index]));
+  const doorCells = blueprint.operations.filter((operation) => operation.phase === "doors_windows");
+  assert.ok(doorCells.length > 0);
+  for (const door of doorCells) {
+    const support = blueprint.operations.find((operation) => operation.phase === "structural_shell" && operation.x === door.x && operation.y === door.y && operation.z === door.z);
+    assert.ok(support, `replacement at ${door.x},${door.y},${door.z} retains its structural cell`);
+    assert.ok(blueprint.operations.indexOf(support!) < blueprint.operations.indexOf(door));
+  }
+  const upperGate = blueprint.operations.find((operation) => operation.phase === "structural_shell" && operation.x === 0 && operation.y === 3 && operation.z === 0)!;
+  assert.ok((indexByCell.get(`${upperGate.x},${upperGate.y - 1},${upperGate.z}`) ?? Infinity) < blueprint.operations.indexOf(upperGate));
 });
 
 test("legacy designs receive stable component IDs and chunk boundaries respect compiler phases", () => {

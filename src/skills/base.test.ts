@@ -316,7 +316,7 @@ function designTestRunner(world: Record<string, string>): BaseBuilderRunner {
     game: { dimension: "overworld" },
     blockAt: (v: Vec3) => {
       const name = world[key(v)];
-      return name === undefined ? null : { name, boundingBox: name === "air" ? "empty" : "block" } as Block;
+      return name === undefined ? null : { name, position: v, boundingBox: name === "air" ? "empty" : "block" } as Block;
     },
     inventory: { items: () => [{ name: "stone", count: 1 }] },
   } as unknown as Bot;
@@ -397,4 +397,47 @@ test("an operation with no authoritative support is blocked, not reported as pro
   assert.equal(result.data?.firstUnresolvedOperationId, "op-00450");
   assert.equal(result.data?.currentOperationIndex, 0, "the unresolved operation remains resumable");
   assert.equal(result.data?.verified, 0, "an unplaced block is never counted as verified");
+});
+
+test("a frozen op-00450 installs deferred door supports bottom-up without claiming them as verified", async () => {
+  const world: Record<string, string> = { "0,61,0": "stone", "0,62,0": "air", "0,63,0": "air", "0,64,0": "air" };
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 62, z: 0, dimension: "overworld" },
+    operations: [
+      { id: "op-00450", x: 0, y: 2, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true },
+      { id: "op-door-lower", x: 0, y: 0, z: 0, material: "oak_door", phase: "doors_windows", replaceExisting: true, structural: false },
+      { id: "op-door-upper", x: 0, y: 1, z: 0, material: "oak_door", phase: "doors_windows", replaceExisting: true, structural: false },
+    ],
+    estimates: { blocks: 3, materials: { stone: 1, oak_door: 2 } },
+    footprint: { width: 1, depth: 1, height: 3 },
+    compilerVersion: "1.0.0",
+  };
+  const runner = designTestRunner(world);
+  (runner as unknown as { placeSimpleTarget: (cell: Vec3) => Promise<boolean> }).placeSimpleTarget = async (cell) => {
+    const below = `${cell.x},${cell.y - 1},${cell.z}`;
+    if (world[below] === undefined || world[below] === "air") return false;
+    world[`${cell.x},${cell.y},${cell.z}`] = "stone";
+    return true;
+  };
+  const result = await runner.runDesignSlice(blueprint, { phaseId: "structural_shell-010", operationStart: 0, operationEnd: 1 });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.data?.verified, 1, "only op-00450 is verified");
+  assert.equal(world["0,62,0"], "stone");
+  assert.equal(world["0,63,0"], "stone");
+  assert.equal(world["0,64,0"], "stone");
+});
+
+test("final verification observes only the last operation at a replaced coordinate", () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [
+      { id: "wall", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true },
+      { id: "door", x: 0, y: 0, z: 0, material: "oak_door", phase: "doors_windows", replaceExisting: true, structural: false },
+    ],
+    estimates: { blocks: 2, materials: { stone: 1, oak_door: 1 } },
+    footprint: { width: 1, depth: 1, height: 1 },
+  };
+  const result = designTestRunner({ "0,64,0": "oak_door" }).verifyDesignOperations(blueprint);
+  assert.deepEqual(result, { operationStart: 0, operationEnd: 2, inspected: 1, verified: 1, mismatches: [] });
 });

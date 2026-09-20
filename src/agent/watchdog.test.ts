@@ -84,6 +84,30 @@ test("a blocked action is not immediately rescheduled; the scheduler holds it as
   assert.equal(again.status, TaskStatus.BLOCKED);
 });
 
+test("a prerequisite-blocked project task is never treated as an expired watchdog block", () => {
+  now = 0;
+  const { scheduler } = newHarness();
+  const task = scheduler.enqueue({
+    type: "build_project_slice",
+    priority: TaskPriority.FOREGROUND,
+    source: "user",
+    objective: "Resume frozen castle phase",
+    parameters: { projectId: "castle", phaseId: "structural_shell-010" },
+    projectId: "castle",
+    projectPhaseId: "structural_shell-010",
+    executionPolicy: "resumable",
+  });
+  assert.equal(scheduler.claim()?.id, task.id);
+  scheduler.blockActive("no authoritative support block");
+
+  for (let tick = 0; tick < 1_100; tick += 1) {
+    advance(1_000);
+    assert.equal(scheduler.claim(), null);
+  }
+  assert.equal(task.status, TaskStatus.BLOCKED);
+  assert.equal(task.attempts, 1, "parking does not create an activate/block loop");
+});
+
 test("different arguments produce different fingerprints, so blocks do not collide", () => {
   now = 0;
   assert.equal(actionFingerprint("collect_resource", { resource: "coal", quantity: 32 }), COAL_32);
