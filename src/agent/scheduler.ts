@@ -414,6 +414,25 @@ export class Scheduler {
     return this.activateNext();
   }
 
+  /** Resume one blocked task after its durable prerequisite has been met. */
+  resumeBlocked(taskId: string, lastError?: string): Task | null {
+    const task = this.queue.find((candidate) => candidate.id === taskId) ?? (this.activeTask?.id === taskId ? this.activeTask : null);
+    if (task === null || task.status !== TaskStatus.BLOCKED || this.activeTask === task) return null;
+    task.status = TaskStatus.QUEUED;
+    task.lastError = lastError;
+    this.order.set(task.id, ++this.seq);
+    this.tasks.update(task);
+    this.bus.emit("task.requeued", { task });
+    logger.info({ taskId: task.id }, "blocked task resumed after prerequisite completion");
+    return task;
+  }
+
+  /** Resume the unique blocked task identified by a durable work key. */
+  resumeBlockedByWorkKey(workKey: string, lastError?: string): Task | null {
+    const task = this.queue.find((candidate) => candidate.workKey === workKey && candidate.status === TaskStatus.BLOCKED);
+    return task === undefined ? null : this.resumeBlocked(task.id, lastError);
+  }
+
   /** Mark the active task failed with a reason, then claim the next task. */
   failActive(lastError: string): Task | null {
     const task = this.activeTask;

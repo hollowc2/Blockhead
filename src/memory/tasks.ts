@@ -24,6 +24,7 @@ interface TaskRow {
   attempts: number | null;
   project_id: string | null;
   project_phase_id: string | null;
+  execution_policy: string | null;
 }
 
 const SELECT_TASK = `
@@ -31,7 +32,7 @@ const SELECT_TASK = `
          status, resume_state_json, parent_task_id, interrupted_task_id,
          last_error, created_at, started_at, completed_at, pause_sequence,
          work_key, phase, progress_fingerprint, last_progress_at, attempts,
-         project_id, project_phase_id
+         project_id, project_phase_id, execution_policy
   FROM tasks`;
 
 const UNFINISHED = `
@@ -52,8 +53,8 @@ export class TasksRepository {
             resume_state_json, parent_task_id, interrupted_task_id, last_error,
             created_at, started_at, completed_at, pause_sequence,
             work_key, phase, progress_fingerprint, last_progress_at, attempts,
-            project_id, project_phase_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            project_id, project_phase_id, execution_policy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -78,6 +79,7 @@ export class TasksRepository {
         task.attempts ?? 0,
         task.projectId ?? null,
         task.projectPhaseId ?? null,
+        task.executionPolicy ?? null,
       );
   }
 
@@ -89,7 +91,7 @@ export class TasksRepository {
            status = ?, resume_state_json = ?, parent_task_id = ?,
            interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?,
            work_key = ?, phase = ?, progress_fingerprint = ?, last_progress_at = ?, attempts = ?,
-           project_id = ?, project_phase_id = ?
+           project_id = ?, project_phase_id = ?, execution_policy = ?
          WHERE id = ?`,
       )
       .run(
@@ -112,6 +114,7 @@ export class TasksRepository {
         task.attempts ?? 0,
         task.projectId ?? null,
         task.projectPhaseId ?? null,
+        task.executionPolicy ?? null,
         task.id,
       );
   }
@@ -217,6 +220,9 @@ function toTask(row: TaskRow): Task {
     attempts: row.attempts ?? 0,
     projectId: row.project_id ?? undefined,
     projectPhaseId: row.project_phase_id ?? undefined,
+    executionPolicy: row.execution_policy === "resumable" || row.execution_policy === "terminal"
+      ? row.execution_policy
+      : undefined,
   };
 }
 

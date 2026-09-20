@@ -36,3 +36,20 @@ test("pruneSettled removes old terminal and blocked rows but keeps live and rece
   assert.deepEqual(tasks.loadAll().map((row) => row.id).sort(), ["paused", "recent"]);
   db.close();
 });
+
+test("project execution policy survives task persistence", () => {
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS);
+  const tasks = new TasksRepository(db);
+  tasks.create({
+    ...task("project-acquire", TaskStatus.QUEUED, "2026-09-19T00:00:00.000Z"),
+    type: "build_project_acquire",
+    projectId: "project-1",
+    projectPhaseId: "phase-1",
+    executionPolicy: "resumable",
+    workKey: "build-project:project-1:phase-1:acquire:stone",
+  });
+  assert.equal(tasks.get("project-acquire")?.executionPolicy, "resumable");
+  assert.equal(tasks.get("project-acquire")?.projectId, "project-1");
+  db.close();
+});

@@ -176,7 +176,7 @@ test("a survival shortage blocks the phase and schedules linked acquisition work
     assert.equal(settlement, "block");
     assert.equal(project.status, "blocked");
     assert.deepEqual(project.shortages, [{ material: "stone_bricks", required: 8, available: 0 }]);
-    assert.equal(phase.status, "blocked");
+    assert.equal(h.projects.getPhases(project.id)[0]?.status, "blocked");
     assert.ok(acquisition);
     assert.equal(acquisition?.projectId, project.id);
     assert.equal(acquisition?.projectPhaseId, phase.id);
@@ -192,6 +192,39 @@ test("successful linked acquisition clears the shortage and resumes the same pha
   try {
     const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
     const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    assert.equal(h.scheduler.claim()?.id, created.task.id);
+    manager.settleChildTask(created.task, {
+      ok: false,
+      status: "blocked",
+      errorCode: "INSUFFICIENT_MATERIALS",
+      data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] },
+    });
+    h.scheduler.blockActive("missing stone bricks");
+    const acquisition = h.tasks.loadUnfinished().find((task) => task.type === "build_project_acquire")!;
+    assert.equal(h.scheduler.active?.id, acquisition.id);
+    assert.equal(manager.settleChildTask(acquisition, {
+      ok: true,
+      status: "completed",
+      message: "acquired",
+      data: { item: "stone_bricks", quantity: 8, availableAtEnd: 8 },
+    }), "complete");
+
+    const project = h.projects.get(created.project.id)!;
+    const phase = h.projects.getPhases(project.id)[0]!;
+    assert.equal(project.status, "active");
+    assert.deepEqual(project.shortages, []);
+    assert.equal(phase.status, "active");
+    assert.equal(h.tasks.loadUnfinished().find((task) => task.workKey === `build-project:${project.id}:${phase.id}`)?.status, TaskStatus.QUEUED);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("completed acquisition without authoritative inventory reconciliation remains blocked", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
     manager.settleChildTask(created.task, {
       ok: false,
       status: "blocked",
@@ -199,14 +232,11 @@ test("successful linked acquisition clears the shortage and resumes the same pha
       data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] },
     });
     const acquisition = h.tasks.loadUnfinished().find((task) => task.type === "build_project_acquire")!;
-    assert.equal(manager.settleChildTask(acquisition, { ok: true, status: "completed", message: "acquired" }), "complete");
-
+    assert.equal(manager.settleChildTask(acquisition, { ok: true, status: "completed", message: "reported success" }), "block");
     const project = h.projects.get(created.project.id)!;
-    const phase = h.projects.getPhases(project.id)[0]!;
-    assert.equal(project.status, "active");
-    assert.deepEqual(project.shortages, []);
-    assert.equal(phase.status, "active");
-    assert.ok(h.tasks.loadUnfinished().some((task) => task.workKey === `build-project:${project.id}:${phase.id}`));
+    assert.equal(project.status, "blocked");
+    assert.deepEqual(project.shortages, [{ material: "stone_bricks", required: 8, available: 0 }]);
+    assert.match(project.lastError ?? "", /without reconciling/);
   } finally {
     h.db.close();
   }

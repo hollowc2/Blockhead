@@ -335,4 +335,9 @@ export const MIGRATIONS: readonly string[] = [
       ON tasks(project_id, project_phase_id)
       WHERE project_id IS NOT NULL AND status IN ('queued','active','paused','blocked');
   `,
+  // v17: preserve resumable execution policy for project-linked tasks across
+  // restart. Older task rows remain terminal-policy agnostic and valid.
+  `
+  ALTER TABLE tasks ADD COLUMN execution_policy TEXT;
+  `,
 ];

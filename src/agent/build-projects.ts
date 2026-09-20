@@ -28,6 +28,12 @@ interface SliceOutcomeData {
   mismatchSamples?: Array<{ operationId: string; expected: string; actual?: string }>;
 }
 
+interface AcquisitionOutcomeData {
+  item?: string;
+  quantity?: number;
+  availableAtEnd?: number;
+}
+
 export interface CreateBuildProjectInput {
   userGoal: string;
   structureType?: string;
@@ -352,6 +358,17 @@ export class BuildProjectManager {
     if (phase === undefined || material === "") return "fail";
 
     if (result.status === "completed") {
+      const requested = Number(task.parameters.quantity ?? 0);
+      const acquisition = asAcquisitionData(result.data);
+      if (acquisition?.item !== undefined && acquisition.item !== material) {
+        return this.blockAcquisition(project, phase, task, `acquisition reconciled the wrong item (${acquisition.item})`, now);
+      }
+      if (acquisition?.availableAtEnd === undefined || acquisition.availableAtEnd < requested) {
+        const available = acquisition?.availableAtEnd ?? 0;
+        const shortage = project.shortages.find((candidate) => candidate.material === material);
+        if (shortage !== undefined) shortage.available = available;
+        return this.blockAcquisition(project, phase, task, `acquisition completed without reconciling ${requested} ${material} (available ${available})`, now);
+      }
       project.shortages = project.shortages.filter((shortage) => shortage.material !== material);
       project.resumeState = { ...project.resumeState, retryAfter: undefined };
       project.updatedAt = now;
@@ -363,7 +380,9 @@ export class BuildProjectManager {
         project.lastError = undefined;
         this.projects.updatePhase(phase);
         this.projects.update(project);
-        this.scheduleNextWork(project.id);
+        const workKey = `build-project:${project.id}:${phase.id}`;
+        const resumed = this.scheduler.resumeBlockedByWorkKey(workKey, "material shortage cleared");
+        if (resumed === null) this.scheduleNextWork(project.id);
       } else {
         // Keep the parent blocked until every known material bill is
         // satisfied; this prevents a resumed slice from racing another
@@ -393,6 +412,17 @@ export class BuildProjectManager {
     project.updatedAt = now;
     this.projects.update(project);
     this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_failed", details: { material, retryable: false, error: project.lastError }, createdAt: now });
+    return "block";
+  }
+
+  private blockAcquisition(project: BuildProject, phase: BuildPhase, task: Task, reason: string, now: string): ProjectTaskSettlement {
+    phase.lastError = reason;
+    project.status = "blocked";
+    project.lastError = reason;
+    project.updatedAt = now;
+    this.projects.updatePhase(phase);
+    this.projects.update(project);
+    this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_reconciliation_failed", details: { material: task.parameters.item, reason }, createdAt: now });
     return "block";
   }
 
@@ -445,6 +475,10 @@ export class BuildProjectManager {
 
 function asRecord(value: unknown): SliceOutcomeData | undefined {
   return value !== null && typeof value === "object" ? value as SliceOutcomeData : undefined;
+}
+
+function asAcquisitionData(value: unknown): AcquisitionOutcomeData | undefined {
+  return value !== null && typeof value === "object" ? value as AcquisitionOutcomeData : undefined;
 }
 
 function isCompleteSlice(data: SliceOutcomeData | undefined, phase: BuildPhase): boolean {
