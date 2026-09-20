@@ -121,3 +121,41 @@ test("a placement error still checks whether the server accepted the block", asy
   const result = await executor.run("accepted-after-error", controller.signal, async () => placeItemAt(bot, item, spot, controller.signal));
   assert.equal(result?.name, "oak_planks");
 });
+
+test("placement skips an equip round-trip when the requested item is already held", async () => {
+  const executor = new WorldActionExecutor();
+  const item = { name: "stone_bricks", count: 1 } as any;
+  let equips = 0;
+  const target = { x: 6, y: 64, z: 6 };
+  const bot = {
+    heldItem: item,
+    inventory: { items: () => [item] },
+    equip: async () => { equips += 1; },
+    placeBlock: async () => undefined,
+    blockAt: () => ({ name: "stone_bricks", boundingBox: "block", position: target } as any),
+  } as any;
+  const spot: PlacementSpot = { position: target as any, reference: { name: "stone", position: { x: 6, y: 63, z: 6 } } as any, face: { x: 0, y: 1, z: 0 } as any };
+  const result = await executor.run("held-placement", new AbortController().signal, async () => placeItemAt(bot, item, spot));
+  assert.equal(result?.name, "stone_bricks");
+  assert.equal(equips, 0);
+});
+
+test("placement confirmation supports a bounded fast polling policy", async () => {
+  const executor = new WorldActionExecutor();
+  const item = { name: "stone_bricks", count: 1 } as any;
+  const target = { x: 8, y: 64, z: 8 };
+  let polls = 0;
+  const bot = {
+    inventory: { items: () => [item] },
+    equip: async () => undefined,
+    placeBlock: async () => undefined,
+    blockAt: () => {
+      polls += 1;
+      return { name: "air", boundingBox: "empty", position: target } as any;
+    },
+  } as any;
+  const spot: PlacementSpot = { position: target as any, reference: { name: "stone", position: { x: 8, y: 63, z: 8 } } as any, face: { x: 0, y: 1, z: 0 } as any };
+  const result = await executor.run("fast-placement-poll", new AbortController().signal, async () => placeItemAt(bot, item, spot, undefined, { maxPolls: 3, pollIntervalMs: 1 }));
+  assert.equal(result, null);
+  assert.equal(polls, 3);
+});

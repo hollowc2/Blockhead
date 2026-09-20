@@ -262,7 +262,9 @@ export type TravelWaitResult =
   | { status: "arrived" | "already_there" | "not_ready" | "wrong_dimension" | "timed_out" | "aborted" }
   | { status: "failed"; error: string };
 
-const CREATIVE_FLIGHT_STEP = 0.5;
+// One block per server tick is still comfortably below vanilla's movement
+// validation threshold, and halves the dead travel time between build cells.
+const CREATIVE_FLIGHT_STEP = 1;
 const CREATIVE_FLIGHT_TICK_MS = 50;
 const CREATIVE_FLIGHT_REACH = 0.75;
 

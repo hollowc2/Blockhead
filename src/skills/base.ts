@@ -365,6 +365,10 @@ async function placeAtCell(
   const placedBlock = await placeItemAt(bot, item, spot, signal, {
     onPlaceAccepted: () => { placeAccepted = true; },
     onPoll: (observation) => observations.push({ attempt: observation.attempt, block: blockName(observation.block), inventoryCount: observation.inventoryCount }),
+    // Creative placement is server-authoritative and retried by the caller.
+    // Two short ticks are enough to observe a normal block update; keeping
+    // the survival default avoids making ordinary building optimistic.
+    ...(isCreativeMode(bot) ? { maxPolls: 3, pollIntervalMs: 50 } : {}),
   });
   if (placedBlock !== null && expected(placedBlock)) return placedBlock;
   const after = bot.blockAt(cell);

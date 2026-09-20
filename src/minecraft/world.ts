@@ -206,18 +206,28 @@ export interface PlacementObservation {
 export interface PlaceItemAtOptions {
   onPlaceAccepted?: () => void;
   onPoll?: (observation: PlacementObservation) => void;
+  /**
+   * Confirmation policy for a placement whose server acknowledgement may lag.
+   * Defaults deliberately remain conservative for survival interactions.
+   */
+  maxPolls?: number;
+  pollIntervalMs?: number;
 }
 
 export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, signal?: AbortSignal, options?: PlaceItemAtOptions): Promise<Block | null> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
   const inventoryBefore = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
-  try {
-    await equipItem(bot, item, signal);
-    throwIfAborted(signal);
-  } catch (err) {
-    throwIfAborted(signal);
-    return null;
+  // A blueprint commonly places dozens of the same material in a row.  An
+  // equip round-trip for each one adds a server tick without changing state.
+  if (bot.heldItem?.name !== item.name) {
+    try {
+      await equipItem(bot, item, signal);
+      throwIfAborted(signal);
+    } catch (err) {
+      throwIfAborted(signal);
+      return null;
+    }
   }
   let placementError: unknown = null;
   try {
@@ -235,13 +245,15 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
   // placeBlock resolves when the placement packet is accepted; the block
   // cache can lag behind by several ticks. Poll briefly for the authoritative
   // block update before declaring a valid placement a failure.
-  for (let attempt = 0; attempt < 6; attempt++) {
+  const maxPolls = options?.maxPolls ?? 6;
+  const pollIntervalMs = options?.pollIntervalMs ?? 150;
+  for (let attempt = 0; attempt < maxPolls; attempt++) {
     throwIfAborted(signal);
     const placed = bot.blockAt(spot.position);
     const inventoryAfter = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
     options?.onPoll?.({ attempt, block: placed, inventoryCount: inventoryAfter });
     if (placed !== null && placed.name !== "air") return placed;
-    if (attempt < 5) await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    if (attempt < maxPolls - 1) await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
     // A delayed inventory packet is observable independently of the block
     // cache; keep polling rather than treating the accepted mutation as lost.
     void inventoryBefore;
