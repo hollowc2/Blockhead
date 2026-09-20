@@ -65,6 +65,33 @@ test("repeating the same design resumes its project without another live slice",
   }
 });
 
+test("identical phase labels from separate projects receive distinct stored IDs", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const design = landmarkTemplate("castle", "small");
+    const first = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design, origin });
+    const second = manager.createOrResume({
+      userGoal: "Build a second castle",
+      structureType: "castle",
+      source: "user",
+      design,
+      origin: { ...origin, x: origin.x + 100 },
+    });
+    const firstPhase = h.projects.getPhases(first.project.id)[0]!;
+    const secondPhase = h.projects.getPhases(second.project.id)[0]!;
+
+    assert.equal(first.resumed, false);
+    assert.equal(second.resumed, false);
+    assert.equal(firstPhase.label, secondPhase.label);
+    assert.notEqual(firstPhase.id, secondPhase.id);
+    assert.ok(firstPhase.id.startsWith(`${first.project.id}:`));
+    assert.ok(secondPhase.id.startsWith(`${second.project.id}:`));
+  } finally {
+    h.db.close();
+  }
+});
+
 test("rehydration restores the frozen project and reuses an existing live child task", () => {
   const h = harness();
   try {

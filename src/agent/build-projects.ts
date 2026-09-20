@@ -510,7 +510,10 @@ function isCompleteSlice(data: SliceOutcomeData | undefined, phase: BuildPhase):
 
 function toBuildPhase(projectId: string, phase: BlueprintPhase, totalOperations: number, ordinal: number): BuildPhase {
   return {
-    id: phase.id,
+    // Compiler phase IDs are deliberately deterministic so they can be
+    // compared within a frozen blueprint.  Database phase IDs, however, are
+    // primary keys and must not collide when two projects share a design.
+    id: `${projectId}:${phase.id}`,
     projectId,
     ordinal,
     label: phase.label,
