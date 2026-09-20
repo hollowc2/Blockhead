@@ -23,6 +23,7 @@ export enum TaskPriority {
 }
 
 export type TaskSource = "user" | "system" | "maintenance" | "background" | "director" | "goal";
+export type TaskExecutionPolicy = "terminal" | "resumable";
 
 export interface Task {
   id: string;
@@ -39,6 +40,9 @@ export interface Task {
   pauseSequence?: number;
   parentTaskId?: string;
   interruptedTaskId?: string;
+  projectId?: string;
+  projectPhaseId?: string;
+  executionPolicy?: TaskExecutionPolicy;
   resumeState?: object;
   lastError?: string;
   workKey?: string;

@@ -380,6 +380,40 @@ export class Scheduler {
     return this.activateNext();
   }
 
+  /** Return active resumable work to the queue without discarding its checkpoint. */
+  requeueActive(lastError?: string): Task | null {
+    const task = this.activeTask;
+    if (!task) return null;
+    this.activeTask = null;
+    this.activeController?.abort(new Error("task requeued"));
+    this.activeController = null;
+    task.status = TaskStatus.QUEUED;
+    task.lastError = lastError;
+    task.pauseSequence = undefined;
+    this.order.set(task.id, ++this.seq);
+    this.queue.push(task);
+    this.tasks.update(task);
+    this.bus.emit("task.requeued", { task });
+    logger.info({ taskId: task.id, lastError: lastError ?? null }, "task requeued with progress preserved");
+    return this.activateNext();
+  }
+
+  /** Stand active work down as blocked while retaining it as live persisted work. */
+  blockActive(lastError: string): Task | null {
+    const task = this.activeTask;
+    if (!task) return null;
+    this.activeTask = null;
+    this.activeController?.abort(new Error("task blocked"));
+    this.activeController = null;
+    task.status = TaskStatus.BLOCKED;
+    task.lastError = lastError;
+    this.queue.push(task);
+    this.tasks.update(task);
+    this.bus.emit("task.blocked", { task });
+    logger.warn({ taskId: task.id, lastError }, "task blocked");
+    return this.activateNext();
+  }
+
   /** Mark the active task failed with a reason, then claim the next task. */
   failActive(lastError: string): Task | null {
     const task = this.activeTask;

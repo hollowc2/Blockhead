@@ -106,6 +106,33 @@ test("checkpoint persists resume state to the database", () => {
   assert.deepEqual(reloaded?.resumeState, { attemptedSites: ["1,64,2", "3,64,4"], interruptions: 2 });
 });
 
+test("requeueActive preserves resumable progress and activates the next task", () => {
+  const { scheduler: s, tasks, bus } = newHarness();
+  const requeued: string[] = [];
+  bus.on("task.requeued", ({ task }) => requeued.push(task.id));
+  const resumable = s.enqueue({ ...userTask("Build a design."), type: "build_design", executionPolicy: "resumable" });
+  const next = s.enqueue(userTask("Gather materials."));
+  s.claim();
+  s.signalsFor(resumable).checkpoint({ operationIndex: 12 });
+
+  assert.equal(s.requeueActive("slice budget reached")?.id, next.id);
+  assert.equal(resumable.status, TaskStatus.QUEUED);
+  assert.deepEqual(tasks.get(resumable.id)?.resumeState, { operationIndex: 12 });
+  assert.deepEqual(requeued, [resumable.id]);
+  assert.equal(s.active?.id, next.id);
+});
+
+test("blockActive retains blocked work as live persisted task", () => {
+  const { scheduler: s, tasks } = newHarness();
+  const task = s.enqueue(userTask("Build a design."));
+  s.claim();
+
+  assert.equal(s.blockActive("missing material"), null);
+  assert.equal(task.status, TaskStatus.BLOCKED);
+  assert.equal(tasks.get(task.id)?.status, TaskStatus.BLOCKED);
+  assert.equal(s.queued.find((candidate) => candidate.id === task.id)?.status, TaskStatus.BLOCKED);
+});
+
 test("Phase 8 acceptance: wood -> iron -> food maintenance -> iron -> wood", () => {
   const { scheduler: s, bus } = newHarness();
   const activated: string[] = [];

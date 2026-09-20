@@ -163,17 +163,20 @@ export class TaskDispatcher {
       });
       const last = task.lastProgressAt === undefined ? Date.now() : Date.parse(task.lastProgressAt);
       if (Date.now() - last > PROGRESS_STALL_TIMEOUT_MS) {
-        this.opts.logger.warn({ taskId: task.id, phase: task.phase ?? null, progressFingerprint: task.progressFingerprint ?? null }, "task progress watchdog requested cancellation");
-        this.opts.scheduler.requestCancel();
+        const resumable = this.isResumable(task);
+        this.opts.logger.warn({ taskId: task.id, phase: task.phase ?? null, progressFingerprint: task.progressFingerprint ?? null, resumable }, resumable ? "task progress watchdog requested pause" : "task progress watchdog requested cancellation");
+        if (resumable) this.opts.scheduler.requestPause();
+        else this.opts.scheduler.requestCancel();
       }
     }, PROGRESS_POLL_MS);
     progressTimer.unref?.();
     try {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          // Cancellation is propagated first. The scheduler keeps the lease
-          // until the original Mineflayer operation settles below.
-          this.opts.scheduler.requestCancel();
+          // Resumable construction yields at its checkpoint instead of being
+          // cancelled, so its persisted progress can be resumed later.
+          if (this.isResumable(task)) this.opts.scheduler.requestPause();
+          else this.opts.scheduler.requestCancel();
           reject(new Error(`skill execution timed out after ${SKILL_TIMEOUT_MS}ms`));
         }, SKILL_TIMEOUT_MS);
       });
@@ -199,8 +202,7 @@ export class TaskDispatcher {
         return;
       }
       this.recordOutcome(task, result);
-      if (result.ok) scheduler.completeActive();
-      else scheduler.failActive(result.message ?? "skill failed");
+      this.settleResult(task, result);
     } catch (err) {
       const message = String(err).includes("operation timed out")
         ? `skill execution timed out after ${SKILL_TIMEOUT_MS}ms`
@@ -240,13 +242,47 @@ export class TaskDispatcher {
     if (result.status === "interrupted") return;
     const fingerprint = actionFingerprint(task.type, task.parameters);
     const reason = result.message ?? result.errorCode ?? "";
-    if (result.ok && result.status !== "partial") {
+    if (result.status === "completed") {
       this.opts.watchdog.record(fingerprint, "success", task.source === "user", reason);
     } else if (result.status === "partial") {
       this.opts.watchdog.record(fingerprint, "partial", task.source === "user", reason);
     } else {
       this.opts.watchdog.record(fingerprint, "failure", task.source === "user", reason);
     }
+  }
+
+  /** Settle from the lifecycle status; `ok` remains compatibility data only. */
+  private settleResult(task: Task, result: SkillResult): void {
+    const scheduler = this.opts.scheduler;
+    const message = result.message ?? result.errorCode ?? "skill failed";
+    switch (result.status) {
+      case "completed":
+        scheduler.completeActive();
+        return;
+      case "partial":
+        if (this.isResumable(task)) scheduler.requeueActive(message);
+        else scheduler.failActive(message);
+        return;
+      case "blocked":
+        scheduler.blockActive(message);
+        return;
+      case "interrupted":
+        // Adapters can observe an interruption without a scheduler checkpoint.
+        // Pause defensively so resumable work is never completed or cancelled.
+        if (!scheduler.interruptPending) scheduler.requestPause();
+        scheduler.settleInterrupted();
+        return;
+      case "failed":
+        if (result.retryable === true && this.isResumable(task)) scheduler.requeueActive(message);
+        else scheduler.failActive(message);
+        return;
+    }
+  }
+
+  private isResumable(task: Task): boolean {
+    // build_design predates executionPolicy and remains resumable during this
+    // compatibility stage. New callers can opt in explicitly.
+    return task.executionPolicy === "resumable" || task.type === "build_design";
   }
 
   private async runSkill(task: Task): Promise<SkillResult> {

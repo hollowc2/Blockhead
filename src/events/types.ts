@@ -238,6 +238,7 @@ export interface EventMap {
   "task.failed": TaskEvent;
   "task.cancelled": TaskEvent;
   "task.paused": TaskEvent;
+  "task.requeued": TaskEvent;
   "goal.started": GoalEvent;
   "goal.completed": GoalEvent;
   "goal.blocked": GoalEvent;
