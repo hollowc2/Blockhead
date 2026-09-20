@@ -4,6 +4,7 @@ import type { BootstrapStage } from "../agent/bootstrap.js";
 import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import type { ProtectedRegion } from "../minecraft/protection.js";
+import type { BuildPhase, BuildProject } from "../memory/build-projects.js";
 
 /**
  * Internal event payloads. Payloads are plain data so listeners never depend
@@ -59,6 +60,12 @@ export interface TaskEvent {
 /** Goal lifecycle events carry the persisted goal (see the goal layer, spec goals). */
 export interface GoalEvent {
   goal: Goal;
+}
+
+export interface BuildProjectEvent {
+  project: BuildProject;
+  phase?: BuildPhase;
+  task?: Task;
 }
 
 export interface DeathEvent {
@@ -243,6 +250,9 @@ export interface EventMap {
   "goal.completed": GoalEvent;
   "goal.blocked": GoalEvent;
   "goal.cancelled": GoalEvent;
+  "build_project.created": BuildProjectEvent;
+  "build_project.rehydrated": BuildProjectEvent;
+  "build_project.scheduled": BuildProjectEvent;
   death: DeathEvent;
   respawn: Record<string, never>;
   "death.recorded": DeathRecordedEvent;

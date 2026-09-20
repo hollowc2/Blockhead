@@ -180,6 +180,13 @@ export class BuildProjectsRepository {
     return row ? toProject(row) : null;
   }
 
+  findLiveByBlueprintHash(blueprintHash: string): BuildProject | null {
+    const row = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects
+      WHERE blueprint_hash = ? AND status IN ('active', 'paused', 'blocked', 'verifying')
+      ORDER BY updated_at DESC LIMIT 1`).get(blueprintHash) as BuildProjectRow | undefined;
+    return row ? toProject(row) : null;
+  }
+
   /** Active, paused, blocked, and verifying projects survive a restart. */
   loadUnfinished(): BuildProject[] {
     const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects WHERE status IN ('active', 'paused', 'blocked', 'verifying') ORDER BY created_at`).all() as BuildProjectRow[];
