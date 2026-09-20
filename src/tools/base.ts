@@ -1,5 +1,7 @@
 import type { Scheduler } from "../agent/scheduler.js";
 import { TaskPriority } from "../agent/task.js";
+import type { BuildProjectManager } from "../agent/build-projects.js";
+import type { BuildingDesign } from "../building/schema.js";
 import { z } from "zod";
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
@@ -12,7 +14,7 @@ import type { ToolDefinition, ToolResult } from "./types.js";
  * scheduler task exactly like the storage tools: deterministic skill code
  * behind one user-picked tool name.
  */
-export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler): void {
+export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, projects: BuildProjectManager): void {
   /** True when a base-build task is already queued or active (no stacking). */
   const baseTaskActive = (): boolean => {
     if (scheduler.active?.type === "build_base") return true;
@@ -94,15 +96,17 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler):
           shape, width, height, length, material: "planks", anchor: anchorKind,
           origin: { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z), dimension: point.dimension.replace(/^minecraft:/, "") },
         };
-        scheduler.enqueue({
-          type: "build_structure",
-          priority: TaskPriority.FOREGROUND,
+        const design = simpleStructureDesign(shape as SimpleStructureShape, width, height, length, parameters.origin);
+        const result = projects.createOrResume({
+          userGoal: `Build a ${width}x${height}x${length} ${shape}.`,
+          structureType: `simple_${shape}`,
           source: "user",
-          objective: `Build a ${width}x${height}x${length} ${shape}.`,
-          parameters,
+          design,
+          origin: parameters.origin,
         });
         scheduler.claim();
-        return `Building a ${width} wide, ${height} tall, ${length} long oak-plank ${shape}.`;
+        const action = result.resumed ? "Resuming" : "Building";
+        return `${action} a ${width} wide, ${height} tall, ${length} long oak-plank ${shape}.`;
       },
     },
   ];
@@ -111,3 +115,55 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler):
     registry.register(tool);
   }
 }
+
+/**
+ * Translate the bounded legacy shape vocabulary into the shared immutable
+ * building-design representation. Each generated component is deterministic
+ * and uses the same origin captured by the tool, so reconnects and repeated
+ * requests produce the same project hash and operation ranges.
+ */
+function simpleStructureDesign(
+  shape: SimpleStructureShape,
+  width: number,
+  height: number,
+  length: number,
+  origin: { x: number; y: number; z: number; dimension: string },
+): BuildingDesign {
+  const components: BuildingDesign["components"] = [];
+  const component = (value: BuildingDesign["components"][number]): void => { components.push(value); };
+  const base = {
+    name: `Simple ${shape}`,
+    description: `Deterministic ${shape} built from approved oak planks.`,
+    anchor: origin,
+    orientation: "north" as const,
+    scale: "small" as const,
+    palette: {
+      foundation: "oak_planks", primary: "oak_planks", secondary: "oak_planks",
+      frame: "oak_planks", glass: "glass", roof: "oak_planks", floor: "oak_planks",
+      accent: "oak_planks", lighting: "torch", furniture: "oak_planks",
+    },
+    decoration: { interior: false, colorful: false, lighting: false },
+  };
+
+  if (shape === "wall") {
+    component({ type: "wall", id: "simple-wall", start: { x: 0, y: 0, z: 0 }, end: { x: width - 1, y: 0, z: 0 }, height, thickness: 1, material: "oak_planks" });
+  } else if (shape === "pyramid") {
+    for (let level = 0; level < height; level += 1) {
+      component({
+        type: "cuboid", id: `simple-pyramid-ring-${String(level + 1).padStart(2, "0")}`,
+        width: width - level * 2, depth: length - level * 2, height: 1, mode: "hollow", material: "oak_planks",
+        transform: { offset: { x: level, y: level, z: level } },
+      });
+    }
+  } else {
+    component({ type: "cuboid", id: "simple-shell", width, depth: length, height, mode: "hollow", material: "oak_planks" });
+    component({ type: "cuboid", id: "simple-roof", width, depth: length, height: 1, mode: "solid", material: "oak_planks", transform: { offset: { x: 0, y: height, z: 0 } } });
+    if (shape === "room" && width >= 3 && height >= 2) {
+      component({ type: "door", id: "simple-door", width: 1, height: 2, transform: { offset: { x: Math.floor(width / 2), y: 0, z: length - 1 } } });
+    }
+  }
+
+  return { ...base, components };
+}
+
+type SimpleStructureShape = "room" | "wall" | "tower" | "pyramid";

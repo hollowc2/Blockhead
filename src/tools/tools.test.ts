@@ -46,7 +46,7 @@ function newHarness(): Harness {
   registerBootstrapTools(registry);
   registerResourceTools(registry, scheduler);
   registerStorageTools(registry, scheduler, storage, locations);
-  registerBaseTools(registry, scheduler);
+  registerBaseTools(registry, scheduler, buildProjectManager);
   registerAcquisitionTools(registry, scheduler);
   registerFoodTools(registry, scheduler);
   registerCombatTools(registry, scheduler);
@@ -199,6 +199,28 @@ test("build_design creates a project slice instead of a legacy long-lived task",
   assert.equal(scheduler.active?.executionPolicy, "resumable");
   assert.equal(scheduler.active?.projectId !== undefined, true);
   assert.equal(scheduler.active?.projectPhaseId !== undefined, true);
+  assert.equal(scheduler.queued.some((task) => task.type === "build_design"), false);
+});
+
+test("build_structure uses the project path and preserves deterministic simple-build semantics", () => {
+  const { registry, scheduler } = newHarness();
+  const bot = {
+    entity: { position: { x: 10, y: 64, z: -4 } },
+    game: { dimension: "overworld" },
+    players: {},
+  } as never;
+  const state = { home: { x: 10, y: 64, z: -4, dimension: "overworld" } } as never;
+  const config = { agent: { owner: "Corey" } } as never;
+  const reply = registry.get("build_structure")!.handler(
+    { shape: "room", width: 5, height: 3, length: 5, material: "planks", anchor: "home" },
+    { bot, state, config, scheduler } as never,
+  );
+
+  assert.match(String(reply), /^Building a 5 wide, 3 tall, 5 long oak-plank room\./);
+  assert.equal(scheduler.active?.type, "build_project_slice");
+  assert.equal(scheduler.active?.executionPolicy, "resumable");
+  assert.equal(scheduler.active?.projectId !== undefined, true);
+  assert.equal(scheduler.queued.some((task) => task.type === "build_structure"), false);
   assert.equal(scheduler.queued.some((task) => task.type === "build_design"), false);
 });
 
