@@ -35,6 +35,16 @@ test("compiler freezes versions, provenance, absolute targets, hash, and determi
   assert.ok(blueprint.phases!.every((phase) => phase.operationEnd - phase.operationStart <= DEFAULT_BLUEPRINT_CHUNK_SIZE));
 });
 
+test("castle structural operations are ordered bottom-up so each upper cell has a prior in-blueprint support", () => {
+  const blueprint = compileBuildingDesign(landmarkTemplate("castle", "small"), origin);
+  const indexByCell = new Map(blueprint.operations.map((operation, index) => [`${operation.x},${operation.y},${operation.z}`, index]));
+  const target = blueprint.operations.find((operation) => operation.id === "op-00450")!;
+  assert.equal(target.x, 0);
+  assert.equal(target.y, 3);
+  assert.equal(target.z, 0);
+  assert.ok((indexByCell.get(`${target.x},${target.y - 1},${target.z}`) ?? Infinity) < blueprint.operations.indexOf(target));
+});
+
 test("legacy designs receive stable component IDs and chunk boundaries respect compiler phases", () => {
   const legacy = { ...landmarkTemplate("mansion", "small"), components: landmarkTemplate("mansion", "small").components.map(({ id: _id, ...component }) => component) };
   const parsed = BuildingDesignSchema.parse(legacy);

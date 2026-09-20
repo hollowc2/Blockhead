@@ -107,6 +107,30 @@ test("a failed world action releases ownership and cleanup stops every primitive
   assert.deepEqual(calls, ["path-stop", "goal-clear", "collect-cancel", "pvp-stop", "window-close"]);
 });
 
+test("cleanup completes before a replacement can observe the old task owner", async () => {
+  const executor = new WorldActionExecutor();
+  const controller = new AbortController();
+  let cleanupFinished = false;
+  const bot = {
+    collectBlock: {
+      cancelTask: async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        cleanupFinished = true;
+      },
+    },
+  } as any;
+  const first = executor.run("requeued-task", controller.signal, async (lease) => {
+    await new Promise<void>((resolve) => lease.signal.addEventListener("abort", () => resolve(), { once: true }));
+  }, { onCancel: () => stopWorldPrimitives(bot) });
+  const replacement = executor.run("replacement-task", new AbortController().signal, async () => {
+    assert.equal(cleanupFinished, true);
+  });
+  controller.abort(new Error("requeue"));
+  await assert.rejects(first, /requeue|aborted/i);
+  await replacement;
+  assert.equal(executor.activeOwner, null);
+});
+
 test("lease cancellation aborts the primitive and acknowledges before ownership is released", async () => {
   const executor = new WorldActionExecutor();
   const controller = new AbortController();

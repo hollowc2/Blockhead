@@ -924,6 +924,10 @@ export class BaseBuilderRunner {
       if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
       const travel = await this.travelToSimpleAnchor(new Vec3(blueprint.origin.x - 2, blueprint.origin.y, blueprint.origin.z - 2), blueprint.origin.dimension);
       if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
+      // Keep a local record for the survival-mode delayed-cache fallback.
+      // Creative mode still requires an authoritative server block, so this
+      // never turns an unobserved placement into a success.
+      const placed = new Set<string>();
       for (let index = resumeCursor; index < operationEnd; index += 1) {
         if (data.inspected >= maxOperations || Date.now() - startedAt >= maxElapsedMs) {
           data.currentOperationIndex = index;
@@ -965,13 +969,17 @@ export class BaseBuilderRunner {
           data.remaining = operationEnd - index;
           return { ok: false, status: "blocked", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${operation.material} at operation ${operation.id}`, data };
         }
-        const placed = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), new Set<string>(), (candidate) => bareName(candidate?.name ?? "") === operation.material);
-        if (!placed) {
+        const placedBlock = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        if (!placedBlock) {
           data.firstUnresolvedOperationId = operation.id;
           data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(this.opts.bot.blockAt(cell)?.name ?? "") || undefined });
           data.remaining = operationEnd - index;
+          if (findReferenceFor(this.opts.bot, cell, placed) === null) {
+            return { ok: false, status: "blocked", errorCode: "UNSUPPORTED_OPERATION", retryable: false, message: `design operation ${operation.id} has no authoritative support block at ${cell.x},${cell.y},${cell.z}`, data };
+          }
           return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", retryable: true, message: `design slice could not verify operation ${operation.id}`, data };
         }
+        placed.add(cellKey(cell));
         data.placed += 1;
         data.verified += 1;
         data.currentOperationIndex = index + 1;

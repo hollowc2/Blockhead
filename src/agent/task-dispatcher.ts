@@ -185,6 +185,10 @@ export class TaskDispatcher {
       let result: SkillResult;
       try {
         result = await Promise.race([run, timeout]);
+        // Complete session-scoped primitive cleanup before settling the task.
+        // Scheduler settlement may synchronously activate the next task; doing
+        // this only in finally allowed that task to start during cleanup.
+        await stopWorldPrimitives(this.opts.bot);
       } catch (err) {
         // Never release the active task's ownership while the skill is still
         // in flight. Await its acknowledgement before settling/replacing.
@@ -214,6 +218,7 @@ export class TaskDispatcher {
       if (timer !== undefined) clearTimeout(timer);
       const scheduler = this.opts.scheduler;
       if (scheduler.active?.id === task.id) {
+        await stopWorldPrimitives(this.opts.bot);
         if (scheduler.interruptPending) scheduler.settleInterrupted();
         else {
           const fingerprint = actionFingerprint(task.type, task.parameters);

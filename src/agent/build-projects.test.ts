@@ -187,6 +187,33 @@ test("a survival shortage blocks the phase and schedules linked acquisition work
   }
 });
 
+test("an impossible slice operation blocks the project instead of requeueing forever", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    assert.equal(h.scheduler.claim()?.id, created.task.id);
+    const phase = h.projects.getPhases(created.project.id)[0]!;
+    const settlement = manager.settleChildTask(created.task, {
+      ok: false,
+      status: "blocked",
+      errorCode: "UNSUPPORTED_OPERATION",
+      message: "design operation op-00450 has no authoritative support block",
+      data: { currentOperationIndex: phase.operationStart, verified: phase.operationStart, remaining: phase.totalOperations, firstUnresolvedOperationId: "op-00450" },
+    });
+
+    assert.equal(settlement, "block");
+    assert.equal(h.projects.get(created.project.id)?.status, "blocked");
+    assert.equal(h.projects.getPhases(created.project.id)[0]?.status, "blocked");
+    assert.equal(h.tasks.loadUnfinished().filter((task) => task.projectId === created.project.id && task.type === "build_project_slice").length, 1);
+    h.scheduler.blockActive("design operation op-00450 has no authoritative support block");
+    assert.equal(h.tasks.loadUnfinished().find((task) => task.id === created.task.id)?.status, TaskStatus.BLOCKED);
+    assert.equal(h.scheduler.claim(), null, "a blocked project cannot spin up another slice");
+  } finally {
+    h.db.close();
+  }
+});
+
 test("successful linked acquisition clears the shortage and resumes the same phase", () => {
   const h = harness();
   try {

@@ -318,7 +318,7 @@ function designTestRunner(world: Record<string, string>): BaseBuilderRunner {
       const name = world[key(v)];
       return name === undefined ? null : { name, boundingBox: name === "air" ? "empty" : "block" } as Block;
     },
-    inventory: { items: () => [] },
+    inventory: { items: () => [{ name: "stone", count: 1 }] },
   } as unknown as Bot;
   const runner = Object.create(BaseBuilderRunner.prototype) as BaseBuilderRunner;
   const mutable = runner as unknown as { opts: { bot: Bot; config: { building?: object }; state: object }; travelToSimpleAnchor: () => Promise<{ status: "already_there" }> };
@@ -378,4 +378,23 @@ test("design slices stop at their operation budget and resume from the checkpoin
   assert.equal(resumed.status, "completed");
   assert.equal(resumed.data?.verified, 3);
   assert.equal(resumed.data?.remaining, 0);
+});
+
+test("an operation with no authoritative support is blocked, not reported as progress", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [{ id: "op-00450", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true }],
+    estimates: { blocks: 1, materials: { stone: 1 } },
+    footprint: { width: 1, depth: 1, height: 1 },
+  };
+  const runner = designTestRunner({ "0,64,0": "air" });
+  (runner as unknown as { placeSimpleTarget: () => Promise<boolean> }).placeSimpleTarget = async () => false;
+  const result = await runner.runDesignSlice(blueprint, { phaseId: "phase-unsupported", operationStart: 0, operationEnd: 1 });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.errorCode, "UNSUPPORTED_OPERATION");
+  assert.equal(result.retryable, false);
+  assert.equal(result.data?.firstUnresolvedOperationId, "op-00450");
+  assert.equal(result.data?.currentOperationIndex, 0, "the unresolved operation remains resumable");
+  assert.equal(result.data?.verified, 0, "an unplaced block is never counted as verified");
 });

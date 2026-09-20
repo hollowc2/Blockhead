@@ -304,6 +304,10 @@ export class BuildProjectManager {
     }
 
     if (result.status === "blocked") {
+      // Preserve the exact cursor before parking the phase. A blocked
+      // operation may be repaired in-world and resumed later; losing this
+      // checkpoint would make recovery restart the whole phase.
+      this.recordSliceProgress(project, phase, data, now, task.id);
       phase.status = "blocked";
       phase.lastError = result.message ?? result.errorCode ?? "project phase blocked";
       this.projects.updatePhase(phase);
