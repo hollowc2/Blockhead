@@ -8,6 +8,7 @@ import { BuildProjectsRepository } from "../memory/build-projects.js";
 import { TasksRepository } from "../memory/tasks.js";
 import { BuildProjectManager } from "./build-projects.js";
 import { Scheduler } from "./scheduler.js";
+import { TaskStatus } from "./task.js";
 
 const origin = { x: 10, y: 64, z: -4, dimension: "overworld" };
 
@@ -85,6 +86,72 @@ test("rehydration restores the frozen project and reuses an existing live child 
     assert.equal(restartedScheduler.queued.length, 1);
     assert.equal(restartedScheduler.queued[0]!.id, first.task.id);
     assert.equal(restartedTasks.loadUnfinished().length, 1);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("a completed slice advances the phase and does not complete the project", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const first = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    const initialPhase = h.projects.getPhases(first.project.id)[0]!;
+    const settlement = manager.settleChildTask(first.task, {
+      ok: true,
+      status: "completed",
+      data: { currentOperationIndex: initialPhase.operationEnd, verified: initialPhase.totalOperations, remaining: 0 },
+    });
+
+    const project = h.projects.get(first.project.id)!;
+    assert.equal(settlement, "complete");
+    assert.equal(project.status, "active");
+    assert.notEqual(project.currentPhaseId, initialPhase.id);
+    assert.equal(h.projects.getPhases(first.project.id)[0]!.status, "completed");
+    assert.equal(h.tasks.loadUnfinished().filter((task) => task.projectId === first.project.id).length, 2);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("all phases schedule final verification and only a clean scan completes the project", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const first = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    let task = first.task;
+    for (;;) {
+      const phase = task.projectPhaseId === undefined ? undefined : h.projects.getPhases(first.project.id).find((candidate) => candidate.id === task.projectPhaseId);
+      if (phase === undefined) break;
+      assert.equal(manager.settleChildTask(task, { ok: true, status: "completed", data: { currentOperationIndex: phase.operationEnd, verified: phase.totalOperations, remaining: 0 } }), "complete");
+      const currentProject = h.projects.get(first.project.id)!;
+      const next = currentProject.currentPhaseId === undefined ? undefined : h.tasks.loadUnfinished().find((candidate) => candidate.projectId === first.project.id && candidate.type === "build_project_slice" && candidate.projectPhaseId === currentProject.currentPhaseId);
+      if (next === undefined) break;
+      task = next;
+    }
+
+    const projectBeforeVerification = h.projects.get(first.project.id)!;
+    assert.equal(projectBeforeVerification.status, "verifying");
+    const verification = h.tasks.loadUnfinished().find((candidate) => candidate.type === "build_project_verify");
+    assert.ok(verification);
+    assert.equal(manager.settleChildTask(verification, { ok: true, status: "completed", data: { inspected: first.project.blueprint.operations.length, verified: first.project.blueprint.operations.length, mismatches: [] } }), "complete");
+    assert.equal(h.projects.get(first.project.id)?.status, "completed");
+  } finally {
+    h.db.close();
+  }
+});
+
+test("explicit cancellation of a project child cancels the parent and cannot resume it", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    assert.equal(h.scheduler.claim()?.id, created.task.id);
+    h.scheduler.cancel(created.task.id);
+    h.scheduler.settleInterrupted();
+    assert.equal(created.task.status, TaskStatus.CANCELLED);
+    assert.equal(h.projects.get(created.project.id)?.status, "cancelled");
+    assert.equal(h.projects.getPhases(created.project.id).some((phase) => phase.status === "active"), true);
   } finally {
     h.db.close();
   }

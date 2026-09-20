@@ -35,6 +35,7 @@ import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
+import type { BuildProjectManager, ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
@@ -71,6 +72,7 @@ export interface TaskDispatcherOptions {
   utility: UtilityRunner;
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
+  buildProjects?: BuildProjectManager;
   /**
    * Anti-loop watchdog: records every settled skill-run outcome per action
    * fingerprint, so a repeatedly-failing action is blocked (and the LLM is
@@ -198,6 +200,7 @@ export class TaskDispatcher {
         // here so a missed checkpoint never wedges the queue. A run that
         // completed before the interrupt is still a real outcome.
         this.recordOutcome(task, result);
+        this.settleProject(task, result);
         scheduler.settleInterrupted();
         return;
       }
@@ -254,6 +257,15 @@ export class TaskDispatcher {
   /** Settle from the lifecycle status; `ok` remains compatibility data only. */
   private settleResult(task: Task, result: SkillResult): void {
     const scheduler = this.opts.scheduler;
+    const projectSettlement = this.settleProject(task, result);
+    if (projectSettlement !== "none") {
+      switch (projectSettlement) {
+        case "complete": scheduler.completeActive(); return;
+        case "requeue": scheduler.requeueActive(result.message ?? result.errorCode); return;
+        case "block": scheduler.blockActive(result.message ?? result.errorCode ?? "project blocked"); return;
+        case "fail": scheduler.failActive(result.message ?? result.errorCode ?? "project failed"); return;
+      }
+    }
     const message = result.message ?? result.errorCode ?? "skill failed";
     switch (result.status) {
       case "completed":
@@ -277,6 +289,12 @@ export class TaskDispatcher {
         else scheduler.failActive(message);
         return;
     }
+  }
+
+  private settleProject(task: Task, result: SkillResult): ProjectTaskSettlement {
+    return task.projectId === undefined || this.opts.buildProjects === undefined
+      ? "none"
+      : this.opts.buildProjects.settleChildTask(task, result);
   }
 
   private isResumable(task: Task): boolean {
@@ -498,6 +516,38 @@ export class TaskDispatcher {
         const params = task.parameters as { design?: unknown; origin?: { x: number; y: number; z: number; dimension: string } };
         if (!params.design || !params.origin) return { ok: false, status: "failed", errorCode: "INVALID_DESIGN", message: "design task is missing its frozen design or origin" };
         return this.opts.buildBase.runDesign(params.design as Parameters<BaseBuilderRunner["runDesign"]>[0], params.origin, { signals, resumeState: task.resumeState as BaseResumeState | undefined });
+      }
+      case "build_project_slice": {
+        const manager = this.opts.buildProjects;
+        const projectId = String(task.projectId ?? task.parameters.projectId ?? "");
+        const project = manager?.getProject(projectId);
+        if (project === null || project === undefined || task.projectPhaseId === undefined) {
+          return { ok: false, status: "failed", errorCode: "NOT_READY", message: "project slice is missing its frozen project or phase" };
+        }
+        const operationStart = Number(task.parameters.operationStart ?? 0);
+        const operationEnd = Number(task.parameters.operationEnd ?? project.blueprint.operations.length);
+        return this.opts.buildBase.runDesignSlice(project.blueprint, {
+          projectId,
+          phaseId: task.projectPhaseId,
+          operationStart,
+          operationEnd,
+          signals,
+          resumeState: task.resumeState as Parameters<BaseBuilderRunner["runDesignSlice"]>[1]["resumeState"],
+        });
+      }
+      case "build_project_verify": {
+        const manager = this.opts.buildProjects;
+        const project = manager?.getProject(String(task.projectId ?? task.parameters.projectId ?? ""));
+        if (project === null || project === undefined) {
+          return { ok: false, status: "failed", errorCode: "NOT_READY", message: "project verification is missing its frozen project" };
+        }
+        const verification = this.opts.buildBase.verifyDesignOperations(project.blueprint);
+        const data: ProjectVerificationData = {
+          inspected: verification.inspected,
+          verified: verification.verified,
+          mismatches: verification.mismatches,
+        };
+        return { ok: verification.mismatches.length === 0, status: "completed", data, message: "project final verification completed" };
       }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");

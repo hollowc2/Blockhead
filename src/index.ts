@@ -403,7 +403,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, watchdog, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

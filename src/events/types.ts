@@ -253,6 +253,8 @@ export interface EventMap {
   "build_project.created": BuildProjectEvent;
   "build_project.rehydrated": BuildProjectEvent;
   "build_project.scheduled": BuildProjectEvent;
+  "build_project.blocked": BuildProjectEvent;
+  "build_project.verified": BuildProjectEvent;
   death: DeathEvent;
   respawn: Record<string, never>;
   "death.recorded": DeathRecordedEvent;
