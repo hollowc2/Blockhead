@@ -535,6 +535,18 @@ export class TaskDispatcher {
           resumeState: task.resumeState as Parameters<BaseBuilderRunner["runDesignSlice"]>[1]["resumeState"],
         });
       }
+      case "build_project_acquire": {
+        const item = String(task.parameters.item ?? "");
+        const quantity = Number(task.parameters.quantity ?? 0);
+        if (item === "" || !Number.isFinite(quantity) || quantity <= 0) {
+          return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "project acquisition is missing a valid item or quantity", retryable: false };
+        }
+        return this.opts.ensureItem.run(item, quantity, {
+          mode: "ensure",
+          signals,
+          resumeState: task.resumeState as { interruptions?: number } | undefined,
+        });
+      }
       case "build_project_verify": {
         const manager = this.opts.buildProjects;
         const project = manager?.getProject(String(task.projectId ?? task.parameters.projectId ?? ""));

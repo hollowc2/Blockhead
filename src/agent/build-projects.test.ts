@@ -156,3 +156,82 @@ test("explicit cancellation of a project child cancels the parent and cannot res
     h.db.close();
   }
 });
+
+test("a survival shortage blocks the phase and schedules linked acquisition work", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    const phase = h.projects.getPhases(created.project.id)[0]!;
+    const settlement = manager.settleChildTask(created.task, {
+      ok: false,
+      status: "blocked",
+      errorCode: "INSUFFICIENT_MATERIALS",
+      message: "missing stone bricks",
+      data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] },
+    });
+
+    const project = h.projects.get(created.project.id)!;
+    const acquisition = h.tasks.loadUnfinished().find((task) => task.type === "build_project_acquire");
+    assert.equal(settlement, "block");
+    assert.equal(project.status, "blocked");
+    assert.deepEqual(project.shortages, [{ material: "stone_bricks", required: 8, available: 0 }]);
+    assert.equal(phase.status, "blocked");
+    assert.ok(acquisition);
+    assert.equal(acquisition?.projectId, project.id);
+    assert.equal(acquisition?.projectPhaseId, phase.id);
+    assert.equal(acquisition?.parameters.item, "stone_bricks");
+    assert.equal(acquisition?.parameters.quantity, 8);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("successful linked acquisition clears the shortage and resumes the same phase", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    manager.settleChildTask(created.task, {
+      ok: false,
+      status: "blocked",
+      errorCode: "INSUFFICIENT_MATERIALS",
+      data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] },
+    });
+    const acquisition = h.tasks.loadUnfinished().find((task) => task.type === "build_project_acquire")!;
+    assert.equal(manager.settleChildTask(acquisition, { ok: true, status: "completed", message: "acquired" }), "complete");
+
+    const project = h.projects.get(created.project.id)!;
+    const phase = h.projects.getPhases(project.id)[0]!;
+    assert.equal(project.status, "active");
+    assert.deepEqual(project.shortages, []);
+    assert.equal(phase.status, "active");
+    assert.ok(h.tasks.loadUnfinished().some((task) => task.workKey === `build-project:${project.id}:${phase.id}`));
+  } finally {
+    h.db.close();
+  }
+});
+
+test("retryable acquisition failure persists a bounded durable backoff", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const created = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin });
+    manager.settleChildTask(created.task, {
+      ok: false,
+      status: "blocked",
+      errorCode: "INSUFFICIENT_MATERIALS",
+      data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] },
+    });
+    const acquisition = h.tasks.loadUnfinished().find((task) => task.type === "build_project_acquire")!;
+    assert.equal(manager.settleChildTask(acquisition, { ok: false, status: "failed", retryable: true, message: "no safe route" }), "block");
+
+    const project = h.projects.get(created.project.id)!;
+    assert.equal(project.status, "blocked");
+    assert.ok(project.resumeState.retryAfter);
+    assert.ok(Date.parse(project.resumeState.retryAfter!) > Date.now());
+    assert.match(project.lastError ?? "", /no safe route/);
+  } finally {
+    h.db.close();
+  }
+});

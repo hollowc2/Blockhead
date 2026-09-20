@@ -74,6 +74,8 @@ export class BuildProjectManager {
         ? this.scheduleNextWork(project.id)
         : project.status === "verifying"
           ? this.scheduleFinalVerification(project.id)
+          : project.status === "blocked"
+            ? this.scheduleDueAcquisition(project.id)
           : null;
       if (task !== null) {
         logger.info({ projectId: project.id, phaseId: task.projectPhaseId, taskId: task.id }, "build project rehydrated");
@@ -243,6 +245,10 @@ export class BuildProjectManager {
       return result.status === "failed" && result.retryable !== true ? "fail" : "requeue";
     }
 
+    if (task.type === "build_project_acquire") {
+      return this.settleAcquisition(project, task, result, now);
+    }
+
     if (phase === undefined) return "none";
     if (result.status === "completed") {
       const complete = isCompleteSlice(data, phase);
@@ -278,12 +284,13 @@ export class BuildProjectManager {
       phase.lastError = result.message ?? result.errorCode ?? "project phase blocked";
       this.projects.updatePhase(phase);
       project.status = "blocked";
-      project.shortages = data?.shortages ?? project.shortages;
+      project.shortages = this.phaseShortages(project, phase, data?.shortages ?? []);
       project.lastError = phase.lastError;
       project.updatedAt = now;
       this.projects.update(project);
       this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "blocked", details: { shortages: project.shortages, error: phase.lastError }, createdAt: now });
       this.bus.emit("build_project.blocked", { project, phase });
+      this.scheduleAcquisition(project, phase, task.id, now);
       return "block";
     }
 
@@ -301,6 +308,104 @@ export class BuildProjectManager {
     this.projects.update(project);
     this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "failed", details: { error: phase.lastError }, createdAt: now });
     return "fail";
+  }
+
+  /** Create one deterministic acquisition task per current shortage. */
+  private scheduleAcquisition(project: BuildProject, phase: BuildPhase, blockedTaskId: string, now: string): Task[] {
+    const tasks: Task[] = [];
+    for (const shortage of project.shortages) {
+      const quantity = Math.max(0, Math.ceil(shortage.required - shortage.available));
+      if (quantity <= 0) continue;
+      const workKey = `build-project:${project.id}:${phase.id}:acquire:${shortage.material}`;
+      const task = this.scheduler.enqueue({
+        type: "build_project_acquire",
+        priority: TaskPriority.FOREGROUND,
+        source: project.source,
+        objective: `Acquire ${quantity} ${shortage.material} for ${project.structureType}.`,
+        parameters: { projectId: project.id, phaseId: phase.id, item: shortage.material, quantity, blueprintHash: project.blueprintHash },
+        projectId: project.id,
+        projectPhaseId: phase.id,
+        executionPolicy: "resumable",
+        workKey,
+      });
+      tasks.push(task);
+      this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_scheduled", details: { material: shortage.material, quantity, blockedTaskId, workKey }, createdAt: now });
+    }
+    return tasks;
+  }
+
+  /** Recreate due acquisition work after a restart without planner involvement. */
+  private scheduleDueAcquisition(projectId: string): Task | null {
+    const project = this.projects.get(projectId);
+    if (project === null || project.status !== "blocked") return null;
+    if (project.resumeState.retryAfter !== undefined && Date.parse(project.resumeState.retryAfter) > Date.now()) return null;
+    const phase = project.currentPhaseId === undefined ? undefined : this.projects.getPhases(project.id).find((item) => item.id === project.currentPhaseId);
+    if (phase === undefined) return null;
+    return this.scheduleAcquisition(project, phase, "rehydrate", new Date().toISOString())[0] ?? null;
+  }
+
+  private settleAcquisition(project: BuildProject, task: Task, result: SkillResult, now: string): ProjectTaskSettlement {
+    const material = String(task.parameters.item ?? "");
+    const phase = task.projectPhaseId === undefined
+      ? undefined
+      : this.projects.getPhases(project.id).find((candidate) => candidate.id === task.projectPhaseId);
+    if (phase === undefined || material === "") return "fail";
+
+    if (result.status === "completed") {
+      project.shortages = project.shortages.filter((shortage) => shortage.material !== material);
+      project.resumeState = { ...project.resumeState, retryAfter: undefined };
+      project.updatedAt = now;
+      this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_completed", details: { material, quantity: task.parameters.quantity }, createdAt: now });
+      if (project.shortages.length === 0) {
+        phase.status = "active";
+        phase.lastError = undefined;
+        project.status = "active";
+        project.lastError = undefined;
+        this.projects.updatePhase(phase);
+        this.projects.update(project);
+        this.scheduleNextWork(project.id);
+      } else {
+        // Keep the parent blocked until every known material bill is
+        // satisfied; this prevents a resumed slice from racing another
+        // acquisition task when a phase has multiple shortages.
+        this.projects.update(project);
+        this.scheduleAcquisition(project, phase, task.id, now);
+      }
+      return "complete";
+    }
+
+    if (result.status === "failed" && result.retryable === true) {
+      const attempts = task.attempts ?? 1;
+      const delayMs = Math.min(60 * 60_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+      project.status = "blocked";
+      project.resumeState = { ...project.resumeState, retryAfter: new Date(Date.now() + delayMs).toISOString() };
+      project.lastError = result.message ?? result.errorCode ?? `acquisition retry scheduled for ${material}`;
+      project.updatedAt = now;
+      this.projects.update(project);
+      this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_backoff", details: { material, retryAfter: project.resumeState.retryAfter, attempts }, createdAt: now });
+      return "block";
+    }
+
+    if (result.status === "partial" || result.status === "interrupted") return "requeue";
+
+    project.status = "blocked";
+    project.lastError = result.message ?? result.errorCode ?? `acquisition failed for ${material}`;
+    project.updatedAt = now;
+    this.projects.update(project);
+    this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "acquisition_failed", details: { material, retryable: false, error: project.lastError }, createdAt: now });
+    return "block";
+  }
+
+  private phaseShortages(project: BuildProject, phase: BuildPhase, reported: Array<{ material: string; required: number; available: number }>): BuildProject["shortages"] {
+    const bill: Record<string, number> = {};
+    for (let index = phase.operationStart; index < phase.operationEnd; index += 1) {
+      const material = project.blueprint.operations[index]?.material;
+      if (material !== undefined) bill[material] = (bill[material] ?? 0) + 1;
+    }
+    return Object.entries(bill).flatMap(([material, required]) => {
+      const observed = reported.find((shortage) => shortage.material === material);
+      return observed === undefined ? [] : [{ material, required: Math.min(required, observed.required), available: observed.available }];
+    });
   }
 
   /** Queue final reconciliation after all deterministic phase tasks finish. */
