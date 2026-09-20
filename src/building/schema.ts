@@ -37,5 +37,16 @@ export const BuildingDesignSchema = z.object({
   orientation: z.enum(["north", "south", "east", "west"]).default("north"), scale: z.enum(["small", "medium", "large"]).default("medium"),
   palette: PaletteSchema, components: z.array(BuildingComponentSchema).min(1).max(64),
   decoration: z.object({ interior: z.boolean().default(true), colorful: z.boolean().default(false), lighting: z.boolean().default(true) }).optional(),
-});
-export type BuildingDesign = z.infer<typeof BuildingDesignSchema>;
+}).transform((design) => ({
+  ...design,
+  // Component IDs were not part of the original design format. Generate
+  // deterministic IDs for legacy/LLM designs so compiler provenance does not
+  // depend on object identity or a random UUID.
+  components: design.components.map((component, index) => ({
+    ...component,
+    id: component.id ?? `component-${String(index + 1).padStart(3, "0")}`,
+  })),
+}));
+export type BuildingDesign = z.output<typeof BuildingDesignSchema>;
+
+export const BUILDING_SCHEMA_VERSION = "1.0.0";
