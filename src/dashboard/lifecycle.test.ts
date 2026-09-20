@@ -9,7 +9,7 @@ const snapshot = (): DashboardSnapshot => ({
   connection: { connected: false, player: null, server: null },
   viewer: { enabled: false, status: "stopped", port: 0, distance: 0, failure: null },
   self: { health: null, hunger: null, position: null, dimension: null, timePhase: null },
-  goal: null, task: null, action: { label: "Standing by", taskId: null }, background: { label: "Standing by", taskId: null },
+  goal: null, task: null, buildProject: null, action: { label: "Standing by", taskId: null }, background: { label: "Standing by", taskId: null },
   stockpiles: null, inventory: null, danger: null,
   llmLastCall: { at: null, latencyMs: null, tool: null, rationale: null },
   llmActivity: { state: "not_called", thinking: false, decisionType: null, thinkingStartedAt: null, thinkingDurationMs: null, model: null, endpoint: null, lastAction: null, lastRationale: null, lastLatencyMs: null, lastFailure: null },

@@ -253,6 +253,8 @@ export interface EventMap {
   "build_project.created": BuildProjectEvent;
   "build_project.rehydrated": BuildProjectEvent;
   "build_project.scheduled": BuildProjectEvent;
+  "build_project.phase_changed": BuildProjectEvent;
+  "build_project.slice_checkpointed": BuildProjectEvent;
   "build_project.blocked": BuildProjectEvent;
   "build_project.verified": BuildProjectEvent;
   death: DeathEvent;

@@ -2,6 +2,7 @@ import type { Bot } from "mineflayer";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { AgentState } from "../agent/state.js";
 import type { Scheduler } from "../agent/scheduler.js";
+import type { BuildProjectManager } from "../agent/build-projects.js";
 import type { GoalManager } from "../agent/goals.js";
 import type { StockpileManager } from "../agent/maintenance.js";
 import type { HostileTracker } from "../minecraft/entities.js";
@@ -17,6 +18,7 @@ import {
   projectPosition,
   projectStockpiles,
   projectTask,
+  projectBuildProject,
   projectLlmLastCall,
   projectLlmActivity,
 } from "./projections.js";
@@ -37,6 +39,7 @@ export interface DashboardTelemetrySource {
   hostile(): HostileTracker | null;
   state: AgentState;
   scheduler: Scheduler;
+  buildProjects?: BuildProjectManager;
   goals(): GoalManager | null;
   decider?: DecisionMaker | null;
   client?: LlamaClient | null;
@@ -62,6 +65,7 @@ export class DashboardTelemetryCollector {
     const hostile = this.source.hostile();
     const activeTask = this.source.scheduler.active;
     const activeGoal = this.source.goals()?.active() ?? null;
+    const buildProject = this.source.buildProjects?.currentProject() ?? null;
     const nearestHostile = hostile?.nearest() ?? null;
     const lastCall = this.source.decider?.lastCall ?? null;
     const viewer = this.source.viewer?.() ?? { enabled: false, status: "stopped" as const, port: 0, distance: 0, failure: null };
@@ -106,6 +110,7 @@ export class DashboardTelemetryCollector {
       },
       goal: projectGoal(activeGoal),
       task: projectTask(activeTask),
+      buildProject: projectBuildProject(buildProject),
       action: { label: actionForTask(activeTask), taskId: activeTask?.id ?? null },
       background: {
         label: activeTask === null ? "Standing by" : actionForTask(activeTask),

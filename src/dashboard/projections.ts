@@ -1,8 +1,9 @@
 import type { Goal } from "../agent/goal.js";
 import type { StockpileSnapshot } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
+import type { BuildProjectStatusView } from "../agent/build-projects.js";
 import type { LlmActivity as DeciderLlmActivity, LlmCallRecord } from "../llm/decider.js";
-import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, LlmActivity, LlmDecisionType, LlmFailureSummary, LlmLastCallSummary } from "./types.js";
+import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, BuildProjectSummary, LlmActivity, LlmDecisionType, LlmFailureSummary, LlmLastCallSummary } from "./types.js";
 
 export interface PositionInput { x: number; y: number; z: number }
 
@@ -14,6 +15,28 @@ export function projectPosition(position: PositionInput | null | undefined): Das
 export function projectTask(task: Task | null | undefined): TaskSummary | null {
   if (task === null || task === undefined) return null;
   return { id: task.id, type: task.type, priority: task.priority, source: task.source, objective: task.objective, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt ?? null, completedAt: task.completedAt ?? null, phase: task.phase ?? null, attempts: task.attempts ?? null, lastError: task.lastError ?? null };
+}
+
+export function projectBuildProject(view: BuildProjectStatusView | null | undefined): BuildProjectSummary | null {
+  if (view === null || view === undefined) return null;
+  const { project, phase } = view;
+  return {
+    id: project.id,
+    structureType: project.structureType,
+    status: project.status,
+    phase: phase === null ? null : {
+      id: phase.id,
+      label: phase.label,
+      status: phase.status,
+      verifiedOperations: phase.verifiedOperations,
+      totalOperations: phase.totalOperations,
+    },
+    verifiedOperations: project.verificationState.verifiedOperations,
+    totalOperations: project.verificationState.totalOperations,
+    currentShortage: project.shortages[0] ?? null,
+    lastBlockingReason: project.status === "blocked" ? project.lastError ?? null : null,
+    blueprintHash: project.blueprintHash,
+  };
 }
 
 export function projectGoal(goal: Goal | null | undefined): GoalSummary | null {

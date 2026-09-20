@@ -209,6 +209,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   hostile: () => session?.hostile ?? null,
   state,
   scheduler,
+  buildProjects: buildProjectManager,
   goals: () => goals,
   decider,
   client,
@@ -251,6 +252,7 @@ statusServer = new StatusServer({
     client: { endpoint: client.endpoint, modelName: client.modelName, healthState: client.healthState, reachable: client.healthState === "unknown" ? null : client.healthState === "ok", lastSuccessAt: client.lastSuccessAt, consecutiveFailures: client.consecutiveFailures, lastFailure: client.lastFailure },
     inDeathLoop: deathManager.inDeathLoop,
     outcomes: taskOutcomes,
+    buildProjects: buildProjectManager,
   }),
 });
 if (config.status?.enabled ?? true) statusServer.start();
@@ -405,7 +407,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // moment the previous one settles.
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33

@@ -17,6 +17,7 @@ import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { GoalManager } from "./goals.js";
+import type { BuildProjectManager } from "./build-projects.js";
 import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriterion } from "./goal.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
@@ -72,6 +73,8 @@ export interface BackgroundManagerOptions {
    * configs without one run the director exactly as before).
    */
   goals?: GoalManager;
+  /** Active durable construction projects suppress director replanning. */
+  buildProjects?: BuildProjectManager;
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -271,6 +274,11 @@ export class BackgroundManager {
     // user relocates the bot or the spawn.
     if (this.opts.inDeathLoop?.() === true) return;
 
+    const projectView = this.opts.buildProjects?.currentProject() ?? null;
+    const resumableProject = projectView !== null
+      && projectView.project.source === "user"
+      && (projectView.project.status === "active" || projectView.project.status === "paused" || projectView.project.status === "verifying");
+
     // Phase 8: home storage is load-bearing for every deposit/stockpile
     // path — a missing chest makes restores deliver nothing and retry
     // forever ("hunted the food but could not deposit it"). Bootstrap runs
@@ -326,6 +334,29 @@ export class BackgroundManager {
       this.opts.maintenance.runMaintenance(crisis, { preempt: true });
       return; // the task-settled hook re-checks when the run ends.
     }
+
+    // A project owns the foreground while it is active or resumable. At a
+    // slice boundary, let the existing automatic sleep skill run first when
+    // the bot is home at night; the project task then resumes from its
+    // persisted checkpoint after sleep completes. A running slice is never
+    // cancelled merely because night began.
+    if (resumableProject && scheduler.active === null && this.shouldSleepAtHome()) {
+      scheduler.enqueue({
+        type: "sleep",
+        priority: TaskPriority.INTERRUPT,
+        source: "background",
+        objective: "Sleep until morning before resuming construction.",
+        parameters: {},
+        workKey: "automatic-night-sleep",
+      });
+      scheduler.claim();
+      return;
+    }
+
+    // The LLM director never replans around an active/resumable foreground
+    // project. Known deterministic prerequisites remain owned by the project
+    // manager and are allowed to rehydrate independently.
+    if (resumableProject) return;
 
     // Phase 13: the LLM director decides what to do next. Foreground user
     // work always owns the floor, and a running task is left alone — the
@@ -389,6 +420,13 @@ export class BackgroundManager {
       this.lastDecisionAt = now;
       await this.deterministicFallback(snapshot);
     }
+  }
+
+  private shouldSleepAtHome(): boolean {
+    if (this.opts.config.behavior?.auto_sleep === false || this.opts.state.timePhase !== "night") return false;
+    const home = this.opts.state.home;
+    const self = this.opts.bot.entity?.position;
+    return home !== null && self !== null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS;
   }
 
   private async worldProbe<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {

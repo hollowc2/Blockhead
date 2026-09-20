@@ -2,7 +2,7 @@ import { deepStrictEqual, equal } from "node:assert/strict";
 import test from "node:test";
 import { GoalStatus } from "../agent/goal.js";
 import { TaskPriority, TaskStatus } from "../agent/task.js";
-import { projectGoal, projectInventory, projectPosition, projectStockpiles, projectTask } from "./projections.js";
+import { projectBuildProject, projectGoal, projectInventory, projectPosition, projectStockpiles, projectTask } from "./projections.js";
 
 const task = { id: "task-1", type: "collect_resource", priority: TaskPriority.FOREGROUND, source: "user" as const, objective: "Collect oak logs", parameters: { resource: "oak_log" }, status: TaskStatus.ACTIVE, createdAt: "2026-09-16T10:00:00.000Z", startedAt: "2026-09-16T10:01:00.000Z", attempts: 1 };
 
@@ -25,6 +25,26 @@ test("projects goals, positions, inventory, and stockpiles", () => {
   deepStrictEqual(projectPosition({ x: 1.5, y: 64, z: -2 }), { x: 1.5, y: 64, z: -2 });
   deepStrictEqual(projectInventory({ stone: 3, oak_log: 2 }), { items: [{ name: "oak_log", count: 2 }, { name: "stone", count: 3 }], totalItems: 5 });
   deepStrictEqual(projectStockpiles({ levels: { wood: 2, food: 64, fuel: 4, torches: 8 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [{ kind: "wood", target: 64, current: 2, deficit: 62, crisis: true }] }), { levels: { wood: 2, food: 64, fuel: 4, torches: 8 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [{ kind: "wood", level: 2, target: 64, deficit: 62, crisis: true }] });
+});
+
+test("projects durable construction progress and blocking details", () => {
+  const projected = projectBuildProject({
+    project: {
+      id: "project-1", userGoal: "Build a castle", structureType: "castle", source: "user", status: "blocked",
+      design: {} as never, origin: { x: 0, y: 64, z: 0, dimension: "overworld" }, compilerVersion: "c1", schemaVersion: "s1",
+      blueprintHash: "hash", blueprint: { operations: [], estimates: { blocks: 0, materials: {} }, origin: { x: 0, y: 64, z: 0, dimension: "overworld" }, footprint: { width: 1, depth: 1, height: 1 } },
+      currentPhaseId: "phase-1", requiredResources: {}, shortages: [{ material: "stone", required: 8, available: 2 }],
+      resumeState: { currentOperationIndex: 2, completedRanges: [], interruptedCount: 1 }, verificationState: { verifiedOperations: 2, totalOperations: 10, finalVerificationPassed: false },
+      createdAt: "now", updatedAt: "now", lastError: "waiting for stone",
+    },
+    phase: { id: "phase-1", projectId: "project-1", ordinal: 0, label: "shell-001", operationStart: 0, operationEnd: 10, status: "blocked", attempts: 1, verifiedOperations: 2, totalOperations: 10 },
+  });
+  deepStrictEqual(projected, {
+    id: "project-1", structureType: "castle", status: "blocked",
+    phase: { id: "phase-1", label: "shell-001", status: "blocked", verifiedOperations: 2, totalOperations: 10 },
+    verifiedOperations: 2, totalOperations: 10, currentShortage: { material: "stone", required: 8, available: 2 },
+    lastBlockingReason: "waiting for stone", blueprintHash: "hash",
+  });
 });
 
 test("outputs are JSON-safe and inputs are unchanged", () => {

@@ -48,6 +48,12 @@ export interface CreateBuildProjectResult {
   resumed: boolean;
 }
 
+/** Small read-only view used by operator/status projections. */
+export interface BuildProjectStatusView {
+  project: BuildProject;
+  phase: BuildPhase | null;
+}
+
 /** Durable coordinator for creation, rehydration, and child-task identity. */
 export class BuildProjectManager {
   constructor(
@@ -173,6 +179,17 @@ export class BuildProjectManager {
     return this.projects.get(projectId);
   }
 
+  /** Return the most recently updated unfinished project for telemetry and gates. */
+  currentProject(): BuildProjectStatusView | null {
+    const project = this.projects.loadUnfinished()
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    if (project === undefined) return null;
+    const phase = project.currentPhaseId === undefined
+      ? null
+      : this.projects.getPhases(project.id).find((candidate) => candidate.id === project.currentPhaseId) ?? null;
+    return { project, phase };
+  }
+
   /**
    * Apply a child outcome to the durable project state before the dispatcher
    * settles the child task. Returning the settlement keeps task state and
@@ -273,6 +290,7 @@ export class BuildProjectManager {
         project.updatedAt = now;
         this.projects.update(project);
         this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "phase_completed", details: { nextPhaseId: next.id }, createdAt: now });
+        this.bus.emit("build_project.phase_changed", { project, phase: next, task });
         this.scheduleNextWork(project.id);
         return "complete";
       }
@@ -470,6 +488,7 @@ export class BuildProjectManager {
     this.projects.updatePhase(phase);
     this.projects.update(project);
     this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId, kind: "slice_checkpointed", details: { currentOperationIndex: cursor, verified: data?.verified ?? 0, remaining: data?.remaining ?? null }, createdAt: now });
+    this.bus.emit("build_project.slice_checkpointed", { project, phase, task: this.scheduler.active ?? undefined });
   }
 }
 

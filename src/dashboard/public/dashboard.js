@@ -11,6 +11,11 @@
     $("dimension").textContent = text(s.self?.dimension); $("timePhase").textContent = text(s.self?.timePhase);
     $("goal").textContent = s.goal ? `${s.goal.description} (${s.goal.status})` : "No active goal";
     $("task").textContent = s.task ? `${s.task.objective} (${s.task.status})` : "No active task"; $("action").textContent = text(s.action?.label);
+    const project = s.buildProject; const phase = project?.phase;
+    $("project").textContent = project ? `${project.structureType} (${project.status})` : "No active project";
+    $("projectPhase").textContent = phase ? `${phase.label} (${phase.status})` : "—";
+    $("projectProgress").textContent = project ? `${project.verifiedOperations} / ${project.totalOperations}` : "—";
+    $("projectBlock").textContent = project?.currentShortage ? `${project.currentShortage.material}: ${project.currentShortage.required - project.currentShortage.available} missing` : (project?.lastBlockingReason || "—");
     const llm = s.llmActivity || {}; $("llmState").textContent = llm.thinking ? "Thinking..." : text(llm.state, "Unknown"); $("decision").textContent = text(llm.decisionType); $("rationale").textContent = text(llm.lastRationale || s.llmLastCall?.rationale); $("llmFailure").textContent = llm.lastFailure ? `${llm.lastFailure.kind}: ${llm.lastFailure.error}` : "None";
     const stocks = $("stockpiles"); stocks.replaceChildren(); const deficits = s.stockpiles?.deficits || []; if (!deficits.length) stocks.textContent = s.stockpiles ? "No deficits" : "No stockpile data"; deficits.forEach((d) => { const row = document.createElement("div"); row.textContent = `${d.kind}: ${text(d.level, "?")} / ${text(d.target, "?")}${d.crisis ? " · CRISIS" : ""}`; stocks.append(row); });
     const items = s.inventory?.items || []; list("inventory", items, (row, item) => { row.textContent = `${item.name}: ${item.count}`; });

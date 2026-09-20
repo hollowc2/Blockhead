@@ -1,6 +1,7 @@
 import type { GoalStatus, GoalSource, SuccessCriterion } from "../agent/goal.js";
 import type { StockpileKind } from "../agent/maintenance.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
+import type { BuildProjectStatus, BuildPhaseStatus, BuildMaterialShortage } from "../memory/build-projects.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -12,6 +13,17 @@ export interface GoalCriterionSummary { kind: SuccessCriterion["kind"]; stockpil
 export interface GoalResultSummary { action: string; outcome: string; message: string | null; at: string }
 export interface GoalSummary { id: string; description: string; source: GoalSource; status: GoalStatus; createdAt: string; currentStep: string | null; successCriteria: readonly GoalCriterionSummary[]; recentResults: readonly GoalResultSummary[]; note: string | null; endedAt: string | null }
 export interface TaskSummary { id: string; type: string; priority: TaskPriority; source: TaskSource; objective: string; status: TaskStatus; createdAt: string; startedAt: string | null; completedAt: string | null; phase: string | null; attempts: number | null; lastError: string | null }
+export interface BuildProjectSummary {
+  id: string;
+  structureType: string;
+  status: BuildProjectStatus;
+  phase: { id: string; label: string; status: BuildPhaseStatus; verifiedOperations: number; totalOperations: number } | null;
+  verifiedOperations: number;
+  totalOperations: number;
+  currentShortage: BuildMaterialShortage | null;
+  lastBlockingReason: string | null;
+  blueprintHash: string;
+}
 export interface ActionLabel { label: string; taskId: string | null }
 export interface BackgroundActivity { label: string; taskId: string | null }
 export interface StockpileLine { kind: StockpileKind; level: number | null; target: number | null; deficit: number | null; crisis: boolean | null }
@@ -51,6 +63,7 @@ export interface DashboardSnapshot {
   self: SelfSummary;
   goal: GoalSummary | null;
   task: TaskSummary | null;
+  buildProject: BuildProjectSummary | null;
   action: ActionLabel;
   background: BackgroundActivity;
   stockpiles: StockpileSummary | null;
