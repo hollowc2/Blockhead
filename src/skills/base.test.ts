@@ -17,7 +17,9 @@ import {
   simpleStructureDecorations,
   simpleStructureDoorCells,
   type BaseLayout,
+  BaseBuilderRunner,
 } from "./base.js";
+import type { Blueprint } from "../building/compiler.js";
 
 /**
  * The centralized stockpile base: placement must be deterministic and
@@ -305,4 +307,75 @@ test("placement reach is checked from the bot eye to the reference face", () => 
   assert.equal(isPlacementWithinReach(bot, reference, new Vec3(0, 1, 0)), true);
   const distant = { position: new Vec3(0, 64, 6) } as Block;
   assert.equal(isPlacementWithinReach(bot, distant, new Vec3(0, 1, 0)), false);
+});
+
+function designTestRunner(world: Record<string, string>): BaseBuilderRunner {
+  const key = (v: Vec3): string => `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}`;
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    game: { dimension: "overworld" },
+    blockAt: (v: Vec3) => {
+      const name = world[key(v)];
+      return name === undefined ? null : { name, boundingBox: name === "air" ? "empty" : "block" } as Block;
+    },
+    inventory: { items: () => [] },
+  } as unknown as Bot;
+  const runner = Object.create(BaseBuilderRunner.prototype) as BaseBuilderRunner;
+  const mutable = runner as unknown as { opts: { bot: Bot; config: { building?: object }; state: object }; travelToSimpleAnchor: () => Promise<{ status: "already_there" }> };
+  mutable.opts = { bot, config: {}, state: {} };
+  mutable.travelToSimpleAnchor = async () => ({ status: "already_there" });
+  return runner;
+}
+
+test("design verification checks an exact range and reports corrupted cells", () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [
+      { id: "op-0", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true },
+      { id: "op-1", x: 1, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true },
+      { id: "op-2", x: 2, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true },
+    ],
+    estimates: { blocks: 3, materials: { stone: 3 } },
+    footprint: { width: 3, depth: 1, height: 1 },
+  };
+  const runner = designTestRunner({ "0,64,0": "stone", "1,64,0": "dirt", "2,64,0": "stone" });
+  const result = runner.verifyDesignOperations(blueprint, 0, 2);
+  assert.deepEqual(result, {
+    operationStart: 0,
+    operationEnd: 2,
+    inspected: 2,
+    verified: 1,
+    mismatches: [{ operationId: "op-1", expected: "stone", actual: "dirt" }],
+  });
+});
+
+test("design slices stop at their operation budget and resume from the checkpoint cursor", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [0, 1, 2].map((x) => ({ id: `op-${x}`, x, y: 0, z: 0, material: "stone", phase: "structural_shell" as const, replaceExisting: false, structural: true })),
+    estimates: { blocks: 3, materials: { stone: 3 } },
+    footprint: { width: 3, depth: 1, height: 1 },
+  };
+  const runner = designTestRunner({ "0,64,0": "stone", "1,64,0": "stone", "2,64,0": "stone" });
+  const first = await runner.runDesignSlice(blueprint, { phaseId: "phase-1", operationStart: 0, operationEnd: 3, maxOperations: 2 });
+  assert.equal(first.status, "partial");
+  assert.equal(first.data?.currentOperationIndex, 2);
+  assert.equal(first.data?.remaining, 1);
+  const resumed = await runner.runDesignSlice(blueprint, {
+    phaseId: "phase-1",
+    operationStart: 0,
+    operationEnd: 3,
+    resumeState: {
+      interruptions: 0,
+      operationStart: 0,
+      operationEnd: 3,
+      currentOperationIndex: first.data!.currentOperationIndex,
+      inspected: first.data!.inspected,
+      verified: first.data!.verified,
+      placed: first.data!.placed,
+    },
+  });
+  assert.equal(resumed.status, "completed");
+  assert.equal(resumed.data?.verified, 3);
+  assert.equal(resumed.data?.remaining, 0);
 });

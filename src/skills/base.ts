@@ -589,10 +589,59 @@ export interface BaseRunOptions {
   /** Cooperative signals from the owning scheduler task; null for unbound runs. */
   signals?: TaskSignals;
   /** Resume state from a paused run of the same task. */
-  resumeState?: BaseResumeState;
+  resumeState?: BaseResumeState | DesignSliceResumeState;
 }
 
 export interface DesignBuildData { operations: number; placed: number; remaining: number; estimate: Record<string, number>; interruptions: number; }
+
+/** Durable cursor and aggregate counters for one bounded design slice. */
+export interface DesignSliceResumeState extends BaseResumeState {
+  projectId?: string;
+  phaseId?: string;
+  operationStart: number;
+  operationEnd: number;
+  currentOperationIndex: number;
+  inspected: number;
+  verified: number;
+  placed: number;
+}
+
+export interface DesignSliceData {
+  projectId?: string;
+  phaseId: string;
+  operationStart: number;
+  operationEnd: number;
+  inspected: number;
+  verified: number;
+  placed: number;
+  remaining: number;
+  firstUnresolvedOperationId?: string;
+  shortages: Array<{ material: string; required: number; available: number }>;
+  mismatchSamples: Array<{ operationId: string; expected: string; actual?: string }>;
+  /** Last operation examined; useful when a slice yields before its end. */
+  currentOperationIndex: number;
+  interruptions: number;
+  estimate: Record<string, number>;
+}
+
+export interface DesignSliceOptions extends BaseRunOptions {
+  phaseId: string;
+  operationStart: number;
+  operationEnd: number;
+  projectId?: string;
+  /** Maximum operations inspected in this invocation. Defaults to the range size. */
+  maxOperations?: number;
+  /** Wall-clock budget for this invocation. Defaults to five minutes. */
+  maxElapsedMs?: number;
+}
+
+export interface DesignVerificationData {
+  operationStart: number;
+  operationEnd: number;
+  inspected: number;
+  verified: number;
+  mismatches: Array<{ operationId: string; expected: string; actual?: string }>;
+}
 
 /**
  * Deterministic `build_base` skill: measure the shed, gather the missing
@@ -805,72 +854,156 @@ export class BaseBuilderRunner {
     }
   }
 
-  /** Execute a frozen, validated declarative blueprint using the same lease,
-   * movement, cancellation and authoritative placement path as simple builds. */
-  async runDesign(design: BuildingDesign, origin: HomeLocation, options: BaseRunOptions = {}): Promise<SkillResult<DesignBuildData>> {
+  /** Verify an exact operation range against the authoritative live world. */
+  verifyDesignOperations(blueprint: Blueprint, operationStart = 0, operationEnd = blueprint.operations.length, maxMismatchSamples = 32): DesignVerificationData {
+    const start = Math.max(0, Math.min(operationStart, blueprint.operations.length));
+    const end = Math.max(start, Math.min(operationEnd, blueprint.operations.length));
+    const mismatches: DesignVerificationData["mismatches"] = [];
+    let verified = 0;
+    for (let index = start; index < end; index += 1) {
+      const operation = blueprint.operations[index]!;
+      const cell = new Vec3(operation.absolute?.x ?? blueprint.origin.x + operation.x, operation.absolute?.y ?? blueprint.origin.y + operation.y, operation.absolute?.z ?? blueprint.origin.z + operation.z);
+      const block = this.opts.bot.blockAt(cell);
+      const actual = block === null ? undefined : bareName(block.name);
+      if (actual === operation.material) verified += 1;
+      else if (mismatches.length < maxMismatchSamples) mismatches.push({ operationId: operation.id, expected: operation.material, actual });
+    }
+    return { operationStart: start, operationEnd: end, inspected: end - start, verified, mismatches };
+  }
+
+  /** Execute one bounded, resumable range from an already-frozen blueprint. */
+  async runDesignSlice(blueprint: Blueprint, options: DesignSliceOptions): Promise<SkillResult<DesignSliceData>> {
     if (this.running) return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "another build is already running" };
-    this.running = true; this.signals = options.signals ?? null; this.stopRequested = false; this.interruptions = options.resumeState?.interruptions ?? 0;
-    const data: DesignBuildData = { operations: 0, placed: 0, remaining: 0, estimate: {}, interruptions: this.interruptions };
+    const operationStart = Math.max(0, Math.min(options.operationStart, blueprint.operations.length));
+    const operationEnd = Math.max(operationStart, Math.min(options.operationEnd, blueprint.operations.length));
+    const resume = options.resumeState as Partial<DesignSliceResumeState> | undefined;
+    const resumeCursor = resume?.operationStart === operationStart && resume.operationEnd === operationEnd
+      ? Math.max(operationStart, Math.min(resume.currentOperationIndex ?? operationStart, operationEnd))
+      : operationStart;
+    const data: DesignSliceData = {
+      projectId: options.projectId,
+      phaseId: options.phaseId,
+      operationStart,
+      operationEnd,
+      inspected: 0,
+      verified: resume?.verified ?? 0,
+      placed: resume?.placed ?? 0,
+      remaining: operationEnd - resumeCursor,
+      shortages: [],
+      mismatchSamples: [],
+      currentOperationIndex: resumeCursor,
+      interruptions: resume?.interruptions ?? 0,
+      estimate: blueprint.estimates.materials,
+    };
+    const startedAt = Date.now();
+    const maxOperations = options.maxOperations ?? operationEnd - operationStart;
+    const maxElapsedMs = options.maxElapsedMs ?? 5 * 60_000;
+    const limits = { ...DEFAULT_BUILDING_LIMITS, allowedMaterials: this.opts.config.building?.allowed_materials ?? DEFAULT_BUILDING_LIMITS.allowedMaterials, allowDemolition: this.opts.config.building?.allow_demolition ?? false };
+    const checkpoint = (operation: Blueprint["operations"][number]): boolean => {
+      data.remaining = operationEnd - data.currentOperationIndex;
+      const state: DesignSliceResumeState = {
+        interruptions: this.interruptions,
+        phase: operation.phase,
+        placed: data.placed,
+        total: operationEnd - operationStart,
+        operationStart,
+        operationEnd,
+        currentOperationIndex: data.currentOperationIndex,
+        inspected: data.inspected,
+        verified: data.verified,
+        projectId: options.projectId,
+        phaseId: options.phaseId,
+      };
+      return this.signals?.checkpoint(state) ?? true;
+    };
+    this.running = true;
+    this.signals = options.signals ?? null;
+    this.stopRequested = false;
+    this.interruptions = resume?.interruptions ?? 0;
     try {
-      const limits = { ...DEFAULT_BUILDING_LIMITS, maxWidth: this.opts.config.building?.max_width ?? DEFAULT_BUILDING_LIMITS.maxWidth, maxDepth: this.opts.config.building?.max_depth ?? DEFAULT_BUILDING_LIMITS.maxDepth, maxHeight: this.opts.config.building?.max_height ?? DEFAULT_BUILDING_LIMITS.maxHeight, maxOperations: this.opts.config.building?.max_operations ?? DEFAULT_BUILDING_LIMITS.maxOperations, maxComponents: this.opts.config.building?.max_components ?? DEFAULT_BUILDING_LIMITS.maxComponents, allowedMaterials: this.opts.config.building?.allowed_materials ?? DEFAULT_BUILDING_LIMITS.allowedMaterials, allowDemolition: this.opts.config.building?.allow_demolition ?? false };
-      const home = this.opts.state.home;
-      if (home !== null && origin.dimension.replace(/^minecraft:/, "") === home.dimension.replace(/^minecraft:/, "") && Math.hypot(origin.x - home.x, origin.z - home.z) > (this.opts.config.building?.max_anchor_distance ?? DEFAULT_BUILDING_LIMITS.maxAnchorDistance)) return { ok: false, status: "blocked", errorCode: "ANCHOR_TOO_FAR", message: "design anchor is outside the configured build distance", data };
-      let blueprint: Blueprint; try { blueprint = compileBuildingDesign(design, origin, limits); } catch (err) { return { ok: false, status: "failed", errorCode: "INVALID_DESIGN", message: String(err instanceof Error ? err.message : err), data }; }
-      data.operations = blueprint.operations.length; data.estimate = blueprint.estimates.materials;
       if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
-      const approach = new Vec3(origin.x - 2, origin.y, origin.z - 2);
-      const travel = await this.travelToSimpleAnchor(approach, origin.dimension); if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
-      // A single missed placement must not strand a large design. This is
-      // especially common in creative mode when the server corrects flight,
-      // a chunk is still loading, or the first pass has not exposed a usable
-      // neighboring reference block yet. Retry deferred operations in later
-      // passes so the rest of the structure can establish those references.
-      let pending = [...blueprint.operations];
-      const maxPasses = 4;
-      for (let pass = 0; pass < maxPasses && pending.length > 0; pass++) {
-        const retry: Blueprint["operations"] = [];
-        let progress = 0;
-        for (const op of pending) {
-          const cell = new Vec3(origin.x + op.x, origin.y + op.y, origin.z + op.z);
-          this.checkInterrupt({ interruptions: this.interruptions, phase: op.phase, placed: data.placed, total: blueprint.operations.length });
-          if (this.stopRequested) return { ok: true, status: "interrupted", message: "design build paused", data };
-          const block = this.opts.bot.blockAt(cell);
-          if (block !== null && block.name.replace(/^minecraft:/, "") === op.material) { data.placed++; progress++; continue; }
-          if (block !== null && !isAir(block)) {
-            if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) {
-              data.remaining = pending.length;
-              return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${block.name}`, data };
-            }
-            await digBlock(this.opts.bot, block, this.signals?.signal);
-          }
-          let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === op.material) ?? null;
-          if (item === null && isCreativeMode(this.opts.bot)) {
-            const provisioned = await provideCreativeItem(this.opts.bot, op.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
-            if (provisioned.ok) item = provisioned.item;
-            else {
-              this.opts.logger.warn({ operationId: op.id, ...provisioned.diagnostics }, "design creative material provisioning failed");
-              data.remaining = pending.length;
-              return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `I could not obtain ${op.material.replaceAll("_", " ")} from the creative inventory: ${provisioned.diagnostics.finalReason}.`, data };
-            }
-          }
-          if (item === null) {
-            data.remaining = pending.length;
-            return { ok: false, status: "partial", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${op.material} at operation ${op.id}`, data };
-          }
-          if (await this.placeSimpleTarget(cell, item, op.material.endsWith("door"), new Set<string>(), (candidate) => candidate?.name.replace(/^minecraft:/, "") === op.material)) {
-            data.placed++; progress++;
-          } else {
-            retry.push(op);
-          }
-          if (!this.signals?.checkpoint({ interruptions: this.interruptions, phase: op.phase, placed: data.placed, total: blueprint.operations.length })) return { ok: true, status: "interrupted", message: "design build paused", data };
+      const travel = await this.travelToSimpleAnchor(new Vec3(blueprint.origin.x - 2, blueprint.origin.y, blueprint.origin.z - 2), blueprint.origin.dimension);
+      if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
+      for (let index = resumeCursor; index < operationEnd; index += 1) {
+        if (data.inspected >= maxOperations || Date.now() - startedAt >= maxElapsedMs) {
+          data.currentOperationIndex = index;
+          data.remaining = operationEnd - index;
+          return { ok: false, status: "partial", retryable: true, message: `design slice yielded with ${data.remaining} operations remaining`, data };
         }
-        pending = retry;
-        if (progress === 0) break;
+        const operation = blueprint.operations[index]!;
+        data.currentOperationIndex = index;
+        data.inspected += 1;
+        const cell = new Vec3(operation.absolute?.x ?? blueprint.origin.x + operation.x, operation.absolute?.y ?? blueprint.origin.y + operation.y, operation.absolute?.z ?? blueprint.origin.z + operation.z);
+        this.checkInterrupt({ phase: operation.phase, placed: data.placed, total: operationEnd - operationStart });
+        if (this.stopRequested) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
+        const existing = this.opts.bot.blockAt(cell);
+        if (bareName(existing?.name ?? "") === operation.material) {
+          data.verified += 1;
+          data.currentOperationIndex = index + 1;
+          if (!checkpoint(operation)) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
+          continue;
+        }
+        if (existing !== null && !isAir(existing)) {
+          if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) {
+            data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(existing.name) });
+            data.firstUnresolvedOperationId = operation.id;
+            data.remaining = operationEnd - index;
+            return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${existing.name}`, data };
+          }
+          await digBlock(this.opts.bot, existing, this.signals?.signal);
+        }
+        let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === operation.material) ?? null;
+        if (item === null && isCreativeMode(this.opts.bot)) {
+          const provisioned = await provideCreativeItem(this.opts.bot, operation.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
+          if (provisioned.ok) item = provisioned.item;
+        }
+        if (item === null) {
+          const available = this.opts.bot.inventory.items().filter((candidate) => bareName(candidate.name) === operation.material).reduce((sum, candidate) => sum + candidate.count, 0);
+          const required = blueprint.operations.slice(index, operationEnd).filter((candidate) => candidate.material === operation.material).length;
+          data.shortages = [{ material: operation.material, required, available }];
+          data.firstUnresolvedOperationId = operation.id;
+          data.remaining = operationEnd - index;
+          return { ok: false, status: "blocked", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${operation.material} at operation ${operation.id}`, data };
+        }
+        const placed = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), new Set<string>(), (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        if (!placed) {
+          data.firstUnresolvedOperationId = operation.id;
+          data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(this.opts.bot.blockAt(cell)?.name ?? "") || undefined });
+          data.remaining = operationEnd - index;
+          return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", retryable: true, message: `design slice could not verify operation ${operation.id}`, data };
+        }
+        data.placed += 1;
+        data.verified += 1;
+        data.currentOperationIndex = index + 1;
+        if (!checkpoint(operation)) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
       }
-      data.remaining = pending.length;
-      if (pending.length > 0) return { ok: false, status: "partial", errorCode: "PLACEMENT_FAILED", message: `${design.name} is partially built: ${data.placed}/${blueprint.operations.length} verified blocks; ${pending.length} remain after retries.`, data };
-      return { ok: true, status: "completed", message: `${design.name} complete (${data.placed} verified blocks)`, data };
-    } finally { this.running = false; this.signals = null; }
+      data.remaining = 0;
+      return { ok: true, status: "completed", message: `design slice verified ${data.verified} operations`, data };
+    } finally {
+      this.running = false;
+      this.signals = null;
+    }
+  }
+
+  /** Compatibility wrapper for callers that still submit a complete design. */
+  async runDesign(design: BuildingDesign, origin: HomeLocation, options: BaseRunOptions = {}): Promise<SkillResult<DesignBuildData>> {
+    const data: DesignBuildData = { operations: 0, placed: 0, remaining: 0, estimate: {}, interruptions: options.resumeState?.interruptions ?? 0 };
+    const limits = { ...DEFAULT_BUILDING_LIMITS, maxWidth: this.opts.config.building?.max_width ?? DEFAULT_BUILDING_LIMITS.maxWidth, maxDepth: this.opts.config.building?.max_depth ?? DEFAULT_BUILDING_LIMITS.maxDepth, maxHeight: this.opts.config.building?.max_height ?? DEFAULT_BUILDING_LIMITS.maxHeight, maxOperations: this.opts.config.building?.max_operations ?? DEFAULT_BUILDING_LIMITS.maxOperations, maxComponents: this.opts.config.building?.max_components ?? DEFAULT_BUILDING_LIMITS.maxComponents, allowedMaterials: this.opts.config.building?.allowed_materials ?? DEFAULT_BUILDING_LIMITS.allowedMaterials, allowDemolition: this.opts.config.building?.allow_demolition ?? false };
+    const home = this.opts.state.home;
+    if (home !== null && origin.dimension.replace(/^minecraft:/, "") === home.dimension.replace(/^minecraft:/, "") && Math.hypot(origin.x - home.x, origin.z - home.z) > (this.opts.config.building?.max_anchor_distance ?? DEFAULT_BUILDING_LIMITS.maxAnchorDistance)) return { ok: false, status: "blocked", errorCode: "ANCHOR_TOO_FAR", message: "design anchor is outside the configured build distance", data };
+    let blueprint: Blueprint;
+    try { blueprint = compileBuildingDesign(design, origin, limits); }
+    catch (err) { return { ok: false, status: "failed", errorCode: "INVALID_DESIGN", message: String(err instanceof Error ? err.message : err), data }; }
+    data.operations = blueprint.operations.length;
+    data.estimate = blueprint.estimates.materials;
+    const result = await this.runDesignSlice(blueprint, { ...options, phaseId: "legacy-design", operationStart: 0, operationEnd: blueprint.operations.length, maxOperations: blueprint.operations.length, maxElapsedMs: Number.MAX_SAFE_INTEGER });
+    const slice = result.data;
+    if (slice !== undefined) {
+      data.placed = slice.verified;
+      data.remaining = slice.remaining;
+      data.interruptions = slice.interruptions;
+    }
+    return { ok: result.ok, status: result.status, errorCode: result.errorCode, retryable: result.retryable, message: result.message, data };
   }
 
   private async decorateSimpleRoom(
