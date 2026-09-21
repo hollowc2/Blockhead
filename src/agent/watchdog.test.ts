@@ -129,6 +129,24 @@ test("different arguments produce different fingerprints, so blocks do not colli
   assert.equal(other.status, TaskStatus.ACTIVE);
 });
 
+test("terrain fingerprints include frozen work identity but ignore volatile cursors", () => {
+  const base = {
+    projectId: "terrain-1", kind: "excavate", geometryHash: "hash-1", phase: "excavate", slice: 2,
+  };
+  assert.equal(
+    actionFingerprint("world_project_slice", { ...base, cursor: 1 }),
+    actionFingerprint("world_project_slice", { ...base, cursor: 99 }),
+  );
+  assert.notEqual(
+    actionFingerprint("world_project_slice", base),
+    actionFingerprint("world_project_slice", { ...base, geometryHash: "hash-2" }),
+  );
+  assert.notEqual(
+    actionFingerprint("world_project_slice", base),
+    actionFingerprint("world_project_slice", { ...base, slice: 3 }),
+  );
+});
+
 test("success clears failure state; partial progress reduces it", () => {
   now = 0;
   const watchdog = new ActionWatchdog({ maxFailures: 3, now: clock });

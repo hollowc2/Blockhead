@@ -39,3 +39,27 @@ test("v17 build rows are copied into the generic envelope during migration", () 
     assert.equal(envelope?.payload.type, "build");
   } finally { db.close(); }
 });
+
+test("v16 build rows migrate idempotently after the v17 task columns are added", () => {
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS.slice(0, 16));
+  try {
+    const builds = new BuildProjectsRepository(db);
+    const design = landmarkTemplate("castle", "small");
+    builds.create({
+      id: "build-v16", userGoal: "build", structureType: "castle", source: "user", status: "active",
+      design, origin: { x: 4, y: 64, z: 5, dimension: "overworld" }, compilerVersion: "c", schemaVersion: "s", blueprintHash: "v16-hash",
+      blueprint: { origin: { x: 4, y: 64, z: 5, dimension: "overworld" }, operations: [], estimates: { blocks: 0, materials: {} }, footprint: { width: 1, depth: 1, height: 1 } },
+      requiredResources: {}, shortages: [], resumeState: { currentOperationIndex: 0, completedRanges: [], interruptedCount: 0 },
+      verificationState: { verifiedOperations: 0, totalOperations: 0, finalVerificationPassed: false },
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    db.runMigrations(MIGRATIONS);
+    db.runMigrations(MIGRATIONS);
+    const envelope = new WorldProjectsRepository(db).get("build-v16");
+    assert.equal(envelope?.kind, "build");
+    assert.equal(envelope?.geometryHash, "v16-hash");
+    const count = db.sql.prepare("SELECT COUNT(*) AS count FROM world_projects WHERE id = ?").get("build-v16") as { count: number } | undefined;
+    assert.equal(count?.count, 1);
+  } finally { db.close(); }
+});
