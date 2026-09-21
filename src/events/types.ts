@@ -5,6 +5,7 @@ import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import type { ProtectedRegion } from "../minecraft/protection.js";
 import type { BuildPhase, BuildProject } from "../memory/build-projects.js";
+import type { WorldProject, WorldProjectPhase } from "../memory/world-projects.js";
 
 /**
  * Internal event payloads. Payloads are plain data so listeners never depend
@@ -65,6 +66,12 @@ export interface GoalEvent {
 export interface BuildProjectEvent {
   project: BuildProject;
   phase?: BuildPhase;
+  task?: Task;
+}
+
+export interface WorldProjectEvent {
+  project: WorldProject;
+  phase?: WorldProjectPhase;
   task?: Task;
 }
 
@@ -257,6 +264,13 @@ export interface EventMap {
   "build_project.slice_checkpointed": BuildProjectEvent;
   "build_project.blocked": BuildProjectEvent;
   "build_project.verified": BuildProjectEvent;
+  "world_project.created": WorldProjectEvent;
+  "world_project.rehydrated": WorldProjectEvent;
+  "world_project.scheduled": WorldProjectEvent;
+  "world_project.phase_changed": WorldProjectEvent;
+  "world_project.blocked": WorldProjectEvent;
+  "world_project.completed": WorldProjectEvent;
+  "world_project.cancelled": WorldProjectEvent;
   death: DeathEvent;
   respawn: Record<string, never>;
   "death.recorded": DeathRecordedEvent;

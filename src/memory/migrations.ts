@@ -340,4 +340,109 @@ export const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE tasks ADD COLUMN execution_policy TEXT;
   `,
+  // v18: generalized durable world projects. Build rows remain intact for
+  // compatibility; the envelope preserves their frozen payload verbatim and
+  // gives terrain projects one canonical lifecycle store.
+  `
+  CREATE TABLE IF NOT EXISTS world_projects (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      user_goal TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      world TEXT NOT NULL,
+      dimension TEXT NOT NULL,
+      geometry_hash TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      current_phase_id TEXT,
+      resume_state_json TEXT NOT NULL,
+      verification_state_json TEXT NOT NULL,
+      authorization_state_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      last_error TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_world_projects_status_updated
+      ON world_projects(status, updated_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_world_projects_live_geometry
+      ON world_projects(kind, world, dimension, geometry_hash)
+      WHERE status IN ('active','paused','blocked','verifying');
+
+  CREATE TABLE IF NOT EXISTS world_project_phases (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL,
+      progress_json TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      FOREIGN KEY(project_id) REFERENCES world_projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, ordinal)
+  );
+  CREATE INDEX IF NOT EXISTS idx_world_project_phases_project_ordinal
+      ON world_project_phases(project_id, ordinal);
+
+  CREATE TABLE IF NOT EXISTS world_project_events (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      phase_id TEXT,
+      task_id TEXT,
+      kind TEXT NOT NULL,
+      details_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES world_projects(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_world_project_events_project_created
+      ON world_project_events(project_id, created_at, id);
+
+  CREATE TABLE IF NOT EXISTS destructive_authorizations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      world TEXT NOT NULL,
+      dimension TEXT NOT NULL,
+      geometry_hash TEXT NOT NULL,
+      geometry_json TEXT NOT NULL,
+      allowed_actions_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES world_projects(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_destructive_authorizations_live
+      ON destructive_authorizations(project_id, task_id, state, expires_at);
+
+  INSERT OR IGNORE INTO world_projects
+    (id, kind, user_goal, source, status, world, dimension, geometry_hash,
+     payload_json, current_phase_id, resume_state_json, verification_state_json,
+     created_at, updated_at, completed_at, last_error)
+  SELECT id, 'build', user_goal, source, status, '', json_extract(origin_json, '$.dimension'),
+     blueprint_hash, json_object('type','build','buildProject',json(printf('%s',
+       json_object('id',id,'userGoal',user_goal,'structureType',structure_type,'source',source,
+       'status',status,'design',json(design_json),'origin',json(origin_json),
+       'compilerVersion',compiler_version,'schemaVersion',schema_version,
+       'blueprintHash',blueprint_hash,'blueprint',json(blueprint_json),
+       'currentPhaseId',current_phase_id,'requiredResources',json(required_resources_json),
+       'shortages',json(shortages_json),'resumeState',json(resume_state_json),
+       'verificationState',json(verification_state_json),'createdAt',created_at,
+       'updatedAt',updated_at,'completedAt',completed_at,'lastError',last_error)))),
+     current_phase_id, resume_state_json, verification_state_json,
+     created_at, updated_at, completed_at, last_error
+  FROM build_projects;
+
+  INSERT OR IGNORE INTO world_project_phases
+    (id, project_id, ordinal, label, status, progress_json, attempts, last_error)
+  SELECT id, project_id, ordinal, label, status,
+     json_object('operationStart',operation_start,'operationEnd',operation_end,
+       'verifiedOperations',verified_operations,'totalOperations',total_operations),
+     attempts, last_error
+  FROM build_project_phases;
+
+  INSERT OR IGNORE INTO world_project_events
+    (project_id, phase_id, task_id, kind, details_json, created_at)
+  SELECT project_id, phase_id, task_id, kind, details_json, created_at
+  FROM build_project_events;
+  `,
 ];

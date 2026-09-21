@@ -17,7 +17,7 @@ import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { GoalManager } from "./goals.js";
-import type { BuildProjectManager } from "./build-projects.js";
+import type { WorldProjectManager } from "./world-projects.js";
 import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriterion } from "./goal.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
@@ -74,7 +74,7 @@ export interface BackgroundManagerOptions {
    */
   goals?: GoalManager;
   /** Active durable construction projects suppress director replanning. */
-  buildProjects?: BuildProjectManager;
+  buildProjects?: WorldProjectManager;
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -274,7 +274,7 @@ export class BackgroundManager {
     // user relocates the bot or the spawn.
     if (this.opts.inDeathLoop?.() === true) return;
 
-    const projectView = this.opts.buildProjects?.currentProject() ?? null;
+    const projectView = this.opts.buildProjects?.currentProjectForBackground() ?? null;
     const resumableProject = projectView !== null
       && projectView.project.source === "user"
       && (projectView.project.status === "active" || projectView.project.status === "paused" || projectView.project.status === "verifying");

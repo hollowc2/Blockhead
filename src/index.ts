@@ -14,14 +14,14 @@ import { BootstrapRepository } from "./memory/bootstrap.js";
 import { SkillsRepository } from "./memory/skills.js";
 import { StorageRepository } from "./memory/storage.js";
 import { TasksRepository } from "./memory/tasks.js";
-import { BuildProjectsRepository } from "./memory/build-projects.js";
+import { WorldProjectsRepository } from "./memory/world-projects.js";
 import { BackgroundFailuresRepository } from "./memory/background-failures.js";
 import { GoalsRepository } from "./memory/goals.js";
 import { ResourceSitesRepository } from "./memory/resource-sites.js";
 import { DeathEventsRepository } from "./memory/deaths.js";
 import { AgentState } from "./agent/state.js";
 import { Scheduler } from "./agent/scheduler.js";
-import { BuildProjectManager } from "./agent/build-projects.js";
+import { WorldProjectManager } from "./agent/world-projects.js";
 import { ActionWatchdog } from "./agent/watchdog.js";
 import { TaskDispatcher } from "./agent/task-dispatcher.js";
 import { DeathRecoveryManager } from "./agent/death-recovery.js";
@@ -82,7 +82,7 @@ const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
-const buildProjects = new BuildProjectsRepository(db);
+const buildProjects = new WorldProjectsRepository(db);
 const actions = new ActionsRepository(db);
 const backgroundFailures = new BackgroundFailuresRepository(db);
 // Bound historical task growth before rehydrating the scheduler, so an old
@@ -112,8 +112,8 @@ const scheduler = new Scheduler({
   worldActionTimeoutMs: config.world_actions?.timeout_ms,
 });
 scheduler.loadFromPersistence();
-const buildProjectManager = new BuildProjectManager(buildProjects, scheduler, bus);
-buildProjectManager.rehydrate();
+const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus);
+buildProjectManager.rehydrateAll();
 const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 

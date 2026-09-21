@@ -35,7 +35,8 @@ import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
-import type { BuildProjectManager, ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
+import type { WorldProjectManager } from "./world-projects.js";
+import type { ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
 import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
@@ -73,7 +74,7 @@ export interface TaskDispatcherOptions {
   utility: UtilityRunner;
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
-  buildProjects?: BuildProjectManager;
+  buildProjects?: WorldProjectManager;
   /** Bounded grants for terrain child tasks; absent until terrain projects are enabled. */
   destructiveAuthorizations?: DestructiveAuthorizationRegistry;
   /**
