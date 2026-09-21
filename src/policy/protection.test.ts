@@ -27,7 +27,7 @@ test("classifyBlock: terrain (trees, ores, stone) vs structural vs infrastructur
   assert.equal(classifyBlock("trapped_chest"), "infrastructure");
   assert.equal(classifyBlock("oak_planks"), "structural");
   assert.equal(classifyBlock("brick_wall"), "structural");
-  assert.equal(classifyBlock("red_bed"), "structural");
+  assert.equal(classifyBlock("red_bed"), "infrastructure");
 });
 
 test("spec 8.2: natural terrain may be gathered inside the region", () => {
@@ -42,12 +42,11 @@ test("spec 8.2: registered storage is never destroyed automatically", () => {
   assert.equal(verdict.code, "PROTECTED_REGION");
 });
 
-test("spec 8.2: structural blocks need an explicit request inside the region", () => {
+test("structural blocks cannot be destroyed merely because a task is user-sourced", () => {
   const unrequested = checkBlockDestruction("oak_planks", inside, region, false);
   assert.equal(unrequested.allowed, false);
   assert.equal(unrequested.code, "PROTECTED_REGION");
-  // "Restricted by default: unrequested demolition" — a request lifts it.
-  assert.equal(checkBlockDestruction("oak_planks", inside, region, true).allowed, true);
+  assert.equal(checkBlockDestruction("oak_planks", inside, region, true).allowed, false);
 });
 
 test("spec 8.2: outside the region everything is free", () => {
@@ -78,7 +77,7 @@ test("the default home policy allows containers, beds, tables, furnaces; forbids
 
 test("last-safe-point policy revalidation rejects protected mutations before the adapter call", () => {
   const config = MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 64, z: 0 },
   });
   const bot = { entity: { position: inside }, health: 20, findBlocks: () => [] } as any;

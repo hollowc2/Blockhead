@@ -36,6 +36,7 @@ import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
 import type { BuildProjectManager, ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
+import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
@@ -73,6 +74,8 @@ export interface TaskDispatcherOptions {
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
   buildProjects?: BuildProjectManager;
+  /** Bounded grants for terrain child tasks; absent until terrain projects are enabled. */
+  destructiveAuthorizations?: DestructiveAuthorizationRegistry;
   /**
    * Anti-loop watchdog: records every settled skill-run outcome per action
    * fingerprint, so a repeatedly-failing action is blocked (and the LLM is
@@ -136,14 +139,23 @@ export class TaskDispatcher {
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
     const signals = this.opts.scheduler.signalsFor(task);
+    const dimension = normalizeDimension(this.opts.bot.game.dimension ?? this.opts.state.self.dimension ?? "");
+    const authorization = task.projectId === undefined || this.opts.destructiveAuthorizations === undefined || this.opts.state.worldId === null
+      ? null
+      : this.opts.destructiveAuthorizations.contextFor(task.id, task.projectId, this.opts.state.worldId, dimension);
     const run = typeof this.opts.scheduler.runWorldAction === "function"
       ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task), {
+        authorization: authorization ?? undefined,
         beforeMutation: (mutation: WorldMutation) => {
           const point = mutation.point ?? this.opts.bot.entity?.position;
           if (!point) throw new Error("mutation policy revalidation requires a live bot position");
           const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, {
             blockName: mutation.blockName,
-            userRequested: task.source === "user",
+            authorization: authorization ?? undefined,
+            taskId: task.id,
+            projectId: task.projectId,
+            worldId: this.opts.state.worldId ?? undefined,
+            dimension,
           });
           if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "mutation rejected by policy");
         },

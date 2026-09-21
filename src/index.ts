@@ -68,6 +68,7 @@ import { startDashboard } from "./dashboard/lifecycle.js";
 import { ViewerManager } from "./dashboard/viewer.js";
 import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
+import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -113,6 +114,7 @@ const scheduler = new Scheduler({
 scheduler.loadFromPersistence();
 const buildProjectManager = new BuildProjectManager(buildProjects, scheduler, bus);
 buildProjectManager.rehydrate();
+const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
@@ -405,7 +407,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, watchdog, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { logger } from "../logger.js";
+import type { MutationAuthorizationContext } from "../policy/destructive-authorization.js";
 
 /** Scheduler-owned serialization and common cancellation helpers for Mineflayer. */
 export interface WorldActionLease {
@@ -10,6 +11,7 @@ export interface WorldActionLease {
   readonly acknowledged: Promise<void>;
   /** Last-safe-point policy check supplied by the session dispatcher. */
   readonly beforeMutation?: (mutation: WorldMutation) => void;
+  readonly authorization?: MutationAuthorizationContext;
 }
 
 export interface WorldMutation {
@@ -60,6 +62,7 @@ export interface WorldActionOptions {
   /** Recovery hook for a plugin that ignores cancellation or leaves state open. */
   onRecovery?: (reason: unknown) => void | Promise<void>;
   beforeMutation?: (mutation: WorldMutation) => void;
+  authorization?: MutationAuthorizationContext;
 }
 
 export interface WorldActionDiagnostics {
@@ -105,7 +108,7 @@ export class WorldActionExecutor {
     if (signal.aborted) forwardAbort();
     else signal.addEventListener("abort", forwardAbort, { once: true });
     const acknowledged = Promise.withResolvers<void>();
-    const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise, beforeMutation: options.beforeMutation };
+    const leased: WorldActionLease = { owner, signal: controller.signal, acknowledged: acknowledged.promise, beforeMutation: options.beforeMutation, authorization: options.authorization };
     this.cancelled = false;
     this.startedAt = Date.now();
     const actionPromise = withWorldActionLease(leased, async () => {
