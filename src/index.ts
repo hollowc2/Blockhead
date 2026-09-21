@@ -70,6 +70,7 @@ import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
 import { TerrainProjectRunner } from "./skills/terrain-project.js";
+import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -113,9 +114,10 @@ const scheduler = new Scheduler({
   worldActionTimeoutMs: config.world_actions?.timeout_ms,
 });
 scheduler.loadFromPersistence();
-const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus);
-buildProjectManager.rehydrateAll();
 const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
+const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus, destructiveAuthorizations, () => state.worldId);
+buildProjectManager.rehydrateAll();
+const survivalInterrupts = new SurvivalInterruptCoordinator({ bus, scheduler, projects: buildProjectManager });
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
@@ -303,6 +305,7 @@ async function shutdown(code: number): Promise<void> {
     await stopWorldPrimitives(active.bot);
   }
   goals.dispose();
+  survivalInterrupts.dispose();
   taskOutcomes.dispose();
   statusServer?.stop();
   dashboardServer?.stop();
@@ -409,7 +412,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
   const terrainProjects = new TerrainProjectRunner(bot, { logger });
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

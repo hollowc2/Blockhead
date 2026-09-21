@@ -6,6 +6,8 @@ import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import type { WorldProject, WorldProjectPhase, WorldProjectsRepository } from "../memory/world-projects.js";
+import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
+import type { DestructiveAction } from "../policy/destructive-authorization.js";
 
 export interface CreateTerrainProjectInput {
   userGoal: string;
@@ -22,18 +24,39 @@ export interface WorldProjectStatusView { project: WorldProject; phase: WorldPro
  * terrain runner through the same resumable child-task lifecycle as builds.
  */
 export class WorldProjectManager extends BuildProjectManager {
-  constructor(private readonly worldProjects: WorldProjectsRepository, private readonly worldScheduler: Scheduler, private readonly worldBus: EventBus) {
+  constructor(
+    private readonly worldProjects: WorldProjectsRepository,
+    private readonly worldScheduler: Scheduler,
+    private readonly worldBus: EventBus,
+    private readonly authorizations?: DestructiveAuthorizationRegistry,
+    private readonly worldId?: () => string | number | null,
+  ) {
     super(worldProjects.buildRepository, worldScheduler, worldBus);
     this.worldBus.on("task.cancelled", ({ task }) => {
       if (task.projectId === undefined) return;
       const project = this.worldProjects.get(task.projectId);
       if (project === null || project.status === "completed" || project.status === "cancelled") return;
+      if (!task.type.startsWith("world_project_")) return;
+      this.setAuthorizationState(task, "revoked");
       project.status = "cancelled";
       project.lastError = "project child task cancelled by owner";
       project.updatedAt = new Date().toISOString();
       this.worldProjects.update(project);
       this.worldProjects.appendEvent({ projectId: project.id, phaseId: task.projectPhaseId, taskId: task.id, kind: "cancelled", details: { reason: "owner" }, createdAt: project.updatedAt });
       this.worldBus.emit("world_project.cancelled", { project });
+    });
+    this.worldBus.on("task.paused", ({ task }) => this.setAuthorizationState(task, "dormant"));
+    this.worldBus.on("task.requeued", ({ task }) => this.setAuthorizationState(task, "dormant"));
+    this.worldBus.on("task.activated", ({ task }) => {
+      if (task.projectId === undefined || task.type !== "world_project_slice") return;
+      const project = this.worldProjects.get(task.projectId);
+      if (project?.payload.type === "terrain") this.issueTerrainAuthorization(project, task);
+    });
+    this.worldBus.on("task.completed", ({ task }) => {
+      if (task.type === "world_project_slice" || task.type === "world_project_verify") this.setAuthorizationState(task, "revoked");
+    });
+    this.worldBus.on("task.failed", ({ task }) => {
+      if (task.type === "world_project_slice" || task.type === "world_project_verify") this.setAuthorizationState(task, "revoked");
     });
   }
 
@@ -84,23 +107,47 @@ export class WorldProjectManager extends BuildProjectManager {
     const task = this.worldScheduler.enqueue({
       type: "world_project_slice", priority: TaskPriority.FOREGROUND, source: project.source,
       objective: `Prepare ${project.kind} terrain project ${project.id}.`,
-      parameters: { projectId: project.id, phaseId: project.currentPhaseId, geometryHash: project.geometryHash },
+      parameters: { projectId: project.id, phaseId: project.currentPhaseId, kind: project.kind, geometryHash: project.geometryHash },
       projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
       workKey: `world-project:${project.id}:${project.currentPhaseId ?? "root"}`,
     });
+    if (project.payload.type === "terrain") this.issueTerrainAuthorization(project, task);
     this.worldProjects.appendEvent({ projectId: project.id, phaseId: project.currentPhaseId, taskId: task.id, kind: "slice_scheduled", details: { geometryHash: project.geometryHash }, createdAt: new Date().toISOString() });
     this.worldBus.emit("world_project.scheduled", { project, phase: project.currentPhaseId === undefined ? undefined : this.worldProjects.getPhases(project.id).find((item) => item.id === project.currentPhaseId), task });
     return task;
   }
 
   override settleChildTask(task: Task, result: SkillResult): ProjectTaskSettlement {
-    if (task.type !== "world_project_slice" && task.type !== "world_project_acquire" && task.type !== "world_project_verify" && task.type !== "world_project_deposit" && task.type !== "world_project_replace_tool") {
+    if (task.type !== "world_project_slice" && task.type !== "world_project_acquire" && task.type !== "world_project_verify" && task.type !== "world_project_deposit" && task.type !== "world_project_replace_tool" && task.type !== "world_project_return") {
       return super.settleChildTask(task, result);
     }
     const project = task.projectId === undefined ? null : this.worldProjects.get(task.projectId);
     if (project === null) return "none";
     const phase = project.currentPhaseId === undefined ? null : this.worldProjects.getPhases(project.id).find((item) => item.id === project.currentPhaseId) ?? null;
     const now = new Date().toISOString();
+    if (task.type === "world_project_deposit" || task.type === "world_project_replace_tool" || task.type === "world_project_return") {
+      if (result.status === "completed") {
+        project.status = "active";
+        project.lastError = undefined;
+        project.updatedAt = now;
+        this.worldProjects.update(project);
+        this.scheduleTerrainChild(project);
+        return "complete";
+      }
+      if (result.status === "interrupted" || result.status === "partial" || result.retryable === true) return "requeue";
+      if (result.status === "blocked") {
+        project.status = "blocked";
+        project.lastError = result.message ?? result.errorCode ?? "project maintenance blocked";
+        project.updatedAt = now;
+        this.worldProjects.update(project);
+        return "block";
+      }
+      project.status = "failed";
+      project.lastError = result.message ?? result.errorCode ?? "project maintenance failed";
+      project.updatedAt = now;
+      this.worldProjects.update(project);
+      return "fail";
+    }
     if (task.type === "world_project_verify") {
       if (result.status === "completed") {
         const verification = result.data as { inspected?: unknown; verified?: unknown; mismatches?: unknown[] } | undefined;
@@ -149,6 +196,41 @@ export class WorldProjectManager extends BuildProjectManager {
     else if (result.status === "interrupted" || result.status === "partial" || result.retryable === true) return "requeue" as const;
     else { project.status = "failed"; project.lastError = result.message ?? result.errorCode ?? "world project failed"; project.updatedAt = now; this.worldProjects.update(project); }
     return result.status === "completed" ? "complete" as const : project.status === "blocked" ? "block" as const : "fail" as const;
+  }
+
+  private setAuthorizationState(task: Task, state: "dormant" | "revoked"): void {
+    if (task.type !== "world_project_slice") return;
+    this.authorizations?.setState(task.id, state);
+    if (task.projectId === undefined) return;
+    const project = this.worldProjects.get(task.projectId);
+    if (project === null) return;
+    project.authorizationState = { taskId: task.id, state, updatedAt: new Date().toISOString() };
+    project.updatedAt = new Date().toISOString();
+    this.worldProjects.update(project);
+  }
+
+  private issueTerrainAuthorization(project: WorldProject, task: Task): void {
+    if (this.authorizations === undefined || project.payload.type !== "terrain") return;
+    const worldId = this.worldId?.();
+    if (worldId === null || worldId === undefined) return;
+    const actions: readonly DestructiveAction[] = ["dig", "place_support", "place_light"];
+    const issuedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+    const authorization = this.authorizations.issue({
+      projectId: project.id,
+      taskId: task.id,
+      worldId,
+      dimension: project.dimension,
+      geometryHash: project.geometryHash,
+      geometry: { bounds: project.payload.plan.bounds },
+      allowedActions: actions,
+      issuedAt,
+      expiresAt,
+    });
+    this.worldProjects.saveAuthorization(authorization);
+    project.authorizationState = { taskId: task.id, state: "active", issuedAt, expiresAt };
+    project.updatedAt = issuedAt;
+    this.worldProjects.update(project);
   }
 }
 

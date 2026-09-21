@@ -34,7 +34,10 @@ import type { WorldMutation } from "./world-actions.js";
 import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
+import { deliverCarriedItems } from "../minecraft/containers.js";
+import { itemsSummary } from "../minecraft/inventory.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
+import type { StorageRepository } from "../memory/storage.js";
 import type { WorldProjectManager } from "./world-projects.js";
 import type { ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
 import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
@@ -60,6 +63,7 @@ export interface TaskDispatcherOptions {
   bot: Bot;
   config: MinecraftConfig;
   maintenance: StockpileManager;
+  storage: StorageRepository;
   collect: CollectResourceRunner;
   food: GatherFoodRunner;
   torches: EnsureTorchesRunner;
@@ -591,6 +595,26 @@ export class TaskDispatcher {
           return { ok: false, status: "failed", errorCode: "NOT_READY", message: "terrain slice is missing its frozen project or runner", retryable: false };
         }
         return runner.run(project.payload.plan, { signals, resumeState: task.resumeState as Parameters<TerrainProjectRunner["run"]>[1]["resumeState"] | undefined });
+      }
+      case "world_project_deposit": {
+        const names = Object.keys(itemsSummary(this.opts.bot));
+        const delivered = await deliverCarriedItems(this.opts.bot, this.opts.state, this.opts.storage, names, this.opts.logger, signals.signal);
+        return delivered.delivered > 0 || names.length === 0
+          ? { ok: true, status: "completed", data: delivered, message: `deposited ${delivered.delivered} carried items` }
+          : { ok: false, status: "blocked", errorCode: "STORAGE_UNREACHABLE", message: "terrain project inventory could not be deposited", retryable: true, data: delivered };
+      }
+      case "world_project_replace_tool": {
+        const item = String(task.parameters.item ?? "");
+        if (item === "") return { ok: false, status: "failed", errorCode: "TOOL_REQUIRED", message: "terrain tool replacement is missing the required item", retryable: false };
+        return this.opts.ensureItem.run(item, 1, { mode: "ensure", signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+      }
+      case "world_project_return": {
+        const home = this.opts.state.home;
+        if (home === null) return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: "terrain maintenance has no known home return route", retryable: false };
+        const returned = await travelHomeAndWait(this.opts.bot, home, { dimension: home.dimension, timeoutMs: GO_HOME_TIMEOUT_MS, signal: signals.signal });
+        if (returned.status !== "arrived" && returned.status !== "already_there") return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: `terrain maintenance could not return home: ${returned.status}`, retryable: true };
+        if (task.parameters.reason === "hunger") return this.opts.utility.eat({ signals });
+        return { ok: true, status: "completed", message: "returned to a safe home waypoint" };
       }
       case "world_project_verify": {
         const manager = this.opts.buildProjects;

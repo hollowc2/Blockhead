@@ -31,6 +31,27 @@ export interface TerrainRunnerOptions {
   mutation?: TerrainMutationService;
   maxBlocksPerSlice?: number;
   logger?: Logger;
+  loadoutPolicy?: TerrainLoadoutPolicy;
+}
+
+/** Survival reserve checked before each terrain atomic operation. */
+export interface TerrainLoadoutPolicy {
+  minFreeSlots: number;
+  minToolReserve: number;
+}
+
+export const DEFAULT_TERRAIN_LOADOUT_POLICY: TerrainLoadoutPolicy = {
+  minFreeSlots: 1,
+  minToolReserve: 1,
+};
+
+/** Inventory gate; required-tool selection and durability remain owned by mutation.ts. */
+export function checkTerrainLoadout(bot: Bot, policy = DEFAULT_TERRAIN_LOADOUT_POLICY): SkillResult<void> {
+  const inventory = bot.inventory;
+  if (inventory !== undefined && inventory.emptySlotCount() < policy.minFreeSlots) {
+    return { ok: false, status: "blocked", errorCode: "INVENTORY_FULL", message: "terrain work needs inventory headroom for drops", retryable: true };
+  }
+  return { ok: true, status: "completed" };
 }
 
 export interface ExcavationRunOptions {
@@ -179,6 +200,8 @@ async function runSurfaceSlice(bot: Bot, plan: FrozenTerrainPlan, options: Surfa
     if (!options.signals.checkpoint({ phase: kind, nextIndex: cursor.nextIndex, removed: cursor.removed, verified: cursor.verified, skipped: cursor.skipped })) return { ok: false, status: "interrupted", message: `${kind} paused at a safe checkpoint`, retryable: true, data: { ...cursor, complete: false, total: ordered.length, columns } };
     const target = ordered[cursor.nextIndex];
     if (target === undefined) break;
+    const loadout = checkTerrainLoadout(bot, options.loadoutPolicy);
+    if (!loadout.ok) return { ...loadout, data: { ...cursor, complete: false, total: ordered.length, columns } };
     if (kind === "flatten" && columns.some((column) => column.fill.some((cell) => positionKey(cell) === positionKey(target)))) {
       const reference = bot.blockAt(new Vec3(target.x, target.y - 1, target.z));
       if (item === null || reference === null) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "flatten fill reference is unavailable", retryable: false };
@@ -350,6 +373,8 @@ export async function runExcavationSlice(bot: Bot, plan: FrozenTerrainPlan, opti
     }
     const target = ordered[cursor.nextIndex];
     if (target === undefined) break;
+    const loadout = checkTerrainLoadout(bot, options.loadoutPolicy);
+    if (!loadout.ok) return { ...loadout, data: { ...cursor, complete: false, total: ordered.length, ramp: checked.data.ramp } };
     const state = classifyObservedBlock(bot.blockAt(new Vec3(target.x, target.y, target.z)));
     if (state === "passable") { cursor.verified += 1; continue; }
     const pose = await findSafeWorkPose(bot, target, bounds, options.signals.signal);
