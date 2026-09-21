@@ -69,6 +69,7 @@ import { ViewerManager } from "./dashboard/viewer.js";
 import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
+import { TerrainProjectRunner } from "./skills/terrain-project.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -407,7 +408,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, destructiveAuthorizations, watchdog, logger });
+  const terrainProjects = new TerrainProjectRunner(bot, { logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();

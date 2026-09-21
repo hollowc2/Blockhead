@@ -38,6 +38,8 @@ import type { StockpileDeficit, StockpileKind, StockpileManager } from "./mainte
 import type { WorldProjectManager } from "./world-projects.js";
 import type { ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
 import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
+import type { TerrainProjectRunner } from "../skills/terrain-project.js";
+import { verifyExcavationVolume } from "../terrain/verification.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
@@ -77,6 +79,7 @@ export interface TaskDispatcherOptions {
   buildProjects?: WorldProjectManager;
   /** Bounded grants for terrain child tasks; absent until terrain projects are enabled. */
   destructiveAuthorizations?: DestructiveAuthorizationRegistry;
+  terrainProjects?: TerrainProjectRunner;
   /**
    * Anti-loop watchdog: records every settled skill-run outcome per action
    * fingerprint, so a repeatedly-failing action is blocked (and the LLM is
@@ -578,6 +581,23 @@ export class TaskDispatcher {
           mismatches: verification.mismatches,
         };
         return { ok: verification.mismatches.length === 0, status: "completed", data, message: "project final verification completed" };
+      }
+      case "world_project_slice": {
+        const runner = this.opts.terrainProjects;
+        const manager = this.opts.buildProjects;
+        const projectId = String(task.projectId ?? task.parameters.projectId ?? "");
+        const project = manager?.getWorldProject(projectId);
+        if (runner === undefined || project === null || project === undefined || project.payload.type !== "terrain") {
+          return { ok: false, status: "failed", errorCode: "NOT_READY", message: "terrain slice is missing its frozen project or runner", retryable: false };
+        }
+        return runner.run(project.payload.plan, { signals, resumeState: task.resumeState as Parameters<TerrainProjectRunner["run"]>[1]["resumeState"] | undefined });
+      }
+      case "world_project_verify": {
+        const manager = this.opts.buildProjects;
+        const project = manager?.getWorldProject(String(task.projectId ?? task.parameters.projectId ?? ""));
+        if (project === null || project === undefined || project.payload.type !== "terrain") return { ok: false, status: "failed", errorCode: "NOT_READY", message: "terrain verification is missing its frozen project", retryable: false };
+        if (project.kind !== "excavate") return { ok: false, status: "failed", errorCode: "NOT_READY", message: "only excavation verification is implemented in Stage 5", retryable: false };
+        return verifyExcavationVolume(this.opts.bot, project.payload.plan.bounds);
       }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");

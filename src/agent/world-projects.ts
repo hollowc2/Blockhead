@@ -19,7 +19,7 @@ export interface WorldProjectStatusView { project: WorldProject; phase: WorldPro
  * Generic project coordinator. BuildProjectManager remains the compatibility
  * implementation for blueprint execution; terrain envelopes are persisted in
  * the canonical world-project tables and deliberately do not schedule a
- * terrain runner until a later stage installs one.
+ * terrain runner through the same resumable child-task lifecycle as builds.
  */
 export class WorldProjectManager extends BuildProjectManager {
   constructor(private readonly worldProjects: WorldProjectsRepository, private readonly worldScheduler: Scheduler, private readonly worldBus: EventBus) {
@@ -79,7 +79,7 @@ export class WorldProjectManager extends BuildProjectManager {
     return { builds: this.rehydrate(), terrain: this.worldProjects.loadUnfinished().filter((project) => project.payload.type === "terrain") };
   }
 
-  /** Terrain children are metadata-only placeholders until Stage 5 supplies the runner. */
+  /** Schedule one bounded terrain slice. */
   private scheduleTerrainChild(project: WorldProject): Task {
     const task = this.worldScheduler.enqueue({
       type: "world_project_slice", priority: TaskPriority.FOREGROUND, source: project.source,
@@ -101,7 +101,50 @@ export class WorldProjectManager extends BuildProjectManager {
     if (project === null) return "none";
     const phase = project.currentPhaseId === undefined ? null : this.worldProjects.getPhases(project.id).find((item) => item.id === project.currentPhaseId) ?? null;
     const now = new Date().toISOString();
-    if (result.status === "completed") { project.status = "verifying"; project.updatedAt = now; this.worldProjects.update(project); if (phase) { phase.status = "completed"; this.worldProjects.updatePhase(phase); } }
+    if (task.type === "world_project_verify") {
+      if (result.status === "completed") {
+        const verification = result.data as { inspected?: unknown; verified?: unknown; mismatches?: unknown[] } | undefined;
+        const passed = verification !== undefined && verification.verified === verification.inspected && (verification.mismatches?.length ?? 1) === 0;
+        project.verificationState = { lastVerifiedAt: now, inspected: verification?.inspected ?? 0, verified: verification?.verified ?? 0, mismatches: verification?.mismatches ?? [] };
+        project.updatedAt = now;
+        if (passed) {
+          project.status = "completed";
+          project.completedAt = now;
+          project.lastError = undefined;
+          this.worldProjects.update(project);
+          if (phase) { phase.status = "completed"; this.worldProjects.updatePhase(phase); }
+          this.worldProjects.appendEvent({ projectId: project.id, phaseId: task.projectPhaseId, taskId: task.id, kind: "verified", details: { inspected: verification.inspected, verified: verification.verified }, createdAt: now });
+          this.worldBus.emit("world_project.completed", { project });
+          return "complete";
+        }
+        project.status = "active";
+        project.lastError = "excavation verification found mismatched cells; reopening the earliest incomplete work";
+        if (phase) {
+          phase.status = "active";
+          phase.lastError = project.lastError;
+          this.worldProjects.updatePhase(phase);
+        }
+        this.worldProjects.update(project);
+        this.scheduleTerrainChild(project);
+        return "complete";
+      }
+      if (result.status === "blocked") { project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project verification blocked"; project.updatedAt = now; this.worldProjects.update(project); return "block"; }
+      return result.retryable === true || result.status === "partial" || result.status === "interrupted" ? "requeue" : "fail";
+    }
+    if (result.status === "completed") {
+      project.status = "verifying";
+      project.updatedAt = now;
+      this.worldProjects.update(project);
+      if (phase) { phase.status = "completed"; this.worldProjects.updatePhase(phase); }
+      const verifyTask = this.worldScheduler.enqueue({
+        type: "world_project_verify", priority: TaskPriority.FOREGROUND, source: project.source,
+        objective: `Verify ${project.kind} terrain project ${project.id}.`,
+        parameters: { projectId: project.id, phaseId: project.currentPhaseId, geometryHash: project.geometryHash },
+        projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
+        workKey: `world-project-verify:${project.id}:${project.currentPhaseId ?? "root"}`,
+      });
+      this.worldProjects.appendEvent({ projectId: project.id, phaseId: project.currentPhaseId, taskId: verifyTask.id, kind: "verification_scheduled", details: {}, createdAt: now });
+    }
     else if (result.status === "blocked") { project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project blocked"; project.updatedAt = now; this.worldProjects.update(project); }
     else if (result.status === "interrupted" || result.status === "partial" || result.retryable === true) return "requeue" as const;
     else { project.status = "failed"; project.lastError = result.message ?? result.errorCode ?? "world project failed"; project.updatedAt = now; this.worldProjects.update(project); }
