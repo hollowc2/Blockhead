@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
-import { verifyExcavationVolume } from "./verification.js";
+import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea } from "./verification.js";
 
 type Point = { x: number; y: number; z: number };
 function block(name: string, position: Point): Block {
@@ -26,4 +26,25 @@ test("verifyExcavationVolume classifies null and fluids as terminal mismatches",
   assert.equal(nullResult.errorCode, "WORLD_NOT_OBSERVED");
   const lavaResult = verifyExcavationVolume(botAt((point) => point.y === 60 ? block("lava", point) : block("air", point)), bounds);
   assert.equal(lavaResult.errorCode, "LAVA_HAZARD");
+});
+
+test("verifyClearArea requires every requested cell to be passable", () => {
+  const bounds = { minX: 0, maxX: 1, minY: 64, maxY: 64, minZ: 0, maxZ: 0 };
+  const result = verifyClearArea(botAt((point) => point.x === 1 ? block("stone", point) : block("air", point)), bounds);
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "UNBREAKABLE_BLOCK");
+  assert.equal(result.data?.verified, 1);
+});
+
+test("verifyFlattenArea requires solid support and two blocks of headroom", () => {
+  const bounds = { minX: 0, maxX: 0, minY: 62, maxY: 63, minZ: 0, maxZ: 0 };
+  const result = verifyFlattenArea(botAt((point) => {
+    if (point.y === 62) return block("stone", point);
+    return block("air", point);
+  }), bounds, 63);
+  assert.equal(result.ok, true);
+  assert.equal(result.data?.verified, 1);
+  const blocked = verifyFlattenArea(botAt((point) => point.y === 62 ? block("water", point) : block("air", point)), bounds, 63);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.errorCode, "WATER_HAZARD");
 });
