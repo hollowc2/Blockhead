@@ -2,8 +2,9 @@ import type { Goal } from "../agent/goal.js";
 import type { StockpileSnapshot } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
 import type { BuildProjectStatusView } from "../agent/build-projects.js";
+import type { WorldProjectStatusView } from "../agent/world-projects.js";
 import type { LlmActivity as DeciderLlmActivity, LlmCallRecord } from "../llm/decider.js";
-import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, BuildProjectSummary, LlmActivity, LlmDecisionType, LlmFailureSummary, LlmLastCallSummary } from "./types.js";
+import type { Position as DashboardPosition, GoalSummary, InventorySummary, StockpileSummary, TaskSummary, BuildProjectSummary, WorldProjectSummary, LlmActivity, LlmDecisionType, LlmFailureSummary, LlmLastCallSummary } from "./types.js";
 
 export interface PositionInput { x: number; y: number; z: number }
 
@@ -36,6 +37,20 @@ export function projectBuildProject(view: BuildProjectStatusView | null | undefi
     currentShortage: project.shortages[0] ?? null,
     lastBlockingReason: project.status === "blocked" ? project.lastError ?? null : null,
     blueprintHash: project.blueprintHash,
+  };
+}
+
+export function projectWorldProject(view: WorldProjectStatusView | null | undefined): WorldProjectSummary | null {
+  if (view === null || view === undefined) return null;
+  const { project, phase } = view;
+  const bounds = project.payload.type === "terrain" ? project.payload.plan.bounds : null;
+  return {
+    id: project.id, kind: project.kind, status: project.status, world: project.world, dimension: project.dimension,
+    geometryHash: project.geometryHash, bounds: bounds === null ? null : { ...bounds },
+    phase: phase === null ? null : { id: phase.id, label: phase.label, status: phase.status, progress: { ...phase.progress }, attempts: phase.attempts },
+    resumeState: { ...project.resumeState }, verificationState: { ...project.verificationState },
+    authorization: project.authorizationState === undefined ? null : { ...project.authorizationState },
+    blocker: project.lastError ?? null,
   };
 }
 

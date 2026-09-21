@@ -57,6 +57,7 @@ import { registerNavigationTools } from "./tools/navigation.js";
 import { registerDeliveryTools } from "./tools/delivery.js";
 import { registerUtilityTools } from "./tools/utility.js";
 import { registerMemoryTools } from "./tools/memory.js";
+import { registerTerrainTools } from "./tools/terrain.js";
 import { TaskOutcomeTracker } from "./status/outcomes.js";
 import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
@@ -169,6 +170,7 @@ registerNavigationTools(registry, scheduler, locations);
 registerDeliveryTools(registry, scheduler);
 registerUtilityTools(registry, scheduler, deaths);
 registerMemoryTools(registry, locations);
+registerTerrainTools(registry, scheduler, buildProjectManager);
 // Goal layer: start_goal / cancel_goal turn owner objectives into the one
 // persistent autonomous goal the background driver pursues.
 registerGoalTools(registry, goals);
@@ -215,6 +217,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   state,
   scheduler,
   buildProjects: buildProjectManager,
+  worldProjects: buildProjectManager,
   goals: () => goals,
   decider,
   client,
@@ -437,6 +440,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     storage,
     maintenance,
     goals,
+    worldProjects: buildProjectManager,
   });
 
   // Bootstrap runs on first spawn; the runner is resumable and idempotent, so a

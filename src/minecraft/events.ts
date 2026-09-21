@@ -18,6 +18,7 @@ import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { GoalManager } from "../agent/goals.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
+import type { TerrainToolName } from "../tools/terrain.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -37,6 +38,7 @@ export interface AgentContext {
   maintenance: StockpileManager;
   /** Process-lifetime goal coordinator (the active autonomous objective). */
   goals?: GoalManager;
+  worldProjects?: import("../agent/world-projects.js").WorldProjectManager;
 }
 
 /** Matches a bare "CobbleBob?" (case-insensitive, optional trailing punctuation). */
@@ -57,6 +59,25 @@ function normalizeInstruction(message: string): string {
 }
 
 interface DeterministicBuildCommand { tool: "build_base" | "build_structure" | "build_design"; args: Record<string, unknown>; error?: string; }
+export interface DeterministicTerrainCommand { tool: TerrainToolName; args: Record<string, unknown>; error?: string; }
+
+/** Explicit, bounded owner phrases for the four terrain operations. */
+export function parseDeterministicTerrainCommand(instruction: string): DeterministicTerrainCommand | null {
+  const value = instruction.trim().toLowerCase().replace(/[!?.,]+$/, "");
+  let match = value.match(/^(?:please )?(?:flatten) (\d+)\s*x\s*(\d+)(?: here)?$/);
+  if (match) return { tool: "flatten_area", args: { width: Number(match[1]), length: Number(match[2]), anchor: "owner" } };
+  match = value.match(/^(?:please )?(?:clear) (\d+)\s*x\s*(\d+)(?: here)?$/);
+  if (match) return { tool: "clear_area", args: { width: Number(match[1]), length: Number(match[2]), height: 4, anchor: "owner" } };
+  match = value.match(/^(?:please )?dig (?:a )?(\d+)\s*x\s*(\d+) (?:hole|excavation) (\d+) blocks? deep(?: here)?$/);
+  if (match) return { tool: "excavate_volume", args: { width: Number(match[1]), length: Number(match[2]), depth: Number(match[3]), anchor: "owner" } };
+  match = value.match(/^(?:please )?dig (?:a )?basement (\d+)\s*x\s*(\d+)\s*x\s*(\d+)(?: here)?$/);
+  if (match) return { tool: "excavate_volume", args: { width: Number(match[1]), length: Number(match[2]), depth: Number(match[3]), anchor: "owner" } };
+  match = value.match(/^(?:please )?dig (?:a )?(?:(\d+)|two)-wide staircase down (\d+) blocks?$/);
+  if (match) return { tool: "dig_mineshaft", args: { width: match[1] === undefined ? 2 : Number(match[1]), height: 2, depth: Number(match[2]), anchor: "owner_front" } };
+  match = value.match(/^(?:please )?dig a mineshaft down to y\s*=\s*(-?\d+)$/);
+  if (match) return { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: Number(match[1]), anchor: "owner_front" } };
+  return null;
+}
 
 /** Small, explicit owner-command rail that remains available while the LLM is down. */
 export function parseDeterministicBuildCommand(instruction: string): DeterministicBuildCommand | null {
@@ -155,6 +176,7 @@ function makeToolContext(bot: Bot, config: MinecraftConfig, ctx: AgentContext): 
     storage: ctx.storage,
     maintenance: ctx.maintenance,
     goals: ctx.goals,
+    worldProjects: ctx.worldProjects,
   };
 }
 
@@ -361,6 +383,16 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     if (/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?camera(?: .*)?$/.test(instruction)) {
       bot.chat("I can't build cameras yet. I can build rooms, towers, pyramids, and the supported landmark designs.");
       logger.info({ reply: "unsupported camera build request" }, "chat sent");
+      return;
+    }
+
+    const directTerrain = parseDeterministicTerrainCommand(instruction);
+    if (directTerrain !== null) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      if (directTerrain.error) { bot.chat(`I can't start that terrain project: ${directTerrain.error}.`); return; }
+      const reply = runTool(bot, config, ctx, directTerrain.tool, directTerrain.args);
+      if (reply) bot.chat(reply);
+      else bot.chat("I couldn't start that terrain project because its bounds or anchor are not allowed.");
       return;
     }
 

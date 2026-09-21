@@ -9,6 +9,7 @@ import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { EventBus } from "../events/bus.js";
 import type { BootstrapRunner } from "../skills/bootstrap-survival.js";
+import type { WorldProjectManager } from "../agent/world-projects.js";
 
 /** Deterministic environment a tool handler may act on. */
 export interface ToolContext {
@@ -31,6 +32,8 @@ export interface ToolContext {
   tasks?: TasksRepository;
   /** Process-lifetime goal coordinator (the active autonomous objective). */
   goals?: GoalManager;
+  /** Process-lifetime world-project coordinator for bounded terrain tools. */
+  worldProjects?: WorldProjectManager;
 }
 
 /** Tool handlers return a short player-facing reply, or nothing to stay silent. */

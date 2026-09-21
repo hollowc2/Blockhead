@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDeterministicBuildCommand } from "./events.js";
+import { parseDeterministicBuildCommand, parseDeterministicTerrainCommand } from "./events.js";
+
+test("terrain phrases map to bounded tools without an LLM call", () => {
+  assert.deepEqual(parseDeterministicTerrainCommand("flatten 10x10 here"), { tool: "flatten_area", args: { width: 10, length: 10, anchor: "owner" } });
+  assert.deepEqual(parseDeterministicTerrainCommand("clear 20x15 here"), { tool: "clear_area", args: { width: 20, length: 15, height: 4, anchor: "owner" } });
+  assert.deepEqual(parseDeterministicTerrainCommand("dig a 10x10 hole 5 blocks deep"), { tool: "excavate_volume", args: { width: 10, length: 10, depth: 5, anchor: "owner" } });
+  assert.deepEqual(parseDeterministicTerrainCommand("dig a mineshaft down to Y=-40"), { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: -40, anchor: "owner_front" } });
+  assert.deepEqual(parseDeterministicTerrainCommand("dig a two-wide staircase down 30 blocks"), { tool: "dig_mineshaft", args: { width: 2, height: 2, depth: 30, anchor: "owner_front" } });
+});
 
 test("standard shed command has a deterministic LLM-independent route", () => {
   assert.deepEqual(parseDeterministicBuildCommand("please build a standard stockpile shed"), {
