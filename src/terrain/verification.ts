@@ -1,14 +1,15 @@
 import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
 import { classifyObservedBlock, type ObservedBlockState } from "./classification.js";
-import type { BlockBounds } from "./schema.js";
+import type { BlockBounds, CardinalDirection, FrozenTerrainPlan, MineshaftSpec } from "./schema.js";
+import { mineshaftSegment } from "./geometry.js";
 import type { SkillErrorCode, SkillResult } from "../skills/skill-library.js";
 
 export interface VerificationMismatch {
   position: { x: number; y: number; z: number };
   state: ObservedBlockState;
   blockName: string | null;
-  errorCode: Extract<SkillErrorCode, "WORLD_NOT_OBSERVED" | "LAVA_HAZARD" | "WATER_HAZARD" | "FALLING_BLOCKS_UNSTABLE" | "UNBREAKABLE_BLOCK" | "PROTECTED_FIXTURE">;
+  errorCode: Extract<SkillErrorCode, "WORLD_NOT_OBSERVED" | "LAVA_HAZARD" | "WATER_HAZARD" | "FALLING_BLOCKS_UNSTABLE" | "UNBREAKABLE_BLOCK" | "PROTECTED_FIXTURE" | "CAVE_OPENING" | "RETURN_ROUTE_LOST">;
 }
 
 export interface ExcavationVerification {
@@ -40,6 +41,16 @@ export interface FlattenAreaVerification {
   columns: FlattenColumnVerification[];
   inspected: number;
   verified: number;
+  mismatches: VerificationMismatch[];
+}
+
+export interface MineshaftVerification {
+  direction: CardinalDirection;
+  targetSegment: number;
+  inspected: number;
+  verified: number;
+  routeForward: boolean;
+  routeBackward: boolean;
   mismatches: VerificationMismatch[];
 }
 
@@ -139,4 +150,57 @@ export function verifyFlattenArea(bot: Bot, bounds: BlockBounds, walkingY = boun
   const data = { bounds, walkingY, columns, inspected, verified, mismatches };
   if (mismatches.length > 0) return { ok: false, status: "blocked", errorCode: mismatches[0]?.errorCode ?? "UNSAFE_GEOMETRY", message: `flatten verification found ${mismatches.length} mismatched cell(s)`, data, retryable: false };
   return { ok: true, status: "completed", data, message: "flatten area verified" };
+}
+
+function mineshaftDirection(plan: FrozenTerrainPlan, spec: MineshaftSpec): CardinalDirection | null {
+  if (spec.direction !== undefined) return spec.direction;
+  if (plan.anchor.z > plan.bounds.maxZ) return "north";
+  if (plan.anchor.z < plan.bounds.minZ) return "south";
+  if (plan.anchor.x > plan.bounds.maxX) return "west";
+  if (plan.anchor.x < plan.bounds.minX) return "east";
+  return null;
+}
+
+function routeCells(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirection, spec: MineshaftSpec, targetSegment: number, mismatches: VerificationMismatch[], maxMismatches: number): { inspected: number; verified: number } {
+  let inspected = 0;
+  let verified = 0;
+  for (let segment = 0; segment <= targetSegment; segment += 1) {
+    const corridor = mineshaftSegment(plan.anchor, direction, spec.width, spec.height, segment);
+    for (let y = corridor.minY; y <= corridor.maxY; y += 1) for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
+      inspected += 1;
+      const found = mismatch(bot, x, y, z);
+      if (found === null) verified += 1;
+      else if (mismatches.length < maxMismatches) mismatches.push(found);
+    }
+    for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
+      inspected += 1;
+      const found = mismatch(bot, x, corridor.minY - 1, z, true);
+      if (found === null) verified += 1;
+      else if (mismatches.length < maxMismatches) mismatches.push({ ...found, errorCode: found.state === "passable" ? "CAVE_OPENING" : found.errorCode });
+    }
+    const exposed = direction === "north" || direction === "south"
+      ? [{ x: corridor.minX - 1, z: corridor.minZ }, { x: corridor.maxX + 1, z: corridor.minZ }]
+      : [{ x: corridor.minX, z: corridor.minZ - 1 }, { x: corridor.minX, z: corridor.maxZ + 1 }];
+    for (const face of exposed) for (let y = corridor.minY; y <= corridor.maxY; y += 1) {
+      inspected += 1;
+      const found = mismatch(bot, face.x, y, face.z);
+      if (found === null) verified += 1;
+      else if (mismatches.length < maxMismatches) mismatches.push({ ...found, errorCode: found.state === "passable" ? "CAVE_OPENING" : found.errorCode });
+    }
+  }
+  return { inspected, verified };
+}
+
+/** Verify the complete traversable corridor and both round-trip directions. */
+export function verifyMineshaft(bot: Bot, plan: FrozenTerrainPlan, maxMismatches = 64): SkillResult<MineshaftVerification> {
+  if (plan.specification.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  const direction = mineshaftDirection(plan, plan.specification);
+  if (direction === null) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft direction is not frozen", retryable: false };
+  const targetSegment = plan.specification.targetY !== undefined ? plan.anchor.y - plan.specification.targetY : plan.specification.depth ?? 0;
+  if (targetSegment < 1) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft endpoint is invalid", retryable: false };
+  const mismatches: VerificationMismatch[] = [];
+  const counts = routeCells(bot, plan, direction, plan.specification, targetSegment, mismatches, maxMismatches);
+  const data = { direction, targetSegment, inspected: counts.inspected, verified: counts.verified, routeForward: mismatches.length === 0, routeBackward: mismatches.length === 0, mismatches };
+  if (mismatches.length > 0) return { ok: false, status: "blocked", errorCode: mismatches[0]?.errorCode ?? "RETURN_ROUTE_LOST", message: "mineshaft round-trip verification failed", data, retryable: false };
+  return { ok: true, status: "completed", data, message: "mineshaft round-trip route verified" };
 }

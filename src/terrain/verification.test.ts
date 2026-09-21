@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
-import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea } from "./verification.js";
+import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea, verifyMineshaft } from "./verification.js";
+import { createFrozenTerrainPlan } from "./schema.js";
 
 type Point = { x: number; y: number; z: number };
 function block(name: string, position: Point): Block {
@@ -47,4 +48,21 @@ test("verifyFlattenArea requires solid support and two blocks of headroom", () =
   const blocked = verifyFlattenArea(botAt((point) => point.y === 62 ? block("water", point) : block("air", point)), bounds, 63);
   assert.equal(blocked.ok, false);
   assert.equal(blocked.errorCode, "WATER_HAZARD");
+});
+
+test("verifyMineshaft requires a clear corridor and solid floors for both directions", () => {
+  const plan = createFrozenTerrainPlan({
+    world: "world", dimension: "overworld", anchor: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    bounds: { minX: 0, maxX: 0, minY: 62, maxY: 66, minZ: 0, maxZ: 1 },
+    specification: { kind: "mineshaft", anchor: "owner_front", width: 1, height: 2, depth: 1, direction: "south" },
+  });
+  const bot = botAt((point) => {
+    if ((point.z === 0 && (point.y === 65 || point.y === 66)) || (point.z === 1 && (point.y === 64 || point.y === 65))) return block("air", point);
+    if ((point.z === 0 && point.y === 63) || (point.z === 1 && point.y === 62)) return block("stone", point);
+    return block("stone", point);
+  });
+  const result = verifyMineshaft(bot, plan);
+  assert.equal(result.ok, true);
+  assert.equal(result.data?.routeForward, true);
+  assert.equal(result.data?.routeBackward, true);
 });

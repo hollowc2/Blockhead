@@ -39,7 +39,7 @@ import type { WorldProjectManager } from "./world-projects.js";
 import type { ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
 import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
 import type { TerrainProjectRunner } from "../skills/terrain-project.js";
-import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea } from "../terrain/verification.js";
+import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea, verifyMineshaft } from "../terrain/verification.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
@@ -599,7 +599,7 @@ export class TaskDispatcher {
         if (project.kind === "excavate") return verifyExcavationVolume(this.opts.bot, project.payload.plan.bounds);
         if (project.kind === "clear") return verifyClearArea(this.opts.bot, project.payload.plan.bounds);
         if (project.kind === "flatten") return verifyFlattenArea(this.opts.bot, project.payload.plan.bounds, project.payload.plan.bounds.maxY);
-        return { ok: false, status: "failed", errorCode: "NOT_READY", message: "mineshaft verification is reserved for a later stage", retryable: false };
+        return verifyMineshaft(this.opts.bot, project.payload.plan);
       }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");

@@ -4,9 +4,9 @@ import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { travelAndWait } from "../minecraft/movement.js";
 import { classifyObservedBlock } from "../terrain/classification.js";
-import { deterministicSerpentine } from "../terrain/geometry.js";
+import { deterministicSerpentine, mineshaftSegment } from "../terrain/geometry.js";
 import { TerrainMutationService } from "../terrain/mutation.js";
-import type { BlockBounds, FrozenTerrainPlan } from "../terrain/schema.js";
+import type { BlockBounds, CardinalDirection, FrozenTerrainPlan, MineshaftSpec } from "../terrain/schema.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import type { SkillResult } from "./skill-library.js";
 
@@ -62,6 +62,30 @@ export interface SurfaceSliceData extends TerrainCursor {
   complete: boolean;
   total: number;
   columns: readonly FlattenColumnPlan[];
+}
+
+export interface MineshaftResumeState {
+  lastVerifiedSegment: number;
+  lastSafeWaypoint: { x: number; y: number; z: number };
+  routeStatus: "verified" | "lost";
+}
+
+export interface MineshaftRunOptions {
+  signals: TaskSignals;
+  resumeState?: MineshaftResumeState;
+}
+
+export interface MineshaftSliceData extends MineshaftResumeState {
+  complete: boolean;
+  totalSegments: number;
+  direction: CardinalDirection;
+  endpoint: { x: number; y: number; z: number };
+}
+
+export interface TerrainRunOptions extends TerrainRunnerOptions {
+  signals: TaskSignals;
+  resumeState?: TerrainCursor | MineshaftResumeState;
+  walkingY?: number;
 }
 
 export const MAX_FLATTEN_CUT = 16;
@@ -198,6 +222,79 @@ function playerInWorkBuffer(bot: Bot, bounds: BlockBounds): boolean {
   });
 }
 
+function pointInBounds(point: { x: number; y: number; z: number }, bounds: BlockBounds): boolean {
+  return point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY && point.z >= bounds.minZ && point.z <= bounds.maxZ;
+}
+
+function directionFromFrozenGeometry(plan: FrozenTerrainPlan, spec: MineshaftSpec): CardinalDirection | null {
+  if (spec.direction !== undefined) return spec.direction;
+  const { anchor, bounds } = plan;
+  if (anchor.z > bounds.maxZ) return "north";
+  if (anchor.z < bounds.minZ) return "south";
+  if (anchor.x > bounds.maxX) return "west";
+  if (anchor.x < bounds.minX) return "east";
+  return null;
+}
+
+function forwardOffset(direction: CardinalDirection): { x: number; z: number } {
+  if (direction === "north") return { x: 0, z: -1 };
+  if (direction === "south") return { x: 0, z: 1 };
+  if (direction === "east") return { x: 1, z: 0 };
+  return { x: -1, z: 0 };
+}
+
+function waypoint(anchor: { x: number; y: number; z: number }, direction: CardinalDirection, width: 1 | 2, segment: number): { x: number; y: number; z: number } {
+  const cross = -Math.floor(width / 2);
+  const offset = forwardOffset(direction);
+  return { x: anchor.x + offset.x * segment + (direction === "north" || direction === "south" ? cross : 0), y: anchor.y - segment + 1, z: anchor.z + offset.z * segment + (direction === "east" || direction === "west" ? cross : 0) };
+}
+
+function stateFailure(state: ReturnType<typeof classifyObservedBlock>, name: string | null): SkillResult<never> {
+  if (state === "fluid") return { ok: false, status: "blocked", errorCode: name?.replace(/^minecraft:/, "").includes("lava") ? "LAVA_HAZARD" : "WATER_HAZARD", message: "mineshaft intersects a fluid", retryable: false };
+  if (state === "falling") return { ok: false, status: "blocked", errorCode: "FALLING_BLOCKS_UNSTABLE", message: "mineshaft contains unsettled falling material", retryable: false };
+  if (state === "unobserved") return { ok: false, status: "blocked", errorCode: "WORLD_NOT_OBSERVED", message: "mineshaft requires an unobserved block", retryable: false };
+  if (state === "protectedFixture") return { ok: false, status: "blocked", errorCode: "PROTECTED_FIXTURE", message: "mineshaft intersects a protected fixture", retryable: false };
+  return { ok: false, status: "blocked", errorCode: "UNBREAKABLE_BLOCK", message: "mineshaft intersects an unbreakable block", retryable: false };
+}
+
+function inspectMineshaftSegment(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirection, segment: number): SkillResult<{ bounds: BlockBounds; floor: Array<{ x: number; y: number; z: number }>; cells: Array<{ x: number; y: number; z: number }> }> {
+  const spec = plan.specification;
+  if (spec.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  const bounds = mineshaftSegment(plan.anchor, direction, spec.width, spec.height, segment);
+  const cells: Array<{ x: number; y: number; z: number }> = [];
+  const floor: Array<{ x: number; y: number; z: number }> = [];
+  for (let y = bounds.maxY; y >= bounds.minY; y -= 1) for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+    if (!pointInBounds({ x, y, z }, plan.bounds)) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft segment exceeds frozen authorization geometry", retryable: false };
+    const block = bot.blockAt(new Vec3(x, y, z));
+    const state = classifyObservedBlock(block);
+    if (state !== "passable" && state !== "solid") return stateFailure(state, block?.name ?? null);
+    cells.push({ x, y, z });
+  }
+  for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+    const position = { x, y: bounds.minY - 1, z };
+    if (!pointInBounds(position, plan.bounds)) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft floor exceeds frozen authorization geometry", retryable: false };
+    const block = bot.blockAt(new Vec3(position.x, position.y, position.z));
+    const state = classifyObservedBlock(block);
+    if (state !== "solid") {
+      if (state === "passable") return { ok: false, status: "blocked", errorCode: "CAVE_OPENING", message: "mineshaft has no solid floor", retryable: false };
+      return stateFailure(state, block?.name ?? null);
+    }
+    floor.push(position);
+  }
+  return { ok: true, status: "completed", data: { bounds, floor, cells } };
+}
+
+function checkExposedFaces(bot: Bot, bounds: BlockBounds, direction: CardinalDirection): SkillResult<void> {
+  const side = direction === "north" || direction === "south" ? [{ x: bounds.minX - 1, z: bounds.minZ }, { x: bounds.maxX + 1, z: bounds.minZ }] : [{ x: bounds.minX, z: bounds.minZ - 1 }, { x: bounds.minX, z: bounds.maxZ + 1 }];
+  for (const face of side) for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    const block = bot.blockAt(new Vec3(face.x, y, face.z));
+    const state = classifyObservedBlock(block);
+    if (state === "passable") return { ok: false, status: "blocked", errorCode: "CAVE_OPENING", message: "mineshaft opens into an unverified cavity", retryable: false };
+    if (state !== "solid") return stateFailure(state, block?.name ?? null);
+  }
+  return { ok: true, status: "completed" };
+}
+
 /** Return a bounded, observed standing position beside a target. */
 export async function findSafeWorkPose(bot: Bot, target: { x: number; y: number; z: number }, bounds: BlockBounds, signal: AbortSignal): Promise<SkillResult<SafeWorkPose>> {
   const candidates = [target.y, target.y + 1].flatMap((y) => [
@@ -266,6 +363,108 @@ export async function runExcavationSlice(bot: Bot, plan: FrozenTerrainPlan, opti
   return { ok: true, status: complete ? "completed" : "partial", data, message: complete ? "excavation slice complete" : "excavation slice checkpointed", retryable: !complete };
 }
 
+/** Verify that a corridor can be traversed in either direction without digging. */
+export function verifyNoDigRoute(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirection, lastSegment: number): SkillResult<{ segments: number; endpoint: { x: number; y: number; z: number } }> {
+  const spec = plan.specification;
+  if (spec.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  for (let segment = 0; segment <= lastSegment; segment += 1) {
+    const inspected = inspectMineshaftSegment(bot, plan, direction, segment);
+    if (!inspected.ok || inspected.data === undefined) return { ok: false, status: inspected.status, errorCode: inspected.errorCode, message: inspected.message, retryable: inspected.retryable };
+    for (const cell of inspected.data.cells) {
+      if (classifyObservedBlock(bot.blockAt(new Vec3(cell.x, cell.y, cell.z))) !== "passable") return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: `mineshaft route is blocked at segment ${segment}`, retryable: false };
+    }
+  }
+  const endpoint = waypoint(plan.anchor, direction, spec.width, lastSegment);
+  return { ok: true, status: "completed", data: { segments: lastSegment + 1, endpoint }, message: "mineshaft route verified in both directions" };
+}
+
+function lightItem(bot: Bot): Item | null {
+  return (bot.inventory?.items?.() ?? []).find((item) => item.name.replace(/^minecraft:/, "") === "torch") ?? null;
+}
+
+async function placePlannedLight(bot: Bot, mutation: TerrainMutationService, plan: FrozenTerrainPlan, direction: CardinalDirection, segment: number, signal: AbortSignal): Promise<SkillResult<void>> {
+  if (segment === 0 || segment % 8 !== 0) return { ok: true, status: "completed" };
+  const spec = plan.specification;
+  if (spec.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  const item = lightItem(bot);
+  if (item === null) return { ok: true, status: "completed", message: "no torch available for this planned light interval" };
+  const segmentBounds = mineshaftSegment(plan.anchor, direction, spec.width, spec.height, segment);
+  const wall = direction === "north" || direction === "south" ? { x: segmentBounds.minX, y: segmentBounds.minY, z: segmentBounds.minZ } : { x: segmentBounds.minX, y: segmentBounds.minY, z: segmentBounds.minZ };
+  const referencePosition = direction === "north" || direction === "south" ? { x: wall.x - 1, y: wall.y, z: wall.z } : { x: wall.x, y: wall.y, z: wall.z - 1 };
+  const reference = bot.blockAt(new Vec3(referencePosition.x, referencePosition.y, referencePosition.z));
+  if (reference === null || classifyObservedBlock(reference) !== "solid") return { ok: false, status: "blocked", errorCode: "CAVE_OPENING", message: "planned light has no safe wall reference", retryable: false };
+  const placed = await mutation.placeLight(item, reference, direction === "north" || direction === "south" ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 }, wall, signal);
+  if (!placed.ok) return { ...placed, data: undefined };
+  return { ok: true, status: "completed" };
+}
+
+async function findMineshaftWorkPose(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirection, width: 1 | 2, segment: number, target: { x: number; y: number; z: number }, signal: AbortSignal): Promise<SkillResult<SafeWorkPose>> {
+  const previous = waypoint(plan.anchor, direction, width, Math.max(0, segment - 1));
+  const offset = forwardOffset(direction);
+  const pose = segment === 0 ? { x: previous.x - offset.x, y: plan.anchor.y + 1, z: previous.z - offset.z } : previous;
+  const feet = classifyObservedBlock(bot.blockAt(new Vec3(pose.x, pose.y, pose.z)));
+  const floor = classifyObservedBlock(bot.blockAt(new Vec3(pose.x, pose.y - 1, pose.z)));
+  if (feet !== "passable" || floor !== "solid" || (pose.x === target.x && pose.y === target.y && pose.z === target.z)) return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: "mineshaft lost its last safe standing waypoint", retryable: false };
+  const self = bot.entity?.position;
+  if (self && Math.hypot(self.x - pose.x, self.y - pose.y, self.z - pose.z) <= 3) return { ok: true, status: "completed", data: { position: pose } };
+  const travel = await travelAndWait(bot, pose, { range: 1.5, timeoutMs: 30_000, signal });
+  if (travel.status === "arrived" || travel.status === "already_there") return { ok: true, status: "completed", data: { position: pose } };
+  return { ok: false, status: "blocked", errorCode: "UNREACHABLE_BLOCK", message: `cannot reach mineshaft waypoint (${pose.x}, ${pose.y}, ${pose.z})`, retryable: false };
+}
+
+export async function runMineshaftSlice(bot: Bot, plan: FrozenTerrainPlan, options: MineshaftRunOptions & TerrainRunnerOptions): Promise<SkillResult<MineshaftSliceData>> {
+  const spec = plan.specification;
+  if (spec.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  const direction = directionFromFrozenGeometry(plan, spec);
+  if (direction === null) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft direction is not frozen", retryable: false };
+  const distance = spec.targetY !== undefined ? plan.anchor.y - spec.targetY : spec.depth ?? 0;
+  if (!Number.isInteger(distance) || distance < 1) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft endpoint must descend below the entrance", retryable: false };
+  const endpoint = waypoint(plan.anchor, direction, spec.width, distance);
+  const base = { lastVerifiedSegment: -1, lastSafeWaypoint: waypoint(plan.anchor, direction, spec.width, 0), routeStatus: "verified" as const };
+  const resume = options.resumeState === undefined ? base : { ...base, ...options.resumeState };
+  const mutation = options.mutation ?? new TerrainMutationService(bot);
+  const limit = Math.max(1, Math.floor(options.maxBlocksPerSlice ?? 4));
+  let worked = 0;
+
+  // A resume cursor is only a hint. Rescan the route from the entrance and
+  // choose the first incomplete segment after every interruption.
+  let firstIncomplete = 0;
+  for (let segment = 0; segment <= distance; segment += 1) {
+    const inspected = inspectMineshaftSegment(bot, plan, direction, segment);
+    if (!inspected.ok || inspected.data === undefined) return { ...inspected, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+    const complete = inspected.data.cells.every((cell) => classifyObservedBlock(bot.blockAt(new Vec3(cell.x, cell.y, cell.z))) === "passable");
+    if (!complete) { firstIncomplete = segment; break; }
+    firstIncomplete = segment + 1;
+  }
+
+  for (let segment = firstIncomplete; segment <= distance && worked < limit; segment += 1) {
+    if (!options.signals.checkpoint({ phase: "mineshaft", segment, lastVerifiedSegment: resume.lastVerifiedSegment, routeStatus: resume.routeStatus })) return { ok: false, status: "interrupted", message: "mineshaft paused at a safe waypoint", retryable: true, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+    const inspected = inspectMineshaftSegment(bot, plan, direction, segment);
+    if (!inspected.ok || inspected.data === undefined) return { ...inspected, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+    const exposed = checkExposedFaces(bot, inspected.data.bounds, direction);
+    if (!exposed.ok) return { ...exposed, data: { ...resume, routeStatus: "lost", complete: false, totalSegments: distance + 1, direction, endpoint } };
+    // Remove ceiling/head blocks first, never the segment floor.
+    for (const target of inspected.data.cells) {
+      if (classifyObservedBlock(bot.blockAt(new Vec3(target.x, target.y, target.z))) === "passable") continue;
+      const pose = await findMineshaftWorkPose(bot, plan, direction, spec.width, segment, target, options.signals.signal);
+      if (!pose.ok) return { ...pose, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+      const broken = await mutation.breakAndVerify(target, options.signals.signal);
+      if (!broken.ok) return { ...broken, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+    }
+    const route = verifyNoDigRoute(bot, plan, direction, segment);
+    if (!route.ok) return { ...route, data: { ...resume, routeStatus: "lost", complete: false, totalSegments: distance + 1, direction, endpoint } };
+    const light = await placePlannedLight(bot, mutation, plan, direction, segment, options.signals.signal);
+    if (!light.ok) return { ...light, data: { ...resume, complete: false, totalSegments: distance + 1, direction, endpoint } };
+    resume.lastVerifiedSegment = segment;
+    resume.lastSafeWaypoint = waypoint(plan.anchor, direction, spec.width, segment);
+    resume.routeStatus = "verified";
+    worked += 1;
+  }
+  const complete = resume.lastVerifiedSegment >= distance;
+  const data = { ...resume, complete, totalSegments: distance + 1, direction, endpoint };
+  return { ok: true, status: complete ? "completed" : "partial", data, message: complete ? "mineshaft slice complete" : "mineshaft slice checkpointed", retryable: !complete };
+}
+
 export function runClearAreaSlice(bot: Bot, plan: FrozenTerrainPlan, options: SurfaceRunOptions & TerrainRunnerOptions): Promise<SkillResult<SurfaceSliceData>> {
   return runSurfaceSlice(bot, plan, options, "clear");
 }
@@ -277,10 +476,10 @@ export function runFlattenAreaSlice(bot: Bot, plan: FrozenTerrainPlan, options: 
 export class TerrainProjectRunner {
   constructor(private readonly bot: Bot, private readonly options: TerrainRunnerOptions = {}) {}
 
-  async run(projectPlan: FrozenTerrainPlan, options: ExcavationRunOptions | SurfaceRunOptions): Promise<SkillResult> {
+  async run(projectPlan: FrozenTerrainPlan, options: TerrainRunOptions): Promise<SkillResult> {
     if (projectPlan.specification.kind === "excavate") return runExcavationSlice(this.bot, projectPlan, { ...this.options, ...options } as ExcavationRunOptions & TerrainRunnerOptions);
     if (projectPlan.specification.kind === "clear") return runClearAreaSlice(this.bot, projectPlan, { ...this.options, ...options } as SurfaceRunOptions & TerrainRunnerOptions);
     if (projectPlan.specification.kind === "flatten") return runFlattenAreaSlice(this.bot, projectPlan, { ...this.options, ...options } as SurfaceRunOptions & TerrainRunnerOptions);
-    return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "mineshaft execution is reserved for a later stage", retryable: false };
+    return runMineshaftSlice(this.bot, projectPlan, { ...this.options, ...options } as MineshaftRunOptions & TerrainRunnerOptions);
   }
 }

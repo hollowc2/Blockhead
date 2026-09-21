@@ -7,7 +7,7 @@ import { WorldActionExecutor } from "../agent/world-actions.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { createFrozenTerrainPlan } from "../terrain/schema.js";
 import { TerrainMutationService } from "../terrain/mutation.js";
-import { runClearAreaSlice, runExcavationSlice, runFlattenAreaSlice } from "./terrain-project.js";
+import { runClearAreaSlice, runExcavationSlice, runFlattenAreaSlice, runMineshaftSlice } from "./terrain-project.js";
 
 type Point = { x: number; y: number; z: number };
 function block(name: string, position: Point): Block {
@@ -112,4 +112,33 @@ test("flatten rejects fluids before any mutation", async () => {
   const result = await new WorldActionExecutor().run("terrain-flatten-lava", new AbortController().signal, async () => runFlattenAreaSlice(bot, plan, { signals: signals() }));
   assert.equal(result.errorCode, "LAVA_HAZARD");
   assert.equal(digCalls, 0);
+});
+
+test("mineshaft descends by verified segments and resumes from a safe waypoint", async () => {
+  const plan = createFrozenTerrainPlan({
+    world: "world", dimension: "overworld", anchor: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    bounds: { minX: 0, maxX: 0, minY: 62, maxY: 66, minZ: 0, maxZ: 1 },
+    specification: { kind: "mineshaft", anchor: "owner_front", width: 1, height: 2, depth: 1, direction: "south" },
+  });
+  const dug = new Set<string>();
+  const corridor = (point: Point): boolean => (point.z === 0 && (point.y === 65 || point.y === 66)) || (point.z === 1 && (point.y === 64 || point.y === 65));
+  const bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } }, players: {},
+    blockAt: (point: Point) => {
+      if (corridor(point)) return dug.has(`${point.x},${point.y},${point.z}`) ? block("air", point) : block("stone", point);
+      if ((point.z === -1 && point.y === 64) || (point.z === 0 && point.y === 64) || (point.z === 1 && point.y === 63)) return block("stone", point);
+      if (point.x === -1 || point.x === 1) return block("stone", point);
+      return block("air", point);
+    },
+    dig: async (target: Block) => { dug.add(`${target.position.x},${target.position.y},${target.position.z}`); },
+    heldItem: { type: 1, maxDurability: 0, durabilityUsed: 0 },
+  } as unknown as Bot;
+  const mutation = new TerrainMutationService(bot, { toolProvisioner: { equipForBlock: async () => undefined, hasDurabilityReserve: () => true }, pollAttempts: 1, settleAttempts: 1 });
+  const first = await new WorldActionExecutor().run("mineshaft-1", new AbortController().signal, async () => runMineshaftSlice(bot, plan, { signals: signals(), mutation, maxBlocksPerSlice: 1 }));
+  assert.equal(first.status, "partial", `${first.errorCode ?? ""} ${first.message ?? ""}`);
+  assert.equal(first.data?.lastVerifiedSegment, 0);
+  const resumed = await new WorldActionExecutor().run("mineshaft-2", new AbortController().signal, async () => runMineshaftSlice(bot, plan, { signals: signals(), mutation, maxBlocksPerSlice: 2, resumeState: first.data }));
+  assert.equal(resumed.status, "completed", `${resumed.errorCode ?? ""} ${resumed.message ?? ""}`);
+  assert.equal(resumed.data?.lastSafeWaypoint.z, 1);
+  assert.equal(dug.size, 4);
 });
