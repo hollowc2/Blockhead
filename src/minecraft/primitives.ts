@@ -59,6 +59,22 @@ export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signa
   throwIfAborted(signal);
 }
 
+/**
+ * Terrain code uses the same lease-bound placement primitive as construction.
+ * Keeping this small adapter here makes it impossible for a terrain caller to
+ * accidentally bypass the scheduler/policy boundary.
+ */
+export async function placeTerrainBlock(
+  bot: Bot,
+  reference: Parameters<Bot["placeBlock"]>[0],
+  face: Parameters<Bot["placeBlock"]>[1],
+  target: { x: number; y: number; z: number },
+  blockName: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await placeBlock(bot, reference, face, signal, target, blockName);
+}
+
 export async function tossItem(bot: Bot, type: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "drop");
