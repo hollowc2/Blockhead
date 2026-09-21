@@ -5,7 +5,7 @@ import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeO
 
 function config(allowPvp = false): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
     behavior: { allow_pvp: allowPvp },
   });

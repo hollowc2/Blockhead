@@ -189,7 +189,7 @@ export class BuildProjectsRepository {
 
   /** Active, paused, blocked, and verifying projects survive a restart. */
   loadUnfinished(): BuildProject[] {
-    const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects WHERE status IN ('active', 'paused', 'blocked', 'verifying') ORDER BY created_at`).all() as BuildProjectRow[];
+    const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects WHERE status IN ('active', 'paused', 'blocked', 'verifying') ORDER BY created_at, rowid`).all() as BuildProjectRow[];
     return rows.map(toProject);
   }
 
@@ -249,13 +249,14 @@ function toProject(row: BuildProjectRow): BuildProject {
     design: parseJson<BuildingDesign>(row.design_json), origin: parseJson<HomeLocation>(row.origin_json),
     compilerVersion: row.compiler_version, schemaVersion: row.schema_version,
     blueprintHash: row.blueprint_hash, blueprint: parseJson<Blueprint>(row.blueprint_json),
-    currentPhaseId: row.current_phase_id ?? undefined,
     requiredResources: parseJson<Record<string, number>>(row.required_resources_json),
     shortages: parseJson<BuildMaterialShortage[]>(row.shortages_json),
     resumeState: parseJson<BuildProjectResumeState>(row.resume_state_json),
     verificationState: parseJson<BuildVerificationState>(row.verification_state_json),
-    createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at ?? undefined,
-    lastError: row.last_error ?? undefined,
+    createdAt: row.created_at, updatedAt: row.updated_at,
+    ...(row.current_phase_id === null ? {} : { currentPhaseId: row.current_phase_id }),
+    ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
+    ...(row.last_error === null ? {} : { lastError: row.last_error }),
   };
 }
 
@@ -265,7 +266,7 @@ function toPhase(row: BuildPhaseRow): BuildPhase {
     operationStart: row.operation_start, operationEnd: row.operation_end,
     status: row.status as BuildPhaseStatus, attempts: row.attempts,
     verifiedOperations: row.verified_operations, totalOperations: row.total_operations,
-    lastError: row.last_error ?? undefined,
+    ...(row.last_error === null ? {} : { lastError: row.last_error }),
   };
 }
 

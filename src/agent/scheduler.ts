@@ -395,7 +395,9 @@ export class Scheduler {
     this.tasks.update(task);
     this.bus.emit("task.requeued", { task });
     logger.info({ taskId: task.id, lastError: lastError ?? null }, "task requeued with progress preserved");
-    return this.activateNext();
+    // A slice that yielded must wait behind work already queued; otherwise
+    // its fresh queue timestamp would immediately select itself again.
+    return this.claimNext(task.id);
   }
 
   /** Stand active work down as blocked while retaining it as live persisted work. */

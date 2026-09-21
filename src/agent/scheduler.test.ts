@@ -111,9 +111,9 @@ test("requeueActive preserves resumable progress and activates the next task", (
   const requeued: string[] = [];
   bus.on("task.requeued", ({ task }) => requeued.push(task.id));
   const resumable = s.enqueue({ ...userTask("Build a design."), type: "build_design", executionPolicy: "resumable" });
-  const next = s.enqueue(userTask("Gather materials."));
   s.claim();
   s.signalsFor(resumable).checkpoint({ operationIndex: 12 });
+  const next = s.enqueue(userTask("Gather materials."));
 
   assert.equal(s.requeueActive("slice budget reached")?.id, next.id);
   assert.equal(resumable.status, TaskStatus.QUEUED);

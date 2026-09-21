@@ -13,7 +13,7 @@ import { MinecraftConfigSchema, type MinecraftConfig } from "../config/schema.js
 
 function configWith(policy: Record<string, unknown>): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
     policy,
   });
@@ -22,7 +22,7 @@ function configWith(policy: Record<string, unknown>): MinecraftConfig {
 /** Minimal valid config used by the dimension tests. */
 function rawConfig(): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
   });
 }
