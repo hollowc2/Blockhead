@@ -52,7 +52,18 @@ export type SkillErrorCode =
    */
   | "LOW_HEALTH"
   /** Hunt health gate: waited out natural regen and health never recovered. */
-  | "REGEN_TIMEOUT";
+  | "REGEN_TIMEOUT"
+  /** Terrain preflight and verification codes. */
+  | "LAVA_HAZARD"
+  | "WATER_HAZARD"
+  | "FALLING_BLOCKS_UNSTABLE"
+  | "UNBREAKABLE_BLOCK"
+  | "UNREACHABLE_BLOCK"
+  | "PROTECTED_FIXTURE"
+  | "CAVE_OPENING"
+  | "UNSAFE_GEOMETRY"
+  | "WORLD_NOT_OBSERVED"
+  | "RETURN_ROUTE_LOST";
 
 /**
  * The consistent search-expansion sequence (spec 12.2). Searches start at the
