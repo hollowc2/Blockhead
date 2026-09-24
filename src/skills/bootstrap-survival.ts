@@ -371,17 +371,21 @@ export class BootstrapRunner {
         throwIfAborted(this.signal ?? undefined);
         if (!BOOTSTRAP_STAGES.includes(stage)) {
           // The next stage belongs to a later phase (or is NORMAL_OPERATION):
-          // stay quiet if this session did nothing, otherwise wrap up the
-          // scope we just finished.
-          if (!started) return;
-          this.finishScope();
+          // NORMAL_OPERATION is our terminal marker, so persist it even when
+          // this process resumed after IRON_TOOLS and did no work itself.
+          // Other future-phase stages should remain quiet unless this run
+          // actually completed part of the current bootstrap scope.
+          if (stage === BootstrapStage.NORMAL_OPERATION || started) this.finishScope();
           return;
         }
         if (!started && !this.startupAnnounced) {
           this.announce("Starting up: home, wood, crafting table, wooden and stone tools, food, sheep wool, bed, storage, furnace, fuel, torches — then iron when available.");
           this.startupAnnounced = true;
-          started = true;
         }
+        // A resumed run may already have announced startup in an earlier
+        // attempt. Track stage execution independently so reaching the end
+        // still calls finishScope() and persists NORMAL_OPERATION.
+        started = true;
         // Snapshot before the stage so its SkillSuccess record describes the
         // inventory it started from, not the whole session's baseline.
         const baseline = itemsSummary(this.opts.bot);
