@@ -445,4 +445,18 @@ export const MIGRATIONS: readonly string[] = [
   SELECT project_id, phase_id, task_id, kind, details_json, created_at
   FROM build_project_events;
   `,
+  // v19: keep bootstrap lifecycle separate from the last completed stage and
+  // persist stage-local progress. Older `blocked` rows lost the resume point;
+  // stone-tools failures are known to have completed CRAFTING, so migrate
+  // those back to that durable checkpoint and let the new bounded search run.
+  `
+  ALTER TABLE bootstrap_state ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  ALTER TABLE bootstrap_state ADD COLUMN progress_json TEXT NOT NULL DEFAULT '{}';
+  UPDATE bootstrap_state
+     SET stage = 'crafting', status = 'active', attempts = 0, retry_at = NULL
+   WHERE stage = 'blocked' AND last_failure_code LIKE 'stone_tools:%';
+  UPDATE bootstrap_state
+     SET status = 'blocked'
+   WHERE stage = 'blocked';
+  `,
 ];

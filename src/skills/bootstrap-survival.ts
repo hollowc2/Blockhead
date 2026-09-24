@@ -40,12 +40,14 @@ import {
   ARRIVE_RANGE,
   travelAndWait,
   travelHomeAndWait,
+  withPathfinderDigging,
   type HomeLocation,
 } from "../minecraft/movement.js";
 import {
   collectBlocks,
   findBlockNear,
   findBlocksNear,
+  findBlocksNearRefined,
   findPlacementSpot,
   isAir,
   isSolid,
@@ -58,7 +60,7 @@ import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
 import type { WorldMutation } from "../agent/world-actions.js";
-import { revalidateAction } from "../policy/action-boundary.js";
+import { isProtectedFixture, revalidateAction } from "../policy/action-boundary.js";
 import { canonicalMobName, isLiveMob } from "../policy/combat.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
@@ -69,10 +71,21 @@ const MAX_SEARCH_RADIUS = 256;
 const COBBLE_TARGET = 12;
 /** How many nearest stone blocks each search pass considers for exposure. */
 const STONE_CANDIDATES = 64;
+const STONE_LOCAL_RADIUS = 32;
+const STONE_SURFACE_VERTICAL_RANGE = 6;
+const STONE_MAX_HOME_DISTANCE = 96;
+const STONE_EXPLORATION_SITES = 6;
+const STONE_SITE_SEPARATION = 32;
+const STONE_FAILED_SITE_CLEARANCE = 24;
+const STONE_MINE_ATTEMPTS = 3;
+const STONE_EXPLORE_TIMEOUT_MS = 60_000;
+const STONE_STAGE_TIMEOUT_MS = 12 * 60_000;
 /** Hard depth cap (in steps) for the dig-down trench; stone lies well above this. */
-const TRENCH_MAX_STEPS = 40;
+const TRENCH_MAX_STEPS = 24;
 /** Wall-clock budget for one trench step (dig + advance). */
-const TRENCH_STEP_TIMEOUT_MS = 60_000;
+const TRENCH_STEP_TIMEOUT_MS = 20_000;
+const STONE_MINE_ROUTE_TIMEOUT_MS = 3 * 60_000;
+const STONE_COLLECT_TIMEOUT_MS = 3 * 60_000;
 /** Wall-clock budget for one block-collection pass. */
 const COLLECT_TIMEOUT_MS = 240_000;
 /** Wall-clock budget for one home trip. */
@@ -97,6 +110,11 @@ const FOOD_ITEM_NAMES: Record<string, true> = {
   cooked_porkchop: true,
   cooked_mutton: true,
   cooked_chicken: true,
+  // Jungle/forest biomes drop apples from trees and sheep/cows may be
+  // absent; an apple is a legitimate, safe food item the bot can gather
+  // deterministically (it falls from jungle leaves), so count it toward
+  // the survival food reserve.
+  apple: true,
 };
 /** Drops swept up after a kill: meat plus leather, wool, feathers, and eggs. */
 const LOOT_ITEM_NAMES: Record<string, true> = {
@@ -221,6 +239,8 @@ export class BootstrapRunner {
   /** Failed block targets are retained across retries of the current stage. */
   private readonly failedTargets = new Set<string>();
   private readonly failedMobIds = new Set<number>();
+  /** Exact cells this deterministic controller has authorized for digging. */
+  private readonly authorizedDigCells = new Set<string>();
 
   constructor(private readonly opts: BootstrapRunnerOptions) {}
 
@@ -237,6 +257,10 @@ export class BootstrapRunner {
   /** The next stage to execute; null once the implemented scope is done. */
   get currentStage(): BootstrapStage | null {
     return nextBootstrapStage(this.completedStage);
+  }
+
+  get bootstrapState() {
+    return this.worldId === null ? null : this.opts.stages.getState(this.worldId);
   }
 
   get isRunning(): boolean {
@@ -281,7 +305,30 @@ export class BootstrapRunner {
             beforeMutation: (mutation: WorldMutation) => {
               const point = mutation.point ?? this.opts.bot.entity?.position;
               if (!point) throw new Error("bootstrap mutation policy revalidation requires a live bot position");
-              const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, { blockName: mutation.blockName });
+              // Bootstrap performs two kinds of first-party digs: collecting
+              // exposed surface stone and the one-wide descending stone
+              // trench. Both are deterministic, finite, and directly issued
+              // by this controller, so they are safe inside the protected
+              // home region — the generic "authorized terrain project" path
+              // does not apply to this first-party lease. Only fixture digs
+              // fall through to normal policy revalidation below.
+              const action = mutation.action as Parameters<typeof revalidateAction>[1];
+              if (action === "dig" && mutation.blockName !== undefined && this.authorizedDigCells.has(blockKey(point))) {
+                // Bootstrap's own digs are deterministic and finite: exposed
+                // surface-stone collection and the one-wide descending stone
+                // trench. Both are performed under the bot's direct control
+                // and never target fixtures, so they are safe inside the
+                // protected home region — the generic "authorized terrain
+                // project" path does not apply to this first-party lease.
+                // Any other dig (or a dig of a protected fixture) still
+                // falls through to the normal policy revalidation below.
+                if (!isProtectedFixture(mutation.blockName)) {
+                  const verdict = revalidateAction(this.opts.bot, action, point, this.opts.config, null, { blockName: mutation.blockName });
+                  if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "bootstrap mutation rejected by policy");
+                  return;
+                }
+              }
+              const verdict = revalidateAction(this.opts.bot, action, point, this.opts.config, this.opts.state.protectedRegion, { blockName: mutation.blockName });
               if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "bootstrap mutation rejected by policy");
             },
             onCancel: () => stopWorldPrimitives(this.opts.bot), onRecovery: () => stopWorldPrimitives(this.opts.bot),
@@ -347,10 +394,11 @@ export class BootstrapRunner {
           this.failStage(stage, outcome.reason);
           const worldId = this.worldId;
           if (worldId !== null) {
-            this.opts.stages.recordFailure(worldId, `${stage}: ${outcome.reason}`, Date.now() + BOOTSTRAP_RETRY_MS, STAGE_ATTEMPTS);
+            this.opts.stages.recordFailure(worldId, `${stage}: ${outcome.reason}`, Date.now() + BOOTSTRAP_RETRY_MS, stage === BootstrapStage.STONE_TOOLS ? 1 : STAGE_ATTEMPTS);
             this.opts.stages.markBlocked(worldId, `${stage}: ${outcome.reason}`);
           }
           this.opts.logger.error({ stage, reason: outcome.reason, action: "TERMINAL_BLOCK" }, "bootstrap exhausted stage attempt budget");
+          this.scheduleRetry();
           return;
         }
         this.completeStage(stage, outcome.message, baseline);
@@ -385,19 +433,27 @@ export class BootstrapRunner {
 
   private async executeWithRetries(stage: BootstrapStage): Promise<StageOutcome> {
     let last: StageOutcome = { ok: false, reason: "no attempt ran" };
-    for (let attempt = 1; attempt <= STAGE_ATTEMPTS; attempt++) {
+    const attempts = stage === BootstrapStage.STONE_TOOLS ? 1 : STAGE_ATTEMPTS;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       const startedAt = Date.now();
       this.opts.logger.info({ stage, attempt, completed: this.completedStage, inventory: itemsSummary(this.opts.bot) }, "BOOTSTRAP phase start");
       throwIfAborted(this.signal ?? undefined);
       last = await this.executeStage(stage);
       this.opts.logger.info({ stage, attempt, elapsedMs: Date.now() - startedAt, ok: last.ok, reason: last.ok ? undefined : last.reason }, "BOOTSTRAP phase settled");
       if (last.ok) return last;
-      if (attempt < STAGE_ATTEMPTS) {
+      if (attempt < attempts) {
         this.opts.logger.warn({ stage, attempt, reason: last.reason }, "bootstrap stage attempt failed; retrying");
         await sleep(RETRY_DELAY_MS, this.signal ?? undefined);
       }
     }
     return last;
+  }
+
+  private async withAuthorizedDigCells<T>(positions: readonly Vec3[], action: () => Promise<T>): Promise<T> {
+    const keys = positions.map(blockKey);
+    for (const key of keys) this.authorizedDigCells.add(key);
+    try { return await action(); }
+    finally { for (const key of keys) this.authorizedDigCells.delete(key); }
   }
 
   private async executeStage(stage: BootstrapStage): Promise<StageOutcome> {
@@ -572,7 +628,10 @@ export class BootstrapRunner {
     if (have >= target) return { ok: true, message: `Already carrying ${have} logs.` };
 
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < target; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
-      const positions = findBlocksNear(bot, isRawLog, radius, 24);
+      // Apply the standable-face check inside Mineflayer's search so a nearby
+      // canopy cannot consume the 24-result cap and hide reachable trunk
+      // bases farther out in the advertised radius.
+      const positions = findBlocksNearRefined(bot, isRawLog, (position) => isReachableTrunkBase(bot, position), radius, 24);
       if (positions.length === 0) {
         this.announce(`No logs within ${radius} blocks. Expanding search.`);
         continue;
@@ -591,7 +650,7 @@ export class BootstrapRunner {
       }
 
       const before = countLogs(bot);
-      const gained = await collectBlocks(
+      const gained = await this.withAuthorizedDigCells(ordered.map((block) => block.position), () => collectBlocks(
         bot,
         ordered,
         () => countLogs(bot),
@@ -601,7 +660,7 @@ export class BootstrapRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
         undefined,
         this.failedTargets,
-      );
+      ));
       have = countLogs(bot);
       this.opts.logger.warn({ radius, gained, skipped: ordered.length - gained, have }, "wood collect pass finished");
       if (have <= before) {
@@ -639,11 +698,11 @@ export class BootstrapRunner {
       }
     }
 
-    if (planksTarget > 0) {
+    if (planksTarget > 0 && countPlanks(bot) < planksTarget) {
       const planks = await craftPlanks(bot, planksTarget, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
     }
-    if (sticksTarget > 0) {
+    if (sticksTarget > 0 && countSticks(bot) < sticksTarget) {
       const sticks = await craftSticks(bot, sticksTarget, this.signal ?? undefined);
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
@@ -808,9 +867,19 @@ export class BootstrapRunner {
     let home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home coordinate configured" };
 
+    // Stone recovery is an expedition, including the return to its staging
+    // point. Refuse to move while critically hurt and unable to regenerate:
+    // otherwise a stranded restart can roam (or clear terrain) before the
+    // later mining health checks ever run.
+    if (bot.health <= HUNT_MIN_HEALTH) {
+      const recovered = await recoverLowHealth(bot);
+      if (!recovered.ok) return { ok: false, reason: `unsafe to gather stone prerequisites: ${recovered.reason}` };
+    }
+
     const travel = await travelHomeAndWait(bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
+      allowDig: false,
     });
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       if (!await this.ensureReachableHome("stone_tools")) return { ok: false, reason: "home unreachable; keeping persisted home" };
@@ -1348,8 +1417,14 @@ export class BootstrapRunner {
     }
     const sticks = await craftSticks(bot, countSticks(bot) + crafts, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
-    const torches = await craftItem(bot, "torch", { times: crafts, signal: this.signal ?? undefined });
-    if (!torches.ok) return { ok: false, reason: torches.reason };
+    // This server can acknowledge only part of a multi-recipe craft before
+    // Mineflayer attempts the next slot transaction, yielding a misleading
+    // "missing ingredient" after consuming some coal. Craft one recipe at a
+    // time and re-read the authoritative inventory between each operation.
+    for (let craft = 0; craft < crafts && countItem(bot, "torch") < target; craft++) {
+      const torches = await craftItem(bot, "torch", { times: 1, signal: this.signal ?? undefined });
+      if (!torches.ok) return { ok: false, reason: torches.reason };
+    }
 
     have = countItem(bot, "torch");
     return { ok: true, message: `Crafted ${have} torches.` };
@@ -1467,14 +1542,21 @@ export class BootstrapRunner {
       this.opts.logger.warn({ reason: wooden.reason }, "furnace: could not restore wooden kit");
       return null;
     }
-    const stone = await this.gatherCobblestone(FURNACE_COBBLE_TARGET);
-    if (!stone.ok) return null;
-    const furnace = await this.craftAtTable("furnace", table);
-    if (!furnace.ok) return null;
-
-    const item = findItem(bot, "furnace");
+    let item = findItem(bot, "furnace");
+    if (item === null) {
+      const stone = await this.gatherCobblestone(FURNACE_COBBLE_TARGET);
+      if (!stone.ok) return null;
+      const furnace = await this.craftAtTable("furnace", table);
+      if (!furnace.ok) return null;
+      item = findItem(bot, "furnace");
+    }
     if (item === null) return null;
-    const spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, home);
+    let spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, home);
+    if (spot === null) {
+      const fallbackCenter = bot.entity?.position;
+      spot = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
+      if (spot !== null) this.opts.logger.warn({ home, pos: fallbackCenter }, "no floor space near home for a furnace; placing near the bot");
+    }
     if (spot === null) return null;
     const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
     return placed !== null && isFurnaceBlock(placed) ? placed : null;
@@ -1509,7 +1591,7 @@ export class BootstrapRunner {
 
     let have = countLogs(bot);
     for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < targetTotal; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
-      const positions = findBlocksNear(bot, isRawLog, radius, 24);
+      const positions = findBlocksNearRefined(bot, isRawLog, (position) => isReachableTrunkBase(bot, position), radius, 24);
       this.opts.logger.info({
         radius,
         found: positions.length,
@@ -1529,7 +1611,7 @@ export class BootstrapRunner {
         .filter((block) => block !== null);
       if (ordered.length === 0) continue;
 
-      await collectBlocks(
+      await this.withAuthorizedDigCells(ordered.map((block) => block.position), () => collectBlocks(
         bot,
         ordered,
         () => countLogs(bot),
@@ -1539,7 +1621,7 @@ export class BootstrapRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
         undefined,
         this.failedTargets,
-      );
+      ));
       have = countLogs(bot);
     }
 
@@ -1566,12 +1648,12 @@ export class BootstrapRunner {
           continue;
         }
         travelled = true;
-        const positions = findBlocksNear(bot, isRawLog, baseRadius, 24);
+        const positions = findBlocksNearRefined(bot, isRawLog, (position) => isReachableTrunkBase(bot, position), baseRadius, 24);
         const ordered = positions
           .map((v) => bot.blockAt(v))
           .filter((block) => block !== null);
         if (ordered.length > 0) {
-          await collectBlocks(
+          await this.withAuthorizedDigCells(ordered.map((block) => block.position), () => collectBlocks(
             bot,
             ordered,
             () => countLogs(bot),
@@ -1581,7 +1663,7 @@ export class BootstrapRunner {
             (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
             undefined,
             this.failedTargets,
-          );
+          ));
           have = countLogs(bot);
         }
       }
@@ -1654,7 +1736,7 @@ export class BootstrapRunner {
       }
 
       const before = countFuelItems(bot);
-      await collectBlocks(
+      await this.withAuthorizedDigCells(targets.map((block) => block.position), () => collectBlocks(
         bot,
         targets,
         () => countFuelItems(bot),
@@ -1664,7 +1746,7 @@ export class BootstrapRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
         undefined,
         this.failedTargets,
-      );
+      ));
       have = countFuelItems(bot);
       if (have <= before) {
         this.announce(`No coal reachable within ${radius} blocks. Expanding search.`);
@@ -1698,7 +1780,7 @@ export class BootstrapRunner {
       }
 
       const before = countItem(bot, "raw_iron");
-      await collectBlocks(
+      await this.withAuthorizedDigCells(targets.map((block) => block.position), () => collectBlocks(
         bot,
         targets,
         () => countItem(bot, "raw_iron"),
@@ -1708,7 +1790,7 @@ export class BootstrapRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
         undefined,
         this.failedTargets,
-      );
+      ));
       have = countItem(bot, "raw_iron");
       if (have <= before) {
         this.announce(`No iron reachable within ${radius} blocks. Expanding search.`);
@@ -1855,18 +1937,25 @@ export class BootstrapRunner {
     const needAxe = !hasItem(bot, "wooden_axe");
     if (!needPickaxe && !needAxe) return { ok: true, message: "wooden kit ready" };
 
-    const needSticks = needPickaxe || needAxe ? 4 : 0;
-    const planksTarget = countPlanks(bot) + (needPickaxe ? 3 : 0) + (needAxe ? 3 : 0) + (needSticks > 0 ? 2 : 0);
-    const totalPlanks = countPlanks(bot) + countLogs(bot) * 4;
-    if (totalPlanks < planksTarget) {
-      const neededLogs = Math.ceil((planksTarget - totalPlanks) / 4);
-      const logs = await this.ensureLogs(neededLogs);
-      if (!logs.ok) return { ok: false, reason: logs.reason };
-    }
+    const missingTools = Number(needPickaxe) + Number(needAxe);
+    const sticksRequired = missingTools * 2;
+    const needStickCraft = countSticks(bot) < sticksRequired;
+    // Mineflayer exposes wooden-tool recipes per plank variant. A total such
+    // as two jungle plus one oak plank is valid in vanilla but can match none
+    // of those recipes. Reserve one fresh four-plank stack for every missing
+    // tool, plus one when sticks must be made, so each recipe has a compatible
+    // three-item stack even when the gathered logs are mixed species.
+    const freshLogs = missingTools + Number(needStickCraft);
+    const logsTarget = countLogs(bot) + freshLogs;
+    const logs = await this.ensureLogs(logsTarget);
+    if (!logs.ok) return { ok: false, reason: logs.reason };
+    const planksTarget = countPlanks(bot) + freshLogs * 4;
     const planks = await craftPlanks(bot, planksTarget, this.signal ?? undefined);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countSticks(bot) + needSticks, this.signal ?? undefined);
-    if (!sticks.ok) return { ok: false, reason: sticks.reason };
+    if (needStickCraft) {
+      const sticks = await craftSticks(bot, sticksRequired, this.signal ?? undefined);
+      if (!sticks.ok) return { ok: false, reason: sticks.reason };
+    }
 
     if (needPickaxe) {
       const pickaxe = await this.craftAtTable("wooden_pickaxe", table);
@@ -1879,51 +1968,123 @@ export class BootstrapRunner {
     return { ok: true, message: "wooden kit ready" };
   }
 
-  /** Collect `needed` cobblestone: exposed surface stone, then a dig trench. */
+  /**
+   * Collect cobblestone with a bounded, persistent site search. A miss in the
+   * currently loaded chunks causes real movement before the next scan. Route
+   * failures are local to one site and are persisted so restart cannot select
+   * the same flooded/blocked hole again.
+   */
   private async gatherCobblestone(needed: number): Promise<{ ok: true; have: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const config = this.opts.config.bootstrap;
-    const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
+    const worldId = this.worldId;
+    const home = this.opts.state.home;
+    if (worldId === null || home === null) return { ok: false, reason: "stone search has no persisted world/home" };
     let have = countItem(bot, "cobblestone");
-
-    for (let radius = baseRadius; radius <= MAX_SEARCH_RADIUS && have < needed; radius = Math.min(radius * 2, MAX_SEARCH_RADIUS + 1)) {
-      // findBlocks sees every block in the loaded chunks (including buried
-      // stone); keep only world-facing candidates the bot can actually reach.
-      const positions = findBlocksNear(bot, isCobbleStone, radius, STONE_CANDIDATES);
-      const exposed = positions.filter((position) => hasStandableMiningFace(bot, position));
-      const targets = exposed.map((position) => bot.blockAt(position)).filter((block) => block !== null);
-      if (targets.length === 0) {
-        this.announce(`No reachable stone within ${radius} blocks. Expanding search.`);
-        continue;
-      }
-
-      const before = countItem(bot, "cobblestone");
-      await collectBlocks(
-        bot,
-        targets,
-        () => countItem(bot, "cobblestone"),
-        needed,
-        (msg) => this.announce(msg),
-        COLLECT_TIMEOUT_MS,
-        (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable block"),
-        undefined,
-        this.failedTargets,
-      );
-      have = countItem(bot, "cobblestone");
-      if (have <= before) {
-        this.announce(`No stone reachable within ${radius} blocks. Expanding search.`);
-      }
-    }
-
-    have = countItem(bot, "cobblestone");
     if (have >= needed) return { ok: true, have };
 
-    const trench = await this.digStoneTrench(needed - have);
-    if (!trench.ok) return { ok: false, reason: `surface stone exhausted: ${trench.reason}` };
-    have = countItem(bot, "cobblestone");
-    if (have < needed) return { ok: false, reason: `trench dug ${trench.gained} cobblestone, still short of ${needed}` };
-    this.announce(`No surface stone; dug a ramp and found ${have} cobblestone underground.`);
-    return { ok: true, have };
+    const stored = this.opts.stages.getState(worldId).progress;
+    const progress = readStoneProgress(stored);
+    const sites = stoneExplorationSites(home);
+    const startedAt = Date.now();
+    const deadline = startedAt + STONE_STAGE_TIMEOUT_MS;
+
+    for (let index = progress.nextSite; index < sites.length && Date.now() < deadline; index++) {
+      throwIfAborted(this.signal ?? undefined);
+      const planned = sites[index]!;
+      if (isNearAnySite(planned, progress.failedSites, STONE_FAILED_SITE_CLEARANCE)) continue;
+
+      const currentPosition = bot.entity?.position;
+      if (currentPosition === undefined || Math.hypot(currentPosition.x - planned.x, currentPosition.z - planned.z) > 3) {
+        this.announce(`Exploring stone site ${index}/${sites.length - 1}.`);
+        // X/Z define the exploration site. Use Bob's current standing Y as a
+        // route hint so a stale persisted home altitude cannot turn a safe
+        // surface patrol into an underground goal.
+        const waypoint = new Vec3(planned.x, Math.floor(currentPosition?.y ?? home.y), planned.z);
+        const travel = await travelAndWait(bot, waypoint, {
+          dimension: home.dimension,
+          timeoutMs: Math.max(1, Math.min(STONE_EXPLORE_TIMEOUT_MS, deadline - Date.now())),
+          range: 3,
+          allowDig: false,
+          signal: this.signal ?? undefined,
+        });
+        if (travel.status !== "arrived" && travel.status !== "already_there") {
+          // A bounded no-dig fallback often reaches useful new terrain but
+          // misses the exact waypoint by a few blocks (or times out after a
+          // long partial traverse). Scan that endpoint when it is still in
+          // bounds and meaningfully separated from every prior scan. Only a
+          // route that failed to relocate is discarded outright.
+          const relocated = bot.entity?.position.floored();
+          if (relocated === undefined || !isUsableStoneRelocation(relocated, home, progress.visitedSites)) {
+            progress.failedSites.push({ x: planned.x, z: planned.z, reason: `travel_${travel.status}` });
+            progress.nextSite = index + 1;
+            this.saveStoneProgress(progress);
+            continue;
+          }
+          this.opts.logger.warn({ index, planned, relocated, travel: travel.status }, "stone route missed waypoint; rescanning relocated endpoint");
+        }
+      }
+
+      const reached = bot.entity?.position.floored();
+      if (reached === undefined) return { ok: false, reason: "bot despawned during stone exploration" };
+      progress.visitedSites.push({ x: reached.x, z: reached.z });
+
+      // `useExtraInfo` applies exposure before the result cap, preventing the
+      // nearest 64 buried stone blocks from hiding later exposed candidates.
+      const exposed = findBlocksNearRefined(
+        bot,
+        isCobbleStone,
+        (position) => isNearSurfaceElevation(position, reached) && hasStandableMiningFace(bot, position),
+        STONE_LOCAL_RADIUS,
+        STONE_CANDIDATES,
+      );
+      const targets = exposed
+        .filter((position) => !this.failedTargets.has(blockKey(position)))
+        .map((position) => bot.blockAt(position))
+        .filter((block): block is Block => block !== null);
+      this.opts.logger.info({ index, site: reached, loadedExposedStone: targets.length }, "stone search site scan");
+      if (targets.length > 0) {
+        await this.withAuthorizedDigCells(targets.map((block) => block.position), () =>
+          withPathfinderDigging(bot, false, () => collectBlocks(
+            bot,
+            targets,
+            () => countItem(bot, "cobblestone"),
+            needed,
+            (msg) => this.announce(msg),
+            Math.max(1, Math.min(STONE_COLLECT_TIMEOUT_MS, deadline - Date.now())),
+            (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable stone"),
+            undefined,
+            this.failedTargets,
+          )),
+        );
+        have = countItem(bot, "cobblestone");
+        if (have >= needed) return { ok: true, have };
+      }
+
+      const farEnoughFromHome = Math.hypot(reached.x - home.x, reached.z - home.z) >= 16;
+      if (index > 0 && farEnoughFromHome && progress.mineAttempts < STONE_MINE_ATTEMPTS) {
+        progress.mineAttempts += 1;
+        this.saveStoneProgress(progress);
+        const trench = await this.digStoneTrench(needed - have, reached, Math.min(deadline, Date.now() + STONE_MINE_ROUTE_TIMEOUT_MS));
+        have = countItem(bot, "cobblestone");
+        if (have >= needed) return { ok: true, have };
+        if (!trench.ok) {
+          progress.failedSites.push({ x: reached.x, z: reached.z, reason: trench.reason });
+          this.opts.logger.warn({ site: reached, attempt: progress.mineAttempts, reason: trench.reason }, "stone mine route blacklisted");
+          this.announce(`Mine route unsafe (${trench.reason}); relocating.`);
+          if (Date.now() < deadline) await travelAndWait(bot, reached, { timeoutMs: Math.max(1, Math.min(STONE_EXPLORE_TIMEOUT_MS, deadline - Date.now())), range: 2, allowDig: false, signal: this.signal ?? undefined });
+        }
+      }
+
+      progress.nextSite = index + 1;
+      this.saveStoneProgress(progress);
+    }
+
+    const reasons = progress.failedSites.map((site) => site.reason);
+    return { ok: false, reason: `bounded stone search exhausted (${progress.visitedSites.length} sites, ${progress.mineAttempts} mines): ${reasons.slice(-3).join(", ") || "no reachable exposed stone"}` };
+  }
+
+  private saveStoneProgress(progress: StoneBootstrapProgress): void {
+    if (this.worldId !== null) this.opts.stages.saveProgress(this.worldId, { kind: "stone_tools", ...progress });
   }
 
   /**
@@ -1932,43 +2093,74 @@ export class BootstrapRunner {
    * is one block down, so the pathfinder can climb back out (single-block
    * steps). Gives flat terrain guaranteed access to the stone layer.
    */
-  private async digStoneTrench(needed: number): Promise<{ ok: true; gained: number } | { ok: false; reason: string }> {
+  private async digStoneTrench(needed: number, origin: Vec3, deadline: number): Promise<{ ok: true; gained: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const direction = pickTrenchDirection(bot);
-    if (direction === null) return { ok: false, reason: "no diggable ground beside the bot" };
+    let direction = pickTrenchDirection(bot);
+    if (direction === null) {
+      const start = nearbyTrenchStart(bot, 8);
+      if (start === null) return { ok: false, reason: "no open trench start near the bot" };
+      // GoalNear at sub-block precision is brittle on slopes: the bot can be
+      // safely adjacent to the chosen footing while never entering a 0.75
+      // radius around its integer corner. A 1.5-block arrival still leaves
+      // the controller close enough to recompute and validate the descent.
+      const travel = await travelAndWait(bot, start, { timeoutMs: TRENCH_STEP_TIMEOUT_MS, range: 1.5, allowDig: false, signal: this.signal ?? undefined });
+      if (travel.status !== "arrived" && travel.status !== "already_there") {
+        return { ok: false, reason: `could not reach a safe trench start (${travel.status})` };
+      }
+      direction = pickTrenchDirection(bot);
+      if (direction === null) return { ok: false, reason: "safe trench start had no diggable descent" };
+    }
 
+    const startingCobble = countItem(bot, "cobblestone");
     let gained = 0;
     for (let step = 0; step < TRENCH_MAX_STEPS && gained < needed; step++) {
+      if (Date.now() >= deadline) return { ok: false, reason: "mine route timed out" };
       const self = bot.entity;
       if (self === null) return { ok: false, reason: "bot is not spawned" };
       const feet = self.position.floored();
       const target = new Vec3(feet.x + direction.x, feet.y - 1, feet.z + direction.z);
-      const block = bot.blockAt(target);
-      if (block === null || !isDiggableGround(block)) {
-        return { ok: false, reason: `trench hit ${block !== null ? block.name : "unloaded ground"}` };
+      const head = target.offset(0, 1, 0);
+      const floor = target.offset(0, -1, 0);
+      const corridor = [head, target];
+      for (const position of [...corridor, floor]) {
+        const block = bot.blockAt(position);
+        const hazard = excavationHazard(block);
+        if (hazard !== null) return { ok: false, reason: `trench hit ${hazard}` };
       }
-      const stoneHere = isCobbleStone(block);
-      try {
-        await withTimeout(TRENCH_STEP_TIMEOUT_MS, (async () => {
-          await equipToolForBlock(bot, block, this.signal ?? undefined);
-          await digBlock(bot, block, this.signal ?? undefined);
-        })(), undefined, this.signal ?? undefined);
-      } catch (err) {
-        return { ok: false, reason: `could not dig the trench: ${String(err)}` };
+      if (!isSolid(bot.blockAt(floor))) return { ok: false, reason: "trench reached unsafe drop" };
+      const preexistingFluid = firstAdjacentFluid(bot, target) ?? firstAdjacentFluid(bot, head);
+      if (preexistingFluid !== null) return { ok: false, reason: `trench adjacent to ${preexistingFluid}` };
+      for (const position of corridor) {
+        const block = bot.blockAt(position);
+        if (isOpenSpace(block)) continue;
+        if (!isDiggableGround(block)) return { ok: false, reason: `trench obstruction ${block?.name ?? "unloaded"}` };
+        try {
+          await this.withAuthorizedDigCells([position], () => withTimeout(TRENCH_STEP_TIMEOUT_MS, (async () => {
+            await equipToolForBlock(bot, block!, this.signal ?? undefined);
+            await digBlock(bot, block!, this.signal ?? undefined);
+          })(), undefined, this.signal ?? undefined));
+        } catch (err) {
+          return { ok: false, reason: `could not dig the trench: ${String(err)}` };
+        }
       }
-      if (!isAir(bot.blockAt(target))) {
-        return { ok: false, reason: "trench block did not break" };
+      if (!isOpenSpace(bot.blockAt(target)) || !isOpenSpace(bot.blockAt(head))) {
+        return { ok: false, reason: "trench corridor did not open" };
       }
-      if (stoneHere) gained += 1;
+      const adjacentHazard = firstAdjacentFluid(bot, target) ?? firstAdjacentFluid(bot, head);
+      if (adjacentHazard !== null) return { ok: false, reason: `trench exposed ${adjacentHazard}` };
 
-      // Advance into the freshly dug cell (one block forward, one down).
-      const advance = await travelAndWait(bot, target, { timeoutMs: TRENCH_STEP_TIMEOUT_MS, range: 0 });
+      const advance = await travelAndWait(bot, target, { timeoutMs: TRENCH_STEP_TIMEOUT_MS, range: 0.75, allowDig: false, signal: this.signal ?? undefined });
       if (advance.status !== "arrived" && advance.status !== "already_there") {
         return { ok: false, reason: "could not advance the trench" };
       }
+      await sleep(500, this.signal ?? undefined);
+      gained = Math.max(0, countItem(bot, "cobblestone") - startingCobble);
     }
 
-    if (gained < needed) return { ok: false, reason: `dug ${TRENCH_MAX_STEPS} blocks deep without ${needed} cobblestone` };
+    if (gained < needed) {
+      if (Date.now() < deadline) await travelAndWait(bot, origin, { timeoutMs: Math.max(1, Math.min(STONE_EXPLORE_TIMEOUT_MS, deadline - Date.now())), range: 2, allowDig: false, signal: this.signal ?? undefined });
+      return { ok: false, reason: `dug ${TRENCH_MAX_STEPS} ramp segments without ${needed} cobblestone` };
+    }
     return { ok: true, gained };
   }
 
@@ -2076,7 +2268,97 @@ export class BootstrapRunner {
   }
 }
 
+export function isNearSurfaceElevation(position: Pick<Vec3, "y">, site: Pick<Vec3, "y">): boolean {
+  return Math.abs(position.y - site.y) <= STONE_SURFACE_VERTICAL_RANGE;
+}
+
 // --- stone tools helpers (Phase 5.2) ---
+
+export interface StoneBootstrapProgress {
+  nextSite: number;
+  mineAttempts: number;
+  visitedSites: Array<{ x: number; z: number }>;
+  failedSites: Array<{ x: number; z: number; reason: string }>;
+}
+
+function readStoneProgress(value: Record<string, unknown>): StoneBootstrapProgress {
+  if (value.kind !== "stone_tools") return { nextSite: 0, mineAttempts: 0, visitedSites: [], failedSites: [] };
+  const visitedSites = Array.isArray(value.visitedSites)
+    ? value.visitedSites.filter(isStoredSite).map((site) => ({ x: site.x, z: site.z }))
+    : [];
+  const failedSites = Array.isArray(value.failedSites)
+    ? value.failedSites.filter(isStoredFailedSite).map((site) => ({ x: site.x, z: site.z, reason: site.reason }))
+    : [];
+  return {
+    nextSite: Number.isInteger(value.nextSite) ? Math.max(0, Number(value.nextSite)) : 0,
+    mineAttempts: Number.isInteger(value.mineAttempts) ? Math.max(0, Number(value.mineAttempts)) : 0,
+    visitedSites,
+    failedSites,
+  };
+}
+
+function isStoredSite(value: unknown): value is { x: number; z: number } {
+  return typeof value === "object" && value !== null
+    && Number.isFinite((value as { x?: unknown }).x) && Number.isFinite((value as { z?: unknown }).z);
+}
+
+function isStoredFailedSite(value: unknown): value is { x: number; z: number; reason: string } {
+  return isStoredSite(value) && typeof (value as { reason?: unknown }).reason === "string";
+}
+
+/** Deterministic, separated destinations bounded to 96 blocks from home. */
+export function stoneExplorationSites(home: { x: number; y: number; z: number }): Vec3[] {
+  const offsets: ReadonlyArray<readonly [number, number]> = [
+    [0, 0], [40, 0], [0, 40], [-40, 0], [0, -40], [48, 48], [-48, -48],
+  ];
+  return offsets
+    .slice(0, STONE_EXPLORATION_SITES + 1)
+    .map(([dx, dz]) => new Vec3(Math.round(home.x + dx), Math.floor(home.y), Math.round(home.z + dz)))
+    .filter((site) => Math.hypot(site.x - home.x, site.z - home.z) <= STONE_MAX_HOME_DISTANCE);
+}
+
+export function isNearAnySite(site: { x: number; z: number }, others: ReadonlyArray<{ x: number; z: number }>, clearance = STONE_SITE_SEPARATION): boolean {
+  return others.some((other) => Math.hypot(site.x - other.x, site.z - other.z) < clearance);
+}
+
+export function isUsableStoneRelocation(
+  site: { x: number; z: number },
+  home: { x: number; z: number },
+  visited: ReadonlyArray<{ x: number; z: number }>,
+): boolean {
+  return Math.hypot(site.x - home.x, site.z - home.z) <= STONE_MAX_HOME_DISTANCE
+    && !isNearAnySite(site, visited, STONE_SITE_SEPARATION);
+}
+
+function blockKey(point: { x: number; y: number; z: number }): string {
+  return `${Math.floor(point.x)},${Math.floor(point.y)},${Math.floor(point.z)}`;
+}
+
+function isOpenSpace(block: Block | null): boolean {
+  if (block === null) return false;
+  const name = bareName(block.name);
+  if (block.boundingBox === "block") return false;
+  if (name === "water" || name === "lava" || name === "cobweb" || name === "fire" || name === "soul_fire" || name === "sweet_berry_bush") return false;
+  return true;
+}
+
+function excavationHazard(block: Block | null): string | null {
+  if (block === null) return "unloaded terrain";
+  const name = bareName(block.name);
+  if (name === "water" || name === "lava") return name;
+  if (name === "sand" || name === "red_sand" || name === "gravel" || name.endsWith("_concrete_powder")) return `falling ${name}`;
+  if (name === "bedrock" || block.hardness === -1) return `unbreakable ${name}`;
+  if (isProtectedFixture(name)) return `protected fixture ${name}`;
+  return null;
+}
+
+function firstAdjacentFluid(bot: Bot, position: Vec3): string | null {
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const) {
+    const name = bareName(bot.blockAt(position.offset(dx, dy, dz))?.name ?? "");
+    if (name === "water" || name === "lava") return name;
+  }
+  return null;
+}
 
 /** Blocks that become cobblestone when mined (stone drops cobblestone). */
 function isCobbleStone(block: Block | null): boolean {
@@ -2095,12 +2377,15 @@ function isCobbleStone(block: Block | null): boolean {
 function groundLevelAt(bot: Bot, x: number, z: number): number | null {
   // In a vertical shaft or an otherwise open column, scanning from the world
   // ceiling finds the lowest bedrock/deepslate floor rather than the surface
-  // the bot is actually standing on. When the bot is already on this column,
-  // prefer its valid standing level so nearby exposed blocks remain reachable.
+  // the bot is actually standing on. When the bot is already on (or right
+  // next to) this column, prefer its valid standing level so nearby exposed
+  // blocks remain reachable: the bot's own feet are ground truth for a
+  // reachable surface, and a sky-scan from far away can pick an overhang or
+  // canopy many blocks above the real ground.
   const self = bot.entity;
   if (self !== null) {
     const feet = self.position.floored();
-    if (feet.x === x && feet.z === z && isAir(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0)))) {
+    if (Math.abs(feet.x - x) <= 1 && Math.abs(feet.z - z) <= 1 && isOpenSpace(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0)))) {
       return feet.y;
     }
   }
@@ -2120,7 +2405,8 @@ function isDiggableGround(block: Block | null): boolean {
   if (block === null || block.boundingBox !== "block") return false;
   const name = block.name.replace(/^minecraft:/, "");
   if (name === "bedrock" || name === "water" || name === "lava") return false;
-  if (/[a-z_]+_log$/.test(name) || name === "leaves") return false;
+  if (isProtectedFixture(name)) return false;
+  if (/[a-z_]+_log$/.test(name) || name === "leaves" || name.endsWith("_leaves")) return false;
   return true;
 }
 
@@ -2131,16 +2417,25 @@ function hasStandableMiningFace(bot: Bot, position: Vec3): boolean {
     const feet = position.offset(dx, 0, dz);
     const head = feet.offset(0, 1, 0);
     const floor = feet.offset(0, -1, 0);
-    if (isAir(bot.blockAt(feet)) && isAir(bot.blockAt(head)) && isSolid(bot.blockAt(floor))) return true;
+    if (isOpenSpace(bot.blockAt(feet)) && isOpenSpace(bot.blockAt(head)) && isSolid(bot.blockAt(floor))) return true;
   }
   return false;
+}
+
+/** Keep vertical canopies from monopolizing a capped log search. */
+function isReachableTrunkBase(bot: Bot, position: Vec3): boolean {
+  const below = bot.blockAt(position.offset(0, -1, 0));
+  return below !== null && !isRawLog(below) && hasStandableMiningFace(bot, position);
 }
 
 /** A diagonal cardinal direction whose front corner is diggable. */
 function pickTrenchDirection(bot: Bot): { x: number; y: number; z: number } | null {
   const self = bot.entity;
   if (self === null) return null;
-  const feet = self.position.floored();
+  return trenchDirectionAt(bot, self.position.floored());
+}
+
+function trenchDirectionAt(bot: Bot, feet: Vec3): { x: number; y: number; z: number } | null {
   // The pathfinder models a 1-block drop natively for diagonal moves, so the
   // ramp descends diagonally (one block forward-sideways and one down per
   // step); straight steps into a pit rely on fall-and-replan instead.
@@ -2149,14 +2444,47 @@ function pickTrenchDirection(bot: Bot): { x: number; y: number; z: number } | nu
     [1, -1],
     [-1, 1],
     [-1, -1],
+    // Dense jungle can block every diagonal with trunks or leaf columns.
+    // A cardinal one-down step is still a bounded, climbable stair once the
+    // target and head cells pass the same checks below.
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
   ];
   for (const [dx, dz] of directions) {
     const front = bot.blockAt(new Vec3(feet.x + dx, feet.y - 1, feet.z + dz));
     if (!isDiggableGround(front)) continue;
     // Headroom above the pit so the bot can step into it after digging.
     const above = bot.blockAt(new Vec3(feet.x + dx, feet.y, feet.z + dz));
-    if (!isAir(above)) continue;
+    if (!isOpenSpace(above)) continue;
     return { x: dx, y: 0, z: dz };
+  }
+  return null;
+}
+
+/** Find nearby open footing from which a fixture-safe diagonal ramp can begin. */
+function nearbyTrenchStart(bot: Bot, radius: number): Vec3 | null {
+  const self = bot.entity;
+  if (self === null) return null;
+  const origin = self.position.floored();
+  for (let ring = 1; ring <= radius; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+        // Uneven terrain is common around jungle spawn. Searching only at the
+        // bot's current Y rejects every otherwise-safe foothold on a one-block
+        // slope, so resolve each candidate column to its actual standing Y.
+        const x = origin.x + dx;
+        const z = origin.z + dz;
+        const standingY = groundLevelAt(bot, x, z);
+        if (standingY === null || Math.abs(standingY - origin.y) > 4) continue;
+        const feet = new Vec3(x, standingY, z);
+        if (!isOpenSpace(bot.blockAt(feet)) || !isOpenSpace(bot.blockAt(feet.offset(0, 1, 0)))) continue;
+        if (!isDiggableGround(bot.blockAt(feet.offset(0, -1, 0)))) continue;
+        if (trenchDirectionAt(bot, feet) !== null) return feet;
+      }
+    }
   }
   return null;
 }

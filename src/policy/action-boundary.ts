@@ -65,7 +65,7 @@ export function revalidateAction(
   return { allowed: true };
 }
 
-function isProtectedFixture(blockName: string): boolean {
+export function isProtectedFixture(blockName: string): boolean {
   const bare = blockName.replace(/^minecraft:/, "");
   return ["chest", "trapped_chest", "barrel", "ender_chest", "shulker_box", "furnace", "smoker", "blast_furnace", "crafting_table", "enchanting_table", "brewing_stand", "smithing_table", "stonecutter", "loom", "cartography_table", "bed", "hopper", "dropper", "dispenser", "beacon", "anvil", "spawner", "decorated_pot"].includes(bare) || bare.endsWith("_bed") || bare.endsWith("_sign") || bare.endsWith("_hanging_sign");
 }

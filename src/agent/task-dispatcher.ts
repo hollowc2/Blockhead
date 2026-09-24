@@ -11,6 +11,7 @@ import {
   travelAndWait,
   travelHomeAndWait,
   waitHere,
+  walkToward,
 } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
 import { checkDimensionEntry, checkHealthRetreat, checkLavaEntry, lavaAvoidanceRadius } from "../policy/safety.js";
@@ -51,7 +52,7 @@ const GO_HOME_TIMEOUT_MS = 120_000;
 /** Upper bound for any skill, including plugins that fail to settle. */
 const SKILL_TIMEOUT_MS = 10 * 60_000;
 /** A task may run longer than this, but must publish a checkpoint/progress. */
-const PROGRESS_STALL_TIMEOUT_MS = 2 * 60_000;
+const PROGRESS_STALL_TIMEOUT_MS = 5 * 60_000;
 const PROGRESS_POLL_MS = 5_000;
 /** A repeatedly disconnected autonomous action must eventually yield/back off. */
 const MAX_BACKGROUND_RESUME_ATTEMPTS = 3;
@@ -682,7 +683,18 @@ export class TaskDispatcher {
         return { ok: false, status: "interrupted", message: "interrupted before arrival" };
       }
       if (travel.status !== "arrived" && travel.status !== "already_there") {
-        return { ok: false, status: "failed", message: `could not reach the player: ${travel.status}`, retryable: true };
+        // Pathfinder failed. Fall back to dumb-walk toward the player
+        // so a "come here" is never a complete dead end.
+        this.opts.logger.warn({ travel: travel.status, player }, "pathfinder failed for interrupt; falling back to walkToward");
+        const fallback = await walkToward(bot, entity.position, {
+          range: 5, // slightly more tolerant since we are walking blind
+          timeoutMs: INTERRUPT_MOVE_TIMEOUT_MS,
+          signal: signals.signal,
+        });
+        if (fallback.arrived) {
+          return { ok: true, status: "completed", message: "arrived (fallback)" };
+        }
+        return { ok: false, status: "failed", message: `could not reach the player: ${fallback.distance > 0 ? `${fallback.distance.toFixed(1)} blocks away after fallback` : travel.status}`, retryable: true };
       }
       return { ok: true, status: "completed", message: "arrived" };
     }

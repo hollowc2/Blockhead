@@ -18,6 +18,7 @@ import {
   findBlockNear,
   findBlocksNear,
   isAir,
+  isPlaceableAir,
   isRawLog,
   isSolid,
   placeItemAt,
@@ -418,7 +419,7 @@ export function freeChestSlotSpot(bot: Bot, home: HomeLocation): PlacementSpot |
   const layout = baseLayoutFor(home);
   for (const slot of layout.chestSlots) {
     const cell = bot.blockAt(slot);
-    if (cell !== null && !isAir(cell)) continue; // occupied (a chest or anything else)
+    if (cell !== null && !isPlaceableAir(cell)) continue; // occupied (a chest or anything else)
     const below = bot.blockAt(slot.offset(0, -1, 0));
     if (below === null || !isSolid(below)) continue;
     return { position: slot, reference: below, face: new Vec3(0, 1, 0) };
@@ -439,7 +440,7 @@ export function stationSlotSpot(bot: Bot, home: HomeLocation, kind: "crafting_ta
   // station slot; let callers use their nearby fallback instead.
   if (bot.entity?.position.floored().equals(slot)) return null;
   const cell = bot.blockAt(slot);
-  if (cell !== null && !isAir(cell)) return null;
+  if (cell !== null && !isPlaceableAir(cell)) return null;
   const below = bot.blockAt(slot.offset(0, -1, 0));
   if (below === null || !isSolid(below)) return null;
   return { position: slot, reference: below, face: new Vec3(0, 1, 0) };

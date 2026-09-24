@@ -20,6 +20,7 @@ const workerFiles = [
 ];
 
 const viewerClient = new URL("../node_modules/prismarine-viewer/public/index.js", import.meta.url);
+const mineflayerInventory = new URL("../node_modules/mineflayer/lib/plugins/inventory.js", import.meta.url);
 
 export function patchWorldRenderer(source, legacy, modern, path = "world renderer") {
   if (source.includes(modern)) return source;
@@ -71,6 +72,32 @@ export function patchViewerRecenterHotkey(source, path = "viewer client") {
   return withHotkey.replace(positionLegacyFixed, "(({pos:t,addMesh:i,yaw:r,pitch:o})=>{c=t;");
 }
 
+/**
+ * Modern servers can keep crafting result slot 0 visually unchanged when
+ * another identical result remains. Mineflayer otherwise waits forever for a
+ * slot-0-specific update even though the server accepted the craft.
+ */
+export function patchMineflayerCrafting(source, path = "mineflayer inventory plugin") {
+  const replacements = [
+    ["await once(bot.inventory, 'updateSlot:0')", "await once(bot.inventory, 'updateSlot')"],
+    ["await once(bot.currentWindow, 'updateSlot:0')", "await once(bot.currentWindow, 'updateSlot')"],
+    [
+      "const promisePutAway = once(window, `updateSlot:${slot}`)",
+      "const promisePutAway = slot === window.craftingResultSlot && (window.type === 'minecraft:inventory' || window.type === 'minecraft:crafting')\n      ? once(window, 'updateSlot')\n      : once(window, `updateSlot:${slot}`)",
+    ],
+  ];
+
+  let patched = source;
+  for (const [legacy, modern] of replacements) {
+    if (patched.includes(modern)) continue;
+    if (patched.split(legacy).length - 1 !== 1) {
+      throw new Error(`Unexpected Mineflayer crafting layout in ${path}; refusing to patch`);
+    }
+    patched = patched.replace(legacy, modern);
+  }
+  return patched;
+}
+
 export async function patchPrismarineViewer() {
   for (const file of files) {
     const source = await readFile(file.path, "utf8");
@@ -88,6 +115,10 @@ export async function patchPrismarineViewer() {
     fileURLToPath(viewerClient),
   );
   if (patchedClient !== clientSource) await writeFile(viewerClient, patchedClient);
+
+  const mineflayerSource = await readFile(mineflayerInventory, "utf8");
+  const patchedMineflayer = patchMineflayerCrafting(mineflayerSource, fileURLToPath(mineflayerInventory));
+  if (patchedMineflayer !== mineflayerSource) await writeFile(mineflayerInventory, patchedMineflayer);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

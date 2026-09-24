@@ -6,7 +6,7 @@ import type { ToolDefinition, ToolResult } from "./types.js";
 /** Human label for the stage the runner will execute next. */
 function stageLabel(runner: BootstrapRunner): string {
   const completed = runner.completedStage;
-  if (runner.currentStage === null) return completed === BootstrapStage.NORMAL_OPERATION ? "complete" : "paused";
+  if (runner.currentStage === null) return completed === BootstrapStage.NORMAL_OPERATION ? "complete" : runner.bootstrapState?.status ?? "paused";
   return runner.currentStage;
 }
 
@@ -29,7 +29,12 @@ export function registerBootstrapTools(registry: ToolRegistry): void {
         const current = ctx.bootstrap;
         if (!current) return "Bootstrap is not available.";
         if (current.isRunning) return "Bootstrap is already running.";
-        if (current.currentStage === null) return "Bootstrap is already complete.";
+        if (current.currentStage === null) {
+          const state = current.bootstrapState;
+          return state?.status === "blocked"
+            ? `Bootstrap is blocked after ${state.stage ?? "start"}: ${state.failureCode ?? "unknown failure"}.`
+            : "Bootstrap is already complete.";
+        }
         void current.run();
         return `Starting bootstrap (next: ${stageLabel(current)}).`;
       },
@@ -42,7 +47,12 @@ export function registerBootstrapTools(registry: ToolRegistry): void {
         const current = ctx.bootstrap;
         if (!current) return "Bootstrap is not available.";
         const stage = current.currentStage;
-        if (stage === null) return "Bootstrap is complete.";
+        if (stage === null) {
+          const state = current.bootstrapState;
+          return state?.status === "blocked"
+            ? `Bootstrap blocked after ${state.stage ?? "start"}: ${state.failureCode ?? "unknown failure"}.`
+            : "Bootstrap is complete.";
+        }
         return `Bootstrap: next stage ${stage}, ${current.isRunning ? "running now" : "started up"}.`;
       },
     },

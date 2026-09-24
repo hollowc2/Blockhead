@@ -25,6 +25,22 @@ export interface CraftOptions {
   signal?: AbortSignal;
 }
 
+/** Server inventory packets can trail a successful crafting click briefly. */
+const INVENTORY_SETTLE_TIMEOUT_MS = 2_000;
+const INVENTORY_SETTLE_POLL_MS = 25;
+
+async function settledCount(count: () => number, before: number, signal: AbortSignal): Promise<number> {
+  const deadline = Date.now() + INVENTORY_SETTLE_TIMEOUT_MS;
+  let current = count();
+  while (current <= before && Date.now() < deadline) {
+    throwIfAborted(signal);
+    await new Promise<void>((resolve) => setTimeout(resolve, INVENTORY_SETTLE_POLL_MS));
+    current = count();
+  }
+  throwIfAborted(signal);
+  return current;
+}
+
 export function failure(name: string, reason: string): CraftResult {
   return { ok: false, name, reason };
 }
@@ -72,8 +88,9 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
     throwIfAborted(signal);
     await craftRecipe(bot, recipe, times, table, signal);
     throwIfAborted(signal);
-    const crafted = Math.max(0, countItem(bot, name) - before);
-    const delta = observedDelta(before, countItem(bot, name), times);
+    const after = await settledCount(() => countItem(bot, name), before, signal);
+    const crafted = Math.max(0, after - before);
+    const delta = observedDelta(before, after, times);
     return delta.delta > 0 ? { ok: true, name, crafted: delta.delta } : failure(name, "craft completed without an output delta");
   } catch (err) {
     throwIfAborted(signal);
@@ -110,7 +127,7 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
       throwIfAborted(signal);
       return failure(planksForLog(logName), String(err));
     }
-    planks = countPlanks(bot);
+    planks = await settledCount(() => countPlanks(bot), planks, signal);
   }
 
   const delta = observedDelta(initial, planks, Math.max(1, targetTotal - initial));
@@ -139,7 +156,7 @@ export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortS
     throwIfAborted(signal);
     await craftRecipe(bot, recipe, times, undefined, signal);
     throwIfAborted(signal);
-    const after = countSticks(bot);
+    const after = await settledCount(() => countSticks(bot), initial, signal);
     const delta = observedDelta(initial, after, Math.max(1, targetTotal - initial));
     return delta.delta > 0 ? { ok: true, name: "stick", crafted: delta.delta } : failure("stick", "craft completed without an output delta");
   } catch (err) {

@@ -327,6 +327,14 @@ export class ActionWatchdog {
     }
     return block;
   }
+  /** Consume an expired cooldown, distinguishing it from ordinary failures. */
+  takeExpiredBlock(action: string): boolean {
+    const block = this.blocks.get(action);
+    if (block === undefined || block.retryAt > this.now()) return false;
+    this.blocks.delete(action);
+    this.persistence?.remove(action);
+    return true;
+  }
 
   /** True when `action` must stand down right now. */
   isBlocked(action: string): boolean {

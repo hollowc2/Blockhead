@@ -28,6 +28,18 @@ export function isAir(block: Block | null): boolean {
   return block !== null && block.name === "air";
 }
 
+/**
+ * Cells a block may be placed into. Open air in modern Minecraft comes in
+ * three registry variants — `air`, `cave_air` (overworld caves) and
+ * `void_air` — and all three accept placement. Placement scans that use only
+ * `isAir` miss every cave cell, which strands building/station placement in
+ * exactly the caves the bot is most likely to shelter in.
+ */
+export function isPlaceableAir(block: Block | null): boolean {
+  if (block === null) return false;
+  return block.name === "air" || block.name === "cave_air" || block.name === "void_air";
+}
+
 /** True when any orthogonal neighbor of `position` is air (world-facing). */
 export function hasAirNeighbor(bot: Bot, position: Vec3): boolean {
   const offsets: [number, number, number][] = [
@@ -80,6 +92,30 @@ export function findBlocksNear(
   return findBlocksNearPoint(bot, self.position, predicate, maxDistance, count);
 }
 
+/**
+ * Find matching blocks while applying `refine` before Mineflayer consumes the
+ * result count. This matters for common underground blocks: filtering a
+ * capped result after `findBlocks` returns lets the nearest buried stone fill
+ * the whole list and hide exposed cave/surface stone.
+ */
+export function findBlocksNearRefined(
+  bot: Bot,
+  predicate: (block: Block) => boolean,
+  refine: (position: Vec3) => boolean,
+  maxDistance: number,
+  count: number,
+): Vec3[] {
+  const self = bot.entity;
+  if (!self) return [];
+  return bot.findBlocks({
+    point: self.position,
+    matching: (block) => block !== null && predicate(block),
+    useExtraInfo: (block: Block) => refine(block.position),
+    maxDistance,
+    count,
+  });
+}
+
 /** The nearest matching block (or null), or a specific named block. */
 export function findBlockNear(bot: Bot, name: string, maxDistance: number): Block | null {
   const positions = findBlocksNear(bot, (block) => block.name === name, maxDistance, 1);
@@ -96,8 +132,10 @@ export function findBlockNear(bot: Bot, name: string, maxDistance: number): Bloc
  * `ignoreNoPath` option does not actually skip (it is a no-op in
  * collectblock 1.6), so the skip happens here. `logSkip` reports each
  * skipped block for diagnostics; `announce` reports partial success when
- * some blocks were collected but others were not. Returns how many new
- * units `countHeld()` gained. Callers own fallbacks (radius expansion).
+ * some blocks were collected but others were not. `timeoutMs` is one total
+ * pass budget, not a multiplier per candidate; each individual target also
+ * has a 15-second cap. Returns how many new units `countHeld()` gained.
+ * Callers own fallbacks (radius expansion).
  */
 export async function collectBlocks(
   bot: Bot,
@@ -113,13 +151,17 @@ export async function collectBlocks(
   requireWorldActionLease(signal);
   const before = countHeld();
   let skipped = 0;
+  const deadline = Date.now() + timeoutMs;
+  const perTargetTimeoutMs = Math.min(15_000, timeoutMs);
   for (const block of ordered) {
     throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
     const targetKey = `${String(bot.game.dimension ?? "unknown").replace(/^minecraft:/, "")}:${block.position.x},${block.position.y},${block.position.z}`;
     if (failedTargets?.has(targetKey)) continue;
     try {
-      await withTimeout(timeoutMs, collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
+      await withTimeout(Math.max(1, Math.min(perTargetTimeoutMs, remainingMs)), collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
       }, signal);
     } catch (err) {
@@ -186,7 +228,7 @@ export function findPlacementSpot(
     const lower = new Vec3(position.x, position.y - 1, position.z);
     const below = bot.blockAt(lower);
     if (!isSolid(below)) continue;
-    if (!isAir(bot.blockAt(position))) continue;
+    if (!isPlaceableAir(bot.blockAt(position))) continue;
     return { position, reference: below, face: new Vec3(0, 1, 0) };
   }
   return null;

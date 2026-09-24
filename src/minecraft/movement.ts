@@ -97,7 +97,11 @@ function installDynamicGoal(bot: Bot, owner: string, signal: AbortSignal, goal: 
  * Lazy pathfinder setup. `Movements` reads `bot.registry`, which is only
  * populated after login, so it is created on first use rather than at boot.
  */
-function getMovements(bot: Bot): Pathfinder.Movements {
+function getMovements(bot: Bot): Pathfinder.Movements | null {
+  // Movements reads `bot.registry`, which is only populated after login (and
+  // absent from minimal test mocks). Without it there is nothing to build;
+  // callers must tolerate a null return (e.g. during early boot or cleanup).
+  if ((bot as { registry?: unknown }).registry === undefined) return null;
   let movements = movementsByBot.get(bot);
   if (!movements) {
     movements = new Movements(bot);
@@ -114,6 +118,39 @@ function getMovements(bot: Bot): Pathfinder.Movements {
     logger.debug("pathfinder movements initialized");
   }
   return movements;
+}
+
+/** Temporarily control whether pathfinder/collectblock may alter terrain. */
+export async function withPathfinderDigging<T>(bot: Bot, allowDig: boolean, action: () => Promise<T>): Promise<T> {
+  const movements = getMovements(bot);
+  const previous = movements?.canDig;
+  if (movements !== null) movements.canDig = allowDig;
+  try {
+    return await action();
+  } finally {
+    // A timeout can rebuild Movements; restore the live object as well as the
+    // one captured above so the policy cannot leak into later work.
+    if (movements !== null && previous !== undefined) movements.canDig = previous;
+    const current = getMovements(bot);
+    if (current !== null && previous !== undefined) current.canDig = previous;
+  }
+}
+
+/**
+ * Force-reinitialize the pathfinder after a stall or timeout. Stale internal
+ * state (wedged A*, a never-settling goal, a corrupted Movements object) can
+ * persist across task boundaries and make every subsequent trip fail
+ * identically. Clearing the cache and rebuilding Movements gives the next
+ * route a clean start.
+ */
+function resetPathfinder(bot: Bot): void {
+  try { invalidateDynamicGoal(bot); } catch { /* disconnect cleanup */ }
+  try { bot.pathfinder.stop(); } catch { /* disconnect cleanup */ }
+  try { bot.pathfinder.setGoal(null); } catch { /* disconnect cleanup */ }
+  movementsByBot.delete(bot);
+  logger.warn("pathfinder forcefully reset after stall/timeout");
+  // Rebuild fresh movements so the next trip starts clean.
+  getMovements(bot);
 }
 
 function getPlayerEntity(bot: Bot, playerName: string): Entity | null {
@@ -207,6 +244,170 @@ export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
   bot.pathfinder.stop();
   bot.pathfinder.setGoal(null);
   return { ok: true, status: "done" };
+}
+
+/**
+ * Fallback movement when the pathfinder is wedged: turn to face a target
+ * position and walk forward for up to `budgetMs`, periodically polling
+ * whether the bot is getting closer. When forward progress stalls, the
+ * bot punches through soft blocks in front of it (dirt, sand, gravel,
+ * grass, leaves, wood, etc.) so it can escape small terrain pockets.
+ * Returns true when the bot reaches the destination (within `range`),
+ * false when the budget runs out.
+ */
+export async function walkToward(
+  bot: Bot,
+  destination: Location,
+  options: { range?: number; timeoutMs?: number; signal?: AbortSignal; allowDig?: boolean } = {},
+): Promise<{ arrived: boolean; distance: number }> {
+  const range = options.range ?? ARRIVE_RANGE;
+  const deadline = Date.now() + (options.timeoutMs ?? 60_000);
+  const self = bot.entity;
+  if (self === null) return { arrived: false, distance: -1 };
+
+  bot.clearControlStates();
+  let arrived = false;
+  let lastDistance = self.position.distanceTo(new Vec3(destination.x, destination.y, destination.z));
+  let stuckTicks = 0;
+  let lastDigAt = 0;
+  let lastStrafeAt = 0;
+  let strafeSide = false;
+  let equippedTool = false;
+
+  const destinationVec = new Vec3(destination.x, destination.y, destination.z);
+
+  // Pick the best tool the bot carries for a block type.
+  const equipBestForDig = (block: import("prismarine-block").Block): void => {
+    if (equippedTool) return;
+    const items = bot.inventory?.items() ?? [];
+    const name = block.name.replace(/^minecraft:/, "");
+    const want = name === "stone" || name === "cobblestone" ? "pickaxe"
+               : name.includes("_log") || name.includes("_wood") ? "axe"
+               : "shovel";
+    let best: import("prismarine-item").Item | null = null;
+    let bestTier = 0;
+    for (const item of items) {
+      const itemName = item.name.replace(/^minecraft:/, "");
+      const tier = itemName.includes("diamond_") ? 4 : itemName.includes("iron_") ? 3 : itemName.includes("stone_") ? 2 : itemName.includes("wooden_") ? 1 : 0;
+      if (itemName.includes(want) && tier > bestTier) { best = item; bestTier = tier; }
+    }
+    if (best !== null) {
+      try { bot.equip(best, "hand"); equippedTool = true; } catch { /* ok */ }
+    }
+  };
+
+  // Blocks the bot is allowed to punch through during emergency movement.
+  const isDiggable = (block: import("prismarine-block").Block | null): boolean => {
+    if (block === null || block.boundingBox !== "block") return false;
+    const name = block.name.replace(/^minecraft:/, "");
+    if (name === "bedrock" || name === "obsidian" || name === "water" || name === "lava") return false;
+    // Never dig placed chests, furnaces, crafting tables, or beds at home.
+    if (name === "chest" || name === "trapped_chest" || name === "furnace" || name === "lit_furnace"
+      || name === "crafting_table" || name.endsWith("_bed")) return false;
+    return block.hardness !== undefined && block.hardness >= 0;
+  };
+
+  try {
+    while (Date.now() < deadline) {
+      if (options.signal?.aborted) break;
+      const current = bot.entity;
+      if (current === null) break;
+
+      const distance = current.position.distanceTo(destinationVec);
+      if (distance <= range) { arrived = true; break; }
+
+      // If we are not making progress, try to clear obstacles.
+      if (distance >= lastDistance - 0.5) {
+        stuckTicks += 1;
+
+        // Every few stuck ticks, try strafing side to side to get around
+        // obstacles the digger can't reach.
+        if (stuckTicks >= 4 && stuckTicks % 3 === 0) {
+          strafeSide = !strafeSide;
+          const now = Date.now();
+          if (now - lastStrafeAt > 800) {
+            lastStrafeAt = now;
+            bot.setControlState(strafeSide ? "left" : "right", true);
+            await new Promise<void>((resolve) => setTimeout(resolve, 600));
+            bot.setControlState(strafeSide ? "left" : "right", false);
+          }
+        }
+
+        // Check blocks directly ahead (toward destination) at foot and head level.
+        if (stuckTicks >= 2 && options.allowDig !== false) {
+          const footY = Math.floor(current.position.y);
+          const headY = footY + 1;
+          const feet = current.position.floored();
+
+          // Compute the direction toward the goal and sort offsets so
+          // the blocks closest to the goal are mined first.
+          const towardX = destinationVec.x - current.position.x;
+          const towardZ = destinationVec.z - current.position.z;
+          const scoreOffset = (dx: number, dz: number): number =>
+            dx * towardX + dz * towardZ; // dot product with goal direction
+
+          const offsets: [number, number][] = ([
+            [1, 0], [-1, 0], [0, 1], [0, -1],
+            [1, 1], [1, -1], [-1, 1], [-1, -1],
+          ] as [number, number][]).sort((a, b) => scoreOffset(b[0], b[1]) - scoreOffset(a[0], a[1]));
+
+          let dug = false;
+          for (const [dx, dz] of offsets) {
+            if (dug) break;
+            for (const y of [footY, headY]) {
+              const pos = new Vec3(feet.x + dx, y, feet.z + dz);
+              const block = bot.blockAt(pos);
+              if (block === null || !isDiggable(block)) continue;
+              try {
+                const now = Date.now();
+                if (now - lastDigAt < 300) continue;
+                lastDigAt = now;
+                equipBestForDig(block);
+                logger.warn({ at: pos, name: block.name, distance: Number(distance.toFixed(1)), stuckTicks }, "walkToward clearing obstacle");
+                await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
+                await bot.dig(block, true);
+                dug = true;
+                stuckTicks = 0;
+              } catch (err) {
+                logger.warn({ at: pos, name: block.name, err: String(err) }, "walkToward dig failed");
+              }
+              if (dug) break;
+            }
+          }
+
+          if (!dug && stuckTicks % 20 === 0) {
+            logger.warn({ position: current.position, distance: Number(distance.toFixed(1)), stuckTicks }, "walkToward stalled, no diggable blocks found in adjacency");
+          }
+
+          // Much more patient — give the bot time to mine through obstacles.
+          if (stuckTicks > 240) {
+            logger.warn({ position: current.position, stuckTicks }, "walkToward giving up after sustained stall");
+            break;
+          }
+        }
+      } else {
+        stuckTicks = 0;
+        lastDistance = distance;
+      }
+
+      // Re-aim toward the destination and walk forward.
+      await bot.lookAt(destinationVec.offset(0, 1, 0), false);
+      bot.setControlState("forward", true);
+      bot.setControlState("jump", true); // helps with small obstacles
+
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 250);
+        const abort = (): void => { clearTimeout(timer); resolve(); };
+        options.signal?.addEventListener("abort", abort, { once: true });
+      });
+    }
+  } finally {
+    bot.clearControlStates();
+  }
+
+  const final = bot.entity;
+  const finalDistance = final === null ? -1 : final.position.distanceTo(destinationVec);
+  return { arrived, distance: finalDistance };
 }
 
 /** Navigate to the configured home location. */
@@ -357,6 +558,8 @@ export interface TravelWaitOptions {
    */
   shouldAbort?: () => boolean;
   signal?: AbortSignal;
+  /** Disable all pathfinder and fallback obstacle digging for safe exploration. */
+  allowDig?: boolean;
 }
 
 const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
@@ -365,6 +568,9 @@ const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
 const HOME_LEG_LENGTH = 48;
 /** Give each route leg a bounded budget so one bad leg cannot consume the trip. */
 const HOME_LEG_TIMEOUT_MS = 60_000;
+/** General travel also uses leg decomposition above this threshold. */
+const TRAVEL_LEG_LENGTH = 48;
+const TRAVEL_LEG_TIMEOUT_MS = 60_000;
 /** A buried bot should use the surface as a transit corridor when possible. */
 const SURFACE_SCAN_UP = 128;
 const SURFACE_SCAN_DOWN = 32;
@@ -373,6 +579,10 @@ const SURFACE_SCAN_DOWN = 32;
 const ABORT_POLL_MS = 250;
 /** Do not hold the world-action lease forever if pathfinder ignores stop(). */
 const TRIP_SETTLE_GRACE_MS = 2_000;
+/** If the pathfinder stays active this long without settling, force-reinitialize it. */
+const PATHFINDER_STALL_MS = 30_000;
+/** How often the stall detector polls `bot.pathfinder.goal` / `isMoving`. */
+const PATHFINDER_STALL_POLL_MS = 5_000;
 
 /**
  * Find a plausible standing Y in the currently loaded column. This is only a
@@ -382,16 +592,41 @@ const TRIP_SETTLE_GRACE_MS = 2_000;
 function surfaceStandingY(bot: Bot, x: number, z: number, fallback: number): number {
   const currentY = Math.floor(bot.entity?.position.y ?? fallback);
   if (typeof bot.blockAt !== "function") return currentY;
+  // The bot's own standing cell is ground truth for a reachable surface.
+  // A wide sky-window scan can otherwise pick an overhang or a canopy ridge
+  // many blocks above the bot (e.g. a ledge at y+16), producing route goals
+  // the pathfinder cannot honor from the bot's actual altitude.
+  const self = bot.entity;
+  if (self !== null) {
+    const feet = self.position.floored();
+    if (Math.abs(feet.x - x) <= 4 && Math.abs(feet.z - z) <= 4) {
+      const below = bot.blockAt(new Vec3(feet.x, feet.y - 1, feet.z));
+      const at = bot.blockAt(new Vec3(feet.x, feet.y, feet.z));
+      if (at?.boundingBox !== "block" && below?.boundingBox === "block") return feet.y;
+    }
+  }
   const minY = currentY - SURFACE_SCAN_DOWN;
   const maxY = currentY + SURFACE_SCAN_UP;
-  let highestSolid = -Infinity;
+  // Prefer the standing level nearest the bot's own altitude: the bot's Y
+  // is reachable by definition, while "highest solid with air above" can be
+  // an overhang or canopy ridge the pathfinder cannot climb to. Ties break
+  // toward the higher level (a short climb beats a long drop).
+  let best: { y: number; dist: number } | null = null;
   for (let y = minY; y <= maxY; y++) {
     const block = bot.blockAt(new Vec3(Math.floor(x), y, Math.floor(z)));
     if (block?.boundingBox !== "block") continue;
     const above = bot.blockAt(new Vec3(Math.floor(x), y + 1, Math.floor(z)));
-    if (above?.name === "air") highestSolid = y;
+    // Any non-solid cell above counts as open: `cave_air`/`void_air` (e.g. a
+    // shaft with open space above its floor) is standable open space, and
+    // requiring literal "air" skips every cave/shaft floor.
+    if (above !== null && above.boundingBox === "block") continue;
+    const stand = y + 1;
+    const dist = Math.abs(stand - currentY);
+    if (best === null || dist < best.dist || (dist === best.dist && stand > best.y)) {
+      best = { y: stand, dist };
+    }
   }
-  return Number.isFinite(highestSolid) ? highestSolid + 1 : fallback;
+  return best?.y ?? fallback;
 }
 
 /**
@@ -416,11 +651,40 @@ export async function raceTrip(
     options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS,
   );
 
+  // Stall detector: if the pathfinder stays "active" (has a goal and
+  // considers itself moving) for PATHFINDER_STALL_MS without settling,
+  // the A* solver is wedged. Force-reset it so the next trip starts
+  // with a clean state instead of inheriting the hang.
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const stallPoll = setInterval(() => {
+    const hasGoal = bot.pathfinder.goal !== null;
+    const isMoving = bot.pathfinder.isMoving?.() ?? false;
+    if (hasGoal && !isMoving) {
+      // Pathfinder has a goal but reports it is not moving — likely wedged.
+      if (stallTimer === undefined) {
+        stallTimer = setTimeout(() => {
+          logger.warn({ pathfinderGoal: bot.pathfinder.goal, pathfinderMoving: isMoving }, "pathfinder has goal but is not moving; force-resetting");
+          resetPathfinder(bot);
+          resolveNap({ status: "failed", error: "pathfinder stalled without progress" });
+        }, PATHFINDER_STALL_MS);
+      }
+    } else {
+      // Pathfinder is making progress (or has no goal yet); clear the stall
+      // timer since progress is being made.
+      if (stallTimer !== undefined) {
+        clearTimeout(stallTimer);
+        stallTimer = undefined;
+      }
+    }
+  }, PATHFINDER_STALL_POLL_MS);
+
   try {
     if (signal.aborted) return { status: "aborted" };
     const winner = await Promise.race([trip, nap]);
-    if (winner.status === "timed_out" || winner.status === "aborted") {
-      bot.pathfinder.stop();
+    if (winner.status === "timed_out" || winner.status === "aborted" || winner.status === "failed") {
+      // resetPathfinder stops the pathfinder and rebuilds its Movements so
+      // the next trip starts clean; the explicit stop is contained there.
+      resetPathfinder(bot);
       // Stopping the pathfinder is only a cancellation request. Mineflayer's
       // goto promise may settle later. Give it a short grace period, but do
       // not let a broken/stale pathfinder hold the scheduler lease forever.
@@ -433,6 +697,8 @@ export async function raceTrip(
   } finally {
     clearInterval(poll);
     clearTimeout(timer);
+    clearInterval(stallPoll);
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
     removeAbort();
   }
 }
@@ -445,7 +711,7 @@ export async function raceTrip(
  * Arrival is judged on horizontal distance; the caller re-snaps the
  * persisted home Y to the real ground once the bot is on the column.
  */
-export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
   const lease = requireWorldActionLease(options.signal);
   const signal = options.signal ?? lease.signal;
   const self: Entity | null = bot.entity;
@@ -527,7 +793,22 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
       logger.warn({ leg: legNumber, distance: Number(distance.toFixed(1)) }, "home route leg timed out; retrying from current position");
       continue;
     }
-    if (result.status !== "arrived" && result.status !== "already_there") return result;
+    if (result.status !== "arrived" && result.status !== "already_there") {
+      // Pathfinder failed this leg. Try a dumb-walk toward home before
+      // giving up — if the pathfinder is fundamentally broken (e.g.
+      // unpathable terrain pocket), this is the only way out.
+      // Give walkToward at least a full leg's budget so the bot can mine
+      // its way home even when the leg consumed most of the deadline.
+      logger.warn({ leg: legNumber, status: result.status }, "home route leg failed; attempting walkToward fallback");
+      const fallback = await walkToward(bot, home, {
+        range: arrivalRange + 2,
+        timeoutMs: Math.max(TRAVEL_LEG_TIMEOUT_MS, remaining),
+        signal,
+        allowDig: options.allowDig,
+      });
+      if (fallback.arrived) return { status: "arrived" };
+      return result;
+    }
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
     const previousDistance = distance;
@@ -561,12 +842,20 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   return { status: "arrived" };
 }
 
+export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+  return withPathfinderDigging(bot, options.allowDig ?? true, () => travelHomeAndWaitImpl(bot, home, options));
+}
+
 /**
  * Walk to `location` and await arrival. Unlike `travelTo` (fire-and-forget),
  * this resolves when the pathfinder goal completes, times out, or fails —
  * the blocking primitive for skills that must be *somewhere* before acting.
+ *
+ * Long trips are decomposed into bounded horizontal legs, like
+ * `travelHomeAndWait`, so a single unreachable waypoint cannot consume the
+ * entire timeout and the pathfinder gets a fresh start on each leg.
  */
-export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
   const lease = requireWorldActionLease(options.signal);
   const signal = options.signal ?? lease.signal;
   const self: Entity | null = bot.entity;
@@ -585,12 +874,101 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
   const range = options.range ?? ARRIVE_RANGE;
 
   const p = self.position;
-  if (Math.hypot(p.x - location.x, p.y - location.y, p.z - location.z) <= range) {
+  const initialDistance = Math.hypot(p.x - location.x, p.y - location.y, p.z - location.z);
+  if (initialDistance <= range) {
     return { status: "already_there" };
   }
 
-  const trip = bot.pathfinder
-    .goto(new goals.GoalNear(location.x, location.y, location.z, range))
-    .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-  return raceTrip(bot, trip, { ...options, signal });
+  // Short trips fit in one leg and skip the decomposition overhead.
+  if (initialDistance <= TRAVEL_LEG_LENGTH) {
+    const trip = bot.pathfinder
+      .goto(new goals.GoalNear(location.x, location.y, location.z, range))
+      .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+    return raceTrip(bot, trip, { ...options, signal });
+  }
+
+  // Long trips: decompose into bounded horizontal legs so a single bad A*
+  // expansion cannot consume the entire budget and the pathfinder starts
+  // fresh on each leg. The final leg targets the exact destination Y;
+  // transit legs use surface standing altitudes.
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
+  let distance = initialDistance;
+  let legNumber = 0;
+  let noProgressLegs = 0;
+  while (distance > range) {
+    if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+    const current = bot.entity;
+    if (!current) return { status: "not_ready" };
+    legNumber += 1;
+    const leg = Math.min(TRAVEL_LEG_LENGTH, distance);
+    const fraction = leg / distance;
+    const finalLeg = distance <= TRAVEL_LEG_LENGTH + range;
+    const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
+    const goal: Location = {
+      x: current.position.x + (location.x - current.position.x) * fraction,
+      y: finalLeg ? location.y : transitY,
+      z: current.position.z + (location.z - current.position.z) * fraction,
+    };
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return { status: "timed_out" };
+    const legTimeout = Math.min(remaining, TRAVEL_LEG_TIMEOUT_MS);
+    logger.info({
+      leg: legNumber,
+      start: current.position,
+      goal,
+      destination: location,
+      currentDimension: bot.game.dimension ?? "",
+      distance: Number(distance.toFixed(3)),
+      range,
+      timeoutMs: legTimeout,
+    }, "travel route leg");
+    const trip = bot.pathfinder
+      .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
+      .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+    const result = await raceTrip(bot, trip, { ...options, timeoutMs: legTimeout, signal });
+    if (result.status === "timed_out" && !finalLeg && Date.now() < deadline) {
+      logger.warn({ leg: legNumber, distance: Number(distance.toFixed(1)) }, "travel route leg timed out; retrying from current position");
+      continue;
+    }
+    if (result.status !== "arrived" && result.status !== "already_there") {
+      // Pathfinder failed. Fall back to dumb-walk toward the destination.
+      // Give walkToward a proper budget even if the leg consumed most of the deadline.
+      logger.warn({ leg: legNumber, status: result.status }, "travel route leg failed; attempting walkToward fallback");
+      const fallback = await walkToward(bot, location, {
+        range: range + 2,
+        timeoutMs: Math.max(TRAVEL_LEG_TIMEOUT_MS, remaining),
+        signal,
+        allowDig: options.allowDig,
+      });
+      if (fallback.arrived) return { status: "arrived" };
+      return result;
+    }
+    const after = bot.entity;
+    if (!after) return { status: "not_ready" };
+    const previousDistance = distance;
+    distance = Math.hypot(after.position.x - location.x, after.position.y - location.y, after.position.z - location.z);
+    if (distance <= range) return { status: "arrived" };
+    const horizontalDelta = previousDistance - distance;
+    if (horizontalDelta < 0.01) noProgressLegs += 1;
+    else noProgressLegs = 0;
+    logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), noProgressLegs }, "travel route progress");
+    if (noProgressLegs >= 2) {
+      logger.warn({
+        leg: legNumber,
+        position: after.position,
+        destination: location,
+        currentDimension: bot.game.dimension ?? "",
+        distance: Number(distance.toFixed(3)),
+        range,
+      }, "travel route made no progress");
+      return distance <= range + 0.01
+        ? { status: "arrived" }
+        : { status: "failed", error: `travel route made no progress at distance ${distance.toFixed(2)}` };
+    }
+  }
+  return { status: "arrived" };
+}
+
+export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
+  return withPathfinderDigging(bot, options.allowDig ?? true, () => travelAndWaitImpl(bot, location, options));
 }

@@ -505,9 +505,10 @@ export class Scheduler {
       if (task.status !== TaskStatus.BLOCKED) continue;
       const fingerprint = actionFingerprint(task.type, task.parameters);
       // BLOCKED is also used for durable prerequisites (materials, world
-      // repair, owner action). Only watchdog-owned blocks have a cooldown.
-      if (!this.watchdog.tracks(fingerprint)) continue;
-      if (this.watchdog.blockFor(fingerprint) !== null) continue;
+      // repair, owner action). Only a watchdog block that has actually
+      // reached its cooldown expiry may be requeued. A failure count below
+      // the threshold is not itself a cooldown and must remain parked.
+      if (!this.watchdog.takeExpiredBlock(fingerprint)) continue;
       task.status = TaskStatus.QUEUED;
       this.tasks.update(task);
       logger.info({ taskId: task.id }, "anti-loop block expired; task requeued");
