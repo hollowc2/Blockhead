@@ -87,6 +87,7 @@ const TABLE_SCAN_RADIUS = 12;
  */
 const DROPPED_ITEM_BY_BLOCK: Record<string, string> = {
   stone: "cobblestone",
+  deepslate: "cobbled_deepslate",
   coal_ore: "coal",
   deepslate_coal_ore: "coal",
   iron_ore: "raw_iron",
@@ -382,7 +383,11 @@ export class CollectResourceRunner {
     if (this.stopRequested) return this.interrupted(data);
 
     const targetMet = carried >= quantity;
-    const deliveredAll = data.delivered === Math.max(carried, data.carriedAtStart) && data.delivered > 0;
+    // Judge delivery by what is left, not by the pre-trip count: the walk
+    // home may have spent a few blocks as pathfinder scaffolding.
+    // A composing skill that asked to keep the haul carried is done as soon
+    // as the target is met.
+    const deliveredAll = !this.deliver || (data.delivered > 0 && countItem(bot, carriedName) === 0);
     const summary: SkillResult<CollectResourceData> = {
       ok: targetMet && deliveredAll,
       status: targetMet && deliveredAll ? "completed" : "partial",
@@ -393,7 +398,7 @@ export class CollectResourceRunner {
     };
 
     if (targetMet && deliveredAll) {
-      this.announce(`Done. ${carried} ${label} in the chest.`);
+      this.announce(this.deliver ? `Done. ${carried} ${label} in the chest.` : `Done. ${carried} ${label} ready.`);
       this.recordSuccess(bare, quantity, startedAt, baseline, data);
       this.opts.bus.emit("resource.gather.complete", {
         resource: bare,
@@ -412,10 +417,15 @@ export class CollectResourceRunner {
         : data.delivered === 0
           ? "no chest at home to deposit into"
           : "could not deposit everything into the home chest";
-      summary.status = "partial";
-      summary.errorCode = "STORAGE_NOT_FOUND";
-      summary.message = reason;
-      this.announce(`Done. ${carried} ${label} gathered, but ${reason}.`);
+      // The owner asked for the items and the bot has them: a full or
+      // missing chest is worth reporting, not a reason to fail and re-run
+      // the whole gather.
+      summary.ok = true;
+      summary.status = "completed";
+      summary.retryable = false;
+      summary.message = `${carried} ${label} gathered; ${reason}, so the rest stays in my inventory`;
+      this.announce(`Done. ${carried} ${label} gathered, but ${reason}. Keeping the rest on me.`);
+      this.recordSuccess(bare, quantity, startedAt, baseline, data);
     } else if (abort !== null) {
       summary.status = carried > 0 ? "partial" : "failed";
       summary.errorCode = abort.errorCode;

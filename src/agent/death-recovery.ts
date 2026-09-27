@@ -97,6 +97,9 @@ function corpusSummary(inventory: Record<string, number>): string {
  * settles (success or failure), the scheduler resumes the paused work, so
  * CobbleBob returns to useful operation either way.
  */
+/** Equipment rebuilt from home stock after every respawn. */
+const REARM_ITEMS = ["stone_sword", "stone_pickaxe", "stone_axe"] as const;
+
 export class DeathRecoveryManager {
   private readonly opts: DeathRecoveryManagerOptions;
   private readonly now: () => number;
@@ -113,15 +116,25 @@ export class DeathRecoveryManager {
   private deathLoopSite: { x: number; y: number; z: number } | null = null;
   /** True once the current brake has been surfaced (one warn per brake). */
   private deathLoopWarned = false;
+  /** Set by a death, consumed by the next respawn. */
+  private rearmOnRespawn = false;
 
   constructor(options: DeathRecoveryManagerOptions) {
     this.opts = options;
     this.now = options.now ?? Date.now;
     this.policy = new ItemPolicy(options.config?.items ?? {});
-    options.bus.on("death", ({ dimension, position, killer, inventory }) =>
-      this.onDeath(dimension, position, killer, inventory),
-    );
-    options.bus.on("respawn", () => this.onRespawn());
+    options.bus.on("death", ({ dimension, position, killer, inventory }) => {
+      this.rearmOnRespawn = true;
+      this.onDeath(dimension, position, killer, inventory);
+    });
+    options.bus.on("respawn", () => {
+      // Every death empties the hands, worth a recovery trip or not.
+      if (this.rearmOnRespawn) {
+        this.rearmOnRespawn = false;
+        this.queueRearm();
+      }
+      this.onRespawn();
+    });
     options.bus.on("task.completed", ({ task }) => this.onRecoveryTaskSettled(task));
     options.bus.on("task.failed", ({ task }) => this.onRecoveryTaskSettled(task));
     options.bus.on("task.cancelled", ({ task }) => this.onRecoveryTaskSettled(task));
@@ -351,6 +364,26 @@ export class DeathRecoveryManager {
     // pauses the active task cooperatively and runs recovery next.
     this.opts.scheduler.claim();
     this.opts.logger.info({ deathId: death.id, taskId: task.id }, "death recovery enqueued at EMERGENCY priority");
+  }
+
+  /**
+   * A respawned bot has empty hands. Queue a sword and the basic tools from
+   * home stock (ensure_item withdraws materials and crafts): below death
+   * recovery, above owner work, so the next zombie is not fought bare-handed
+   * and the next job does not stall on a missing pickaxe.
+   */
+  private queueRearm(): void {
+    for (const item of REARM_ITEMS) {
+      this.opts.scheduler.enqueue({
+        type: "ensure_item",
+        priority: TaskPriority.MAINTENANCE,
+        source: "maintenance",
+        objective: `Re-arm after respawn: ${item}.`,
+        parameters: { item, quantity: 1 },
+        workKey: `rearm:${item}`,
+      });
+    }
+    this.opts.scheduler.claim();
   }
 
   private cancelQueuedRecovery(task: Task): void {

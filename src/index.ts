@@ -14,14 +14,14 @@ import { BootstrapRepository } from "./memory/bootstrap.js";
 import { SkillsRepository } from "./memory/skills.js";
 import { StorageRepository } from "./memory/storage.js";
 import { TasksRepository } from "./memory/tasks.js";
-import { BuildProjectsRepository } from "./memory/build-projects.js";
+import { WorldProjectsRepository } from "./memory/world-projects.js";
 import { BackgroundFailuresRepository } from "./memory/background-failures.js";
 import { GoalsRepository } from "./memory/goals.js";
 import { ResourceSitesRepository } from "./memory/resource-sites.js";
 import { DeathEventsRepository } from "./memory/deaths.js";
 import { AgentState } from "./agent/state.js";
 import { Scheduler } from "./agent/scheduler.js";
-import { BuildProjectManager } from "./agent/build-projects.js";
+import { WorldProjectManager } from "./agent/world-projects.js";
 import { ActionWatchdog } from "./agent/watchdog.js";
 import { TaskDispatcher } from "./agent/task-dispatcher.js";
 import { DeathRecoveryManager } from "./agent/death-recovery.js";
@@ -35,6 +35,7 @@ import { GatherFoodRunner } from "./skills/gather-food.js";
 import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
 import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
+import { SelfDefenseReflex } from "./agent/self-defense.js";
 import { UtilityRunner } from "./skills/utility.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
@@ -57,6 +58,7 @@ import { registerNavigationTools } from "./tools/navigation.js";
 import { registerDeliveryTools } from "./tools/delivery.js";
 import { registerUtilityTools } from "./tools/utility.js";
 import { registerMemoryTools } from "./tools/memory.js";
+import { registerTerrainTools } from "./tools/terrain.js";
 import { TaskOutcomeTracker } from "./status/outcomes.js";
 import { buildStatusSnapshot } from "./status/snapshot.js";
 import { StatusServer } from "./status/server.js";
@@ -66,8 +68,15 @@ import { EventHistory } from "./dashboard/event-history.js";
 import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
 import { startDashboard } from "./dashboard/lifecycle.js";
 import { ViewerManager } from "./dashboard/viewer.js";
-import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
+import { createPrismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
+import { cachedPublicState } from "./dashboard/public-state.js";
+import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
+import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
+import { mineshaftExitRoute, TerrainProjectRunner } from "./skills/terrain-project.js";
+import { setEscapeRouteProvider } from "./minecraft/movement.js";
+import { normalizeDimension } from "./minecraft/protection.js";
+import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -81,7 +90,7 @@ const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
-const buildProjects = new BuildProjectsRepository(db);
+const buildProjects = new WorldProjectsRepository(db);
 const actions = new ActionsRepository(db);
 const backgroundFailures = new BackgroundFailuresRepository(db);
 // Bound historical task growth before rehydrating the scheduler, so an old
@@ -111,8 +120,19 @@ const scheduler = new Scheduler({
   worldActionTimeoutMs: config.world_actions?.timeout_ms,
 });
 scheduler.loadFromPersistence();
-const buildProjectManager = new BuildProjectManager(buildProjects, scheduler, bus);
-buildProjectManager.rehydrate();
+const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
+const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus, destructiveAuthorizations, () => state.worldId);
+// Any trip that starts deep in a shaft the bot dug climbs out by its steps.
+setEscapeRouteProvider((position, dimension) => {
+  for (const project of buildProjects.loadMineshafts(config.server.world_key, normalizeDimension(dimension))) {
+    if (project.payload.type !== "terrain") continue;
+    const route = mineshaftExitRoute(project.payload.plan, position);
+    if (route !== null) return route;
+  }
+  return null;
+});
+buildProjectManager.rehydrateAll();
+const survivalInterrupts = new SurvivalInterruptCoordinator({ bus, scheduler, projects: buildProjectManager });
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
@@ -164,6 +184,7 @@ registerNavigationTools(registry, scheduler, locations);
 registerDeliveryTools(registry, scheduler);
 registerUtilityTools(registry, scheduler, deaths);
 registerMemoryTools(registry, locations);
+registerTerrainTools(registry, scheduler, buildProjectManager);
 // Goal layer: start_goal / cancel_goal turn owner objectives into the one
 // persistent autonomous goal the background driver pursues.
 registerGoalTools(registry, goals);
@@ -172,6 +193,25 @@ registerGoalTools(registry, goals);
 // connection attempts and recovery tracking survives a reconnect.
 const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger });
 const taskOutcomes = new TaskOutcomeTracker({ bus });
+
+// Long projects run across many slices; tell the owner when one finishes or
+// stalls instead of leaving them to guess from silence.
+function announceProject(message: string): void {
+  try { session?.bot.chat(message); } catch { /* chat is best effort */ }
+}
+bus.on("world_project.completed", ({ project }) => {
+  if (project.source !== "user") return;
+  const checked = typeof project.verificationState.verified === "number" ? ` (${project.verificationState.verified} cells checked)` : "";
+  announceProject(`Finished the ${project.kind}${checked}.`);
+});
+bus.on("world_project.blocked", ({ project }) => {
+  if (project.source !== "user") return;
+  announceProject(`The ${project.kind} is stuck: ${project.lastError ?? "unknown problem"}. Tell me to try again once it's sorted.`);
+});
+bus.on("build_project.verified", ({ project }) => {
+  if (project.source !== "user") return;
+  announceProject(`The ${project.structureType.replace(/_/g, " ")} is finished and checked.`);
+});
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
 let dashboardServer: ReturnType<typeof startDashboard> = null;
@@ -180,7 +220,15 @@ const viewerManager = new ViewerManager({
   port: config.dashboard?.viewer_port ?? 3001,
   distance: config.dashboard?.viewer_distance ?? 6,
   dashboardPort: config.dashboard?.port ?? 3000,
-  adapter: prismarineViewerAdapter,
+  adapter: createPrismarineViewerAdapter({
+    host: config.dashboard?.viewer_host ?? "127.0.0.1",
+    publicViewer: config.dashboard?.public_viewer?.enabled === true
+      ? { port: config.dashboard.public_viewer.port, maxConnections: config.dashboard.public_viewer.max_connections }
+      : null,
+    // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
+    publicState: cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot()),
+    logger,
+  }),
   logger,
 });
 
@@ -194,6 +242,8 @@ interface Session {
   /** Phase 12: session-scoped stockpile manager (dashboard readout). */
   maintenance: StockpileManager;
   dispatcher: TaskDispatcher;
+  /** Fights back when a hostile attacks or closes in. */
+  selfDefense: SelfDefenseReflex;
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
@@ -210,6 +260,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   state,
   scheduler,
   buildProjects: buildProjectManager,
+  worldProjects: buildProjectManager,
   goals: () => goals,
   decider,
   client,
@@ -254,12 +305,23 @@ statusServer = new StatusServer({
     outcomes: taskOutcomes,
     buildProjects: buildProjectManager,
   }),
+  operator: {
+    // Local operator channel: identical to the owner typing in chat, so the
+    // whole deterministic + LLM command path is exercised.
+    command: (text) => {
+      const bot = session?.bot;
+      if (bot === undefined || bot.entity === null || bot.entity === undefined) throw new Error("bot not connected");
+      if (text.length === 0) throw new Error("empty command");
+      (bot.emit as (event: string, ...args: unknown[]) => boolean)("chat", config.agent?.owner ?? "Corey", text, null, null, null);
+      return `delivered as ${config.agent?.owner ?? "Corey"}: ${text}`;
+    },
+  },
 });
 if (config.status?.enabled ?? true) statusServer.start();
 
 dashboardServer = startDashboard({
   enabled: config.dashboard?.enabled ?? true,
-  host: config.dashboard?.host ?? "0.0.0.0",
+  host: config.dashboard?.host ?? "127.0.0.1",
   port: config.dashboard?.port ?? 3000,
   logger,
   snapshot: () => dashboardTelemetry.snapshot(),
@@ -275,10 +337,15 @@ process.on("exit", () => {
 const resumeBootstrapIfPending = (): void => {
   if (currentBootstrap !== null && currentBootstrap.currentStage !== null) {
     void currentBootstrap.run().catch((err: unknown) => {
-      logger.error({ err: String(err) }, "supervised bootstrap resume failed");
+      if (String(err).includes("yielded to owner work")) logger.info("bootstrap paused for owner work");
+      else logger.error({ err: String(err) }, "supervised bootstrap resume failed");
     });
   }
 };
+// Owner work never waits behind a multi-minute bootstrap stage.
+bus.on("task.created", ({ task }) => {
+  if (task.source === "user" && currentBootstrap?.isRunning === true) currentBootstrap.yieldNow();
+});
 bus.on("task.completed", resumeBootstrapIfPending);
 bus.on("task.failed", resumeBootstrapIfPending);
 bus.on("task.cancelled", resumeBootstrapIfPending);
@@ -293,6 +360,7 @@ async function shutdown(code: number): Promise<void> {
     viewerManager.stopFor(active.bot);
     active.background.stop();
     active.hostile.detach();
+    active.selfDefense.detach();
     // A service restart is operational, not an owner cancellation. Persist
     // the active task as paused so the next process can resume it.
     scheduler.requestPause();
@@ -300,6 +368,7 @@ async function shutdown(code: number): Promise<void> {
     await stopWorldPrimitives(active.bot);
   }
   goals.dispose();
+  survivalInterrupts.dispose();
   taskOutcomes.dispose();
   statusServer?.stop();
   dashboardServer?.stop();
@@ -398,6 +467,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // delivery runners cover the remaining tools. Every one is deterministic
   // and one-at-a-time; the LLM only picks the registered tool name.
   const ensureItem = new EnsureItemRunner({ bot, state, config, bus, storage, sites, skills, collect, food, logger });
+  maintenance.setCharcoalProducer((quantity, signals) => ensureItem.run("charcoal", quantity, { mode: "ensure", signals }));
   const defense = new DefenseRunner({ bot, state, config, bus, skills, logger });
   const utility = new UtilityRunner({ bot, state, config, storage, logger });
   const delivery = new DeliveryRunner({ bot, state, config, storage, logger });
@@ -405,7 +475,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, watchdog, logger });
+  const terrainProjects = new TerrainProjectRunner(bot, { logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
@@ -415,7 +486,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // the rest of the bot wiring; detached when the connection ends.
   const hostile = new HostileTracker(bot, bus);
   hostile.attach();
-  session = { bot, background, hostile, maintenance, dispatcher };
+  const selfDefense = new SelfDefenseReflex({ bot, bus, scheduler, logger });
+  selfDefense.attach();
+  session = { bot, background, hostile, maintenance, dispatcher, selfDefense };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -430,6 +503,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     storage,
     maintenance,
     goals,
+    worldProjects: buildProjectManager,
   });
 
   // Bootstrap runs on first spawn; the runner is resumable and idempotent, so a
@@ -440,7 +514,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {
-      logger.error({ err: String(err) }, "supervised bootstrap run failed");
+      if (String(err).includes("yielded to owner work")) logger.info("bootstrap paused for owner work");
+      else logger.error({ err: String(err) }, "supervised bootstrap run failed");
     });
     // Phase 8: with the world available, resume a rehydrated ACTIVE task
     // (crashed mid-skill) from its persisted resume state, then reclaim the
@@ -479,6 +554,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // sensor via `shutdown`.
   background.stop();
   hostile.detach();
+  selfDefense.detach();
   dispatcher.dispose();
   session = null;
   currentBootstrap = null;

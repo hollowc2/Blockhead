@@ -2,7 +2,7 @@ import { deepStrictEqual, equal } from "node:assert/strict";
 import test from "node:test";
 import { GoalStatus } from "../agent/goal.js";
 import { TaskPriority, TaskStatus } from "../agent/task.js";
-import { projectBuildProject, projectGoal, projectInventory, projectPosition, projectStockpiles, projectTask } from "./projections.js";
+import { projectBuildProject, projectGoal, projectInventory, projectPosition, projectStockpiles, projectTask, projectWorldProject } from "./projections.js";
 
 const task = { id: "task-1", type: "collect_resource", priority: TaskPriority.FOREGROUND, source: "user" as const, objective: "Collect oak logs", parameters: { resource: "oak_log" }, status: TaskStatus.ACTIVE, createdAt: "2026-09-16T10:00:00.000Z", startedAt: "2026-09-16T10:01:00.000Z", attempts: 1 };
 
@@ -57,4 +57,18 @@ test("outputs are JSON-safe and inputs are unchanged", () => {
   equal(JSON.stringify({ task, goal, inventory, stockpiles }), before);
   equal(projectPosition(undefined), null);
   equal(projectStockpiles(null), null);
+});
+
+test("projects a terrain envelope with frozen geometry and runtime state", () => {
+  const projected = projectWorldProject({
+    project: {
+      id: "terrain-1", kind: "excavate", userGoal: "dig", source: "user", status: "blocked", world: "world", dimension: "overworld", geometryHash: "hash",
+      payload: { type: "terrain", plan: { planVersion: 1, world: "world", dimension: "overworld", anchor: { x: 0, y: 64, z: 0, dimension: "overworld" }, bounds: { minX: -5, maxX: 4, minY: 59, maxY: 63, minZ: -5, maxZ: 4 }, specification: { kind: "excavate", anchor: "owner", width: 10, length: 10, depth: 5 }, geometryHash: "hash" } },
+      currentPhaseId: "phase", resumeState: { nextIndex: 4 }, verificationState: { verified: 3 }, authorizationState: { state: "active" }, createdAt: "now", updatedAt: "now", lastError: "lava",
+    },
+    phase: { id: "phase", projectId: "terrain-1", ordinal: 0, label: "excavate", status: "blocked", progress: { rows: 2 }, attempts: 2 },
+  });
+  equal(projected?.kind, "excavate");
+  deepStrictEqual(projected?.bounds, { minX: -5, maxX: 4, minY: 59, maxY: 63, minZ: -5, maxZ: 4 });
+  equal(projected?.blocker, "lava");
 });

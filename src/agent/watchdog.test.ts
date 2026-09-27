@@ -86,7 +86,7 @@ test("a blocked action is not immediately rescheduled; the scheduler holds it as
 
 test("a prerequisite-blocked project task is never treated as an expired watchdog block", () => {
   now = 0;
-  const { scheduler } = newHarness();
+  const { scheduler, watchdog } = newHarness();
   const task = scheduler.enqueue({
     type: "build_project_slice",
     priority: TaskPriority.FOREGROUND,
@@ -98,6 +98,7 @@ test("a prerequisite-blocked project task is never treated as an expired watchdo
     executionPolicy: "resumable",
   });
   assert.equal(scheduler.claim()?.id, task.id);
+  watchdog.record(actionFingerprint(task.type, task.parameters), "failure", true, "no authoritative support block");
   scheduler.blockActive("no authoritative support block");
 
   for (let tick = 0; tick < 1_100; tick += 1) {
@@ -127,6 +128,24 @@ test("different arguments produce different fingerprints, so blocks do not colli
   const other = scheduler.enqueue(backgroundTask("collect_resource", { resource: "coal", quantity: 64 }));
   assert.equal(scheduler.claim()?.id, other.id, "a different argument is not blocked by this action's block");
   assert.equal(other.status, TaskStatus.ACTIVE);
+});
+
+test("terrain fingerprints include frozen work identity but ignore volatile cursors", () => {
+  const base = {
+    projectId: "terrain-1", kind: "excavate", geometryHash: "hash-1", phase: "excavate", slice: 2,
+  };
+  assert.equal(
+    actionFingerprint("world_project_slice", { ...base, cursor: 1 }),
+    actionFingerprint("world_project_slice", { ...base, cursor: 99 }),
+  );
+  assert.notEqual(
+    actionFingerprint("world_project_slice", base),
+    actionFingerprint("world_project_slice", { ...base, geometryHash: "hash-2" }),
+  );
+  assert.notEqual(
+    actionFingerprint("world_project_slice", base),
+    actionFingerprint("world_project_slice", { ...base, slice: 3 }),
+  );
 });
 
 test("success clears failure state; partial progress reduces it", () => {

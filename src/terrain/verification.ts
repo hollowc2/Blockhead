@@ -1,0 +1,217 @@
+import type { Bot } from "mineflayer";
+import { Vec3 } from "vec3";
+import { classifyObservedBlock, type ObservedBlockState } from "./classification.js";
+import type { BlockBounds, CardinalDirection, FrozenTerrainPlan, MineshaftSpec } from "./schema.js";
+import { mineshaftSegment } from "./geometry.js";
+import type { SkillErrorCode, SkillResult } from "../skills/skill-library.js";
+
+export interface VerificationMismatch {
+  position: { x: number; y: number; z: number };
+  state: ObservedBlockState;
+  blockName: string | null;
+  errorCode: Extract<SkillErrorCode, "WORLD_NOT_OBSERVED" | "LAVA_HAZARD" | "WATER_HAZARD" | "FALLING_BLOCKS_UNSTABLE" | "UNBREAKABLE_BLOCK" | "PROTECTED_FIXTURE" | "CAVE_OPENING" | "RETURN_ROUTE_LOST">;
+}
+
+export interface ExcavationVerification {
+  bounds: BlockBounds;
+  inspected: number;
+  verified: number;
+  mismatches: VerificationMismatch[];
+}
+
+export interface ClearAreaVerification {
+  bounds: BlockBounds;
+  inspected: number;
+  verified: number;
+  mismatches: VerificationMismatch[];
+}
+
+export interface FlattenColumnVerification {
+  x: number;
+  z: number;
+  walkingY: number;
+  supportState: ObservedBlockState;
+  walkingState: ObservedBlockState;
+  headState: ObservedBlockState;
+}
+
+export interface FlattenAreaVerification {
+  bounds: BlockBounds;
+  walkingY: number;
+  columns: FlattenColumnVerification[];
+  inspected: number;
+  verified: number;
+  mismatches: VerificationMismatch[];
+}
+
+export interface MineshaftVerification {
+  direction: CardinalDirection;
+  targetSegment: number;
+  inspected: number;
+  verified: number;
+  routeForward: boolean;
+  routeBackward: boolean;
+  mismatches: VerificationMismatch[];
+}
+
+function errorCodeFor(state: ObservedBlockState, blockName: string | null): VerificationMismatch["errorCode"] {
+  switch (state) {
+    case "unobserved": return "WORLD_NOT_OBSERVED";
+    case "fluid": return blockName?.replace(/^minecraft:/, "").includes("lava") ? "LAVA_HAZARD" : "WATER_HAZARD";
+    case "falling": return "FALLING_BLOCKS_UNSTABLE";
+    case "unbreakable": return "UNBREAKABLE_BLOCK";
+    case "protectedFixture": return "PROTECTED_FIXTURE";
+    default: return "UNBREAKABLE_BLOCK";
+  }
+}
+
+/** Water cannot be dug out; clear/excavate leave it in place. */
+function isWater(name: string | undefined): boolean {
+  const bare = name?.replace(/^minecraft:/, "");
+  return bare === "water" || bare === "flowing_water" || bare === "bubble_column";
+}
+
+/** Independently inspect every cell in an excavation AABB. */
+export function verifyExcavationVolume(bot: Bot, bounds: BlockBounds, maxMismatches = 64): SkillResult<ExcavationVerification> {
+  const mismatches: VerificationMismatch[] = [];
+  let inspected = 0;
+  let verified = 0;
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+        inspected += 1;
+        const block = bot.blockAt(new Vec3(x, y, z));
+        const state = classifyObservedBlock(block);
+        if (state === "passable" || isWater(block?.name)) {
+          verified += 1;
+        } else if (mismatches.length < maxMismatches) {
+          mismatches.push({ position: { x, y, z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) });
+        }
+      }
+    }
+  }
+  const data = { bounds, inspected, verified, mismatches };
+  if (mismatches.length > 0) {
+    const first = mismatches[0];
+    return { ok: false, status: "blocked", errorCode: first?.errorCode ?? "WORLD_NOT_OBSERVED", message: `excavation verification found ${mismatches.length} mismatched cell(s)`, data, retryable: false };
+  }
+  return { ok: true, status: "completed", data, message: "excavation volume verified" };
+}
+
+function mismatch(bot: Bot, x: number, y: number, z: number, allowSolid = false, allowWater = false): VerificationMismatch | null {
+  const block = bot.blockAt(new Vec3(x, y, z));
+  const state = classifyObservedBlock(block);
+  if (state === "passable" || (allowWater && isWater(block?.name)) || (allowSolid && state === "solid")) return null;
+  return { position: { x, y, z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) };
+}
+
+/** Verify that a clear operation removed only the requested prism contents. */
+export function verifyClearArea(bot: Bot, bounds: BlockBounds, maxMismatches = 64): SkillResult<ClearAreaVerification> {
+  const mismatches: VerificationMismatch[] = [];
+  let inspected = 0;
+  let verified = 0;
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+        inspected += 1;
+        const found = mismatch(bot, x, y, z, false, true);
+        if (found === null) verified += 1;
+        else if (mismatches.length < maxMismatches) mismatches.push(found);
+      }
+    }
+  }
+  const data = { bounds, inspected, verified, mismatches };
+  if (mismatches.length > 0) return { ok: false, status: "blocked", errorCode: mismatches[0]?.errorCode, message: `clear verification found ${mismatches.length} mismatched cell(s)`, data, retryable: false };
+  return { ok: true, status: "completed", data, message: "clear area verified" };
+}
+
+/** Verify support, walking space, and two-block headroom for every flatten column. */
+export function verifyFlattenArea(bot: Bot, bounds: BlockBounds, walkingY = bounds.maxY, maxMismatches = 64): SkillResult<FlattenAreaVerification> {
+  if (!Number.isInteger(walkingY) || walkingY < bounds.minY || walkingY > bounds.maxY) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "flatten walking plane is outside the authorized bounds", retryable: false };
+  const mismatches: VerificationMismatch[] = [];
+  const columns: FlattenColumnVerification[] = [];
+  let inspected = 0;
+  let verified = 0;
+  const addMismatch = (x: number, y: number, z: number): void => {
+    const found = mismatch(bot, x, y, z, false);
+    if (found !== null && mismatches.length < maxMismatches) mismatches.push(found);
+  };
+  for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      const support = bot.blockAt(new Vec3(x, walkingY - 1, z));
+      const walking = bot.blockAt(new Vec3(x, walkingY, z));
+      const head = bot.blockAt(new Vec3(x, walkingY + 1, z));
+      const secondHead = bot.blockAt(new Vec3(x, walkingY + 2, z));
+      inspected += 4;
+      columns.push({ x, z, walkingY, supportState: classifyObservedBlock(support), walkingState: classifyObservedBlock(walking), headState: classifyObservedBlock(head) });
+      if (classifyObservedBlock(support) === "solid" && classifyObservedBlock(walking) === "passable" && classifyObservedBlock(head) === "passable" && classifyObservedBlock(secondHead) === "passable") verified += 1;
+      else {
+        addMismatch(x, walkingY - 1, z);
+        addMismatch(x, walkingY, z);
+        addMismatch(x, walkingY + 1, z);
+        addMismatch(x, walkingY + 2, z);
+      }
+    }
+  }
+  const data = { bounds, walkingY, columns, inspected, verified, mismatches };
+  if (mismatches.length > 0) return { ok: false, status: "blocked", errorCode: mismatches[0]?.errorCode ?? "UNSAFE_GEOMETRY", message: `flatten verification found ${mismatches.length} mismatched cell(s)`, data, retryable: false };
+  return { ok: true, status: "completed", data, message: "flatten area verified" };
+}
+
+function mineshaftDirection(plan: FrozenTerrainPlan, spec: MineshaftSpec): CardinalDirection | null {
+  if (spec.direction !== undefined) return spec.direction;
+  if (plan.anchor.z > plan.bounds.maxZ) return "north";
+  if (plan.anchor.z < plan.bounds.minZ) return "south";
+  if (plan.anchor.x > plan.bounds.maxX) return "west";
+  if (plan.anchor.x < plan.bounds.minX) return "east";
+  return null;
+}
+
+function routeCells(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirection, spec: MineshaftSpec, targetSegment: number, mismatches: VerificationMismatch[], maxMismatches: number): { inspected: number; verified: number } {
+  let inspected = 0;
+  let verified = 0;
+  for (let segment = 0; segment <= targetSegment; segment += 1) {
+    const corridor = mineshaftSegment(plan.anchor, direction, spec.width, spec.height, segment);
+    for (let y = corridor.minY; y <= corridor.maxY; y += 1) for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
+      inspected += 1;
+      const found = mismatch(bot, x, y, z, false, true);
+      if (found === null) verified += 1;
+      else if (mismatches.length < maxMismatches) mismatches.push(found);
+    }
+    for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
+      inspected += 1;
+      const found = mismatch(bot, x, corridor.minY - 1, z, true);
+      // A settled gravel/sand step still carries the walker.
+      if (found === null || found.state === "falling") verified += 1;
+      else if (mismatches.length < maxMismatches) mismatches.push({ ...found, errorCode: found.state === "passable" ? "CAVE_OPENING" : found.errorCode });
+    }
+    const exposed = direction === "north" || direction === "south"
+      ? [{ x: corridor.minX - 1, z: corridor.minZ }, { x: corridor.maxX + 1, z: corridor.minZ }]
+      : [{ x: corridor.minX, z: corridor.minZ - 1 }, { x: corridor.minX, z: corridor.maxZ + 1 }];
+    // Side walls are normally solid rock; a cave beside the stairway is
+    // tolerated. Only lava or an unloaded cell next to the route is a fault.
+    for (const face of exposed) for (let y = corridor.minY; y <= corridor.maxY; y += 1) {
+      inspected += 1;
+      const block = bot.blockAt(new Vec3(face.x, y, face.z));
+      const state = classifyObservedBlock(block);
+      const lava = state === "fluid" && String(block?.name ?? "").includes("lava");
+      if (!lava && state !== "unobserved") { verified += 1; continue; }
+      if (mismatches.length < maxMismatches) mismatches.push({ position: { x: face.x, y, z: face.z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) });
+    }
+  }
+  return { inspected, verified };
+}
+
+/** Verify the complete traversable corridor and both round-trip directions. */
+export function verifyMineshaft(bot: Bot, plan: FrozenTerrainPlan, maxMismatches = 64): SkillResult<MineshaftVerification> {
+  if (plan.specification.kind !== "mineshaft") return { ok: false, status: "failed", errorCode: "INVALID_RESOURCE", message: "not a mineshaft plan", retryable: false };
+  const direction = mineshaftDirection(plan, plan.specification);
+  if (direction === null) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft direction is not frozen", retryable: false };
+  const targetSegment = plan.specification.targetY !== undefined ? plan.anchor.y - plan.specification.targetY : plan.specification.depth ?? 0;
+  if (targetSegment < 1) return { ok: false, status: "blocked", errorCode: "UNSAFE_GEOMETRY", message: "mineshaft endpoint is invalid", retryable: false };
+  const mismatches: VerificationMismatch[] = [];
+  const counts = routeCells(bot, plan, direction, plan.specification, targetSegment, mismatches, maxMismatches);
+  const data = { direction, targetSegment, inspected: counts.inspected, verified: counts.verified, routeForward: mismatches.length === 0, routeBackward: mismatches.length === 0, mismatches };
+  if (mismatches.length > 0) return { ok: false, status: "blocked", errorCode: mismatches[0]?.errorCode ?? "RETURN_ROUTE_LOST", message: "mineshaft round-trip verification failed", data, retryable: false };
+  return { ok: true, status: "completed", data, message: "mineshaft round-trip route verified" };
+}

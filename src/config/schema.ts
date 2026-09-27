@@ -263,11 +263,24 @@ export const MinecraftConfigSchema = z.object({
   dashboard: z
     .object({
       enabled: z.boolean().default(true),
-      host: z.string().default("0.0.0.0"),
+      host: z.string().default("127.0.0.1"),
       port: z.number().int().positive().default(3000),
       viewer_enabled: z.boolean().default(true),
+      /** Bind address of the full viewer shell on `viewer_port`. */
+      viewer_host: z.string().default("127.0.0.1"),
       viewer_port: z.number().int().positive().default(3001),
-      viewer_distance: z.number().positive().default(6),
+      viewer_distance: z.number().positive().max(8).default(6),
+      /**
+       * Read-only, redacted viewer on loopback for Tailscale Funnel. It
+       * never proxies to the dashboard or the status/command server.
+       */
+      public_viewer: z
+        .object({
+          enabled: z.boolean().default(false),
+          port: z.number().int().positive().default(3003),
+          max_connections: z.number().int().positive().max(32).default(6),
+        })
+        .default({}),
     })
     .optional(),
   tui: z

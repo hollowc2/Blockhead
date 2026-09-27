@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { patchViewerClient, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
+import { patchMineflayerCrafting, patchViewerClient, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
 
 test("patches both modern world-height loops", () => {
   const legacy = "for (let y = 0; y < 256; y += 16) {";
@@ -39,4 +39,21 @@ test("viewer client adds an R shortcut to recenter on CobbleBob", () => {
   assert.match(patched, /e\.key===\\?\"r\\?\"/);
   assert.match(patched, /c=t/);
   assert.equal(patchViewerRecenterHotkey(patched), patched);
+});
+
+test("Mineflayer crafting patch accepts any authoritative slot update", () => {
+  const source = [
+    "await once(bot.inventory, 'updateSlot:0')",
+    "await once(bot.currentWindow, 'updateSlot:0')",
+    "const promisePutAway = once(window, `updateSlot:${slot}`)",
+  ].join("\n");
+  const patched = patchMineflayerCrafting(source);
+  assert.match(patched, /once\(bot\.inventory, 'updateSlot'\)/);
+  assert.match(patched, /once\(bot\.currentWindow, 'updateSlot'\)/);
+  assert.match(patched, /slot === window\.craftingResultSlot/);
+  assert.equal(patchMineflayerCrafting(patched), patched);
+});
+
+test("Mineflayer crafting patch refuses an unknown dependency layout", () => {
+  assert.throws(() => patchMineflayerCrafting("unrelated"), /refusing to patch/);
 });

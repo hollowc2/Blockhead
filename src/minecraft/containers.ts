@@ -179,6 +179,7 @@ export async function deliverCarriedItems(
   itemNames: readonly string[],
   logger: Logger,
   signal?: AbortSignal,
+  options: { keep?: number } = {},
 ): Promise<{ delivered: number }> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
@@ -188,6 +189,9 @@ export async function deliverCarriedItems(
     return { delivered: 0 };
   }
   let delivered = 0;
+  // `keep` leaves that many items (across all the names) in the inventory.
+  let surplus = itemNames.reduce((sum, name) => sum + countItem(bot, name), 0) - (options.keep ?? 0);
+  if (surplus <= 0) return { delivered: 0 };
   try {
     assertContainerAllowed(state, chest);
     const container = await openContainer(bot, chest, signal);
@@ -196,7 +200,7 @@ export async function deliverCarriedItems(
       for (const name of itemNames) {
         throwIfAborted(signal);
         const before = countItem(bot, name);
-        if (before === 0) continue;
+        if (before === 0 || surplus <= 0) continue;
         const itemId = bot.registry.itemsByName[bareName(name)]?.id;
         if (itemId === undefined) {
           logger.warn({ item: name }, "no item id for deposit");
@@ -204,8 +208,10 @@ export async function deliverCarriedItems(
         }
         try {
           assertContainerAllowed(state, chest);
-          await deposit(container, itemId, null, before, signal);
-          delivered += Math.max(0, before - countItem(bot, name));
+          await deposit(container, itemId, null, Math.min(before, surplus), signal);
+          const moved = Math.max(0, before - countItem(bot, name));
+          delivered += moved;
+          surplus -= moved;
         } catch (err) {
           throwIfAborted(signal);
           logger.warn({ err: String(err), item: name }, "chest deposit failed");

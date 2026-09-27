@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recipe } from "prismarine-recipe";
-import { ORE_SOURCE_BY_DROP, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
+import { ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
 
 /** Tiny fake recipe catalog (ids are arbitrary but consistent). */
 function recipe(id: number, outputCount: number, deltas: [number, number][], requiresTable = false): Recipe {
@@ -117,4 +117,22 @@ test("craft quantities round up to whole crafts", () => {
   assert.equal(plan.ok, true);
   const gather = plan.plan.steps.find((step) => step.kind === "gather") as Extract<EnsureStep, { kind: "gather" }>;
   assert.equal(gather.quantity, 2); // 5 planks need 2 crafts of 4, so 2 logs.
+});
+test("recipe ranking looks one craft deeper: sticks come from the stocked log species", () => {
+  const names: Record<number, string> = { 1: "pale_oak_log", 2: "birch_log", 10: "pale_oak_planks", 12: "birch_planks", 11: "stick" };
+  const recipes: Record<string, Recipe[]> = {
+    pale_oak_planks: [recipe(10, 4, [[1, -1], [10, 4]])],
+    birch_planks: [recipe(12, 4, [[2, -1], [12, 4]])],
+    // Listed pale oak first, as the registry happened to.
+    stick: [recipe(11, 4, [[10, -2], [11, 4]]), recipe(11, 4, [[12, -2], [11, 4]])],
+  };
+  const stock: Record<string, number> = { birch_log: 36 };
+  const stocked: RecipeCatalog = {
+    gatherable: (item) => item.endsWith("_log"),
+    recipesProducing: (item) => recipes[item] ?? [],
+    nameForId: (id) => names[id] ?? null,
+    available: (item) => stock[item] ?? 0,
+  };
+  const ranked = rankRecipes(recipes.stick!, stocked);
+  assert.equal(stocked.nameForId(ranked[0]!.delta[0]!.id), "birch_planks");
 });

@@ -1,38 +1,71 @@
-import { mineflayer as prismarineViewer } from "prismarine-viewer";
 import { createServer } from "node:net";
 import type { Bot } from "mineflayer";
-import type { ViewerAdapter, ViewerHandle } from "./viewer.js";
+import type { Logger } from "pino";
+import type { ViewerAdapter } from "./viewer.js";
 import { ViewerShellServer } from "./viewer-shell.js";
+import { ReadOnlyViewerServer } from "./viewer-server.js";
 
-/** Production adapter for the documented prismarine-viewer Mineflayer API. */
-export const prismarineViewerAdapter: ViewerAdapter = {
-  async start(bot: Bot, options) {
-    await assertPortAvailable(options.port);
-    const viewerPort = options.port + 1;
-    await assertPortAvailable(viewerPort);
-    const viewerOptions = {
-      port: viewerPort,
-      viewDistance: options.viewDistance,
-      firstPerson: false,
-    } as Parameters<typeof prismarineViewer>[1] & { firstPerson: boolean };
-    prismarineViewer(bot, viewerOptions);
-    const viewer = (bot as Bot & { viewer?: ViewerHandle }).viewer;
-    if (viewer === undefined) throw new Error("viewer did not attach to bot");
-    const shell = new ViewerShellServer({ host: "0.0.0.0", port: options.port, viewerPort, statsPort: options.dashboardPort });
-    try {
-      await shell.start();
-    } catch (error) {
-      viewer.close();
-      throw error;
-    }
-    return { close: () => { shell.stop(); viewer.close(); } };
-  },
-};
+export interface PrismarineAdapterOptions {
+  /** Bind address for the tailnet shell and the raw viewer server. */
+  host: string;
+  /** Loopback-only listener that Tailscale Funnel exposes; null disables it. */
+  publicViewer: { port: number; maxConnections: number } | null;
+  publicState: () => Promise<unknown>;
+  logger?: Pick<Logger, "info" | "warn">;
+}
 
-function assertPortAvailable(port: number): Promise<void> {
+/**
+ * Production adapter: the read-only viewer server on `port + 1` (loopback),
+ * the full shell on `port` for the tailnet, and optionally the public shell.
+ */
+export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterOptions): ViewerAdapter {
+  return {
+    async start(bot: Bot, options) {
+      const viewerPort = options.port + 1;
+      const publicPort = adapterOptions.publicViewer?.port;
+      await assertPortAvailable(options.port, adapterOptions.host);
+      await assertPortAvailable(viewerPort, "127.0.0.1");
+      if (publicPort !== undefined) await assertPortAvailable(publicPort, "127.0.0.1");
+
+      const viewer = new ReadOnlyViewerServer(bot, {
+        host: "127.0.0.1",
+        port: viewerPort,
+        viewDistance: options.viewDistance,
+        maxPublicConnections: adapterOptions.publicViewer?.maxConnections ?? 0,
+        maxConnections: (adapterOptions.publicViewer?.maxConnections ?? 0) + 4,
+        logger: adapterOptions.logger,
+      });
+      await viewer.start();
+      const shells: ViewerShellServer[] = [
+        new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort, logger: adapterOptions.logger }),
+      ];
+      if (publicPort !== undefined) {
+        shells.push(new ViewerShellServer({
+          host: "127.0.0.1",
+          port: publicPort,
+          viewerPort,
+          statsPort: options.dashboardPort,
+          mode: "public",
+          publicState: adapterOptions.publicState,
+          logger: adapterOptions.logger,
+        }));
+      }
+      try {
+        for (const shell of shells) await shell.start();
+      } catch (error) {
+        for (const shell of shells) shell.stop();
+        viewer.close();
+        throw error;
+      }
+      return { close: () => { for (const shell of shells) shell.stop(); viewer.close(); } };
+    },
+  };
+}
+
+function assertPortAvailable(port: number, host: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", reject);
-    probe.listen(port, "0.0.0.0", () => probe.close((error) => error ? reject(error) : resolve()));
+    probe.listen(port, host, () => probe.close((error) => error ? reject(error) : resolve()));
   });
 }

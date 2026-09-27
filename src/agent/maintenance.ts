@@ -4,6 +4,7 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import { bareName, isRawLogItemName, itemsSummary } from "../minecraft/inventory.js";
 import { countStoredItems } from "../minecraft/containers.js";
+import { dominantNearbyLog } from "../minecraft/world.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { Scheduler } from "./scheduler.js";
 import type { TaskSignals } from "./scheduler.js";
@@ -224,10 +225,16 @@ export class StockpileManager {
       targets,
       deficits: snapshot.deficits,
     });
-    this.opts.logger.info(
-      { levels: { wood, food, fuel, torches }, targets },
-      "stockpile check",
-    );
+    // Checks run every 30s; logging unchanged levels each time buries
+    // everything else and rotates the journal away within hours.
+    const logKey = JSON.stringify([levels, targets]);
+    if (logKey !== this.lastLoggedLevels) {
+      this.lastLoggedLevels = logKey;
+      this.opts.logger.info(
+        { levels: { wood, food, fuel, torches }, targets },
+        "stockpile check",
+      );
+    }
     return snapshot;
   }
 
@@ -247,6 +254,10 @@ export class StockpileManager {
     const minimums = stockpileMinimums(this.opts.config);
     const targets = snapshot.targets;
     for (const deficit of snapshot.deficits) {
+      // Only an empty food supply threatens survival. Low wood, fuel, or
+      // torches must never preempt what the owner asked for; they are
+      // restored as ordinary background work when the bot is idle.
+      if (deficit.kind !== "food") continue;
       const floor = Math.min(minimums[deficit.kind], targets[deficit.kind]);
       if (deficit.current < floor) return deficit;
     }
@@ -292,11 +303,21 @@ export class StockpileManager {
    * Public so the TaskDispatcher can run a maintenance task with the task's
    * cooperative signals; the skills deliver into the home chest.
    */
+  /** Charcoal producer, wired after construction (ensure_item is built later). */
+  private lastLoggedLevels: string | null = null;
+
+  private charcoal: ((quantity: number, signals?: TaskSignals) => Promise<SkillResult>) | null = null;
+
+  setCharcoalProducer(producer: (quantity: number, signals?: TaskSignals) => Promise<SkillResult>): void {
+    this.charcoal = producer;
+  }
+
   restore(deficit: StockpileDeficit, signals?: TaskSignals): Promise<SkillResult> {
     const options = signals === undefined ? {} : { signals };
     switch (deficit.kind) {
       case "wood":
-        return this.opts.collect.run("oak_log", deficit.deficit, options);
+        // "Wood" is whatever trees grow here, not specifically oak.
+        return this.opts.collect.run(dominantNearbyLog(this.opts.bot), deficit.deficit, options);
       case "food":
         // Crisis runs may search past the night cap: the food floor is
         // breached, so the bot's survival depends on finding an animal.
@@ -306,8 +327,13 @@ export class StockpileManager {
         });
       case "fuel":
         // `collect_resource` counts the drop ("coal") and delivers it to the
-        // home chest, so the fuel stockpile sees real coal.
-        return this.opts.collect.run("coal_ore", deficit.deficit, options);
+        // home chest, so the fuel stockpile sees real coal. With no coal in
+        // reach, smelt charcoal from logs instead of failing forever.
+        return this.opts.collect.run("coal_ore", deficit.deficit, options).then((result) => {
+          if (result.ok || this.charcoal === null) return result;
+          this.opts.logger.info({ reason: result.message }, "fuel: no coal reachable; smelting charcoal instead");
+          return this.charcoal(deficit.deficit, signals);
+        });
       case "torches":
         return this.opts.torches.run(deficit.deficit, options);
     }

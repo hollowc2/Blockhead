@@ -14,6 +14,8 @@ export enum TaskStatus {
 }
 
 export enum TaskPriority {
+  /** Fighting off an attacker: outranks even death recovery. */
+  REFLEX = 110,
   EMERGENCY = 100,
   INTERRUPT = 90,
   MAINTENANCE = 80,

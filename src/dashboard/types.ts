@@ -2,6 +2,7 @@ import type { GoalStatus, GoalSource, SuccessCriterion } from "../agent/goal.js"
 import type { StockpileKind } from "../agent/maintenance.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
 import type { BuildProjectStatus, BuildPhaseStatus, BuildMaterialShortage } from "../memory/build-projects.js";
+import type { WorldProjectKind, WorldProjectStatus, WorldProjectPhaseStatus } from "../memory/world-projects.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -23,6 +24,20 @@ export interface BuildProjectSummary {
   currentShortage: BuildMaterialShortage | null;
   lastBlockingReason: string | null;
   blueprintHash: string;
+}
+export interface WorldProjectSummary {
+  id: string;
+  kind: WorldProjectKind;
+  status: WorldProjectStatus;
+  world: string;
+  dimension: string;
+  geometryHash: string;
+  bounds: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number } | null;
+  phase: { id: string; label: string; status: WorldProjectPhaseStatus; progress: Record<string, unknown>; attempts: number } | null;
+  resumeState: Record<string, unknown>;
+  verificationState: Record<string, unknown>;
+  authorization: Record<string, unknown> | null;
+  blocker: string | null;
 }
 export interface ActionLabel { label: string; taskId: string | null }
 export interface BackgroundActivity { label: string; taskId: string | null }
@@ -64,6 +79,8 @@ export interface DashboardSnapshot {
   goal: GoalSummary | null;
   task: TaskSummary | null;
   buildProject: BuildProjectSummary | null;
+  /** Generic world-project projection; buildProject remains for frontend compatibility. */
+  worldProject?: WorldProjectSummary | null;
   action: ActionLabel;
   background: BackgroundActivity;
   stockpiles: StockpileSummary | null;

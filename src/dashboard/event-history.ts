@@ -92,6 +92,11 @@ export class EventHistory {
     on("tool.low_durability", (p) => this.record("tool", "warning", `Tool low: ${text((p as { item?: unknown }).item, "unknown tool")}`));
     on("tool.broken", (p) => this.record("tool", "error", `Tool broke: ${text((p as { item?: unknown }).item, "unknown tool")}`, true));
     on("director.decided", (p) => this.record("director", "info", `Director chose ${text((p as { task?: unknown }).task, "unknown task")}${rationaleSuffix(p)}`));
+    on("world_project.created", (p) => this.worldProject(p, "started", "info"));
+    on("world_project.scheduled", (p) => this.worldProject(p, "scheduled", "info"));
+    on("world_project.completed", (p) => this.worldProject(p, "completed", "success"));
+    on("world_project.blocked", (p) => this.worldProject(p, "blocked", "warning", true));
+    on("world_project.cancelled", (p) => this.worldProject(p, "cancelled", "warning", true));
   }
 
   events(): readonly DashboardEvent[] { return this.entries.slice(); }
@@ -127,6 +132,14 @@ export class EventHistory {
     const status = text(value.status, "complete");
     const severity: Severity = status === "completed" ? "success" : status === "failed" ? "error" : "warning";
     this.record("resource", severity, `Gather ${status}: ${count(value.gathered)}/${count(value.quantity)} ${text(value.resource, "resource")} (${count(value.delivered)} delivered)`, status === "failed" || status === "blocked");
+  }
+
+  private worldProject(payload: unknown, state: string, severity: Severity, failure = false): void {
+    const project = (payload as { project?: { kind?: unknown; geometryHash?: unknown; lastError?: unknown } } | undefined)?.project;
+    const kind = text(project?.kind, "world");
+    const hash = text(project?.geometryHash, "");
+    const suffix = state === "blocked" || state === "cancelled" ? ` — ${text(project?.lastError, "no reason")}` : "";
+    this.record("world_project", severity, `Terrain project ${kind} ${state}${hash === "" ? "" : ` (${hash.slice(0, 12)})`}${suffix}`, failure);
   }
 
   private record(category: string, severity: Severity, message: string, failure = false, chat = false): void {

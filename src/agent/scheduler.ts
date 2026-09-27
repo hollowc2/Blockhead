@@ -55,6 +55,21 @@ export interface TaskSignals {
  * (the latest user instruction wins), and paused tasks resume most-recently-
  * paused-first (Phase 8 acceptance: iron resumes before wood).
  */
+/**
+ * The parts of a checkpoint that only move when real work happens. Counters
+ * like "inspected" or "interruptions" tick on every attempt and would hide a
+ * slice that keeps failing at the same operation.
+ */
+function progressMarker(task: Task): string {
+  const state = (task.resumeState ?? {}) as Record<string, unknown>;
+  const keys = ["currentOperationIndex", "nextIndex", "lastVerifiedSegment", "placed", "removed", "gathered", "delivered", "phase"];
+  const picked = keys.filter((key) => key in state).map((key) => [key, state[key]]);
+  return picked.length > 0 ? JSON.stringify(picked) : task.progressFingerprint ?? "";
+}
+
+/** Requeues without a progress change before a task is parked as blocked. */
+const MAX_STALLED_REQUEUES = 3;
+
 export class Scheduler {
   private readonly bus: EventBus;
   private readonly tasks: TasksRepository;
@@ -72,6 +87,8 @@ export class Scheduler {
   /** Stable birth order of every live task (newest first among ties). */
   private seq = 0;
   private readonly order = new Map<string, number>();
+  /** Consecutive requeues of a task whose progress fingerprint did not change. */
+  private readonly requeueStalls = new Map<string, { fingerprint: string; count: number }>();
 
   /** Sequence number of the last paused task (most-recently-paused resumes first). */
   private pausedSeq = 0;
@@ -99,7 +116,12 @@ export class Scheduler {
         // Crash recovery must retain one and only one owner. Any additional
         // ACTIVE row is parked for explicit resumption instead of being
         // silently orphaned by overwriting the active reference.
-        if (this.activeTask === null) this.activeTask = task;
+        if (this.activeTask === null) {
+          this.activeTask = task;
+          // The resumed run needs a live signal; without a controller the
+          // rehydrated task got an already-aborted signal and failed on boot.
+          this.activeController = new AbortController();
+        }
         else {
           task.status = TaskStatus.PAUSED;
           task.lastError = "duplicate active task quarantined during restart";
@@ -384,6 +406,17 @@ export class Scheduler {
   requeueActive(lastError?: string): Task | null {
     const task = this.activeTask;
     if (!task) return null;
+    // A slice that keeps coming back without any new progress is stuck, not
+    // resumable: park it as blocked instead of spinning on the same failure.
+    const fingerprint = progressMarker(task);
+    const stalled = this.requeueStalls.get(task.id);
+    const stalls = stalled !== undefined && stalled.fingerprint === fingerprint ? stalled.count + 1 : 0;
+    this.requeueStalls.set(task.id, { fingerprint, count: stalls });
+    if (stalls >= MAX_STALLED_REQUEUES) {
+      this.requeueStalls.delete(task.id);
+      logger.warn({ taskId: task.id, lastError: lastError ?? null }, "requeued task made no progress repeatedly; blocking it");
+      return this.blockActive(`no progress after ${stalls + 1} attempts: ${lastError ?? "unknown"}`);
+    }
     this.activeTask = null;
     this.activeController?.abort(new Error("task requeued"));
     this.activeController = null;
@@ -395,7 +428,19 @@ export class Scheduler {
     this.tasks.update(task);
     this.bus.emit("task.requeued", { task });
     logger.info({ taskId: task.id, lastError: lastError ?? null }, "task requeued with progress preserved");
-    return this.activateNext();
+    // A slice that yielded waits behind queued work of at least its own
+    // priority (fairness between user jobs); lower-priority background work
+    // must never jump ahead of an owner's multi-slice job.
+    const competitor = this.nextCandidate(task.id);
+    const next = competitor !== null && competitor.priority >= task.priority ? this.claimNext(task.id) : null;
+    if (next === null) {
+      // Nothing else wants the slot: continue this work on the next tick
+      // (after the dispatcher finishes settling the previous slice) instead
+      // of leaving a multi-slice job parked forever.
+      const timer = setTimeout(() => { if (this.activeTask === null) this.activateNext(); }, 0);
+      timer.unref?.();
+    }
+    return next;
   }
 
   /** Stand active work down as blocked while retaining it as live persisted work. */
@@ -503,9 +548,10 @@ export class Scheduler {
       if (task.status !== TaskStatus.BLOCKED) continue;
       const fingerprint = actionFingerprint(task.type, task.parameters);
       // BLOCKED is also used for durable prerequisites (materials, world
-      // repair, owner action). Only watchdog-owned blocks have a cooldown.
-      if (!this.watchdog.tracks(fingerprint)) continue;
-      if (this.watchdog.blockFor(fingerprint) !== null) continue;
+      // repair, owner action). Only a watchdog block that has actually
+      // reached its cooldown expiry may be requeued. A failure count below
+      // the threshold is not itself a cooldown and must remain parked.
+      if (!this.watchdog.takeExpiredBlock(fingerprint)) continue;
       task.status = TaskStatus.QUEUED;
       this.tasks.update(task);
       logger.info({ taskId: task.id }, "anti-loop block expired; task requeued");

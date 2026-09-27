@@ -13,7 +13,7 @@ import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, isLiveMob } from "../policy/combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -124,6 +124,13 @@ const KILL_TIMEOUT_MS = 90_000;
 const COLLECT_TIMEOUT_MS = 240_000;
 /** Furthest radius the hunt expands to when the config omits `bootstrap.hunt_max_radius`. */
 const DEFAULT_HUNT_MAX_RADIUS = 1024;
+/** Food items the bot keeps carried when depositing a hunt. */
+const FOOD_CARRY_RESERVE = 16;
+/** Failed kills of passive animals tolerated in one hunt run. */
+const MAX_KILL_FAILURES = 3;
+/** Remembered animal sightings (bounded) and how long one stays useful. */
+const MAX_SIGHTINGS = 64;
+const SIGHTING_TTL_MS = 30 * 60_000;
 /** Wall-clock budget for one outward patrol trip between hunt radii. */
 const PATROL_TRIP_TIMEOUT_MS = 60_000;
 /**
@@ -239,6 +246,16 @@ export function isForageFoodBlock(block: Block): boolean {
 }
 
 /**
+ * The next hunt radius: doubling, but always landing on `maxRadius` itself
+ * before stopping. Doubling straight to `maxRadius + 1` skipped the final
+ * ring (48 -> 96 -> done with a 128 cap), where the only herd near home was.
+ */
+export function nextHuntRadius(radius: number, maxRadius: number): number {
+  if (radius >= maxRadius) return maxRadius + 1;
+  return Math.min(radius * 2, maxRadius);
+}
+
+/**
  * Compass heading in degrees for sweep step `step`. Wraps modulo
  * `SWEEP_HEADINGS` (and handles negatives) so any counter fans out around
  * home: 0 = along +z, 45 = +x/+z, ... 315 = -x/+z.
@@ -280,7 +297,7 @@ function lootDropsNear(bot: Bot, radius: number): Entity[] {
   if (self === null) return [];
   const drops: Entity[] = [];
   for (const entity of Object.values(bot.entities)) {
-    if (entity.type !== "object") continue;
+    if (!isDroppedItemEntity(entity)) continue;
     if (self.position.distanceTo(entity.position) <= radius && isLootDropItem(entity)) {
       drops.push(entity);
     }
@@ -297,7 +314,7 @@ function foodDropsNear(bot: Bot, radius: number): Entity[] {
   if (self === null) return [];
   const drops: Entity[] = [];
   for (const entity of Object.values(bot.entities)) {
-    if (entity.type !== "object") continue;
+    if (!isDroppedItemEntity(entity)) continue;
     const item = entity.getDroppedItem();
     if (item === null) continue;
     if (FOOD_ITEM_NAMES[bareName(item.name)] !== true) continue;
@@ -334,9 +351,40 @@ export class GatherFoodRunner {
   /** Set per run: hunt target filter (specific mob, "hostile", or null for passives). */
   private targetMob: string | null = null;
 
+  /**
+   * Where huntable animals were last seen, by entity id. The client only
+   * tracks mobs near the bot, so a herd passed on an errand is invisible
+   * from home; remembering it beats sweeping blind compass headings.
+   */
+  private readonly sightings = new Map<number, { x: number; y: number; z: number; at: number }>();
+
   constructor(private readonly opts: GatherFoodOptions) {
     const throttleSeconds = opts.config.background?.announce_throttle_seconds ?? 30;
     this.chatThrottle = new ChatThrottle(throttleSeconds * 1000);
+    const remember = (entity: Entity): void => {
+      // Mineflayer invalidates an entity before emitting entityGone, so
+      // liveness here is only "not killed", not isValid.
+      if (!isMobEntity(entity) || HUNT_MOB_NAMES[canonicalMobName(entity)] !== true) return;
+      if (typeof entity.health === "number" && entity.health <= 0) return;
+      this.sightings.set(entity.id, { x: entity.position.x, y: entity.position.y, z: entity.position.z, at: Date.now() });
+      if (this.sightings.size > MAX_SIGHTINGS) this.sightings.delete(this.sightings.keys().next().value!);
+    };
+    // Spawn = came into view; gone = left view (its last position is where
+    // the herd is now) or died (a killed animal is pruned on use).
+    opts.bot.on?.("entitySpawn", remember);
+    opts.bot.on?.("entityGone", remember);
+  }
+
+  /** The most recent sighting within `maxRadius` of home, or null. */
+  private recentSighting(home: { x: number; z: number }, maxRadius: number): { x: number; y: number; z: number } | null {
+    const cutoff = Date.now() - SIGHTING_TTL_MS;
+    let best: { x: number; y: number; z: number; at: number } | null = null;
+    for (const [id, seen] of this.sightings) {
+      if (seen.at < cutoff) { this.sightings.delete(id); continue; }
+      if (Math.hypot(seen.x - home.x, seen.z - home.z) > maxRadius) continue;
+      if (best === null || seen.at > best.at) best = seen;
+    }
+    return best;
   }
 
   get isRunning(): boolean {
@@ -420,7 +468,23 @@ export class GatherFoodRunner {
     const meter = (): number => countsFood ? countFoodItems(bot) : data.kills;
 
     let have = meter();
-    for (let radius = baseRadius; radius <= maxRadius && have < quantity; radius = Math.min(radius * 2, maxRadius + 1)) {
+    // Nothing huntable in view: walk to the last place animals were seen
+    // before falling back to blind compass sweeps.
+    if (countsFood && nearestMatchingMob(bot, baseRadius, huntTargetPredicate(this.targetMob)) === null) {
+      const seen = this.recentSighting(home, maxRadius);
+      if (seen !== null) {
+        const walked = await travelAndWait(bot, seen, { range: 8, timeoutMs: this.patrolTimeoutMs(Math.hypot(seen.x - home.x, seen.z - home.z)), shouldAbort: this.travelAbort, signal: this.signals?.signal });
+        if (this.stopRequested) return this.interrupted(data);
+        this.opts.logger.info({ to: [Math.round(seen.x), Math.round(seen.z)], status: walked.status }, "gather_food heading to last animal sighting");
+      }
+    }
+    // Widen the ring only when it is empty; a kill stays at the same radius
+    // (advancing on every kill capped a run at ~3 kills with a 128 cap).
+    let radius = baseRadius;
+    let killFailures = 0;
+    let engagements = 0;
+    const maxEngagements = quantity * 2 + MAX_KILL_FAILURES + 4;
+    while (radius <= maxRadius && have < quantity && engagements < maxEngagements) {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
       const matches = huntTargetPredicate(this.targetMob);
@@ -438,6 +502,7 @@ export class GatherFoodRunner {
           // Starving: take the food home now instead of roaming farther.
           // Healthy: keep expanding the search toward the target.
           if (bot.health <= HUNT_MIN_HEALTH) break;
+          radius = nextHuntRadius(radius, maxRadius);
           continue;
         }
         // Only when this radius offers nothing to hunt *or* forage does low
@@ -449,11 +514,16 @@ export class GatherFoodRunner {
         // restore cooldown).
         if (bot.health <= HUNT_MIN_HEALTH) {
           const recovered = await recoverLowHealth(bot);
-          if (!recovered.ok) {
+          // Starving with nothing to regenerate from: waiting only ends in
+          // starvation, so in daylight keep looking for animals anyway. At
+          // night the roaming risk outweighs it and the bot stays put.
+          const starvingInDaylight = !recovered.ok && recovered.code === "LOW_HEALTH" && !atNight;
+          if (!recovered.ok && !starvingInDaylight) {
             return this.fail(data, recovered.code, recovered.reason, {
               retryable: recovered.code !== "LOW_HEALTH",
             });
           }
+          if (starvingInDaylight) this.opts.logger.warn({ health: bot.health, hunger: bot.food }, "gather_food: starving and cannot regenerate; searching anyway in daylight");
         }
         // The radius scan only sees entities the client tracks around the
         // bot's current spot, so an empty radius reads like the world has no
@@ -486,6 +556,7 @@ export class GatherFoodRunner {
             ? "No animals or forage close to home; night hunting stays nearby."
             : `No animals or forage within ${radius} blocks. Expanding search.`,
         );
+        radius = nextHuntRadius(radius, maxRadius);
         continue;
       }
 
@@ -497,9 +568,17 @@ export class GatherFoodRunner {
       if (HOSTILE_MOB_NAMES.has(mob.name ?? "") && belowHealthRetreat(bot.health, HEALTH_RETREAT_THRESHOLD)) {
         return this.fail(data, "DANGER_TOO_HIGH", `health ${bot.health} is at/below the retreat threshold ${HEALTH_RETREAT_THRESHOLD}; not engaging a hostile ${mob.name ?? "mob"}`);
       }
+      engagements += 1;
       const kill = await this.killMob(mob);
       if (this.stopRequested) return this.interrupted(data);
-      if (!kill.ok) return this.fail(data, "DANGER_TOO_HIGH", kill.reason);
+      if (!kill.ok) {
+        // A cow that bolts mid-fight is not a danger; try again (it or the
+        // next animal) a few times. A hostile that got away still ends the run.
+        killFailures += 1;
+        if (HOSTILE_MOB_NAMES.has(mob.name ?? "") || killFailures >= MAX_KILL_FAILURES) return this.fail(data, "DANGER_TOO_HIGH", kill.reason);
+        this.opts.logger.info({ mob: mob.name, reason: kill.reason, killFailures }, "gather_food kill failed; retrying");
+        continue;
+      }
       data.kills += 1;
       have = meter();
       if (countsFood && have <= before) {
@@ -512,8 +591,11 @@ export class GatherFoodRunner {
     if (this.stopRequested) return this.interrupted(data);
     if (have < quantity) {
       if (have > 0 && countsFood) {
-        // Partial kills still deliver what was gathered (spec 23).
-        const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal);
+        // Partial kills still deliver what was gathered (spec 23), minus the
+        // reserve the bot eats from.
+        await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+        if (this.stopRequested) return this.interrupted(data);
+        const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
         data.delivered = partial.delivered;
       }
       return this.fail(data, "RESOURCE_NOT_FOUND", `only ${have}/${quantity} ${countsFood ? "food" : "kills"} nearby`);
@@ -521,13 +603,16 @@ export class GatherFoodRunner {
 
     let complete: boolean;
     if (countsFood) {
-      const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal);
+      // Walk home before opening the chest, and keep a meal reserve on hand:
+      // the bot eats from its inventory, not from the chest.
+      await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+      if (this.stopRequested) return this.interrupted(data);
+      const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
       data.delivered = delivered.delivered;
-      complete = delivered.delivered > 0;
-      if (complete) {
-        this.announce(`Done. ${delivered.delivered} food in the chest.`);
-        this.recordSuccess(quantity, startedAt, baseline, data);
-      }
+      // The food exists either way; a full or unreachable chest is a note.
+      complete = true;
+      this.announce(delivered.delivered > 0 ? `Done. ${delivered.delivered} food in the chest, the rest on me.` : `Done. ${have} food on me.`);
+      this.recordSuccess(quantity, startedAt, baseline, data);
     } else {
       complete = true;
       this.announce(`Done. ${data.kills} ${this.targetMob ?? "targets"} cleared.`);

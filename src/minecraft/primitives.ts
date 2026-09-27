@@ -5,8 +5,8 @@ import type { Item } from "prismarine-item";
 import type { Recipe } from "prismarine-recipe";
 import { requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
-function beforeMutation(lease: ReturnType<typeof requireWorldActionLease>, action: string, point?: { x: number; y: number; z: number }, blockName?: string): void {
-  lease.beforeMutation?.({ action, point, blockName });
+function beforeMutation(lease: ReturnType<typeof requireWorldActionLease>, action: string, point?: { x: number; y: number; z: number }, blockName?: string, ownBuildReplacement?: boolean): void {
+  lease.beforeMutation?.({ action, point, blockName, ownBuildReplacement });
 }
 
 function blockPoint(block: { position?: { x: number; y: number; z: number }; name?: string }): { x: number; y: number; z: number } | undefined {
@@ -52,11 +52,35 @@ export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock
   throwIfAborted(signal);
 }
 
+/** Break a block the active build placed itself, for a planned replacement (door/window). */
+export async function digOwnBuildBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  beforeMutation(lease, "dig", blockPoint(block), block.name, true);
+  await bot.dig(block);
+  throwIfAborted(signal);
+}
+
 export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "dig", blockPoint(block), block.name);
   await bot.dig(block);
   throwIfAborted(signal);
+}
+
+/**
+ * Terrain code uses the same lease-bound placement primitive as construction.
+ * Keeping this small adapter here makes it impossible for a terrain caller to
+ * accidentally bypass the scheduler/policy boundary.
+ */
+export async function placeTerrainBlock(
+  bot: Bot,
+  reference: Parameters<Bot["placeBlock"]>[0],
+  face: Parameters<Bot["placeBlock"]>[1],
+  target: { x: number; y: number; z: number },
+  blockName: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await placeBlock(bot, reference, face, signal, target, blockName);
 }
 
 export async function tossItem(bot: Bot, type: number, metadata: number | null, count: number, signal?: AbortSignal): Promise<void> {
@@ -66,10 +90,45 @@ export async function tossItem(bot: Bot, type: number, metadata: number | null, 
   throwIfAborted(signal);
 }
 
+/**
+ * Fight `target` until it dies or despawns, or the fight is stopped
+ * (`pvpStop`, a timeout wrapper, or the plugin losing sight of it).
+ * `bot.pvp.attack` only *starts* the fight and resolves at once; awaiting it
+ * alone made every caller see a live mob, give up and call stop, so the bot
+ * never landed more than a swing.
+ */
 export async function pvpAttack(bot: Bot, target: Entity, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
-  beforeMutation(lease, "combat", { x: target.position.x, y: target.position.y, z: target.position.z });
-  await bot.pvp.attack(target);
+  beforeMutation(lease, "combat", { x: target.position.x, y: target.position.y, z: target.position.z }, target.name ?? undefined);
+  const fightSignal = signal;
+  // mineflayer-pvp emits this on the bot but does not declare it.
+  const pvpEvents = bot as unknown as NodeJS.EventEmitter;
+  await new Promise<void>((resolve, reject) => {
+    const finish = (error?: unknown): void => {
+      bot.off("entityGone", onGone);
+      bot.off("entityDead", onDead);
+      pvpEvents.off("stoppedAttacking", onStopped);
+      fightSignal.removeEventListener("abort", onAbort);
+      if (error === undefined) resolve(); else reject(error);
+    };
+    const onGone = (entity: Entity): void => { if (entity.id === target.id) finish(); };
+    // The corpse stays in bot.entities through the death animation; record
+    // the death so kill checks (isLiveMob, combatOutcomeObserved) see it.
+    const onDead = (entity: Entity): void => {
+      if (entity.id !== target.id) return;
+      (entity as Entity & { health?: number }).health = 0;
+      finish();
+    };
+    const onStopped = (): void => finish();
+    const onAbort = (): void => finish(fightSignal.reason ?? new Error("combat aborted"));
+    bot.on("entityGone", onGone);
+    bot.on("entityDead", onDead);
+    pvpEvents.on("stoppedAttacking", onStopped);
+    fightSignal.addEventListener("abort", onAbort, { once: true });
+    bot.pvp.attack(target).then(() => {
+      if (bot.entities[target.id] === undefined) finish();
+    }, finish);
+  });
   throwIfAborted(signal);
 }
 
@@ -99,9 +158,17 @@ export async function collectBlockOperation(
 export type ContainerWindow = Chest | Dispenser;
 
 /** Open a container while retaining the caller's lease and cancellation contract. */
+/** Farthest a container can be opened from (eye to block centre). */
+const CONTAINER_REACH = 5.5;
+
 export async function openContainer(bot: Bot, block: Block, signal?: AbortSignal): Promise<ContainerWindow> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "container", blockPoint(block), block.name);
+  // Out of reach, Mineflayer waits 20s for a window that never opens. Fail
+  // fast so the caller can walk over (or report) instead.
+  const eye = bot.entity?.position.offset(0, 1.62, 0);
+  const reach = eye === undefined ? 0 : eye.distanceTo(block.position.offset(0.5, 0.5, 0.5));
+  if (reach > CONTAINER_REACH) throw new Error(`${block.name} is out of reach (${reach.toFixed(1)} blocks away)`);
   const window = await bot.openContainer(block);
   bindWindow(window, block);
   throwIfAborted(signal);

@@ -73,9 +73,27 @@ export function canonicalMobName(entity: { name?: string | null; mobType?: strin
   return withoutNamespace.toLowerCase();
 }
 
+/**
+ * Creature categories. Mineflayer copies minecraft-data's entity category
+ * into `entity.type`: for 1.21.x that is "hostile", "animal", "passive", ...
+ * and only a handful of oddities are still "mob". Checking `type === "mob"`
+ * alone left every zombie and cow invisible to defense, hunting and the
+ * hostile tracker.
+ */
+const MOB_ENTITY_TYPES: ReadonlySet<string> = new Set(["mob", "hostile", "animal", "passive", "water_creature", "ambient"]);
+
+export function isMobEntity(entity: { type?: string | null }): boolean {
+  return MOB_ENTITY_TYPES.has(entity.type ?? "");
+}
+
+/** A dropped item stack: category "other" named "item" on 1.21.x, "object" on older data. */
+export function isDroppedItemEntity(entity: { type?: string | null; name?: string | null }): boolean {
+  return entity.name === "item" || entity.type === "object";
+}
+
 /** Ignore entity records that have already been invalidated or killed. */
 export function isLiveMob(entity: { type?: string | null; isValid?: boolean; health?: number }): boolean {
-  return entity.type === "mob" && entity.isValid !== false && !(typeof entity.health === "number" && entity.health <= 0);
+  return isMobEntity(entity) && entity.isValid !== false && !(typeof entity.health === "number" && entity.health <= 0);
 }
 
 /** True when the target is a human player entity ("player" type). */

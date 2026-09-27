@@ -1,5 +1,6 @@
 import type { Bot } from "mineflayer";
 import type { EventBus } from "../events/bus.js";
+import { isMobEntity } from "../policy/combat.js";
 
 /**
  * Deterministic hostile-entity sensor (Phase 12). Mineflayer feeds raw
@@ -127,7 +128,7 @@ export class HostileTracker {
 
   private onSpawn(entity: TrackedEntity): void {
     if (entity.id === this.bot.entity?.id) return; // the bot's own body
-    if (entity.type !== "mob" || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) return;
+    if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) return;
     this.hostile.set(entity.id, entity);
     const self = this.bot.entity?.position;
     const distance =

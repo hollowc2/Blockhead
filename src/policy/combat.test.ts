@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MinecraftConfigSchema, type MinecraftConfig } from "../config/schema.js";
-import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isHumanTarget, isLiveMob, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
+import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity, PVP_ERROR_CODE, targetNameIsHuman } from "./combat.js";
 
 function config(allowPvp = false): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
     behavior: { allow_pvp: allowPvp },
   });
@@ -56,4 +56,16 @@ test("mob detection accepts namespaced/cased metadata and ignores stale entities
   assert.equal(isLiveMob({ type: "mob", isValid: true, health: 10 }), true);
   assert.equal(isLiveMob({ type: "mob", isValid: false, health: 10 }), false);
   assert.equal(isLiveMob({ type: "mob", isValid: true, health: 0 }), false);
+});
+
+test("1.21 entity categories: hostiles and animals are mobs, item stacks are drops", () => {
+  assert.equal(isMobEntity({ type: "hostile" }), true);
+  assert.equal(isMobEntity({ type: "animal" }), true);
+  assert.equal(isMobEntity({ type: "mob" }), true, "legacy category");
+  assert.equal(isMobEntity({ type: "player" }), false);
+  assert.equal(isMobEntity({ type: "other" }), false);
+  assert.equal(isLiveMob({ type: "animal", isValid: true }), true);
+  assert.equal(isDroppedItemEntity({ type: "other", name: "item" }), true);
+  assert.equal(isDroppedItemEntity({ type: "object", name: "item" }), true, "legacy category");
+  assert.equal(isDroppedItemEntity({ type: "other", name: "oak_boat" }), false);
 });

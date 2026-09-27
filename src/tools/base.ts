@@ -96,7 +96,12 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
           shape, width, height, length, material: "planks", anchor: anchorKind,
           origin: { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z), dimension: point.dimension.replace(/^minecraft:/, "") },
         };
-        const design = simpleStructureDesign(shape as SimpleStructureShape, width, height, length, parameters.origin);
+        // Asking again for the same build at the same spot resumes it, even
+        // if the wood the bot carries has changed since it was started.
+        const previous = projects.findUnfinishedAt(`simple_${shape}`, parameters.origin);
+        const previousPlank = previous?.design.palette?.primary;
+        const plank = typeof previousPlank === "string" && previousPlank.endsWith("_planks") ? previousPlank : preferredPlank(ctx.bot);
+        const design = simpleStructureDesign(shape as SimpleStructureShape, width, height, length, parameters.origin, plank);
         const result = projects.createOrResume({
           userGoal: `Build a ${width}x${height}x${length} ${shape}.`,
           structureType: `simple_${shape}`,
@@ -106,7 +111,7 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
         });
         scheduler.claim();
         const action = result.resumed ? "Resuming" : "Building";
-        return `${action} a ${width} wide, ${height} tall, ${length} long oak-plank ${shape}.`;
+        return `${action} a ${width} wide, ${height} tall, ${length} long ${plank.replace(/_planks$/, "").replace(/_/g, " ")}-plank ${shape}.`;
       },
     },
   ];
@@ -122,48 +127,83 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
  * and uses the same origin captured by the tool, so reconnects and repeated
  * requests produce the same project hash and operation ranges.
  */
-function simpleStructureDesign(
+export function simpleStructureDesign(
   shape: SimpleStructureShape,
   width: number,
   height: number,
   length: number,
   origin: { x: number; y: number; z: number; dimension: string },
+  plank = "oak_planks",
 ): BuildingDesign {
   const components: BuildingDesign["components"] = [];
   const component = (value: BuildingDesign["components"][number]): void => { components.push(value); };
   const base = {
     name: `Simple ${shape}`,
-    description: `Deterministic ${shape} built from approved oak planks.`,
+    description: `Deterministic ${shape} built from approved ${plank.replace(/_/g, " ")}.`,
     anchor: origin,
     orientation: "north" as const,
     scale: "small" as const,
     palette: {
-      foundation: "oak_planks", primary: "oak_planks", secondary: "oak_planks",
-      frame: "oak_planks", glass: "glass", roof: "oak_planks", floor: "oak_planks",
-      accent: "oak_planks", lighting: "torch", furniture: "oak_planks",
+      foundation: plank, primary: plank, secondary: plank,
+      frame: plank, glass: "glass", roof: plank, floor: plank,
+      accent: plank, lighting: "torch", furniture: plank,
     },
     decoration: { interior: false, colorful: false, lighting: false },
   };
 
   if (shape === "wall") {
-    component({ type: "wall", id: "simple-wall", start: { x: 0, y: 0, z: 0 }, end: { x: width - 1, y: 0, z: 0 }, height, thickness: 1, material: "oak_planks" });
+    component({ type: "wall", id: "simple-wall", start: { x: 0, y: 0, z: 0 }, end: { x: width - 1, y: 0, z: 0 }, height, thickness: 1, material: plank });
   } else if (shape === "pyramid") {
     for (let level = 0; level < height; level += 1) {
       component({
         type: "cuboid", id: `simple-pyramid-ring-${String(level + 1).padStart(2, "0")}`,
-        width: width - level * 2, depth: length - level * 2, height: 1, mode: "hollow", material: "oak_planks",
+        width: width - level * 2, depth: length - level * 2, height: 1, mode: "hollow", material: plank,
         transform: { offset: { x: level, y: level, z: level } },
       });
     }
-  } else {
-    component({ type: "cuboid", id: "simple-shell", width, depth: length, height, mode: "hollow", material: "oak_planks" });
-    component({ type: "cuboid", id: "simple-roof", width, depth: length, height: 1, mode: "solid", material: "oak_planks", transform: { offset: { x: 0, y: height, z: 0 } } });
-    if (shape === "room" && width >= 3 && height >= 2) {
-      component({ type: "door", id: "simple-door", width: 1, height: 2, transform: { offset: { x: Math.floor(width / 2), y: 0, z: length - 1 } } });
+  } else if (shape === "room" && width >= 3 && length >= 3 && height >= 2) {
+    // Four walls with a real doorway gap. A solid shell whose door later
+    // *replaces* a wall block cannot be finished in survival: the builder
+    // would have to break its own planks inside the protected home region.
+    const door = Math.floor(width / 2);
+    const front = length - 1;
+    component({ type: "wall", id: "simple-wall-back", start: { x: 0, y: 0, z: 0 }, end: { x: width - 1, y: 0, z: 0 }, height, thickness: 1, material: plank });
+    component({ type: "wall", id: "simple-wall-left", start: { x: 0, y: 0, z: 1 }, end: { x: 0, y: 0, z: front - 1 }, height, thickness: 1, material: plank });
+    component({ type: "wall", id: "simple-wall-right", start: { x: width - 1, y: 0, z: 1 }, end: { x: width - 1, y: 0, z: front - 1 }, height, thickness: 1, material: plank });
+    component({ type: "wall", id: "simple-wall-front-a", start: { x: 0, y: 0, z: front }, end: { x: door - 1, y: 0, z: front }, height, thickness: 1, material: plank });
+    component({ type: "wall", id: "simple-wall-front-b", start: { x: door + 1, y: 0, z: front }, end: { x: width - 1, y: 0, z: front }, height, thickness: 1, material: plank });
+    if (height > 2) {
+      component({ type: "wall", id: "simple-wall-lintel", start: { x: door, y: 0, z: front }, end: { x: door, y: 0, z: front }, height: height - 2, thickness: 1, material: plank, transform: { offset: { x: 0, y: 2, z: 0 } } });
     }
+    component({ type: "cuboid", id: "simple-roof", width, depth: length, height: 1, mode: "solid", material: plank, transform: { offset: { x: 0, y: height, z: 0 } } });
+    component({ type: "door", id: "simple-door", width: 1, height: 2, transform: { offset: { x: door, y: 0, z: front } } });
+  } else {
+    component({ type: "cuboid", id: "simple-shell", width, depth: length, height, mode: "hollow", material: plank });
+    component({ type: "cuboid", id: "simple-roof", width, depth: length, height: 1, mode: "solid", material: plank, transform: { offset: { x: 0, y: height, z: 0 } } });
   }
 
   return { ...base, components };
+}
+
+const WOOD_TYPES = ["oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "pale_oak"] as const;
+
+/**
+ * The plank family the bot can supply most of (planks carried plus four per
+ * log), so a birch-forest bot builds in birch instead of stalling on oak.
+ */
+export function preferredPlank(bot: { inventory?: { items(): { name: string; count: number }[] } }): string {
+  const items = bot.inventory?.items() ?? [];
+  let best = { plank: "oak_planks", supply: 0 };
+  for (const wood of WOOD_TYPES) {
+    const supply = items.reduce((total, item) => {
+      const name = item.name.replace(/^minecraft:/, "");
+      if (name === `${wood}_planks`) return total + item.count;
+      if (name === `${wood}_log` || name === `${wood}_wood` || name === `stripped_${wood}_log`) return total + item.count * 4;
+      return total;
+    }, 0);
+    if (supply > best.supply) best = { plank: `${wood}_planks`, supply };
+  }
+  return best.plank;
 }
 
 type SimpleStructureShape = "room" | "wall" | "tower" | "pyramid";

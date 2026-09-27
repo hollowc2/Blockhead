@@ -6,11 +6,13 @@ import type { EventBus } from "../events/bus.js";
 import type { Scheduler } from "./scheduler.js";
 import type { TaskSignals } from "./scheduler.js";
 import type { Task } from "./task.js";
-import { TaskStatus } from "./task.js";
+import { TaskPriority, TaskStatus } from "./task.js";
 import {
   travelAndWait,
   travelHomeAndWait,
   waitHere,
+  walkToward,
+  withoutPathfinderScaffolding,
 } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
 import { checkDimensionEntry, checkHealthRetreat, checkLavaEntry, lavaAvoidanceRadius } from "../policy/safety.js";
@@ -34,17 +36,31 @@ import type { WorldMutation } from "./world-actions.js";
 import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
 import { STORAGE_CATEGORIES } from "../memory/storage.js";
+import { deliverCarriedItems } from "../minecraft/containers.js";
+import { itemsSummary } from "../minecraft/inventory.js";
 import type { StockpileDeficit, StockpileKind, StockpileManager } from "./maintenance.js";
-import type { BuildProjectManager, ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
+import type { StorageRepository } from "../memory/storage.js";
+import type { WorldProjectManager } from "./world-projects.js";
+import type { ProjectTaskSettlement, ProjectVerificationData } from "./build-projects.js";
+import { DestructiveAuthorizationRegistry } from "../policy/destructive-authorization.js";
+import type { TerrainProjectRunner } from "../skills/terrain-project.js";
+import { waitForTerrainObserved } from "../skills/terrain-project.js";
+import { verifyClearArea, verifyExcavationVolume, verifyFlattenArea, verifyMineshaft } from "../terrain/verification.js";
 
 /** Wall-clock budget for one interrupt movement (come here / follow me). */
 const INTERRUPT_MOVE_TIMEOUT_MS = 120_000;
+/** "follow me" lasts until a new command, "stop", or this long. */
+const FOLLOW_MAX_MS = 30 * 60_000;
+/** Give up following after the player has been out of view this long. */
+const FOLLOW_LOST_MS = 60_000;
+/** Re-path once the player is farther than this. */
+const FOLLOW_RANGE = 4;
 /** Wall-clock budget for a "go home" trip. */
 const GO_HOME_TIMEOUT_MS = 120_000;
 /** Upper bound for any skill, including plugins that fail to settle. */
 const SKILL_TIMEOUT_MS = 10 * 60_000;
 /** A task may run longer than this, but must publish a checkpoint/progress. */
-const PROGRESS_STALL_TIMEOUT_MS = 2 * 60_000;
+const PROGRESS_STALL_TIMEOUT_MS = 5 * 60_000;
 const PROGRESS_POLL_MS = 5_000;
 /** A repeatedly disconnected autonomous action must eventually yield/back off. */
 const MAX_BACKGROUND_RESUME_ATTEMPTS = 3;
@@ -56,6 +72,7 @@ export interface TaskDispatcherOptions {
   bot: Bot;
   config: MinecraftConfig;
   maintenance: StockpileManager;
+  storage: StorageRepository;
   collect: CollectResourceRunner;
   food: GatherFoodRunner;
   torches: EnsureTorchesRunner;
@@ -72,7 +89,10 @@ export interface TaskDispatcherOptions {
   utility: UtilityRunner;
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
-  buildProjects?: BuildProjectManager;
+  buildProjects?: WorldProjectManager;
+  /** Bounded grants for terrain child tasks; absent until terrain projects are enabled. */
+  destructiveAuthorizations?: DestructiveAuthorizationRegistry;
+  terrainProjects?: TerrainProjectRunner;
   /**
    * Anti-loop watchdog: records every settled skill-run outcome per action
    * fingerprint, so a repeatedly-failing action is blocked (and the LLM is
@@ -136,14 +156,24 @@ export class TaskDispatcher {
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
     const signals = this.opts.scheduler.signalsFor(task);
+    const dimension = normalizeDimension(this.opts.bot.game.dimension ?? this.opts.state.self.dimension ?? "");
+    const authorization = task.projectId === undefined || this.opts.destructiveAuthorizations === undefined || this.opts.state.worldId === null
+      ? null
+      : this.opts.destructiveAuthorizations.contextFor(task.id, task.projectId, this.opts.state.worldId, dimension);
     const run = typeof this.opts.scheduler.runWorldAction === "function"
       ? this.opts.scheduler.runWorldAction(task.id, signals.signal, () => this.runSkill(task), {
+        authorization: authorization ?? undefined,
         beforeMutation: (mutation: WorldMutation) => {
           const point = mutation.point ?? this.opts.bot.entity?.position;
           if (!point) throw new Error("mutation policy revalidation requires a live bot position");
           const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, {
             blockName: mutation.blockName,
-            userRequested: task.source === "user",
+            ownBuildReplacement: mutation.ownBuildReplacement === true && (task.type === "build_project_slice" || task.type === "build_structure" || task.type === "build_design"),
+            authorization: authorization ?? undefined,
+            taskId: task.id,
+            projectId: task.projectId,
+            worldId: this.opts.state.worldId ?? undefined,
+            dimension,
           });
           if (!verdict.allowed) throw new Error(verdict.violation?.reason ?? "mutation rejected by policy");
         },
@@ -220,18 +250,37 @@ export class TaskDispatcher {
       if (scheduler.active?.id === task.id) {
         await stopWorldPrimitives(this.opts.bot);
         if (scheduler.interruptPending) scheduler.settleInterrupted();
-        else {
+        else if (isAbortError(err) && this.isResumable(task)) {
+          // A stray abort (restart, reconnect, a torn-down primitive) is not
+          // the work failing: keep the resumable progress and try again.
+          scheduler.requeueActive(message);
+        } else {
           const fingerprint = actionFingerprint(task.type, task.parameters);
           this.opts.watchdog.record(fingerprint, "failure", task.source === "user", message);
           scheduler.failActive(message);
         }
       }
     } finally {
-      await stopWorldPrimitives(this.opts.bot);
+      // Both settle paths above already stopped primitives before settling.
+      // Settlement can synchronously start the next task (or resume
+      // bootstrap); stopping again here would kill *its* pathfinder goal
+      // mid-trip (the "GoalChanged" failures). Only clean up when nothing
+      // else has taken over.
+      const activeId = this.opts.scheduler.active?.id ?? null;
+      const leaseOwner = this.opts.scheduler.worldActionOwner;
+      if ((activeId === null || activeId === task.id) && (leaseOwner === null || leaseOwner === task.id)) {
+        await stopWorldPrimitives(this.opts.bot);
+      }
       // The dispatcher must never hand control back to arbitration while a
       // Mineflayer primitive still owns the serialized world lease.
-      try { this.opts.scheduler.assertWorldActionAvailable(); }
-      catch (err) { this.opts.logger.error({ taskId: task.id, err: String(err) }, "stale world primitive after task cleanup"); }
+      // A task-settled listener or periodic background tick may legitimately
+      // acquire the lease before this finally block runs. Only this task's
+      // own surviving lease is stale; do not misdiagnose a new background
+      // probe that started after settlement.
+      if (this.opts.scheduler.worldActionOwner === task.id) {
+        try { this.opts.scheduler.assertWorldActionAvailable(); }
+        catch (err) { this.opts.logger.error({ taskId: task.id, err: String(err) }, "stale world primitive after task cleanup"); }
+      }
       if (timer !== undefined) clearTimeout(timer);
       clearInterval(progressTimer);
     }
@@ -310,7 +359,10 @@ export class TaskDispatcher {
 
   private async runSkill(task: Task): Promise<SkillResult> {
     const signals: TaskSignals = this.opts.scheduler.signalsFor(task);
-    if (task.source !== "user" && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
+    // Survival work (a food crisis, death recovery, defense) is preempted by
+    // design, by the defense reflex or a service restart, and must not be
+    // abandoned for having been paused.
+    if (task.source !== "user" && task.priority < TaskPriority.MAINTENANCE && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
       return {
         ok: false,
         status: "failed",
@@ -432,7 +484,12 @@ export class TaskDispatcher {
         );
       }
       case "defend_self":
-        return this.opts.defense.defendSelf({ signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+        return this.opts.defense.defendSelf({
+          signals,
+          resumeState: task.resumeState as { interruptions?: number } | undefined,
+          ...(typeof task.parameters.radius === "number" ? { radius: task.parameters.radius } : {}),
+          reflex: task.parameters.reflex === true,
+        });
       case "defend_player": {
         const player = String(task.parameters.player ?? "");
         if (player === "") return this.invalidParams("defend_player");
@@ -550,6 +607,8 @@ export class TaskDispatcher {
           mode: "ensure",
           signals,
           resumeState: task.resumeState as { interruptions?: number } | undefined,
+          // Build materials are placed from the inventory, not the chest.
+          keepCarried: true,
         });
       }
       case "build_project_verify": {
@@ -565,6 +624,59 @@ export class TaskDispatcher {
           mismatches: verification.mismatches,
         };
         return { ok: verification.mismatches.length === 0, status: "completed", data, message: "project final verification completed" };
+      }
+      case "world_project_slice": {
+        const runner = this.opts.terrainProjects;
+        const manager = this.opts.buildProjects;
+        const projectId = String(task.projectId ?? task.parameters.projectId ?? "");
+        const project = manager?.getWorldProject(projectId);
+        if (runner === undefined || project === null || project === undefined || project.payload.type !== "terrain") {
+          return { ok: false, status: "failed", errorCode: "NOT_READY", message: "terrain slice is missing its frozen project or runner", retryable: false };
+        }
+        const plan = project.payload.plan;
+        const run = () => runner.run(plan, { signals, resumeState: task.resumeState as Parameters<TerrainProjectRunner["run"]>[1]["resumeState"] | undefined });
+        // A shaft's corridor must stay open behind the bot; a clear may need
+        // the pathfinder to tower up to a canopy (verification catches any
+        // stray block and reopens the dig).
+        return project.kind === "mineshaft" ? withoutPathfinderScaffolding(this.opts.bot, run) : run();
+      }
+      case "world_project_deposit": {
+        const names = Object.keys(itemsSummary(this.opts.bot));
+        const delivered = await deliverCarriedItems(this.opts.bot, this.opts.state, this.opts.storage, names, this.opts.logger, signals.signal);
+        return delivered.delivered > 0 || names.length === 0
+          ? { ok: true, status: "completed", data: delivered, message: `deposited ${delivered.delivered} carried items` }
+          : { ok: false, status: "blocked", errorCode: "STORAGE_UNREACHABLE", message: "terrain project inventory could not be deposited", retryable: true, data: delivered };
+      }
+      case "world_project_replace_tool": {
+        const item = String(task.parameters.item ?? "");
+        if (item === "") return { ok: false, status: "failed", errorCode: "TOOL_REQUIRED", message: "terrain tool replacement is missing the required item", retryable: false };
+        // A spare pickaxe halves the trips out of a deep shaft.
+        const quantity = /_pickaxe$/.test(item) ? 2 : 1;
+        return this.opts.ensureItem.run(item, quantity, { mode: "ensure", signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+      }
+      case "world_project_acquire": {
+        const item = String(task.parameters.item ?? "");
+        const quantity = Math.max(1, Math.floor(Number(task.parameters.quantity ?? 1)));
+        if (item === "") return { ok: false, status: "failed", errorCode: "INSUFFICIENT_MATERIALS", message: "terrain material fetch is missing the item", retryable: false };
+        return this.opts.ensureItem.run(item, quantity, { mode: "ensure", keepCarried: true, signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+      }
+      case "world_project_return": {
+        const home = this.opts.state.home;
+        if (home === null) return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: "terrain maintenance has no known home return route", retryable: false };
+        const returned = await travelHomeAndWait(this.opts.bot, home, { dimension: home.dimension, timeoutMs: GO_HOME_TIMEOUT_MS, signal: signals.signal });
+        if (returned.status !== "arrived" && returned.status !== "already_there") return { ok: false, status: "blocked", errorCode: "RETURN_ROUTE_LOST", message: `terrain maintenance could not return home: ${returned.status}`, retryable: true };
+        if (task.parameters.reason === "hunger") return this.opts.utility.eat({ signals });
+        return { ok: true, status: "completed", message: "returned to a safe home waypoint" };
+      }
+      case "world_project_verify": {
+        const manager = this.opts.buildProjects;
+        const project = manager?.getWorldProject(String(task.projectId ?? task.parameters.projectId ?? ""));
+        if (project === null || project === undefined || project.payload.type !== "terrain") return { ok: false, status: "failed", errorCode: "NOT_READY", message: "terrain verification is missing its frozen project", retryable: false };
+        await waitForTerrainObserved(this.opts.bot, project.payload.plan.bounds, signals.signal);
+        if (project.kind === "excavate") return verifyExcavationVolume(this.opts.bot, project.payload.plan.bounds);
+        if (project.kind === "clear") return verifyClearArea(this.opts.bot, project.payload.plan.bounds);
+        if (project.kind === "flatten") return verifyFlattenArea(this.opts.bot, project.payload.plan.bounds, project.payload.plan.bounds.maxY);
+        return verifyMineshaft(this.opts.bot, project.payload.plan);
       }
       case "create_storage": {
         const category = String(task.parameters.category ?? "general");
@@ -605,10 +717,11 @@ export class TaskDispatcher {
       waitHere(bot);
       return { ok: true, status: "completed", message: "staying put" };
     }
-    if (tool === "come_to_player" || tool === "follow_player") {
+    if (tool === "follow_player") return this.runFollow(player, signals);
+    if (tool === "come_to_player") {
       const entity = bot.players[player]?.entity ?? null;
       if (entity === null) {
-        return { ok: true, status: "completed", message: "could not see the player" };
+        return { ok: false, status: "failed", message: "could not see the player", retryable: true };
       }
       // Bounded: walk within follow range and stop. Sustained follow-tracking
       // is Phase 9 companion behavior; as an interrupt the move completes and
@@ -623,11 +736,60 @@ export class TaskDispatcher {
         return { ok: false, status: "interrupted", message: "interrupted before arrival" };
       }
       if (travel.status !== "arrived" && travel.status !== "already_there") {
-        return { ok: false, status: "failed", message: `could not reach the player: ${travel.status}`, retryable: true };
+        // Pathfinder failed. Fall back to dumb-walk toward the player
+        // so a "come here" is never a complete dead end.
+        this.opts.logger.warn({ travel: travel.status, player }, "pathfinder failed for interrupt; falling back to walkToward");
+        const fallback = await walkToward(bot, entity.position, {
+          range: 5, // slightly more tolerant since we are walking blind
+          timeoutMs: INTERRUPT_MOVE_TIMEOUT_MS,
+          signal: signals.signal,
+        });
+        if (fallback.arrived) {
+          return { ok: true, status: "completed", message: "arrived (fallback)" };
+        }
+        return { ok: false, status: "failed", message: `could not reach the player: ${fallback.distance > 0 ? `${fallback.distance.toFixed(1)} blocks away after fallback` : travel.status}`, retryable: true };
       }
       return { ok: true, status: "completed", message: "arrived" };
     }
     return { ok: false, status: "failed", message: `unknown interrupt '${tool}'`, retryable: false };
+  }
+
+  /**
+   * Companion follow: keep within a few blocks of the player until told to
+   * stop or given any other command (a newly queued user task ends the
+   * follow so it can run), bounded by FOLLOW_MAX_MS.
+   */
+  private async runFollow(player: string, signals: TaskSignals): Promise<SkillResult> {
+    const bot = this.opts.bot;
+    const deadline = Date.now() + FOLLOW_MAX_MS;
+    const newCommand = (): boolean => this.opts.scheduler.queued.some((task) => task.source === "user");
+    let tick = 0;
+    let unseenSince: number | null = null;
+    while (Date.now() < deadline) {
+      tick += 1;
+      if (!signals.checkpoint({ phase: "follow", tick })) return { ok: false, status: "interrupted", message: "follow interrupted" };
+      if (newCommand()) return { ok: true, status: "completed", message: "stopped following for a new command" };
+      const entity = bot.players[player]?.entity ?? null;
+      const self = bot.entity;
+      if (entity === null || self === null) {
+        unseenSince ??= Date.now();
+        if (Date.now() - unseenSince > FOLLOW_LOST_MS) return { ok: false, status: "failed", message: "lost sight of the player", retryable: false };
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        continue;
+      }
+      unseenSince = null;
+      if (self.position.distanceTo(entity.position) > FOLLOW_RANGE) {
+        await travelAndWait(bot, entity.position.clone(), {
+          timeoutMs: 15_000,
+          range: FOLLOW_RANGE - 1,
+          shouldAbort: () => !signals.checkpoint({ phase: "follow", tick }) || newCommand(),
+          signal: signals.signal,
+        });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    return { ok: true, status: "completed", message: "follow time limit reached" };
   }
 
   /** "go home": travel to the home column, then let the next task claim the slot. */
@@ -755,4 +917,8 @@ export class TaskDispatcher {
       retryable: false,
     };
   }
+}
+
+function isAbortError(err: unknown): boolean {
+  return (err instanceof Error && err.name === "AbortError") || /AbortError|operation was aborted/.test(String(err));
 }

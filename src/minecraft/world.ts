@@ -1,4 +1,5 @@
 import type { Bot } from "mineflayer";
+import { logger } from "../logger.js";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
@@ -26,6 +27,18 @@ export function isSolid(block: Block | null): block is Block {
 /** Air cells (also matches liquids' empty bounding boxes implicitly). */
 export function isAir(block: Block | null): boolean {
   return block !== null && block.name === "air";
+}
+
+/**
+ * Cells a block may be placed into. Open air in modern Minecraft comes in
+ * three registry variants — `air`, `cave_air` (overworld caves) and
+ * `void_air` — and all three accept placement. Placement scans that use only
+ * `isAir` miss every cave cell, which strands building/station placement in
+ * exactly the caves the bot is most likely to shelter in.
+ */
+export function isPlaceableAir(block: Block | null): boolean {
+  if (block === null) return false;
+  return block.name === "air" || block.name === "cave_air" || block.name === "void_air";
 }
 
 /** True when any orthogonal neighbor of `position` is air (world-facing). */
@@ -80,6 +93,30 @@ export function findBlocksNear(
   return findBlocksNearPoint(bot, self.position, predicate, maxDistance, count);
 }
 
+/**
+ * Find matching blocks while applying `refine` before Mineflayer consumes the
+ * result count. This matters for common underground blocks: filtering a
+ * capped result after `findBlocks` returns lets the nearest buried stone fill
+ * the whole list and hide exposed cave/surface stone.
+ */
+export function findBlocksNearRefined(
+  bot: Bot,
+  predicate: (block: Block) => boolean,
+  refine: (position: Vec3) => boolean,
+  maxDistance: number,
+  count: number,
+): Vec3[] {
+  const self = bot.entity;
+  if (!self) return [];
+  return bot.findBlocks({
+    point: self.position,
+    matching: (block) => block !== null && predicate(block),
+    useExtraInfo: (block: Block) => refine(block.position),
+    maxDistance,
+    count,
+  });
+}
+
 /** The nearest matching block (or null), or a specific named block. */
 export function findBlockNear(bot: Bot, name: string, maxDistance: number): Block | null {
   const positions = findBlocksNear(bot, (block) => block.name === name, maxDistance, 1);
@@ -96,8 +133,10 @@ export function findBlockNear(bot: Bot, name: string, maxDistance: number): Bloc
  * `ignoreNoPath` option does not actually skip (it is a no-op in
  * collectblock 1.6), so the skip happens here. `logSkip` reports each
  * skipped block for diagnostics; `announce` reports partial success when
- * some blocks were collected but others were not. Returns how many new
- * units `countHeld()` gained. Callers own fallbacks (radius expansion).
+ * some blocks were collected but others were not. `timeoutMs` is one total
+ * pass budget, not a multiplier per candidate; each individual target also
+ * has a 15-second cap. Returns how many new units `countHeld()` gained.
+ * Callers own fallbacks (radius expansion).
  */
 export async function collectBlocks(
   bot: Bot,
@@ -113,13 +152,17 @@ export async function collectBlocks(
   requireWorldActionLease(signal);
   const before = countHeld();
   let skipped = 0;
+  const deadline = Date.now() + timeoutMs;
+  const perTargetTimeoutMs = Math.min(15_000, timeoutMs);
   for (const block of ordered) {
     throwIfAborted(signal);
     if (countHeld() >= targetTotal) break;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
     const targetKey = `${String(bot.game.dimension ?? "unknown").replace(/^minecraft:/, "")}:${block.position.x},${block.position.y},${block.position.z}`;
     if (failedTargets?.has(targetKey)) continue;
     try {
-      await withTimeout(timeoutMs, collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
+      await withTimeout(Math.max(1, Math.min(perTargetTimeoutMs, remainingMs)), collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
       }, signal);
     } catch (err) {
@@ -127,6 +170,9 @@ export async function collectBlocks(
       // implementation treated cancellation like an unreachable block and
       // could keep acting after a replacement task acquired the lease.
       throwIfAborted(signal);
+      // Cancellation of the surrounding work (not an unreachable block):
+      // stop here instead of blacklisting every remaining target.
+      if (err instanceof Error && err.name === "AbortError") throw err;
       skipped++;
       failedTargets?.add(targetKey);
       logSkip?.(block, err);
@@ -185,11 +231,23 @@ export function findPlacementSpot(
     if (exclude.some((tried) => tried.equals(position))) continue;
     const lower = new Vec3(position.x, position.y - 1, position.z);
     const below = bot.blockAt(lower);
-    if (!isSolid(below)) continue;
-    if (!isAir(bot.blockAt(position))) continue;
+    if (!isSolid(below) || isInteractableBlock(below)) continue;
+    if (!isPlaceableAir(bot.blockAt(position))) continue;
     return { position, reference: below, face: new Vec3(0, 1, 0) };
   }
   return null;
+}
+
+/**
+ * Blocks that open a UI (or toggle) on right-click. Clicking one to place a
+ * block against it interacts instead, so it can never be a placement
+ * reference.
+ */
+export function isInteractableBlock(block: Block | null): boolean {
+  if (block === null) return false;
+  const name = block.name.replace(/^minecraft:/, "");
+  return /(?:chest|barrel|shulker_box|furnace|smoker|crafting_table|_table|anvil|_bed|_door|trapdoor|fence_gate|button|lever|hopper|dropper|dispenser|brewing_stand|beacon|loom|stonecutter|grindstone|lectern|jukebox|note_block|composter|cauldron|bell|repeater|comparator|daylight_detector)$/.test(name)
+    || name === "chest" || name === "ender_chest" || name === "trapped_chest";
 }
 
 /**
@@ -259,6 +317,23 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     void inventoryBefore;
     void inventoryAfter;
   }
-  void placementError;
+  logger.warn({ item: item.name, at: spot.position, reference: spot.reference.name, err: placementError === null ? null : String(placementError), bot: bot.entity?.position }, "placement not observed");
   return null;
 }
+
+/** The log type that is most common around the bot (what "wood" means here). */
+export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "entity">): string {
+  const counts = new Map<string, number>();
+  try {
+    const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
+    for (const position of positions) {
+      const name = bot.blockAt(position)?.name;
+      if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  } catch { /* no world view yet */ }
+  let best = "oak_log";
+  let bestCount = 0;
+  for (const [name, count] of counts) if (count > bestCount) { best = name; bestCount = count; }
+  return best;
+}
+

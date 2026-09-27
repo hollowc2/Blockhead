@@ -60,8 +60,22 @@ unavailable.
   safeguards.
 - Persistent autonomous goals and an anti-loop watchdog for repeatedly failing
   actions.
+- Four bounded terrain project tools: `clear_area`, `flatten_area`,
+  `excavate_volume`, and `dig_mineshaft`. Each freezes exact world geometry,
+  resumes through the scheduler, and verifies the observed Minecraft result.
 - Structured logs, terminal dashboard, local SQLite state, and reconnect-safe
   operation.
+
+Terrain operations are intentionally conservative. Requests are limited to
+small rectangular regions and an excavation volume of at most 8,192 blocks.
+Unknown cells, water, lava, falling blocks, unbreakable blocks, protected
+fixtures, unsafe access geometry, and lost return routes block the project
+instead of being guessed through. Mineshafts are descending stair corridors,
+not vertical shafts, and completion requires a verified route in both
+directions. Inventory pressure, tool replacement, survival interrupts,
+disconnects, death, and owner cancellation checkpoint the project; cancellation
+revokes its bounded destructive authorization and does not automatically restart
+it.
 
 ## Run locally
 

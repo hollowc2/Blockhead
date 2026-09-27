@@ -6,6 +6,8 @@ import type { Logger } from "pino";
 import { WebSocketServer, WebSocket, type WebSocket as WebSocketType } from "ws";
 import type { DashboardSnapshot } from "./types.js";
 
+const BASE_HEADERS = { "x-content-type-options": "nosniff", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } as const;
+
 const SNAPSHOT_INTERVAL_MS = 500;
 const MAX_BUFFERED_BYTES = 1_048_576;
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "public");
@@ -88,7 +90,7 @@ export class DashboardServer {
     if (asset) {
       try {
         const body = await readFile(join(PUBLIC_DIR, asset.file));
-        response.writeHead(200, { "content-type": asset.contentType, "cache-control": "no-store" });
+        response.writeHead(200, { ...BASE_HEADERS, "content-type": asset.contentType, "cache-control": "no-store" });
         response.end(body);
       } catch (error) {
         this.options.logger?.warn({ err: String(error), pathname }, "dashboard static asset failed");
@@ -158,7 +160,7 @@ export class DashboardServer {
   }
 
   private sendJson(response: ServerResponse, status: number, body: unknown, extraHeaders: Record<string, string> = {}): void {
-    response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...extraHeaders });
+    response.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...extraHeaders });
     response.end(JSON.stringify(body));
   }
 }

@@ -152,6 +152,16 @@ function goalArguments(type: string, parameters: Record<string, unknown>): strin
       // Distance defines the trip's goal; the heading is a clock-rotated
       // fan-out knob, so it must not split one action into many identities.
       return quantity(parameters.distance, 128);
+    case "world_project_slice": {
+      // Terrain cursors are runtime progress hints. They must not create a
+      // new watchdog identity after a restart or a bounded checkpoint. The
+      // frozen work identity is the project kind, geometry, phase, and slice.
+      const phase = clean(parameters.phase ?? parameters.phaseId);
+      return [
+        clean(parameters.projectId), clean(parameters.kind), clean(parameters.geometryHash), phase,
+        numeric(parameters.slice),
+      ].filter((part) => part !== "").join(":");
+    }
     default:
       return canonicalScalars(parameters);
   }
@@ -316,6 +326,14 @@ export class ActionWatchdog {
       return null;
     }
     return block;
+  }
+  /** Consume an expired cooldown, distinguishing it from ordinary failures. */
+  takeExpiredBlock(action: string): boolean {
+    const block = this.blocks.get(action);
+    if (block === undefined || block.retryAt > this.now()) return false;
+    this.blocks.delete(action);
+    this.persistence?.remove(action);
+    return true;
   }
 
   /** True when `action` must stand down right now. */

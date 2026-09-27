@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import { readState } from "./bot.js";
+import { dominantNearbyLog } from "./world.js";
 import { itemsSummary } from "./inventory.js";
 import { logger } from "../logger.js";
 import type { MinecraftConfig } from "../config/schema.js";
@@ -18,6 +19,7 @@ import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { GoalManager } from "../agent/goals.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
+import type { TerrainToolName } from "../tools/terrain.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -37,6 +39,7 @@ export interface AgentContext {
   maintenance: StockpileManager;
   /** Process-lifetime goal coordinator (the active autonomous objective). */
   goals?: GoalManager;
+  worldProjects?: import("../agent/world-projects.js").WorldProjectManager;
 }
 
 /** Matches a bare "CobbleBob?" (case-insensitive, optional trailing punctuation). */
@@ -57,6 +60,71 @@ function normalizeInstruction(message: string): string {
 }
 
 interface DeterministicBuildCommand { tool: "build_base" | "build_structure" | "build_design"; args: Record<string, unknown>; error?: string; }
+export interface DeterministicTerrainCommand { tool: TerrainToolName; args: Record<string, unknown>; error?: string; }
+
+/** Explicit, bounded owner phrases for the four terrain operations. */
+export function parseDeterministicTerrainCommand(instruction: string): DeterministicTerrainCommand | null {
+  const value = instruction.trim().toLowerCase().replace(/[!?.,]+$/, "");
+  let match = value.match(/^(?:please )?(?:flatten) (\d+)\s*x\s*(\d+)(?: here)?$/);
+  if (match) return { tool: "flatten_area", args: { width: Number(match[1]), length: Number(match[2]), anchor: "owner" } };
+  match = value.match(/^(?:please )?clear(?: out)?(?: (?:a|an|the|this))? (\d+)\s*(?:x|by)\s*(\d+)(?: area| space)?(?: here| for me)?$/);
+  // A terrain prism centred on the owner would always be rejected by the
+  // player-safety buffer.  Treat "clear 5x5" as the area in front of
+  // the owner, leaving a one-block safety gap for the person giving the order.
+  if (match) return { tool: "clear_area", args: { width: Number(match[1]), length: Number(match[2]), height: 4, anchor: "owner_front" } };
+  if (/^(?:please )?clear (?:this|the|an?) (?:area|space|spot)(?: here| for me)?$/.test(value)) return { tool: "clear_area", args: { width: 8, length: 8, height: 4, anchor: "owner_front" } };
+  match = value.match(/^(?:please )?dig (?:a |me a )?(\d+)\s*(?:x|by)\s*(\d+) (?:hole|pit|excavation) (\d+)(?: blocks?)? deep(?: here)?$/);
+  if (match) return { tool: "excavate_volume", args: { width: Number(match[1]), length: Number(match[2]), depth: Number(match[3]), anchor: "owner" } };
+  match = value.match(/^(?:please )?dig (?:a )?basement (\d+)\s*x\s*(\d+)\s*x\s*(\d+)(?: here)?$/);
+  if (match) return { tool: "excavate_volume", args: { width: Number(match[1]), length: Number(match[2]), depth: Number(match[3]), anchor: "owner" } };
+  match = value.match(/^(?:please )?dig (?:a )?(?:(\d+)|two)-wide staircase down (\d+) blocks?$/);
+  if (match) return { tool: "dig_mineshaft", args: { width: match[1] === undefined ? 2 : Number(match[1]), height: 2, depth: Number(match[2]), anchor: "owner_front" } };
+  match = value.match(/^(?:please )?dig (?:a |me a )?(?:mineshaft|mine shaft|mine|staircase mine) (?:down )?to y\s*=?\s*(-?\d+)$/);
+  if (match) return { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: Number(match[1]), anchor: "owner_front" } };
+  // "dig a mine": a walkable staircase down to iron level in front of the owner.
+  if (/^(?:please )?(?:dig|make|build|start) (?:a |me a |us a )?(?:mineshaft|mine shaft|mine|staircase mine|branch mine)(?: here)?$/.test(value)) {
+    return { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: 16, anchor: "owner_front" } };
+  }
+  return null;
+}
+
+const GATHER_ALIASES: Record<string, string> = {
+  stone: "stone", stones: "stone", cobble: "stone", cobblestone: "stone", rock: "stone", rocks: "stone",
+  deepslate: "deepslate", dirt: "dirt", sand: "sand", gravel: "gravel",
+  coal: "coal_ore", "coal ore": "coal_ore", iron: "iron_ore", "iron ore": "iron_ore", "raw iron": "iron_ore",
+  copper: "copper_ore", "copper ore": "copper_ore", gold: "gold_ore", "gold ore": "gold_ore",
+  diamond: "diamond_ore", diamonds: "diamond_ore", redstone: "redstone_ore", lapis: "lapis_ore",
+  emerald: "emerald_ore", emeralds: "emerald_ore",
+};
+const WOOD_WORDS = new Set(["wood", "log", "logs", "tree", "trees", "timber"]);
+const WOOD_TYPES = ["oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "pale_oak"];
+
+export interface DeterministicGatherCommand { resource: string; quantity: number; }
+
+/**
+ * "get 32 logs", "mine 20 iron", "collect some cobblestone", "chop 16 birch
+ * wood": ordinary resource requests should not wait 30s on the LLM.
+ */
+export function parseDeterministicGatherCommand(instruction: string, nearbyLog: () => string): DeterministicGatherCommand | null {
+  const value = instruction.trim().toLowerCase().replace(/[!?.,]+$/, "");
+  const match = value.match(/^(?:please |can you |could you )?(?:get|gather|collect|mine|chop|cut|fetch|bring|go get)(?: me| us)? (\d+|some|a stack of|a few|lots of|more) (.+?)(?: for me| please)?$/);
+  if (match === null) return null;
+  const amount = match[1]!;
+  const quantity = /^\d+$/.test(amount) ? Number(amount) : amount === "a stack of" ? 64 : amount === "a few" ? 8 : 32;
+  if (quantity < 1 || quantity > 2304) return null;
+  let noun = match[2]!.trim().replace(/ blocks?$/, "");
+  const words = noun.split(/\s+/);
+  const last = words[words.length - 1]!;
+  if (WOOD_WORDS.has(last)) {
+    const species = words.slice(0, -1).join("_");
+    if (species === "") return { resource: nearbyLog(), quantity };
+    if (WOOD_TYPES.includes(species)) return { resource: `${species}_log`, quantity };
+    return null;
+  }
+  noun = noun.replace(/_/g, " ");
+  const resource = GATHER_ALIASES[noun] ?? GATHER_ALIASES[noun.replace(/s$/, "")];
+  return resource === undefined ? null : { resource, quantity };
+}
 
 /** Small, explicit owner-command rail that remains available while the LLM is down. */
 export function parseDeterministicBuildCommand(instruction: string): DeterministicBuildCommand | null {
@@ -155,6 +223,7 @@ function makeToolContext(bot: Bot, config: MinecraftConfig, ctx: AgentContext): 
     storage: ctx.storage,
     maintenance: ctx.maintenance,
     goals: ctx.goals,
+    worldProjects: ctx.worldProjects,
   };
 }
 
@@ -198,6 +267,21 @@ async function executeDecision(bot: Bot, config: MinecraftConfig, ctx: AgentCont
   }
 }
 
+const ALWAYS_BANNED_FOOD = ["pufferfish", "poisonous_potato", "spider_eye", "chorus_fruit", "suspicious_stew"];
+/** Hunger at or below which rotten flesh becomes acceptable food. */
+const EMERGENCY_FOOD_HUNGER = 6;
+
+/**
+ * Rotten flesh is normally banned (it causes Hunger), but when the stomach is
+ * nearly empty it is strictly better than starving at 1 HP.
+ */
+export function updateEmergencyFoodPolicy(bot: Bot): void {
+  if (bot.autoEat === undefined) return;
+  const starving = Number.isFinite(bot.food) && bot.food <= EMERGENCY_FOOD_HUNGER;
+  const banned = starving ? ALWAYS_BANNED_FOOD : [...ALWAYS_BANNED_FOOD, "rotten_flesh"];
+  if (bot.autoEat.opts.bannedFood.length !== banned.length) bot.autoEat.setOpts({ bannedFood: banned });
+}
+
 export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger, ctx: AgentContext): void {
   bot.once("login", () => {
     const runtime = bot as Bot & { version?: string; _client?: { version?: string; protocolVersion?: number } };
@@ -211,9 +295,28 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
   bot.once("spawn", () => {
     logger.info(readState(bot), "spawned");
     ctx.state.updateSelf(readState(bot));
+    // Eating is a reflex, not a task: keep auto-eat on for the whole session
+    // so carried food is always used before hunger turns into starvation.
+    if (bot.autoEat !== undefined) {
+      bot.autoEat.setOpts({ minHunger: 16, minHealth: 14, returnToLastItem: true });
+      bot.autoEat.enableAuto();
+    }
+    updateEmergencyFoodPolicy(bot);
   });
 
   bot.on("health", () => {
+    ctx.state.updateSelf(readState(bot));
+    updateEmergencyFoodPolicy(bot);
+  });
+
+  // Position otherwise only refreshed on health/spawn events, so the
+  // dashboard (and a death-site fallback) showed wherever the bot last took
+  // damage. Refresh on movement, at most once a second.
+  let lastMoveRefresh = 0;
+  bot.on("move", () => {
+    const now = Date.now();
+    if (now - lastMoveRefresh < 1_000) return;
+    lastMoveRefresh = now;
     ctx.state.updateSelf(readState(bot));
   });
 
@@ -326,6 +429,16 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     const softInterrupt = SOFT_INTERRUPT_COMMANDS[instruction];
     if (softInterrupt !== undefined) {
       ctx.bus.emit("chat.command", { from: username, command: instruction });
+      // Mineflayer only exposes a player entity while the server is tracking
+      // that player for this client. Without an entity there is no
+      // authoritative destination, so do not claim that a movement command
+      // has started (or enqueue a task that can only finish immediately).
+      if (softInterrupt.needsPlayer && bot.players[username]?.entity === undefined) {
+        const reply = "I can't see you from here. Come within view distance, then ask me again.";
+        bot.chat(reply);
+        logger.info({ reply, player: username }, "movement command refused because player is not visible");
+        return;
+      }
       ctx.scheduler.enqueue({
         type: "interrupt",
         priority: TaskPriority.INTERRUPT,
@@ -361,6 +474,41 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     if (/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?camera(?: .*)?$/.test(instruction)) {
       bot.chat("I can't build cameras yet. I can build rooms, towers, pyramids, and the supported landmark designs.");
       logger.info({ reply: "unsupported camera build request" }, "chat sent");
+      return;
+    }
+
+    const directTerrain = parseDeterministicTerrainCommand(instruction);
+    if (directTerrain !== null) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      if (directTerrain.error) { bot.chat(`I can't start that terrain project: ${directTerrain.error}.`); return; }
+      const reply = runTool(bot, config, ctx, directTerrain.tool, directTerrain.args);
+      if (reply) bot.chat(reply);
+      else bot.chat("I couldn't start that terrain project because its bounds or anchor are not allowed.");
+      return;
+    }
+
+    if (/^(?:please )?(?:continue|resume|finish|keep)(?: building| working on)?(?: the| my| our| that)? ?(?:house|home|build|building|room|project)?$/.test(instruction)
+      && ctx.worldProjects !== undefined) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      const resumed = ctx.worldProjects.resumeLatest();
+      ctx.scheduler.claim();
+      bot.chat(resumed === null ? "There is no unfinished build to continue." : `Continuing the ${resumed.project.structureType.replace(/^simple_/, "")}.`);
+      return;
+    }
+
+    const food = instruction.match(/^(?:please )?(?:go )?(?:get|gather|find|hunt(?: for)?|collect)(?: me| us)? (?:(\d+) |some |more )?(?:food|meat)(?: please)?$|^(?:please )?go hunt(?:ing)?$/);
+    if (food !== null) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      const reply = runTool(bot, config, ctx, "gather_food", { quantity: food[1] === undefined ? 16 : Number(food[1]) });
+      if (reply) bot.chat(reply);
+      return;
+    }
+
+    const directGather = parseDeterministicGatherCommand(instruction, () => dominantNearbyLog(bot));
+    if (directGather !== null) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      const reply = runTool(bot, config, ctx, "collect_resource", directGather);
+      if (reply) bot.chat(reply);
       return;
     }
 

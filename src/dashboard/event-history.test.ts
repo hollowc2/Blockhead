@@ -49,6 +49,17 @@ test("maps event categories and severities", () => {
   history.dispose();
 });
 
+test("records generic world-project lifecycle in the operator history", () => {
+  const bus = new EventBus();
+  const history = new EventHistory({ bus, now });
+  const project = { id: "terrain-1", kind: "excavate" as const, geometryHash: "abcdef1234567890", lastError: "lava hazard" };
+  bus.emit("world_project.created", { project: project as never });
+  bus.emit("world_project.blocked", { project: project as never });
+  deepStrictEqual(history.events().map((event) => event.message), ["Terrain project excavate started (abcdef123456)", "Terrain project excavate blocked (abcdef123456) — lava hazard"]);
+  equal(history.recentFailures().length, 1);
+  history.dispose();
+});
+
 test("failed tasks appear in bounded recentFailures", () => {
   const bus = new EventBus();
   const history = new EventHistory({ bus, maxRecentFailures: 1, now });

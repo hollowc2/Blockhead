@@ -1,5 +1,6 @@
 import type { ProtectedRegion, RegionPoint } from "../minecraft/protection.js";
 import { canPerform, regionContains } from "../minecraft/protection.js";
+import { isNaturalBlock } from "../minecraft/natural-blocks.js";
 
 /**
  * Deterministic block-action protection policy (spec sections 8.2, 34:
@@ -56,6 +57,9 @@ const TERRAIN_BLOCK_NAMES: ReadonlySet<string> = new Set([
 const INFRASTRUCTURE_BLOCK_NAMES: ReadonlySet<string> = new Set([
   "chest",
   "trapped_chest",
+  "barrel", "ender_chest", "shulker_box", "furnace", "smoker", "blast_furnace",
+  "crafting_table", "enchanting_table", "brewing_stand", "smithing_table", "stonecutter", "loom", "cartography_table",
+  "bed", "hopper", "dropper", "dispenser", "beacon", "anvil", "spawner", "decorated_pot",
 ]);
 
 /** Structural blocks with a natural lookalike (planks vs logs). */
@@ -74,8 +78,9 @@ const STRUCTURAL_SUFFIXES: readonly string[] = [
 /** Classify a bare block name for the destruction decision. */
 export function classifyBlock(name: string): BlockClass {
   const bare = name.replace(/^minecraft:/, "");
-  if (INFRASTRUCTURE_BLOCK_NAMES.has(bare)) return "infrastructure";
-  if (TERRAIN_BLOCK_NAMES.has(bare)) return "terrain";
+  if (INFRASTRUCTURE_BLOCK_NAMES.has(bare) || bare.endsWith("_bed")) return "infrastructure";
+  if (bare.endsWith("_sign") || bare.endsWith("_hanging_sign")) return "infrastructure";
+  if (TERRAIN_BLOCK_NAMES.has(bare) || isNaturalBlock(bare)) return "terrain";
   if (/_(log|leaves|ore)$/.test(bare) || /^deepslate_.+_ore$/.test(bare)) return "terrain";
   for (const suffix of STRUCTURAL_SUFFIXES) {
     if (bare.endsWith(suffix)) return "structural";
@@ -91,15 +96,14 @@ export interface ProtectionVerdict {
 }
 
 /**
- * Is destroying `blockName` at `point` legal? `userRequested` records whether
- * the owner explicitly asked for this work (a `source: "user"` task); the
- * spec's "restricted by default" demolition rule needs that distinction.
+ * Is destroying `blockName` at `point` legal? The legacy boolean argument is
+ * accepted for source compatibility but is not a capability grant.
  */
 export function checkBlockDestruction(
   blockName: string,
   point: RegionPoint,
   region: ProtectedRegion | null,
-  userRequested: boolean,
+  _legacyUserRequested: boolean,
 ): ProtectionVerdict {
   if (region === null || !regionContains(region, point)) return { allowed: true };
   const blockClass = classifyBlock(blockName);
@@ -111,14 +115,7 @@ export function checkBlockDestruction(
       reason: `${blockName} is registered storage; it is never destroyed automatically`,
     };
   }
-  if (!userRequested) {
-    return {
-      allowed: false,
-      code: "PROTECTED_REGION",
-      reason: `breaking ${blockName} inside the protected home region requires an explicit request`,
-    };
-  }
-  return { allowed: true };
+  return { allowed: false, code: "PROTECTED_REGION", reason: `breaking ${blockName} inside the protected home region requires bounded terrain authorization` };
 }
 
 /**
@@ -135,7 +132,8 @@ export function checkBlockPlacement(
   if (region === null || !regionContains(region, point)) return { allowed: true };
   const bare = blockName.replace(/^minecraft:/, "");
   let action: "fire" | "lava" | "place";
-  if (bare === "fire" || bare === "campfire" || bare === "torch") {
+  // Torches are lighting, not fire: a lit base is the point of placing them.
+  if (bare === "fire" || bare === "campfire") {
     action = "fire";
   } else if (bare === "lava" || bare === "flowing_lava") {
     action = "lava";

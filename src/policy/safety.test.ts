@@ -13,7 +13,7 @@ import { MinecraftConfigSchema, type MinecraftConfig } from "../config/schema.js
 
 function configWith(policy: Record<string, unknown>): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
     policy,
   });
@@ -22,7 +22,7 @@ function configWith(policy: Record<string, unknown>): MinecraftConfig {
 /** Minimal valid config used by the dimension tests. */
 function rawConfig(): MinecraftConfig {
   return MinecraftConfigSchema.parse({
-    server: { host: "h", port: 25565, username: "CobbleBob" },
+    server: { host: "h", port: 25565, username: "CobbleBob", world_key: "test-world" },
     home: { x: 0, y: 0, z: 0 },
   });
 }
@@ -34,6 +34,10 @@ test("isStraightDownTarget detects the block directly beneath the feet", () => {
   assert.equal(isStraightDownTarget({ x: 11, y: 63, z: -9 }, self), false);
   // Two blocks down is no longer the underfoot block.
   assert.equal(isStraightDownTarget({ x: 10, y: 62, z: -9 }, self), false);
+  // A bot parked on a block centre stands on that block, not its neighbour.
+  const centred = { x: -59.505, y: 64, z: 276.5 };
+  assert.equal(isStraightDownTarget({ x: -60, y: 63, z: 277 }, centred), false);
+  assert.equal(isStraightDownTarget({ x: -60, y: 63, z: 276 }, centred), true);
 });
 
 test("spec 34: never dig straight down blindly", () => {

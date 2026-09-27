@@ -14,15 +14,22 @@ status:
   host: 127.0.0.1
   port: 8155
 
-# Phase 1 dashboard configuration groundwork. The collector is read-only in
-# this phase; no dashboard or viewer server is started yet.
+# Dashboard (3000) and full viewer shell (3001) bind to loopback; tailnet
+# devices reach them through `tailscale serve`. The raw viewer server sits on
+# viewer_port + 1 (loopback). public_viewer is the only listener Tailscale
+# Funnel points at: viewer + redacted status, nothing else.
 dashboard:
   enabled: true
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 3000
   viewer_enabled: true
+  viewer_host: 127.0.0.1
   viewer_port: 3001
   viewer_distance: 6
+  public_viewer:
+    enabled: true
+    port: 3003
+    max_connections: 6
 
 # All keys are Zod-validated against src/config/schema.ts at startup.
 
@@ -45,16 +52,16 @@ llm:
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:
-  world_key: main
+  world_key: cobblebob-bootstrap-20260925
   host: eros
   port: 25565
   username: CobbleBob
 
 home:
   dimension: overworld
-  x: -46
-  y: 84
-  z: 0
+  x: -93
+  y: 75
+  z: 247
   protected_size_x: 100
   protected_size_z: 100
 
