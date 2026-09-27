@@ -6,6 +6,7 @@ import { Vec3 } from "vec3";
 import { logger } from "../logger.js";
 import { registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { enableCreativeFlight, isCreativeMode } from "./mode.js";
+import { isNaturalBlock } from "./natural-blocks.js";
 
 // Node's cjs-module-lexer fails to detect the `goals` named export of this CJS
 // package, so named ESM imports would resolve to undefined at runtime.
@@ -105,6 +106,7 @@ function getMovements(bot: Bot): Pathfinder.Movements | null {
   let movements = movementsByBot.get(bot);
   if (!movements) {
     movements = new Movements(bot);
+    configureMovements(bot, movements);
     bot.pathfinder.setMovements(movements);
     // collectblock builds its own Movements in its constructor and calls
     // `setMovements` on every collect(), clobbering this config. Point it at
@@ -118,6 +120,51 @@ function getMovements(bot: Bot): Pathfinder.Movements | null {
     logger.debug("pathfinder movements initialized");
   }
   return movements;
+}
+
+/** Throwaway blocks the pathfinder may place to tower or bridge. */
+const SCAFFOLD_ITEMS = ["dirt", "cobblestone", "cobbled_deepslate", "netherrack", "andesite", "diorite", "granite", "tuff", "stone", "deepslate"];
+
+function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
+  const registry = bot.registry;
+  for (const block of registry.blocksArray) {
+    if (!isNaturalBlock(block.name) || !block.diggable) movements.blocksCantBreak.add(block.id);
+  }
+  applyScaffolding(bot, movements);
+  // Parkour jumps and long drops are the main source of falls and of
+  // getting wedged in terrain; a companion can afford the longer route.
+  movements.allowParkour = false;
+  movements.maxDropDown = 3;
+}
+
+/** Bots whose pathfinder must not place scaffolding (nesting depth). */
+const scaffoldFrozen = new WeakMap<Bot, number>();
+
+function applyScaffolding(bot: Bot, movements: Pathfinder.Movements): void {
+  const frozen = (scaffoldFrozen.get(bot) ?? 0) > 0;
+  (movements as unknown as { scafoldingBlocks: number[] }).scafoldingBlocks = frozen
+    ? []
+    : SCAFFOLD_ITEMS.map((name) => bot.registry.itemsByName[name]?.id).filter((id): id is number => id !== undefined);
+  movements.allow1by1towers = !frozen;
+}
+
+/**
+ * Run terrain work with pathfinder scaffolding switched off. Walking to a
+ * work pose inside a freshly dug mineshaft let the pathfinder drop dirt back
+ * into the corridor, which then failed the route check ("route is blocked
+ * at segment 4"). The terrain runner places its own blocks deliberately.
+ */
+export async function withoutPathfinderScaffolding<T>(bot: Bot, action: () => Promise<T>): Promise<T> {
+  scaffoldFrozen.set(bot, (scaffoldFrozen.get(bot) ?? 0) + 1);
+  const movements = getMovements(bot);
+  if (movements !== null) applyScaffolding(bot, movements);
+  try {
+    return await action();
+  } finally {
+    scaffoldFrozen.set(bot, Math.max(0, (scaffoldFrozen.get(bot) ?? 1) - 1));
+    const current = getMovements(bot);
+    if (current !== null) applyScaffolding(bot, current);
+  }
 }
 
 /** Temporarily control whether pathfinder/collectblock may alter terrain. */
@@ -255,6 +302,100 @@ export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
  * Returns true when the bot reaches the destination (within `range`),
  * false when the budget runs out.
  */
+/**
+ * One step of an upward staircase: clear the block over the bot's head and
+ * the two cells of the next step (feet+1, feet+2 one block ahead), then jump
+ * onto it. Returns false when a cell cannot be cleared or there is no floor.
+ */
+async function climbStep(
+  bot: Bot,
+  feet: Vec3,
+  dx: number,
+  dz: number,
+  isDiggable: (block: import("prismarine-block").Block | null) => boolean,
+  equip: (block: import("prismarine-block").Block) => void,
+): Promise<boolean> {
+  const floor = bot.blockAt(new Vec3(feet.x + dx, feet.y, feet.z + dz));
+  if (floor === null || floor.boundingBox !== "block") return false;
+  const cells = [new Vec3(feet.x, feet.y + 2, feet.z), new Vec3(feet.x + dx, feet.y + 1, feet.z + dz), new Vec3(feet.x + dx, feet.y + 2, feet.z + dz)];
+  for (const cell of cells) {
+    const block = bot.blockAt(cell);
+    if (block === null) return false;
+    if (block.boundingBox !== "block") continue;
+    if (!isDiggable(block)) return false;
+    try {
+      equip(block);
+      logger.warn({ at: cell, name: block.name }, "walkToward climbing: clearing a stair cell");
+      await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
+      await bot.dig(block, true);
+    } catch (err) {
+      logger.warn({ at: cell, err: String(err) }, "walkToward climb dig failed");
+      return false;
+    }
+  }
+  // Let the pathfinder take the one-block step: it centres the bot, which a
+  // blind jump in a one-wide tunnel does not (the hitbox catches the wall).
+  const startY = bot.entity?.position.y ?? feet.y;
+  try {
+    await Promise.race([
+      bot.pathfinder.goto(new goals.GoalNear(feet.x + dx, feet.y + 1, feet.z + dz, 0)),
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error("step timed out")), 4_000)),
+    ]);
+  } catch {
+    bot.pathfinder.setGoal(null);
+    await bot.lookAt(new Vec3(feet.x + dx + 0.5, feet.y + 1.6, feet.z + dz + 0.5), true);
+    bot.setControlState("jump", true);
+    bot.setControlState("forward", true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 450));
+    bot.setControlState("jump", false);
+    bot.setControlState("forward", false);
+  }
+  return (bot.entity?.position.y ?? startY) > startY + 0.5;
+}
+
+/** Throwaway blocks a trapped bot may stand on while towering up. */
+const PILLAR_ITEMS = ["cobblestone", "dirt", "cobbled_deepslate", "andesite", "diorite", "granite", "netherrack"];
+
+/** Clear the block overhead, jump, and place a block where the bot stood. */
+async function pillarStep(
+  bot: Bot,
+  feet: Vec3,
+  isDiggable: (block: import("prismarine-block").Block | null) => boolean,
+  equip: (block: import("prismarine-block").Block) => void,
+): Promise<boolean> {
+  const item = bot.inventory.items().find((candidate) => PILLAR_ITEMS.includes(candidate.name.replace(/^minecraft:/, "")));
+  if (item === undefined) return false;
+  const below = bot.blockAt(feet.offset(0, -1, 0));
+  if (below === null || below.boundingBox !== "block") return false;
+  for (const cell of [feet.offset(0, 2, 0)]) {
+    const block = bot.blockAt(cell);
+    if (block === null) return false;
+    if (block.boundingBox !== "block") continue;
+    if (!isDiggable(block)) return false;
+    try {
+      equip(block);
+      await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
+      await bot.dig(block, true);
+    } catch { return false; }
+  }
+  try {
+    await bot.equip(item, "hand");
+    await bot.lookAt(feet.offset(0.5, -0.5, 0.5), true);
+    const startY = bot.entity?.position.y ?? feet.y;
+    bot.setControlState("jump", true);
+    const deadline = Date.now() + 800;
+    while ((bot.entity?.position.y ?? startY) < startY + 1 && Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await bot.placeBlock(below, new Vec3(0, 1, 0));
+    logger.warn({ at: feet }, "walkToward climbing: towered up one block");
+    return true;
+  } catch (err) {
+    logger.warn({ at: feet, err: String(err) }, "walkToward tower step failed");
+    return false;
+  } finally {
+    bot.setControlState("jump", false);
+  }
+}
+
 export async function walkToward(
   bot: Bot,
   destination: Location,
@@ -302,8 +443,8 @@ export async function walkToward(
     const name = block.name.replace(/^minecraft:/, "");
     if (name === "bedrock" || name === "obsidian" || name === "water" || name === "lava") return false;
     // Never dig placed chests, furnaces, crafting tables, or beds at home.
-    if (name === "chest" || name === "trapped_chest" || name === "furnace" || name === "lit_furnace"
-      || name === "crafting_table" || name.endsWith("_bed")) return false;
+    // Only natural terrain: never tunnel through something a player built.
+    if (!isNaturalBlock(name)) return false;
     return block.hardness !== undefined && block.hardness >= 0;
   };
 
@@ -352,6 +493,18 @@ export async function walkToward(
           ] as [number, number][]).sort((a, b) => scoreOffset(b[0], b[1]) - scoreOffset(a[0], a[1]));
 
           let dug = false;
+          // Destination well above (trapped in a cave or tunnel): climb a
+          // staircase toward it. Digging straight ahead at the current depth
+          // only lengthens the tunnel.
+          if (destinationVec.y - current.position.y >= 3) {
+            for (const [dx, dz] of offsets.filter(([ox, oz]) => ox === 0 || oz === 0)) {
+              dug = await climbStep(bot, feet, dx, dz, isDiggable, equipBestForDig);
+              if (dug) break;
+            }
+            // No step to climb onto in any direction: tower straight up.
+            if (!dug) dug = await pillarStep(bot, feet, isDiggable, equipBestForDig);
+            if (dug) { stuckTicks = 0; lastDistance = distance; continue; }
+          }
           for (const [dx, dz] of offsets) {
             if (dug) break;
             for (const y of [footY, headY]) {
@@ -630,6 +783,28 @@ function surfaceStandingY(bot: Bot, x: number, z: number, fallback: number): num
 }
 
 /**
+ * The topmost standing level in a loaded column (open cell over solid, with
+ * no ground above), ignoring leaves so a tree canopy is not "the surface".
+ * Returns null when the column is not loaded.
+ */
+export function skySurfaceY(bot: Bot, x: number, z: number): number | null {
+  if (typeof bot.blockAt !== "function") return null;
+  const bx = Math.floor(x);
+  const bz = Math.floor(z);
+  let sawLoaded = false;
+  for (let y = 319; y >= -63; y--) {
+    const block = bot.blockAt(new Vec3(bx, y, bz));
+    if (block === null) { if (sawLoaded) return null; continue; }
+    sawLoaded = true;
+    if (block.boundingBox !== "block") continue;
+    const name = block.name.replace(/^minecraft:/, "");
+    if (name.endsWith("_leaves") || name.endsWith("_log")) continue;
+    return y + 1;
+  }
+  return null;
+}
+
+/**
  * Race a pathfinder trip against the wall-clock timeout and the cooperative
  * abort probe. Used by both travel helpers so their interrupt behavior is
  * identical.
@@ -682,6 +857,7 @@ export async function raceTrip(
     if (signal.aborted) return { status: "aborted" };
     const winner = await Promise.race([trip, nap]);
     if (winner.status === "timed_out" || winner.status === "aborted" || winner.status === "failed") {
+      logger.info({ status: winner.status, error: winner.status === "failed" ? winner.error : undefined, position: bot.entity?.position }, "pathfinder trip ended without arrival");
       // resetPathfinder stops the pathfinder and rebuilds its Movements so
       // the next trip starts clean; the explicit stop is contained there.
       resetPathfinder(bot);
@@ -732,7 +908,9 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
 
   const p = self.position;
   const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
-  const homeSurfaceY = surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
+  // Home is on the surface: from a cave under the home column the nearest
+  // standing level is the cave floor, which must never count as "home".
+  const homeSurfaceY = skySurfaceY(bot, home.x, home.z) ?? surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
   const verticallyAtHome = Math.abs(p.y - homeSurfaceY) <= 3;
   if (initialDistance <= arrivalRange && verticallyAtHome) {
     logger.info({
@@ -761,6 +939,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
+    const legStart = current.position.clone();
     legNumber += 1;
     const verticalOnly = distance <= arrivalRange;
     const leg = verticalOnly ? 0 : Math.min(HOME_LEG_LENGTH, distance);
@@ -789,8 +968,11 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
       .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
       .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
     const result = await raceTrip(bot, trip, { ...options, timeoutMs: legTimeout, signal });
-    if (result.status === "timed_out" && !finalLeg && Date.now() < deadline) {
+    if (result.status === "timed_out" && Date.now() < deadline && (!finalLeg || movedSince(bot, legStart, 2)) && !trappedBelow(bot, home, legStart)) {
+      // Slow is not stuck: digging a staircase with a wooden pickaxe easily
+      // outlasts one leg budget. Keep going while the bot is still moving.
       logger.warn({ leg: legNumber, distance: Number(distance.toFixed(1)) }, "home route leg timed out; retrying from current position");
+      distance = Math.hypot((bot.entity?.position.x ?? current.position.x) - home.x, (bot.entity?.position.z ?? current.position.z) - home.z);
       continue;
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
@@ -799,8 +981,12 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
       // unpathable terrain pocket), this is the only way out.
       // Give walkToward at least a full leg's budget so the bot can mine
       // its way home even when the leg consumed most of the deadline.
-      logger.warn({ leg: legNumber, status: result.status }, "home route leg failed; attempting walkToward fallback");
-      const fallback = await walkToward(bot, home, {
+      logger.warn({ leg: legNumber, status: result.status, error: result.status === "failed" ? result.error : undefined, position: bot.entity?.position, goal }, "home route leg failed; attempting walkToward fallback");
+      // A no-dig NoPath is answered by the caller's natural-digging retry;
+      // blind walking cannot beat an exhaustive A* search.
+      if (options.allowDig === false && isNoPath(result)) return result;
+      if (signal.aborted || /GoalChanged/.test(result.status === "failed" ? result.error : "")) return result;
+      const fallback = await walkToward(bot, { x: home.x, y: homeSurfaceY, z: home.z }, {
         range: arrivalRange + 2,
         timeoutMs: Math.max(TRAVEL_LEG_TIMEOUT_MS, remaining),
         signal,
@@ -842,8 +1028,65 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   return { status: "arrived" };
 }
 
+/**
+ * Deep below the goal and no higher than when the leg began: the bot is
+ * wandering a cave, not climbing out. Skip the leg retries and go to the
+ * walkToward fallback, which digs a staircase up.
+ */
+function trappedBelow(bot: Bot, goal: { y: number }, legStart: Vec3): boolean {
+  const y = bot.entity?.position.y;
+  return y !== undefined && goal.y - y >= 6 && y - legStart.y < 1;
+}
+
+function movedSince(bot: Bot, start: Vec3, minimum: number): boolean {
+  const now = bot.entity?.position;
+  return now !== undefined && now.distanceTo(start) >= minimum;
+}
+
+function isNoPath(result: TravelWaitResult): boolean {
+  return result.status === "failed" && /NoPath|no progress/i.test(result.error);
+}
+
+/** Known way up from where the bot stands (a dug mineshaft), or null. */
+export type EscapeRouteProvider = (position: { x: number; y: number; z: number }, dimension: string) => Array<{ x: number; y: number; z: number }> | null;
+let escapeRouteProvider: EscapeRouteProvider | null = null;
+
+export function setEscapeRouteProvider(provider: EscapeRouteProvider | null): void {
+  escapeRouteProvider = provider;
+}
+
+/** Destinations this far above the bot count as "climbing out". */
+const ESCAPE_MIN_RISE = 6;
+
+/**
+ * Deep in a mineshaft with a destination far above, walk up the shaft's own
+ * steps to its entrance first. A pathfinder search from the bottom of a long
+ * staircase to the surface does not finish, and the straight-line fallback
+ * then tunnels sideways at depth instead of climbing.
+ */
+async function climbOutFirst(bot: Bot, destination: { y: number }, options: TravelWaitOptions): Promise<void> {
+  const self = bot.entity?.position;
+  if (escapeRouteProvider === null || self === undefined || destination.y - self.y < ESCAPE_MIN_RISE) return;
+  const route = escapeRouteProvider({ x: self.x, y: self.y, z: self.z }, String(bot.game?.dimension ?? ""));
+  if (route === null || route.length === 0) return;
+  logger.info({ from: { x: Math.floor(self.x), y: Math.floor(self.y), z: Math.floor(self.z) }, hops: route.length }, "climbing out through the mineshaft first");
+  for (const point of route) {
+    if (options.signal?.aborted === true || options.shouldAbort?.() === true) return;
+    const hop = await withPathfinderDigging(bot, false, () => travelAndWaitImpl(bot, point, { ...options, range: 1.5, timeoutMs: 45_000 }));
+    if (hop.status !== "arrived" && hop.status !== "already_there") return;
+  }
+}
+
 export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
-  return withPathfinderDigging(bot, options.allowDig ?? true, () => travelHomeAndWaitImpl(bot, home, options));
+  await climbOutFirst(bot, { y: home.y }, options);
+  const allowDig = options.allowDig ?? true;
+  const result = await withPathfinderDigging(bot, allowDig, () => travelHomeAndWaitImpl(bot, home, options));
+  if (allowDig || !isNoPath(result)) return result;
+  // A no-dig route can be physically impossible (the bot is in a pit or a
+  // sealed cave). Digging only natural terrain is always safe, and staying
+  // trapped forever is not.
+  logger.warn({ home }, "no walkable route home; retrying with natural-terrain digging");
+  return withPathfinderDigging(bot, true, () => travelHomeAndWaitImpl(bot, home, { ...options, allowDig: true }));
 }
 
 /**
@@ -899,6 +1142,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
+    const legStart = current.position.clone();
     legNumber += 1;
     const leg = Math.min(TRAVEL_LEG_LENGTH, distance);
     const fraction = leg / distance;
@@ -926,14 +1170,20 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
       .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
       .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
     const result = await raceTrip(bot, trip, { ...options, timeoutMs: legTimeout, signal });
-    if (result.status === "timed_out" && !finalLeg && Date.now() < deadline) {
+    if (result.status === "timed_out" && Date.now() < deadline && (!finalLeg || movedSince(bot, legStart, 2)) && !trappedBelow(bot, location, legStart)) {
       logger.warn({ leg: legNumber, distance: Number(distance.toFixed(1)) }, "travel route leg timed out; retrying from current position");
+      const now = bot.entity?.position ?? current.position;
+      distance = Math.hypot(now.x - location.x, now.y - location.y, now.z - location.z);
       continue;
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
       // Pathfinder failed. Fall back to dumb-walk toward the destination.
       // Give walkToward a proper budget even if the leg consumed most of the deadline.
-      logger.warn({ leg: legNumber, status: result.status }, "travel route leg failed; attempting walkToward fallback");
+      logger.warn({ leg: legNumber, status: result.status, error: result.status === "failed" ? result.error : undefined, position: bot.entity?.position, goal }, "travel route leg failed; attempting walkToward fallback");
+      // A no-dig NoPath is answered by the caller's natural-digging retry;
+      // blind walking cannot beat an exhaustive A* search.
+      if (options.allowDig === false && isNoPath(result)) return result;
+      if (signal.aborted || /GoalChanged/.test(result.status === "failed" ? result.error : "")) return result;
       const fallback = await walkToward(bot, location, {
         range: range + 2,
         timeoutMs: Math.max(TRAVEL_LEG_TIMEOUT_MS, remaining),
@@ -970,5 +1220,10 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
 }
 
 export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
-  return withPathfinderDigging(bot, options.allowDig ?? true, () => travelAndWaitImpl(bot, location, options));
+  await climbOutFirst(bot, location, options);
+  const allowDig = options.allowDig ?? true;
+  const result = await withPathfinderDigging(bot, allowDig, () => travelAndWaitImpl(bot, location, options));
+  if (allowDig || !isNoPath(result)) return result;
+  logger.warn({ location }, "no walkable route; retrying with natural-terrain digging");
+  return withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true }));
 }

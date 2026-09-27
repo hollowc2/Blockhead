@@ -70,10 +70,12 @@ export function checkHealthRetreat(health: number, threshold: number = HEALTH_RE
  * move, and a sideways or angled dig is always available instead.
  */
 export function isStraightDownTarget(target: { x: number; y: number; z: number }, self: { x: number; y: number; z: number }): boolean {
+  // Block coordinates are floors. Rounding misread a bot standing at a block
+  // centre (z = 276.5, on block 276) as standing on block 277 next to it.
   return (
-    Math.round(target.x) === Math.round(self.x) &&
-    Math.round(target.z) === Math.round(self.z) &&
-    Math.round(target.y) === Math.round(self.y) - 1
+    Math.floor(target.x) === Math.floor(self.x) &&
+    Math.floor(target.z) === Math.floor(self.z) &&
+    Math.floor(target.y) === Math.floor(self.y + 1e-6) - 1
   );
 }
 

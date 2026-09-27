@@ -61,7 +61,7 @@ import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
 import type { WorldMutation } from "../agent/world-actions.js";
 import { isProtectedFixture, revalidateAction } from "../policy/action-boundary.js";
-import { canonicalMobName, isLiveMob } from "../policy/combat.js";
+import { canonicalMobName, isDroppedItemEntity, isLiveMob } from "../policy/combat.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -209,6 +209,12 @@ export interface BootstrapRunnerOptions {
   shouldYield?: () => boolean;
 }
 
+/** Stages that search far from home; they only start in daylight. */
+const NIGHT_PAUSED_STAGES: ReadonlySet<BootstrapStage> = new Set([
+  BootstrapStage.WOOD, BootstrapStage.STONE_TOOLS, BootstrapStage.FOOD, BootstrapStage.WOOL,
+  BootstrapStage.FUEL, BootstrapStage.IRON,
+]);
+
 /**
  * Bootstrap state machine (spec section 7). Executes the Phase 5.6 stages
  * HOME -> WOOD -> CRAFTING -> STONE_TOOLS -> FOOD -> STORAGE -> FURNACE
@@ -241,6 +247,9 @@ export class BootstrapRunner {
   private readonly failedMobIds = new Set<number>();
   /** Exact cells this deterministic controller has authorized for digging. */
   private readonly authorizedDigCells = new Set<string>();
+  /** Set by yieldNow(): the aborted stage is not a failure. */
+  private yielding = false;
+  private nightPauseAnnounced = false;
 
   constructor(private readonly opts: BootstrapRunnerOptions) {}
 
@@ -282,6 +291,19 @@ export class BootstrapRunner {
       if (this.activeRun === run) this.activeRun = null;
       if (this.controller === controller) this.controller = null;
     }
+  }
+
+  /**
+   * Abandon the in-flight stage so owner work can take the world lease now
+   * instead of waiting minutes for a stage boundary. Progress is persisted
+   * per stage, so the task-settled hook resumes bootstrap at the same stage.
+   */
+  yieldNow(): boolean {
+    if (!this.running || this.controller === null) return false;
+    this.yielding = true;
+    this.opts.logger.info({ stage: this.currentStage }, "bootstrap stage interrupted for owner work");
+    this.controller.abort(new Error("bootstrap yielded to owner work"));
+    return true;
   }
 
   /** Cancel and await any in-flight bootstrap before its bot session is torn down. */
@@ -357,6 +379,7 @@ export class BootstrapRunner {
     }
 
     this.running = true;
+    this.yielding = false;
     this.startedAt = Date.now();
     this.signal = signal ?? null;
     try {
@@ -368,6 +391,18 @@ export class BootstrapRunner {
           this.opts.logger.info({ stage }, "bootstrap yielding to higher-priority work; resuming later");
           return;
         }
+        // Roaming stages (tree, animal, stone, coal, and ore searches) wait
+        // for daylight: a night-time search 60+ blocks out is how the bot
+        // died to skeletons and lost everything it carried.
+        if (NIGHT_PAUSED_STAGES.has(stage) && this.opts.bot.time?.isDay === false) {
+          if (!this.nightPauseAnnounced) {
+            this.opts.logger.info({ stage }, "bootstrap waiting for daylight before a roaming stage");
+            this.nightPauseAnnounced = true;
+          }
+          this.scheduleRetry();
+          return;
+        }
+        this.nightPauseAnnounced = false;
         throwIfAborted(this.signal ?? undefined);
         if (!BOOTSTRAP_STAGES.includes(stage)) {
           // The next stage belongs to a later phase (or is NORMAL_OPERATION):
@@ -390,6 +425,7 @@ export class BootstrapRunner {
         // inventory it started from, not the whole session's baseline.
         const baseline = itemsSummary(this.opts.bot);
         const outcome = await this.executeWithRetries(stage);
+        if (this.yielding) return;
         if (!outcome.ok) {
           if (stage === BootstrapStage.WOOL || stage === BootstrapStage.BED) {
             this.deferOptionalStage(stage, outcome.reason, baseline);
@@ -876,7 +912,17 @@ export class BootstrapRunner {
     // otherwise a stranded restart can roam (or clear terrain) before the
     // later mining health checks ever run.
     if (bot.health <= HUNT_MIN_HEALTH) {
-      const recovered = await recoverLowHealth(bot);
+      let recovered = await recoverLowHealth(bot);
+      if (!recovered.ok && recovered.code === "LOW_HEALTH") {
+        // Starving with nothing to eat: waiting can never help (normal
+        // difficulty stops starvation at 1 HP, so the bot never dies and
+        // respawns either). Passive animals cannot fight back, so a food
+        // run is the one safe way out; auto-eat turns the meat into regen.
+        this.announce("Too weak to mine. Getting food first.");
+        const fed = await this.stageFood();
+        this.opts.logger.info({ ok: fed.ok, reason: fed.ok ? fed.message : fed.reason, health: bot.health, food: bot.food }, "stone_tools: emergency food run settled");
+        recovered = await recoverLowHealth(bot);
+      }
       if (!recovered.ok) return { ok: false, reason: `unsafe to gather stone prerequisites: ${recovered.reason}` };
     }
 
@@ -1405,9 +1451,17 @@ export class BootstrapRunner {
     if (have >= target) return { ok: true, message: `Already carrying ${have} torches.` };
 
     const crafts = Math.ceil((target - have) / 4);
-    const fuels = countFuelItems(bot);
+    let fuels = countFuelItems(bot);
     if (fuels < crafts) {
-      return { ok: false, reason: `only ${fuels} coal/charcoal for ${crafts} torch crafts` };
+      // FUEL is already behind us (a torch craft can consume coal without an
+      // observed output), so top up with charcoal here instead of failing
+      // forever on a stage that never re-runs.
+      const topUp = await this.produceCharcoal(crafts - fuels);
+      fuels = countFuelItems(bot);
+      if (fuels < crafts) {
+        if (have >= Math.ceil(target / 2)) return { ok: true, message: `Carrying ${have} torches; more once fuel is available.` };
+        return { ok: false, reason: `only ${fuels} coal/charcoal for ${crafts} torch crafts${topUp.ok ? "" : `: ${topUp.reason}`}` };
+      }
     }
 
     // Sticks come from planks; secure the wood first so a fresh stock never
@@ -1529,13 +1583,13 @@ export class BootstrapRunner {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
     });
-    if (travel.status !== "arrived" && travel.status !== "already_there") return null;
+    if (travel.status !== "arrived" && travel.status !== "already_there") { this.opts.logger.warn({ travel }, "furnace: home unreachable"); return null; }
 
     const existing = furnaceBlockNear(bot, FURNACE_SCAN_RADIUS);
     if (existing !== null) return existing;
 
     const table = await this.ensureTableAtHome();
-    if (table === null) return null;
+    if (table === null) { this.opts.logger.warn("furnace: no crafting table at home"); return null; }
 
     // Bootstrap stages are persisted across deaths/restarts, but inventory is
     // not.  A bot can resume at FURNACE with the table intact and no pickaxe;
@@ -1549,9 +1603,9 @@ export class BootstrapRunner {
     let item = findItem(bot, "furnace");
     if (item === null) {
       const stone = await this.gatherCobblestone(FURNACE_COBBLE_TARGET);
-      if (!stone.ok) return null;
+      if (!stone.ok) { this.opts.logger.warn({ reason: stone.reason }, "furnace: not enough cobblestone"); return null; }
       const furnace = await this.craftAtTable("furnace", table);
-      if (!furnace.ok) return null;
+      if (!furnace.ok) { this.opts.logger.warn({ furnace }, "furnace: craft failed"); return null; }
       item = findItem(bot, "furnace");
     }
     if (item === null) return null;
@@ -1561,8 +1615,9 @@ export class BootstrapRunner {
       spot = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
       if (spot !== null) this.opts.logger.warn({ home, pos: fallbackCenter }, "no floor space near home for a furnace; placing near the bot");
     }
-    if (spot === null) return null;
+    if (spot === null) { this.opts.logger.warn({ home }, "furnace: no placement spot"); return null; }
     const placed = await placeItemAt(bot, item, spot, this.signal ?? undefined);
+    if (placed === null || !isFurnaceBlock(placed)) this.opts.logger.warn({ spot: spot.position, placed: placed?.name ?? null }, "furnace: placement failed");
     return placed !== null && isFurnaceBlock(placed) ? placed : null;
   }
 
@@ -1986,11 +2041,43 @@ export class BootstrapRunner {
     let have = countItem(bot, "cobblestone");
     if (have >= needed) return { ok: true, have };
 
+    const startedAt = Date.now();
+    const deadline = startedAt + STONE_STAGE_TIMEOUT_MS;
+
+    // Direct pass: the nearest stone in any direction, reached with
+    // natural-terrain pathfinder digging (it will stair down or tunnel to
+    // buried stone). Most of the time stone is a few blocks under the bot's
+    // feet, and the surface-exposure search below cannot see it.
+    const self = bot.entity;
+    if (self !== null) {
+      const nearest = bot.findBlocks({ point: self.position, matching: (block) => isCobbleStone(block), maxDistance: 32, count: 48 })
+        .filter((position) => !this.failedTargets.has(blockKey(position)))
+        .sort((a, b) => a.distanceTo(self.position) - b.distanceTo(self.position))
+        .map((position) => bot.blockAt(position))
+        .filter((block): block is Block => block !== null);
+      this.opts.logger.info({ candidates: nearest.length, have, needed }, "stone direct pass");
+      if (nearest.length > 0) {
+        await this.withAuthorizedDigCells(nearest.map((block) => block.position), () =>
+          withPathfinderDigging(bot, true, () => collectBlocks(
+            bot,
+            nearest,
+            () => countItem(bot, "cobblestone"),
+            needed,
+            (msg) => this.announce(msg),
+            Math.max(1, Math.min(STONE_COLLECT_TIMEOUT_MS, deadline - Date.now())),
+            (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable stone"),
+            undefined,
+            this.failedTargets,
+          )),
+        );
+        have = countItem(bot, "cobblestone");
+        if (have >= needed) return { ok: true, have };
+      }
+    }
+
     const stored = this.opts.stages.getState(worldId).progress;
     const progress = readStoneProgress(stored);
     const sites = stoneExplorationSites(home);
-    const startedAt = Date.now();
-    const deadline = startedAt + STONE_STAGE_TIMEOUT_MS;
 
     for (let index = progress.nextSite; index < sites.length && Date.now() < deadline; index++) {
       throwIfAborted(this.signal ?? undefined);
@@ -2389,7 +2476,10 @@ function groundLevelAt(bot: Bot, x: number, z: number): number | null {
   const self = bot.entity;
   if (self !== null) {
     const feet = self.position.floored();
-    if (Math.abs(feet.x - x) <= 1 && Math.abs(feet.z - z) <= 1 && isOpenSpace(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0)))) {
+    // Only trust the feet when they are under open sky: a bot standing in a
+    // cave beneath the home column would otherwise re-snap home onto the
+    // cave floor, dragging "home" underground a little further each time.
+    if (Math.abs(feet.x - x) <= 1 && Math.abs(feet.z - z) <= 1 && isOpenSpace(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0))) && hasOpenSkyAbove(bot, feet)) {
       return feet.y;
     }
   }
@@ -2402,6 +2492,16 @@ function groundLevelAt(bot: Bot, x: number, z: number): number | null {
     if (isDiggableGround(block)) return y + 1;
   }
   return null;
+}
+
+/** True when no ground block covers this cell (tree canopy does not count). */
+function hasOpenSkyAbove(bot: Bot, feet: Vec3): boolean {
+  for (let y = feet.y + 2; y <= 319; y++) {
+    const block = bot.blockAt(new Vec3(feet.x, y, feet.z));
+    if (block === null) return true; // above the loaded/built height
+    if (isDiggableGround(block)) return false;
+  }
+  return true;
 }
 
 /** A physical, manually diggable block (never liquids, bedrock, or trees). */
@@ -2633,7 +2733,7 @@ function lootDropsNear(bot: Bot, radius: number): Entity[] {
   if (self === null) return [];
   const drops: Entity[] = [];
   for (const entity of Object.values(bot.entities)) {
-    if (entity.type !== "object" || !isLootDropItem(entity)) continue;
+    if (!isDroppedItemEntity(entity) || !isLootDropItem(entity)) continue;
     if (self.position.distanceTo(entity.position) > radius) continue;
     drops.push(entity);
   }

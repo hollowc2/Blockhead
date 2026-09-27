@@ -7,7 +7,7 @@ import { WorldActionExecutor } from "../agent/world-actions.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { createFrozenTerrainPlan } from "../terrain/schema.js";
 import { TerrainMutationService } from "../terrain/mutation.js";
-import { runClearAreaSlice, runExcavationSlice, runFlattenAreaSlice, runMineshaftSlice } from "./terrain-project.js";
+import { findSafeWorkPose, mineshaftExitRoute, reachToBlock, runClearAreaSlice, runExcavationSlice, runFlattenAreaSlice, runMineshaftSlice } from "./terrain-project.js";
 
 type Point = { x: number; y: number; z: number };
 function block(name: string, position: Point): Block {
@@ -77,6 +77,37 @@ test("clear removes only the requested prism and preserves the ground", async ()
   assert.equal(bot.blockAt(new Vec3(0, 63, 0))?.name, "stone");
 });
 
+test("clear accepts supported gravel on the preserved ground layer", async () => {
+  const plan = createFrozenTerrainPlan({
+    world: "world", dimension: "overworld", anchor: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    bounds: { minX: 0, maxX: 0, minY: 64, maxY: 67, minZ: 0, maxZ: 0 },
+    specification: { kind: "clear", anchor: "owner_front", width: 1, length: 1, height: 4 },
+  });
+  const bot = {
+    entity: { position: { x: -2, y: 64, z: 0 } }, players: {},
+    blockAt: (point: Point) => point.y === 61 ? block("stone", point) : point.y === 62 || point.y === 63 ? block("gravel", point) : block("air", point),
+    heldItem: { type: 1, maxDurability: 0, durabilityUsed: 0 },
+  } as unknown as Bot;
+  const result = await new WorldActionExecutor().run("terrain-gravel-ground", new AbortController().signal, async () => runClearAreaSlice(bot, plan, { signals: signals() }));
+  assert.equal(result.status, "completed", `${result.errorCode ?? ""} ${result.message ?? ""}`);
+  assert.equal(bot.blockAt(new Vec3(0, 63, 0))?.name, "gravel");
+});
+
+test("a tall clear target can be reached safely from the walking plane", async () => {
+  const bot = {
+    entity: { position: { x: -2, y: 64, z: 0 } },
+    blockAt: (point: Point) => point.y === 63 ? block("stone", point) : block("air", point),
+  } as unknown as Bot;
+  const result = await findSafeWorkPose(
+    bot,
+    { x: 0, y: 67, z: 0 },
+    { minX: 0, maxX: 4, minY: 64, maxY: 67, minZ: 0, maxZ: 4 },
+    new AbortController().signal,
+  );
+  assert.equal(result.status, "completed", `${result.errorCode ?? ""} ${result.message ?? ""}`);
+  assert.equal(result.data?.position.y, 64);
+});
+
 test("flatten cuts high terrain to an exact walking plane", async () => {
   const plan = createFrozenTerrainPlan({
     world: "world", dimension: "overworld", anchor: { x: 0, y: 64, z: 0, dimension: "overworld" },
@@ -141,4 +172,26 @@ test("mineshaft descends by verified segments and resumes from a safe waypoint",
   assert.equal(resumed.status, "completed", `${resumed.errorCode ?? ""} ${resumed.message ?? ""}`);
   assert.equal(resumed.data?.lastSafeWaypoint.z, 1);
   assert.equal(dug.size, 4);
+});
+
+test("the exit route from deep in a mineshaft climbs its own steps to the entrance", () => {
+  const plan = createFrozenTerrainPlan({
+    world: "world", dimension: "overworld", anchor: { x: 0, y: 70, z: 0, dimension: "overworld" },
+    bounds: { minX: -21, maxX: 0, minY: 48, maxY: 72, minZ: 0, maxZ: 0 },
+    specification: { kind: "mineshaft", anchor: "owner_front", width: 1, height: 2, targetY: 50, direction: "west" },
+  });
+  // Standing on segment 20: feet at y = 70 - 20 + 1 = 51, x = -20.
+  const route = mineshaftExitRoute(plan, { x: -19.5, y: 51, z: 0.5 });
+  assert.deepEqual(route, [
+    { x: -14, y: 57, z: 0 }, { x: -8, y: 63, z: 0 }, { x: -2, y: 69, z: 0 }, { x: 0, y: 71, z: 0 },
+  ]);
+  assert.equal(mineshaftExitRoute(plan, { x: 40, y: 51, z: 0 }), null, "not in the shaft");
+});
+
+test("reach is measured to a block's nearest face, so canopy is reachable from the ground", () => {
+  // Standing beside a birch on y=71 ground: the y=77 leaf's underside is in reach.
+  const eye = { x: -65.5, y: 71 + 1.62, z: 323.5 };
+  assert.ok(reachToBlock(eye, { x: -67, y: 77, z: 323 }) <= 4.5);
+  assert.ok(reachToBlock(eye, { x: -67, y: 79, z: 323 }) > 4.5);
+  assert.equal(reachToBlock({ x: 0.5, y: 0.5, z: 0.5 }, { x: 0, y: 0, z: 0 }), 0);
 });

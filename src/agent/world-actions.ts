@@ -19,6 +19,8 @@ export interface WorldMutation {
   point?: { x: number; y: number; z: number };
   blockName?: string;
   userRequested?: boolean;
+  /** A builder replacing a block it placed itself (door/window cut-in). */
+  ownBuildReplacement?: boolean;
 }
 
 const worldActionContext = new AsyncLocalStorage<WorldActionLease>();

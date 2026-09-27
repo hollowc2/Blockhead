@@ -47,6 +47,8 @@ const RE_CHECK_DELAY_MS = 1_000;
 
 /** Horizontal standoff from home at which the bot counts as "home". */
 const AUTO_SLEEP_HOME_RADIUS = 12;
+/** At night an idle bot farther than this from home walks back. */
+const NIGHT_HOME_RADIUS = 16;
 
 export interface BackgroundManagerOptions {
   bot: Bot;
@@ -119,6 +121,10 @@ export class BackgroundManager {
   private readonly lastFailedAt = new Map<string, number>();
   /** Failure reason of the most recent failed restore attempt, per kind. */
   private readonly lastFailReason = new Map<string, string>();
+  /** When each kind may retry; grows with consecutive failures. */
+  private readonly retryAt = new Map<string, number>();
+  /** Consecutive failed restores per kind; a success resets it. */
+  private readonly failureStreak = new Map<string, number>();
   /** Last block code warn issued per key; one notice per block state entry. */
   private readonly lastBlockNotice = new Map<string, string>();
 
@@ -133,6 +139,9 @@ export class BackgroundManager {
       }
       this.lastFailedAt.set(state.action, state.failedAt);
       this.lastFailReason.set(state.action, state.reason);
+      this.retryAt.set(state.action, state.retryAt);
+      const base = this.baseCooldownMs();
+      this.failureStreak.set(state.action, 1 + Math.max(0, Math.round(Math.log2(Math.max(1, (state.retryAt - state.failedAt) / base)))));
     }
   }
 
@@ -150,6 +159,11 @@ export class BackgroundManager {
     this.timer.unref?.();
 
     const onSettled = (): void => this.scheduleKick();
+    const onCompleted = ({ task }: { task: Task }): void => {
+      const key = failureKey(task);
+      if (key !== null) this.failureStreak.delete(key);
+      this.scheduleKick();
+    };
     const onFailed = ({ task }: { task: Task }): void => {
       this.recordFailure(task);
       this.scheduleKick();
@@ -159,7 +173,7 @@ export class BackgroundManager {
     // A goal settling (started/completed/blocked/cancelled) and a watchdog-
     // blocked task both need a fresh pass too.
     this.settledListeners = [
-      this.opts.bus.on("task.completed", onSettled),
+      this.opts.bus.on("task.completed", onCompleted),
       this.opts.bus.on("task.failed", onFailed),
       this.opts.bus.on("task.cancelled", onSettled),
       this.opts.bus.on("task.blocked", onSettled),
@@ -364,6 +378,25 @@ export class BackgroundManager {
     if (scheduler.active !== null) return;
     if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND)) return;
 
+    // Night without owner work: go home and stay there. Background errands
+    // far from home at night are how the bot dies and loses its inventory.
+    if (this.opts.state.timePhase === "night") {
+      const home = this.opts.state.home;
+      const self = this.opts.bot.entity?.position;
+      if (home !== null && self !== undefined && self !== null && Math.hypot(self.x - home.x, self.z - home.z) > NIGHT_HOME_RADIUS) {
+        scheduler.enqueue({
+          type: "go_home",
+          priority: TaskPriority.BACKGROUND,
+          source: "background",
+          objective: "Head home for the night.",
+          parameters: {},
+          workKey: "night-return-home",
+        });
+        scheduler.claim();
+        return;
+      }
+    }
+
     // Phase 13 (spec 9): automatic night sleep is code-owned. When the bot is
     // idle, home, and it is night, it sleeps instead of starting new work.
     if (this.opts.config.behavior?.auto_sleep !== false && this.opts.state.timePhase === "night") {
@@ -453,26 +486,23 @@ export class BackgroundManager {
    * work that fails is never the loop's to re-run.
    */
   private recordFailure(task: Task): void {
-    if (task.source !== "background" && task.source !== "director") return;
-    let key: string | null = null;
-    if (task.type === "stockpile_maintenance") {
-      const kind = String(task.parameters.kind ?? "");
-      if (kind !== "") key = kind;
-    } else if (task.type === "collect_resource") {
-      const resource = String(task.parameters.resource ?? "");
-      if (resource !== "") key = `resource:${resource}`;
-    } else if (task.type === "upgrade_equipment") {
-      key = "upgrade";
-    } else if (task.type === "build_base") {
-      key = "build";
-    }
+    const key = failureKey(task);
     if (key === null) return;
     const failedAt = this.now();
     const reason = task.lastError ?? "skill failed";
     this.lastFailedAt.set(key, failedAt);
     this.lastFailReason.set(key, reason);
-    const cooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
+    // Back off exponentially: with no animals (or no trees) in range, a
+    // fixed one-minute retry sends the bot on the same fruitless trek all day.
+    const streak = (this.failureStreak.get(key) ?? 0) + 1;
+    this.failureStreak.set(key, streak);
+    const cooldownMs = Math.min(MAX_RESTORE_COOLDOWN_MS, this.baseCooldownMs() * 2 ** (streak - 1));
+    this.retryAt.set(key, failedAt + cooldownMs);
     this.opts.backgroundFailures?.upsert({ action: key, failedAt, retryAt: failedAt + cooldownMs, reason });
+  }
+
+  private baseCooldownMs(): number {
+    return (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
   }
 
   /**
@@ -488,10 +518,10 @@ export class BackgroundManager {
   private restoreBlock(key: string): RestoreBlock | null {
     const failedAt = this.lastFailedAt.get(key);
     if (failedAt === undefined) return null;
-    const cooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
-    const remainingMs = failedAt + cooldownMs - this.now();
+    const remainingMs = (this.retryAt.get(key) ?? failedAt + this.baseCooldownMs()) - this.now();
     if (remainingMs <= 0) {
       this.lastFailedAt.delete(key);
+      this.retryAt.delete(key);
       this.lastFailReason.delete(key);
       this.lastBlockNotice.delete(key);
       this.opts.backgroundFailures?.remove(key);
@@ -955,4 +985,23 @@ function goalStepLabel(type: string, args: Record<string, unknown>): string {
     default:
       return type;
   }
+}
+
+/** Longest a failing background restore waits before trying again. */
+const MAX_RESTORE_COOLDOWN_MS = 30 * 60_000;
+
+/** The per-kind cooldown key of a loop-owned restore task, or null. */
+function failureKey(task: Task): string | null {
+  if (task.source !== "background" && task.source !== "director") return null;
+  if (task.type === "stockpile_maintenance") {
+    const kind = String(task.parameters.kind ?? "");
+    return kind === "" ? null : kind;
+  }
+  if (task.type === "collect_resource") {
+    const resource = String(task.parameters.resource ?? "");
+    return resource === "" ? null : `resource:${resource}`;
+  }
+  if (task.type === "upgrade_equipment") return "upgrade";
+  if (task.type === "build_base") return "build";
+  return null;
 }

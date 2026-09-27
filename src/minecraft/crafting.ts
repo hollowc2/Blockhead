@@ -1,4 +1,5 @@
 import type { Bot } from "mineflayer";
+import { logger } from "../logger.js";
 import type { Block } from "prismarine-block";
 import type { Recipe } from "prismarine-recipe";
 import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
@@ -39,6 +40,26 @@ async function settledCount(count: () => number, before: number, signal: AbortSi
   }
   throwIfAborted(signal);
   return current;
+}
+
+/** Shift-click anything sitting in the player's 2x2 crafting grid back into the inventory. */
+async function clearCraftingGrid(bot: Bot): Promise<void> {
+  const inventory = bot.inventory;
+  if (inventory === undefined) return;
+  for (const slot of [1, 2, 3, 4]) {
+    if (inventory.slots[slot] === null || inventory.slots[slot] === undefined) continue;
+    try { await bot.clickWindow(slot, 0, 1); } catch { /* best effort */ }
+  }
+}
+
+/** Ask the server to resend every inventory slot (bounded wait). */
+async function resyncInventory(bot: Bot): Promise<void> {
+  const sync = (bot as Bot & { _syncWindow?: (window: unknown) => Promise<void> })._syncWindow;
+  if (typeof sync !== "function" || bot.inventory === undefined) return;
+  await Promise.race([
+    sync.call(bot, bot.inventory).catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 1_500)),
+  ]);
 }
 
 export function failure(name: string, reason: string): CraftResult {
@@ -83,19 +104,53 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
     return failure(name, recipes.length === 0 ? `no recipe for '${name}'` : `missing ingredients for '${name}'`);
   }
 
-  try {
-    const before = countItem(bot, name);
+  // One recipe run at a time, re-reading the authoritative inventory between
+  // runs: on this server Mineflayer's multi-run craft (and a craft started
+  // right after a chest withdrawal) can act on a stale inventory model and
+  // throw "missing ingredient" even though the items are carried.
+  const before = countItem(bot, name);
+  let lastError: unknown = null;
+  for (let run = 0; run < times; run += 1) {
     throwIfAborted(signal);
-    await craftRecipe(bot, recipe, times, table, signal);
-    throwIfAborted(signal);
-    const after = await settledCount(() => countItem(bot, name), before, signal);
-    const crafted = Math.max(0, after - before);
-    const delta = observedDelta(before, after, times);
-    return delta.delta > 0 ? { ok: true, name, crafted: delta.delta } : failure(name, "craft completed without an output delta");
-  } catch (err) {
-    throwIfAborted(signal);
-    return failure(name, String(err));
+    // The local model lags the server, most of all right after a chest
+    // withdrawal: ingredients that are really carried can read as missing.
+    // Resync before concluding the run is impossible (13 logs once crafted
+    // only 10 runs of planks this way).
+    let usable = recipeUsable(bot, recipe, 1);
+    for (let recheck = 0; !usable && recheck < 3; recheck += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+      throwIfAborted(signal);
+      await resyncInventory(bot);
+      usable = recipeUsable(bot, recipe, 1);
+    }
+    if (!usable) break;
+    let done = false;
+    for (let attempt = 0; attempt < 4 && !done; attempt += 1) {
+      try {
+        // Make the local inventory model match the server before clicking;
+        // a stale model is what produces the bogus "missing ingredient".
+        await resyncInventory(bot);
+        // A desynced earlier craft can leave items in the 2x2 grid, and the
+        // next click then crafts something else from them (stray buttons).
+        await clearCraftingGrid(bot);
+        const runBefore = countItem(bot, name);
+        await craftRecipe(bot, recipe, 1, table, signal);
+        throwIfAborted(signal);
+        await settledCount(() => countItem(bot, name), runBefore, signal);
+        done = true;
+      } catch (err) {
+        throwIfAborted(signal);
+        lastError = err;
+        logger.warn({ item: name, run, attempt, err: String(err) }, "craft run failed; resyncing and retrying");
+        await new Promise<void>((resolve) => setTimeout(resolve, 600));
+      }
+    }
+    if (!done) break;
   }
+  const after = countItem(bot, name);
+  const crafted = Math.max(0, after - before);
+  if (crafted > 0) return { ok: true, name, crafted };
+  return failure(name, lastError === null ? "craft completed without an output delta" : String(lastError));
 }
 
 /**
@@ -119,15 +174,9 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
 
     const craftsNeeded = Math.ceil((targetTotal - planks) / 4);
     const times = Math.min(craftsNeeded, logCount);
-    try {
-      throwIfAborted(signal);
-      await craftRecipe(bot, recipe, times, undefined, signal);
-      throwIfAborted(signal);
-    } catch (err) {
-      throwIfAborted(signal);
-      return failure(planksForLog(logName), String(err));
-    }
-    planks = await settledCount(() => countPlanks(bot), planks, signal);
+    const crafted = await craftItem(bot, planksForLog(logName), { times, signal });
+    if (!crafted.ok && countPlanks(bot) <= planks) return failure(planksForLog(logName), crafted.reason);
+    planks = countPlanks(bot);
   }
 
   const delta = observedDelta(initial, planks, Math.max(1, targetTotal - initial));

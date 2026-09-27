@@ -13,6 +13,8 @@ import { bareName, countItem, countPlanks, findItem, hasItem, itemsSummary } fro
 import { craftItem, itemId } from "../minecraft/crafting.js";
 import { smeltItems } from "../minecraft/smelting.js";
 import { countStoredItems, deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { dominantNearbyLog } from "../minecraft/world.js";
+import { isNaturalBlock } from "../minecraft/natural-blocks.js";
 import { findBlockNear, findPlacementSpot, placeItemAt } from "../minecraft/world.js";
 import { travelHomeAndWait } from "../minecraft/movement.js";
 import { isEquipmentName } from "../policy/item-policy.js";
@@ -120,17 +122,78 @@ export interface RecipeCatalog {
   recipesProducing(item: string): Recipe[];
   /** Item name for a numeric id, or null when unknown. */
   nameForId(id: number): string | null;
+  /** Carried + stored count, used to prefer recipes whose inputs are in stock. */
+  available?(item: string): number;
+}
+
+/**
+ * Recipe variants ordered by how much of their input is already in stock, so
+ * a stone pickaxe comes from the cobblestone being carried rather than from
+ * whichever variant (cobbled deepslate, blackstone) the data lists first.
+ */
+export function rankRecipes(recipes: Recipe[], catalog: RecipeCatalog): Recipe[] {
+  if (catalog.available === undefined) return recipes;
+  // How well stock covers `need` of `name`: held/stored first, then (at half
+  // weight) what one more crafting step could make from stock. One level
+  // alone saw every plank species at zero, so a stick picked pale oak while
+  // the chest held birch logs.
+  const supply = (name: string, need: number, depth: number): number => {
+    const direct = Math.min(1, (catalog.available?.(name) ?? 0) / need);
+    if (direct >= 1 || depth <= 0) return direct;
+    let best = 0;
+    for (const recipe of catalog.recipesProducing(name)) {
+      let sum = 0;
+      let count = 0;
+      for (const delta of recipe.delta) {
+        if (delta.count >= 0) continue;
+        const ingredient = catalog.nameForId(delta.id);
+        if (ingredient === null) continue;
+        count += 1;
+        sum += supply(ingredient, -delta.count, depth - 1);
+      }
+      if (count > 0) best = Math.max(best, sum / count);
+    }
+    return Math.max(direct, best / 2);
+  };
+  const score = (recipe: Recipe): number => {
+    let total = 0;
+    for (const delta of recipe.delta) {
+      if (delta.count >= 0) continue;
+      const name = catalog.nameForId(delta.id);
+      if (name === null) continue;
+      total += supply(name, -delta.count, 1);
+    }
+    return total;
+  };
+  return recipes.map((recipe, index) => ({ recipe, index, score: score(recipe) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.recipe);
 }
 
 /** The live catalog over a connected mineflayer bot. */
-export function makeRecipeCatalog(bot: Bot): RecipeCatalog {
+export function makeRecipeCatalog(bot: Bot, available?: (item: string) => number): RecipeCatalog {
   return {
-    gatherable: (item) => bot.registry.blocksByName[bareName(item)] !== undefined,
+    available,
+    // A block is gathered only when it occurs in nature or cannot be
+    // crafted: planks, bricks, and the like are blocks too, but searching the
+    // world for them instead of crafting from logs/stone never succeeds.
+    gatherable: (item) => {
+      const bare = bareName(item);
+      if (bot.registry.blocksByName[bare] === undefined) return false;
+      if (isNaturalBlock(bare) || /_log$|_wood$/.test(bare)) return true;
+      const id = itemId(bot, bare);
+      try { return id === null || (bot.recipesAll(id, null, true) ?? []).length === 0; } catch { return true; }
+    },
     recipesProducing: (item) => {
       const id = itemId(bot, item);
       if (id === null) return [];
       try {
-        return bot.recipesAll(id, null, false) ?? [];
+        // Inventory (2x2) recipes first, then table-only recipes: doors,
+        // tools, chests and furnaces need the 3x3 grid and were invisible
+        // when only the 2x2 set was consulted.
+        const handheld = bot.recipesAll(id, null, false) ?? [];
+        const withTable = (bot.recipesAll(id, null, true) ?? []).filter((recipe) => !handheld.includes(recipe) && recipe.requiresTable);
+        return [...handheld, ...withTable];
       } catch {
         return [];
       }
@@ -138,12 +201,9 @@ export function makeRecipeCatalog(bot: Bot): RecipeCatalog {
     nameForId: (id) => {
       const items = bot.registry.items;
       if (items === undefined) return null;
-      for (const [name, entry] of Object.entries(items)) {
-        if (typeof entry === "object" && entry !== null && (entry as { id?: number }).id === id) {
-          return bareName(name);
-        }
-      }
-      return null;
+      // registry.items is keyed by numeric id; the name lives on the entry.
+      const entry = (items as Record<number, { name?: string } | undefined>)[id];
+      return entry?.name === undefined ? null : bareName(entry.name);
     },
   };
 }
@@ -189,7 +249,7 @@ export function resolvePlan(item: string, quantity: number, catalog: RecipeCatal
     );
   }
 
-  const recipes = catalog.recipesProducing(bare);
+  const recipes = rankRecipes(catalog.recipesProducing(bare), catalog);
   // Skip a recipe that consumes its own output (data quirk / self-loop).
   const recipe = recipes.find((candidate) => {
     return !candidate.delta.some((d) => d.count < 0 && catalog.nameForId(d.id) === bare);
@@ -286,6 +346,8 @@ export interface EnsureRunOptions {
   signals?: TaskSignals;
   /** Resume state from a paused run of the same task. */
   resumeState?: Partial<EnsureResumeState>;
+  /** Leave the result in the inventory (build materials), withdrawing stock if needed. */
+  keepCarried?: boolean;
 }
 
 /** A production failure with a structured code. */
@@ -340,6 +402,7 @@ export class EnsureItemRunner {
     this.stopRequested = false;
     this.currentItemName = bareName(item);
     this.currentQuantity = quantity;
+    this.keepCarried = options.keepCarried === true;
     try {
       return await this.execute(item, quantity, mode);
     } finally {
@@ -353,8 +416,8 @@ export class EnsureItemRunner {
     const bot = this.opts.bot;
     const startedAt = Date.now();
     const baseline = itemsSummary(bot);
-    const bare = bareName(item);
-    const label = resourceLabel(bare);
+    let bare = bareName(item);
+    let label = resourceLabel(bare);
     const data: EnsureItemData = {
       item: bare,
       quantity,
@@ -389,13 +452,27 @@ export class EnsureItemRunner {
 
     const stored = await countStoredItems(bot, this.opts.state, this.opts.storage, this.signals?.signal);
     this.stored = { ...stored };
+    if (bare.endsWith("_planks") || (bare.endsWith("_door") && !bare.startsWith("iron_") && !bare.includes("trapdoor"))) {
+      // Plank and wooden-door requests (house walls) accept any wood: make
+      // the species we already have the most of instead of chopping a
+      // different tree.
+      const suffix = bare.endsWith("_door") ? "_door" : "_planks";
+      const best = this.bestPlankSpecies(bare.replace(/_door$/, "_planks")).replace(/_planks$/, suffix);
+      if (best !== bare) {
+        this.opts.logger.info({ requested: bare, using: best }, "ensure_item: substituting the best-stocked plank species");
+        bare = best;
+        label = resourceLabel(bare);
+        data.item = bare;
+        this.currentItemName = bare;
+      }
+    }
     data.availableAtStart = this.available(bare);
 
     // Already satisfied: materialize the shortfall for equipment; bulk stock
     // may stay in the chest.
     if (data.availableAtStart >= quantity) {
       const carried = countItem(bot, bare);
-      if (isEquipmentName(bare) && carried < quantity) {
+      if ((isEquipmentName(bare) || this.keepCarried) && carried < quantity) {
         const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, bare, quantity - carried, this.opts.logger, this.signals?.signal);
         this.withdrawAccount(bare, withdrawn.withdrawn);
         data.withdrawals += withdrawn.withdrawn;
@@ -403,12 +480,13 @@ export class EnsureItemRunner {
       return this.finish(data, baseline, startedAt, true);
     }
 
-    const catalog = makeRecipeCatalog(bot);
+    const catalog = makeRecipeCatalog(bot, (item) => this.available(item));
     const planResult = resolvePlan(bare, quantity, catalog);
     if (!planResult.ok) {
       return this.fail(data, planResult.errorCode, planResult.reason, false);
     }
     const plan = planResult.plan;
+    this.opts.logger.info({ item: bare, quantity, available: data.availableAtStart, steps: plan.steps }, "ensure_item plan");
     if (this.stopRequested) return this.interrupted(data);
 
     // Infrastructure: a crafting table for craft steps, a furnace for smelt.
@@ -433,6 +511,7 @@ export class EnsureItemRunner {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
       const failure = await this.executeStep(step, table, furnace, data);
+      this.opts.logger.info({ step, ok: failure === null, reason: failure?.reason, carried: countItem(this.opts.bot, bareName("item" in step ? step.item : bare)) }, "ensure_item step settled");
       if (failure !== null) {
         return this.fail(data, failure.errorCode, failure.reason, failure.retryable);
       }
@@ -545,7 +624,10 @@ export class EnsureItemRunner {
     const charcoalMissing = Math.max(0, step.quantity - this.availableFuel());
     if (charcoalMissing > 0) {
       const logsNeeded = charcoalMissing * 2;
-      const logs = await this.materialize("oak_log", logsNeeded);
+      // Burn whichever log species is actually stocked (or grows nearby).
+      const logName = ["oak_log", "spruce_log", "birch_log", "jungle_log", "acacia_log", "dark_oak_log", "mangrove_log", "cherry_log", "pale_oak_log"]
+        .reduce((best, name) => (this.available(name) > this.available(best) ? name : best), dominantNearbyLog(this.opts.bot));
+      const logs = await this.materialize(logName, logsNeeded);
       if (!logs.ok) {
         return { errorCode: "INSUFFICIENT_MATERIALS", reason: `no coal and no logs for charcoal (${logs.reason})`, retryable: false };
       }
@@ -554,8 +636,8 @@ export class EnsureItemRunner {
         return { errorCode: "NOT_READY", reason: "no furnace at home for charcoal", retryable: true };
       }
       const smelt = await smeltItems(this.opts.bot, furnace, {
-        inputName: "oak_log",
-        fuelName: "oak_log",
+        inputName: logName,
+        fuelName: logName,
         outputName: "charcoal",
         times: charcoalMissing,
         signal: this.signals?.signal,
@@ -571,8 +653,8 @@ export class EnsureItemRunner {
   /** A craft step: run `quantity` craft passes of `item` at the table. */
   private async stepCraft(step: { item: string; quantity: number; table: boolean }, table: Block | null, data: EnsureItemData): Promise<StepFailure | null> {
     const name = bareName(step.item);
-    const recipe = makeRecipeCatalog(this.opts.bot)
-      .recipesProducing(name)
+    const stepCatalog = makeRecipeCatalog(this.opts.bot, (item) => this.available(item));
+    const recipe = rankRecipes(stepCatalog.recipesProducing(name), stepCatalog)
       .find((candidate) => candidate.result && itemId(this.opts.bot, name) === candidate.result.id);
     if (recipe === undefined) {
       return { errorCode: "INVALID_RESOURCE", reason: `no recipe found for '${name}'`, retryable: false };
@@ -589,12 +671,26 @@ export class EnsureItemRunner {
         return { errorCode: "INSUFFICIENT_MATERIALS", reason: materialized.reason, retryable: false };
       }
     }
-    const crafted = await craftItem(this.opts.bot, name, {
+    const perRun = Math.max(1, recipe.result?.count ?? 1);
+    const target = countItem(this.opts.bot, name) + step.quantity * perRun;
+    let crafted = await craftItem(this.opts.bot, name, {
       times: step.quantity,
       craftingTable: step.table ? (table ?? undefined) : undefined,
       signal: this.signals?.signal,
     });
-    if (!crafted.ok) {
+    // A run cut short by inventory desync leaves ingredients carried; finish
+    // the remaining runs instead of failing the whole plan on a shortfall.
+    for (let pass = 0; crafted.ok && pass < 2; pass += 1) {
+      const remainingRuns = Math.ceil((target - countItem(this.opts.bot, name)) / perRun);
+      if (remainingRuns <= 0) break;
+      this.opts.logger.info({ item: name, remainingRuns }, "craft step fell short; crafting the remainder");
+      crafted = await craftItem(this.opts.bot, name, {
+        times: remainingRuns,
+        craftingTable: step.table ? (table ?? undefined) : undefined,
+        signal: this.signals?.signal,
+      });
+    }
+    if (!crafted.ok && countItem(this.opts.bot, name) < target) {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: crafted.reason, retryable: true };
     }
     data.crafted += step.quantity;
@@ -649,6 +745,24 @@ export class EnsureItemRunner {
   /** Carried + tracked-stored fuel (coal + charcoal). */
   private availableFuel(): number {
     return (this.available("coal") + this.available("charcoal")) as number;
+  }
+
+  private keepCarried = false;
+
+  /** Plank species with the largest supply (planks + 4 per log), carried or stored. */
+  private bestPlankSpecies(requested: string): string {
+    const supply = (species: string): number => {
+      const planks = `${species}_planks`;
+      const log = `${species}_log`;
+      return this.available(planks) + 4 * this.available(log);
+    };
+    const requestedSpecies = requested.replace(/_planks$/, "");
+    let best = { species: requestedSpecies, supply: supply(requestedSpecies) };
+    for (const species of ["oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "pale_oak"]) {
+      const amount = supply(species);
+      if (amount > best.supply) best = { species, supply: amount };
+    }
+    return `${best.species}_planks`;
   }
 
   private withdrawAccount(name: string, withdrawn: number): void {
@@ -769,7 +883,7 @@ export class EnsureItemRunner {
     // Equipment and food stay carried; bulk materials are deposited into the
     // home chest (spec 23 delivery behavior). When the run started with the
     // target already available, nothing new arrived to deposit.
-    const deposit = !alreadyHadIt && !isEquipmentName(bare) && FOOD_ITEM_NAMES[bare] !== true;
+    const deposit = !alreadyHadIt && !this.keepCarried && !isEquipmentName(bare) && FOOD_ITEM_NAMES[bare] !== true;
     if (deposit && targetMet) {
       const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, bare, this.opts.logger, this.signals?.signal);
       data.delivered = delivered.delivered;

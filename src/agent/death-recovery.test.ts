@@ -28,6 +28,7 @@ interface Harness {
   manager: DeathRecoveryManager;
   bus: EventBus;
   enqueued: Enqueued[];
+  rearmed: string[];
   warns: Array<Record<string, unknown>>;
   loops: Array<Record<string, unknown>>;
   clock: { now: number };
@@ -41,6 +42,7 @@ function newHarness(): Harness {
   const clock = { now: 1_000_000 };
   const bus = new EventBus();
   const enqueued: Enqueued[] = [];
+  const rearmed: string[] = [];
   const warns: Array<Record<string, unknown>> = [];
   const loops: Array<Record<string, unknown>> = [];
   const skipped: string[] = [];
@@ -98,6 +100,11 @@ function newHarness(): Harness {
         parameters: input.parameters ?? {},
       };
       const deathId = Number(task.parameters.deathId);
+      // Re-arm tasks are tracked separately; these tests count recovery trips.
+      if (task.type === "ensure_item") {
+        rearmed.push(String(task.parameters.item));
+        return task;
+      }
       enqueued.push({
         type: task.type,
         deathId: Number.isFinite(deathId) ? deathId : null,
@@ -128,7 +135,7 @@ function newHarness(): Harness {
     now: () => clock.now,
   } as DeathRecoveryManagerOptions);
 
-  return { manager, bus, enqueued, warns, loops, clock, skipped, pauses };
+  return { manager, bus, enqueued, rearmed, warns, loops, clock, skipped, pauses };
 }
 
 /** Default carried kit so a plain `die` exercises the recovery-worthy path. */
@@ -162,6 +169,7 @@ test("a single death enqueues exactly one recovery on respawn", () => {
   respawn(h);
   assert.equal(h.enqueued.length, 1);
   assert.equal(h.enqueued[0]!.type, "death_recovery");
+  assert.deepEqual(h.rearmed, ["stone_sword", "stone_pickaxe", "stone_axe"], "respawn re-arms from home stock");
   assert.equal(h.manager.inDeathLoop, false);
   assert.equal(h.pauses.count, 1, "ordinary work pauses once for a worthy corpse");
   assert.deepEqual(h.skipped, [], "the corpse held items; no skip");
@@ -287,6 +295,7 @@ test("a death carrying nothing is skipped: no pause, no trip, reason recorded", 
 
   respawn(h);
   assert.equal(h.enqueued.length, 0, "no recovery task for an empty corpse");
+  assert.deepEqual(h.rearmed, ["stone_sword", "stone_pickaxe", "stone_axe"], "still re-arms: the hands are empty either way");
 });
 
 test("a corpse of only discard junk is skipped too", () => {

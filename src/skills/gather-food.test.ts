@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { FOOD_ITEM_NAMES, isForageFoodBlock, patrolHeadingDeg, patrolWaypoint } from "./gather-food.js";
+import { FOOD_ITEM_NAMES, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -72,4 +72,12 @@ test("FOOD_ITEM_NAMES counts farmed and foraged food as food", () => {
   ]) {
     assert.equal(FOOD_ITEM_NAMES[name], true, `${name} is food`);
   }
+});
+test("the hunt radius sequence always scans the configured maximum ring", () => {
+  const radii: number[] = [];
+  for (let radius = 48; radius <= 128; radius = nextHuntRadius(radius, 128)) radii.push(radius);
+  assert.deepEqual(radii, [48, 96, 128]);
+  const exact: number[] = [];
+  for (let radius = 48; radius <= 96; radius = nextHuntRadius(radius, 96)) exact.push(radius);
+  assert.deepEqual(exact, [48, 96]);
 });

@@ -16,14 +16,14 @@ test("excavation bounds are an explicit range below the anchor", () => {
 
 test("owner-front bounds retain one block of gap in the snapped direction", () => {
   const owner = { position: anchor, yaw: 0 };
-  deepStrictEqual(resolveOwnerFrontBounds(owner, 4, 6, 10, 10), { minX: -2, maxX: 1, minY: 10, maxY: 10, minZ: 2, maxZ: 7 });
-  deepStrictEqual(resolveOwnerFrontBounds({ position: anchor, yaw: Math.PI }, 4, 6, 10, 10), { minX: -2, maxX: 1, minY: 10, maxY: 10, minZ: -7, maxZ: -2 });
+  deepStrictEqual(resolveOwnerFrontBounds(owner, 4, 6, 10, 10), { minX: -2, maxX: 1, minY: 10, maxY: 10, minZ: -7, maxZ: -2 });
+  deepStrictEqual(resolveOwnerFrontBounds({ position: anchor, yaw: Math.PI }, 4, 6, 10, 10), { minX: -2, maxX: 1, minY: 10, maxY: 10, minZ: 2, maxZ: 7 });
 });
 
-test("cardinal yaw snapping follows Mineflayer's 0=south convention", () => {
-  equal(snapCardinalYaw(0), "south");
+test("cardinal yaw snapping follows Mineflayer's 0=north convention (yaw = PI - notchian yaw)", () => {
+  equal(snapCardinalYaw(0), "north");
   equal(snapCardinalYaw(Math.PI / 2), "west");
-  equal(snapCardinalYaw(Math.PI), "north");
+  equal(snapCardinalYaw(Math.PI), "south");
   equal(snapCardinalYaw(-Math.PI / 2), "east");
 });
 

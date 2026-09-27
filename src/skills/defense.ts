@@ -9,7 +9,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, HOSTILE_MOB_NAMES } from "../policy/combat.js";
+import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES } from "../policy/combat.js";
 import { checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -23,6 +23,12 @@ import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-lib
 
 /** View distance in blocks for hostile selection while defending. */
 const DEFENSE_VIEW_RADIUS = 64;
+/** How far to back away from a creeper (its blast reaches ~7 blocks). */
+const EVADE_DISTANCE = 12;
+/** Below this, even a reflex defense pass stands down. */
+const REFLEX_CRITICAL_HEALTH = 4;
+/** A hostile this close means fleeing is no longer an option. */
+const CORNERED_RADIUS = 4;
 /** Wall-clock budget for one kill (approach, fight, stop). */
 const KILL_TIMEOUT_MS = 60_000;
 /** Wall-clock budget for the whole defense pass. */
@@ -77,7 +83,7 @@ export class DefenseRunner {
   }
 
   /** Defend the bot itself: clear hostiles close enough to pose a threat. */
-  async defendSelf(options: { signals?: TaskSignals; resumeState?: { interruptions?: number } } = {}): Promise<SkillResult<DefenseData>> {
+  async defendSelf(options: { signals?: TaskSignals; resumeState?: { interruptions?: number }; radius?: number; reflex?: boolean } = {}): Promise<SkillResult<DefenseData>> {
     return this.run("self", null, options);
   }
 
@@ -92,7 +98,7 @@ export class DefenseRunner {
   private async run(
     kind: "self" | "player",
     player: string | null,
-    options: { signals?: TaskSignals; resumeState?: { interruptions?: number } },
+    options: { signals?: TaskSignals; resumeState?: { interruptions?: number }; radius?: number; reflex?: boolean },
   ): Promise<SkillResult<DefenseData>> {
     if (this.running) {
       return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "already defending" };
@@ -102,14 +108,14 @@ export class DefenseRunner {
     this.interruptions = typeof options.resumeState?.interruptions === "number" ? options.resumeState.interruptions : 0;
     this.stopRequested = false;
     try {
-      return await this.execute(kind, player);
+      return await this.execute(kind, player, options.radius ?? DEFENSE_VIEW_RADIUS, options.reflex === true);
     } finally {
       this.running = false;
       this.signals = null;
     }
   }
 
-  private async execute(kind: "self" | "player", player: string | null): Promise<SkillResult<DefenseData>> {
+  private async execute(kind: "self" | "player", player: string | null, radius: number, reflex: boolean): Promise<SkillResult<DefenseData>> {
     const bot = this.opts.bot;
     const startedAt = Date.now();
     const baseline = itemsSummary(bot);
@@ -128,8 +134,14 @@ export class DefenseRunner {
 
     // Spec 34: dangerous work retreats below the health floor. Fighting at
     // low health risks another death; the bot waits for regen instead.
+    // A reflex pass with the attacker already in melee range fights anyway:
+    // standing still at low health only hands the mob free hits.
     const healthGate = checkHealthRetreat(bot.health, HEALTH_RETREAT_THRESHOLD);
-    if (!healthGate.allowed) {
+    // Fleeing an archer only hands it free shots, so a reflex pass keeps
+    // fighting until health is critical.
+    const cornered = reflex && this.nearestHostile(null, CORNERED_RADIUS) !== null;
+    const stillFighting = reflex && bot.health > REFLEX_CRITICAL_HEALTH;
+    if (!healthGate.allowed && !cornered && !stillFighting) {
       return this.fail(data, "DANGER_TOO_HIGH", `health ${bot.health} is at/below the retreat threshold ${HEALTH_RETREAT_THRESHOLD}`, false);
     }
 
@@ -158,8 +170,16 @@ export class DefenseRunner {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
 
-      const hostile = this.nearestHostile(anchor);
+      const hostile = this.nearestHostile(anchor, radius);
       if (hostile === null) break;
+      if (hostile.name === "creeper") {
+        // Meleeing a creeper lights its fuse at arm's length. Back off
+        // instead: the bot outruns it, and the reflex fires again if it
+        // closes in.
+        await this.evade(hostile);
+        if (this.stopRequested) return this.interrupted(data);
+        break;
+      }
       const kill = await this.killHostile(hostile, data, deadline);
       if (kill.blocked) {
         data.blocked += 1;
@@ -192,7 +212,7 @@ export class DefenseRunner {
   }
 
   /** Nearest hostile mob to `anchor` (the bot when defending itself). */
-  private nearestHostile(anchor: { x: number; y: number; z: number } | null): Entity | null {
+  private nearestHostile(anchor: { x: number; y: number; z: number } | null, radius = DEFENSE_VIEW_RADIUS): Entity | null {
     const bot = this.opts.bot;
     if (bot.entity === null) return null;
     const origin = anchor ?? { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z };
@@ -201,18 +221,31 @@ export class DefenseRunner {
     for (const entity of Object.values(bot.entities)) {
       // THE policy boundary: player entities are never candidates.
       if (entity.type === "player") continue;
-      if (entity.type !== "mob" || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
+      if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
       const distance = Math.hypot(
         entity.position.x - origin.x,
         entity.position.y - origin.y,
         entity.position.z - origin.z,
       );
-      if (distance <= DEFENSE_VIEW_RADIUS && distance < bestDistance) {
+      if (distance <= radius && distance < bestDistance) {
         best = entity;
         bestDistance = distance;
       }
     }
     return best;
+  }
+
+  /** Walk straight away from `threat` far enough to be out of blast range. */
+  private async evade(threat: Entity): Promise<void> {
+    const bot = this.opts.bot;
+    const self = bot.entity?.position;
+    if (self === undefined) return;
+    const dx = self.x - threat.position.x;
+    const dz = self.z - threat.position.z;
+    const length = Math.hypot(dx, dz) || 1;
+    const target = { x: self.x + (dx / length) * EVADE_DISTANCE, y: self.y, z: self.z + (dz / length) * EVADE_DISTANCE };
+    this.opts.logger.info({ threat: threat.name, from: { x: Math.round(self.x), z: Math.round(self.z) } }, "defense: backing away from a creeper");
+    await travelAndWait(bot, target, { range: 3, timeoutMs: 8_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
   }
 
   /** Approach and kill one hostile. Belt-and-braces combat guard included. */

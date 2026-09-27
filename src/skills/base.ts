@@ -23,9 +23,25 @@ import {
   isSolid,
   placeItemAt,
   type PlacementSpot,
+  isInteractableBlock,
 } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
-import { cancelCollection, collectBlockOperation, digBlock } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation, digBlock, digOwnBuildBlock, equipToolForBlock } from "../minecraft/primitives.js";
+import { isNaturalBlock } from "../minecraft/natural-blocks.js";
+
+/**
+ * Plank blueprints accept any wood: a birch-forest bot builds the same house
+ * from birch planks instead of stalling on oak.
+ */
+export function materialMatches(actual: string, material: string): boolean {
+  if (actual === material) return true;
+  if (material.endsWith("_planks")) return actual.endsWith("_planks");
+  const woodenDoor = (name: string): boolean => name.endsWith("_door") && !name.startsWith("iron_") && !name.includes("trapdoor");
+  return woodenDoor(material) && woodenDoor(actual);
+}
+
+/** Throwaway blocks used to shore up a wall cell over a dip. */
+const SUPPORT_FILL = ["dirt", "cobblestone", "cobbled_deepslate", "stone", "andesite", "diorite", "granite", "netherrack"];
 import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import type { BuildingDesign } from "../building/schema.js";
 import { compileBuildingDesign, type Blueprint } from "../building/compiler.js";
@@ -290,14 +306,16 @@ function targetHasExpectedBlock(block: Block | null, door: boolean): boolean {
  * on the block below. Null when no reference is available this pass.
  */
 function findReferenceFor(bot: Bot, cell: Vec3, placed: ReadonlySet<string>): Pick<PlacementSpot, "reference" | "face"> | null {
+  // Right-clicking a door, chest, or table interacts with it instead of
+  // placing against it, so those can never serve as a reference face.
   const below = bot.blockAt(cell.offset(0, -1, 0));
-  if (below !== null && isSolid(below)) {
+  if (below !== null && isSolid(below) && !isInteractableBlock(below)) {
     return { reference: below, face: new Vec3(0, 1, 0) };
   }
   for (const [dx, dy, dz] of ORTHOGONAL) {
     const neighbor = cell.offset(dx, dy, dz);
     const block = bot.blockAt(neighbor);
-    if (block === null) continue;
+    if (block === null || isInteractableBlock(block)) continue;
     // Creative placement requires an authoritative solid reference. Preserve
     // the survival builder's existing placed-marker fallback for compatibility
     // with its delayed block-cache updates.
@@ -442,7 +460,7 @@ export function stationSlotSpot(bot: Bot, home: HomeLocation, kind: "crafting_ta
   const cell = bot.blockAt(slot);
   if (cell !== null && !isPlaceableAir(cell)) return null;
   const below = bot.blockAt(slot.offset(0, -1, 0));
-  if (below === null || !isSolid(below)) return null;
+  if (below === null || !isSolid(below) || isInteractableBlock(below)) return null;
   return { position: slot, reference: below, face: new Vec3(0, 1, 0) };
 }
 
@@ -875,7 +893,7 @@ export class BaseBuilderRunner {
       const cell = new Vec3(operation.absolute?.x ?? blueprint.origin.x + operation.x, operation.absolute?.y ?? blueprint.origin.y + operation.y, operation.absolute?.z ?? blueprint.origin.z + operation.z);
       const block = this.opts.bot.blockAt(cell);
       const actual = block === null ? undefined : bareName(block.name);
-      if (actual === operation.material) verified += 1;
+      if (actual !== undefined && materialMatches(actual, operation.material)) verified += 1;
       else if (mismatches.length < maxMismatchSamples) mismatches.push({ operationId: operation.id, expected: operation.material, actual });
     }
     const inspected = blueprint.operations.slice(start, end).filter((operation, offset, range) => !range.slice(offset + 1).some((candidate) =>
@@ -955,13 +973,35 @@ export class BaseBuilderRunner {
         this.checkInterrupt({ phase: operation.phase, placed: data.placed, total: operationEnd - operationStart });
         if (this.stopRequested) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
         const existing = this.opts.bot.blockAt(cell);
-        if (bareName(existing?.name ?? "") === operation.material) {
+        if (materialMatches(bareName(existing?.name ?? ""), operation.material)) {
           data.verified += 1;
           data.currentOperationIndex = index + 1;
           if (!checkpoint(operation)) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
           continue;
         }
-        if (existing !== null && !isAir(existing)) {
+        if (existing !== null && !isAir(existing) && !isCreativeMode(this.opts.bot) && isNaturalBlock(existing.name)) {
+          // Grass, dirt, or a stone bump where a wall goes is just uneven
+          // ground: dig it out rather than abandoning the build.
+          await this.clearNaturalCell(cell);
+        }
+        if (operation.replaceExisting === true && !isCreativeMode(this.opts.bot)) {
+          // A door/window cut into a wall this blueprint built: break our
+          // own block (never anything else) and place the replacement.
+          const current = this.opts.bot.blockAt(cell);
+          const ours = current !== null && !isAir(current)
+            && blueprint.operations.some((candidate) => candidate.replaceExisting !== true && materialMatches(bareName(current.name), candidate.material));
+          if (ours && await this.reachCell(cell)) {
+            try {
+              await equipToolForBlock(this.opts.bot, current!, this.signals?.signal).catch(() => undefined);
+              await digOwnBuildBlock(this.opts.bot, current!, this.signals?.signal);
+            } catch (err) {
+              this.opts.logger.warn({ at: cell, block: current!.name, err: String(err) }, "build: could not cut in replacement");
+            }
+          }
+        }
+        const obstruction = this.opts.bot.blockAt(cell);
+        if (obstruction !== null && !isAir(obstruction)) {
+          const existing = obstruction;
           if (!isCreativeMode(this.opts.bot) || !limits.allowDemolition) {
             data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(existing.name) });
             data.firstUnresolvedOperationId = operation.id;
@@ -970,20 +1010,66 @@ export class BaseBuilderRunner {
           }
           await digBlock(this.opts.bot, existing, this.signals?.signal);
         }
-        let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === operation.material) ?? null;
+        let item = this.opts.bot.inventory.items().find((candidate) => bareName(candidate.name) === operation.material)
+          ?? this.opts.bot.inventory.items().find((candidate) => materialMatches(bareName(candidate.name), operation.material))
+          ?? null;
         if (item === null && isCreativeMode(this.opts.bot)) {
           const provisioned = await provideCreativeItem(this.opts.bot, operation.material, 1, this.signals?.signal, { approvedMaterials: limits.allowedMaterials });
           if (provisioned.ok) item = provisioned.item;
         }
         if (item === null) {
-          const available = this.opts.bot.inventory.items().filter((candidate) => bareName(candidate.name) === operation.material).reduce((sum, candidate) => sum + candidate.count, 0);
-          const required = blueprint.operations.slice(index, operationEnd).filter((candidate) => candidate.material === operation.material).length;
+          const available = this.opts.bot.inventory.items().filter((candidate) => materialMatches(bareName(candidate.name), operation.material)).reduce((sum, candidate) => sum + candidate.count, 0);
+          const required = blueprint.operations.slice(index, operationEnd).filter((candidate) => materialMatches(candidate.material, operation.material)).length;
           data.shortages = [{ material: operation.material, required, available }];
           data.firstUnresolvedOperationId = operation.id;
           data.remaining = operationEnd - index;
           return { ok: false, status: "blocked", errorCode: "INSUFFICIENT_MATERIALS", message: `missing approved material ${operation.material} at operation ${operation.id}`, data };
         }
-        let placedBlock = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+        // A door is placed from its lower cell and fills both halves. For the
+        // upper-half operation, (re)place the door at the lower cell when it
+        // is not already there (e.g. a leaf block sat under the doorway).
+        let placeCell = cell;
+        if (operation.material.endsWith("_door") && !isCreativeMode(this.opts.bot)) {
+          const below = cell.offset(0, -1, 0);
+          const belowIsDoor = blueprint.operations.some((candidate) => candidate.material.endsWith("_door")
+            && (candidate.absolute?.x ?? blueprint.origin.x + candidate.x) === below.x
+            && (candidate.absolute?.y ?? blueprint.origin.y + candidate.y) === below.y
+            && (candidate.absolute?.z ?? blueprint.origin.z + candidate.z) === below.z);
+          const lower = this.opts.bot.blockAt(below);
+          if (belowIsDoor && !materialMatches(bareName(lower?.name ?? ""), operation.material)) {
+            if (lower !== null && !isAir(lower) && isNaturalBlock(lower.name)) await this.clearNaturalCell(below);
+            placeCell = below;
+          }
+        }
+        const upperDoorHalf = operation.material.endsWith("_door")
+          && materialMatches(bareName(this.opts.bot.blockAt(placeCell.offset(0, -1, 0))?.name ?? ""), operation.material);
+        if (operation.material.endsWith("_door") && !upperDoorHalf && !isCreativeMode(this.opts.bot)) {
+          // Doors need a sturdy block underneath; leaves or air there make the
+          // server refuse the placement. Swap in a solid block first.
+          const supportCell = placeCell.offset(0, -1, 0);
+          const support = this.opts.bot.blockAt(supportCell);
+          if (support !== null && (isAir(support) || /_leaves$/.test(support.name))) {
+            if (!isAir(support)) await this.clearNaturalCell(supportCell);
+            await this.buildSupportColumn(placeCell, placed, true);
+          }
+          // The door's upper half needs air too: cut in our own wall block
+          // or clear natural terrain there before placing the lower half.
+          const headCell = placeCell.offset(0, 1, 0);
+          const head = this.opts.bot.blockAt(headCell);
+          if (head !== null && !isAir(head) && !materialMatches(bareName(head.name), operation.material)) {
+            if (isNaturalBlock(head.name)) await this.clearNaturalCell(headCell);
+            else if (blueprint.operations.some((candidate) => candidate.replaceExisting !== true && materialMatches(bareName(head.name), candidate.material)) && await this.reachCell(headCell)) {
+              try {
+                await equipToolForBlock(this.opts.bot, head, this.signals?.signal).catch(() => undefined);
+                await digOwnBuildBlock(this.opts.bot, head, this.signals?.signal);
+              } catch (err) {
+                this.opts.logger.warn({ at: headCell, block: head.name, err: String(err) }, "build: could not clear the door's upper cell");
+              }
+            }
+          }
+        }
+        let placedBlock = await this.placeSimpleTarget(placeCell, item, operation.material.endsWith("door"), placed, (candidate) => materialMatches(bareName(candidate?.name ?? ""), operation.material));
+        if (placedBlock && placeCell !== cell) placedBlock = materialMatches(bareName(this.opts.bot.blockAt(cell)?.name ?? ""), operation.material);
         if (!placedBlock && findReferenceFor(this.opts.bot, cell, placed) === null) {
           // Frozen compiler-1.0 projects may have deferred door/window cells
           // where this structural column needs support. Install only that
@@ -992,7 +1078,14 @@ export class BaseBuilderRunner {
           // verified blueprint operations; their later replacement ops still
           // have to be observed independently.
           const recovered = await this.installDeferredReplacementSupports(blueprint, index, cell, item, operation.material, placed);
-          if (recovered) placedBlock = await this.placeSimpleTarget(cell, item, false, placed, (candidate) => bareName(candidate?.name ?? "") === operation.material);
+          if (recovered) placedBlock = await this.placeSimpleTarget(cell, item, false, placed, (candidate) => materialMatches(bareName(candidate?.name ?? ""), operation.material));
+        }
+        if (!placedBlock && findReferenceFor(this.opts.bot, cell, placed) === null && !isCreativeMode(this.opts.bot)) {
+          // A wall cell over a dip: fill down to the ground with throwaway
+          // blocks so the wall has something to stand on.
+          if (await this.buildSupportColumn(cell, placed)) {
+            placedBlock = await this.placeSimpleTarget(cell, item, operation.material.endsWith("door"), placed, (candidate) => materialMatches(bareName(candidate?.name ?? ""), operation.material));
+          }
         }
         if (!placedBlock) {
           data.firstUnresolvedOperationId = operation.id;
@@ -1015,6 +1108,64 @@ export class BaseBuilderRunner {
       this.running = false;
       this.signals = null;
     }
+  }
+
+  /** Get within reach of a cell (natural-terrain digging allowed on the way). */
+  private async reachCell(cell: Vec3): Promise<boolean> {
+    const bot = this.opts.bot;
+    const center = cell.offset(0.5, 0.5, 0.5);
+    const inReach = (): boolean => (bot.entity?.position.offset(0, 1.62, 0).distanceTo(center) ?? Infinity) <= 4.3;
+    if (!inReach()) await travelAndWait(bot, cell, { range: 3, timeoutMs: 30_000, signal: this.signals?.signal });
+    return inReach();
+  }
+
+  /** Dig natural terrain out of a blueprint cell (re-digging sand/gravel refills). */
+  private async clearNaturalCell(cell: Vec3): Promise<boolean> {
+    const bot = this.opts.bot;
+    if (!await this.reachCell(cell)) return false;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const block = bot.blockAt(cell);
+      if (block === null || isAir(block)) return true;
+      if (!isNaturalBlock(block.name)) return false;
+      try {
+        await equipToolForBlock(bot, block, this.signals?.signal).catch(() => undefined);
+        await digBlock(bot, block, this.signals?.signal);
+      } catch (err) {
+        this.opts.logger.warn({ at: cell, block: block.name, err: String(err) }, "build: could not clear obstruction");
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    const final = bot.blockAt(cell);
+    return final === null || isAir(final);
+  }
+
+  /** Stack throwaway blocks under an unsupported cell down to solid ground. */
+  private async buildSupportColumn(cell: Vec3, placed: Set<string>, allowPlanks = false): Promise<boolean> {
+    const bot = this.opts.bot;
+    const column: Vec3[] = [];
+    let probe = cell.offset(0, -1, 0);
+    for (let depth = 0; depth < 6; depth += 1) {
+      const block = bot.blockAt(probe);
+      if (block === null) return false;
+      if (isSolid(block)) break;
+      if (!isAir(block) && !isPlaceableAir(block)) return false;
+      column.push(probe);
+      probe = probe.offset(0, -1, 0);
+    }
+    if (column.length === 0 || column.length >= 6) return false;
+    for (const support of column.reverse()) {
+      const filler = bot.inventory.items().find((candidate) => SUPPORT_FILL.includes(bareName(candidate.name)))
+        ?? (allowPlanks ? bot.inventory.items().find((candidate) => bareName(candidate.name).endsWith("_planks")) : undefined);
+      if (filler === undefined) return false;
+      if (!await this.reachCell(support)) return false;
+      const below = bot.blockAt(support.offset(0, -1, 0));
+      if (below === null || !isSolid(below)) return false;
+      const result = await placeItemAt(bot, filler, { position: support, reference: below, face: new Vec3(0, 1, 0) }, this.signals?.signal);
+      if (result === null || isAir(result)) return false;
+      placed.add(cellKey(support));
+    }
+    return true;
   }
 
   private async installDeferredReplacementSupports(blueprint: Blueprint, operationIndex: number, target: Vec3, item: Item, material: string, placed: Set<string>): Promise<boolean> {
@@ -1130,6 +1281,7 @@ export class BaseBuilderRunner {
         continue;
       }
       if (this.stopRequested) return false;
+      if (!isCreativeMode(this.opts.bot)) await this.stepOutOfCell(cell);
       const placedBlock = await placeAtCell(this.opts.bot, item, cell, placed, this.signals?.signal, {
         logger: this.opts.logger,
         approachIndex: attempt,
@@ -1139,6 +1291,26 @@ export class BaseBuilderRunner {
       if (placedBlock !== null && expected(this.opts.bot.blockAt(cell))) return true;
     }
     return false;
+  }
+
+  /** The server refuses a placement that would intersect the bot's own hitbox. */
+  private botOccupies(cell: Vec3): boolean {
+    const p = this.opts.bot.entity?.position;
+    if (p === undefined) return false;
+    return cell.x + 1 > p.x - 0.3 && cell.x < p.x + 0.3
+      && cell.z + 1 > p.z - 0.3 && cell.z < p.z + 0.3
+      && cell.y + 1 > p.y && cell.y < p.y + 1.8;
+  }
+
+  /** Step to a nearby standing spot so the target cell is free to place into. */
+  private async stepOutOfCell(cell: Vec3): Promise<void> {
+    const bot = this.opts.bot;
+    if (!this.botOccupies(cell)) return;
+    const feetY = Math.floor(bot.entity?.position.y ?? cell.y);
+    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2]] as const) {
+      await travelAndWait(bot, { x: cell.x + dx + 0.5, y: feetY, z: cell.z + dz + 0.5 }, { range: 1, timeoutMs: 8_000, signal: this.signals?.signal });
+      if (!this.botOccupies(cell) || this.signals?.signal.aborted) return;
+    }
   }
 
   /** Creative players can fly directly; pathfinder is unreliable in void/sky builds. */

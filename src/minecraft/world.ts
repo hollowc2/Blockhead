@@ -1,4 +1,5 @@
 import type { Bot } from "mineflayer";
+import { logger } from "../logger.js";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
@@ -169,6 +170,9 @@ export async function collectBlocks(
       // implementation treated cancellation like an unreachable block and
       // could keep acting after a replacement task acquired the lease.
       throwIfAborted(signal);
+      // Cancellation of the surrounding work (not an unreachable block):
+      // stop here instead of blacklisting every remaining target.
+      if (err instanceof Error && err.name === "AbortError") throw err;
       skipped++;
       failedTargets?.add(targetKey);
       logSkip?.(block, err);
@@ -227,11 +231,23 @@ export function findPlacementSpot(
     if (exclude.some((tried) => tried.equals(position))) continue;
     const lower = new Vec3(position.x, position.y - 1, position.z);
     const below = bot.blockAt(lower);
-    if (!isSolid(below)) continue;
+    if (!isSolid(below) || isInteractableBlock(below)) continue;
     if (!isPlaceableAir(bot.blockAt(position))) continue;
     return { position, reference: below, face: new Vec3(0, 1, 0) };
   }
   return null;
+}
+
+/**
+ * Blocks that open a UI (or toggle) on right-click. Clicking one to place a
+ * block against it interacts instead, so it can never be a placement
+ * reference.
+ */
+export function isInteractableBlock(block: Block | null): boolean {
+  if (block === null) return false;
+  const name = block.name.replace(/^minecraft:/, "");
+  return /(?:chest|barrel|shulker_box|furnace|smoker|crafting_table|_table|anvil|_bed|_door|trapdoor|fence_gate|button|lever|hopper|dropper|dispenser|brewing_stand|beacon|loom|stonecutter|grindstone|lectern|jukebox|note_block|composter|cauldron|bell|repeater|comparator|daylight_detector)$/.test(name)
+    || name === "chest" || name === "ender_chest" || name === "trapped_chest";
 }
 
 /**
@@ -301,6 +317,23 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
     void inventoryBefore;
     void inventoryAfter;
   }
-  void placementError;
+  logger.warn({ item: item.name, at: spot.position, reference: spot.reference.name, err: placementError === null ? null : String(placementError), bot: bot.entity?.position }, "placement not observed");
   return null;
 }
+
+/** The log type that is most common around the bot (what "wood" means here). */
+export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "entity">): string {
+  const counts = new Map<string, number>();
+  try {
+    const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
+    for (const position of positions) {
+      const name = bot.blockAt(position)?.name;
+      if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  } catch { /* no world view yet */ }
+  let best = "oak_log";
+  let bestCount = 0;
+  for (const [name, count] of counts) if (count > bestCount) { best = name; bestCount = count; }
+  return best;
+}
+

@@ -15,6 +15,7 @@ import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
 import { findBlockNear } from "../minecraft/world.js";
 import { ItemPolicy, type ItemValue } from "../policy/item-policy.js";
+import { isDroppedItemEntity, isMobEntity } from "../policy/combat.js";
 import { Vec3 } from "vec3";
 import { distanceFromHome, hasUsableFamilyTool } from "./expedition.js";
 import { sleep, type SkillResult } from "./skill-library.js";
@@ -403,7 +404,7 @@ export class DeathRecoveryRunner {
     const siteVec = new Vec3(site.x, site.y, site.z);
     const drops: Entity[] = [];
     for (const entity of Object.values(bot.entities)) {
-      if (entity.type !== "object" || entity.getDroppedItem() === null) continue;
+      if (!isDroppedItemEntity(entity) || entity.getDroppedItem() === null) continue;
       if (entity.position.distanceTo(siteVec) > radius) continue;
       drops.push(entity);
     }
@@ -463,7 +464,7 @@ export class DeathRecoveryRunner {
     const self = bot.entity;
     if (self === null) return false;
     for (const entity of Object.values(bot.entities)) {
-      if (entity.type !== "mob" || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
+      if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
       if (self.position.distanceTo(entity.position) <= radius) return true;
     }
     return false;

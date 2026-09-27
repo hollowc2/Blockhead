@@ -35,6 +35,7 @@ import { GatherFoodRunner } from "./skills/gather-food.js";
 import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
 import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
+import { SelfDefenseReflex } from "./agent/self-defense.js";
 import { UtilityRunner } from "./skills/utility.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
@@ -70,7 +71,9 @@ import { ViewerManager } from "./dashboard/viewer.js";
 import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
-import { TerrainProjectRunner } from "./skills/terrain-project.js";
+import { mineshaftExitRoute, TerrainProjectRunner } from "./skills/terrain-project.js";
+import { setEscapeRouteProvider } from "./minecraft/movement.js";
+import { normalizeDimension } from "./minecraft/protection.js";
 import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
 
 const config = loadConfig("config/minecraft.yaml");
@@ -117,6 +120,15 @@ const scheduler = new Scheduler({
 scheduler.loadFromPersistence();
 const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
 const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus, destructiveAuthorizations, () => state.worldId);
+// Any trip that starts deep in a shaft the bot dug climbs out by its steps.
+setEscapeRouteProvider((position, dimension) => {
+  for (const project of buildProjects.loadMineshafts(config.server.world_key, normalizeDimension(dimension))) {
+    if (project.payload.type !== "terrain") continue;
+    const route = mineshaftExitRoute(project.payload.plan, position);
+    if (route !== null) return route;
+  }
+  return null;
+});
 buildProjectManager.rehydrateAll();
 const survivalInterrupts = new SurvivalInterruptCoordinator({ bus, scheduler, projects: buildProjectManager });
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
@@ -179,6 +191,25 @@ registerGoalTools(registry, goals);
 // connection attempts and recovery tracking survives a reconnect.
 const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger });
 const taskOutcomes = new TaskOutcomeTracker({ bus });
+
+// Long projects run across many slices; tell the owner when one finishes or
+// stalls instead of leaving them to guess from silence.
+function announceProject(message: string): void {
+  try { session?.bot.chat(message); } catch { /* chat is best effort */ }
+}
+bus.on("world_project.completed", ({ project }) => {
+  if (project.source !== "user") return;
+  const checked = typeof project.verificationState.verified === "number" ? ` (${project.verificationState.verified} cells checked)` : "";
+  announceProject(`Finished the ${project.kind}${checked}.`);
+});
+bus.on("world_project.blocked", ({ project }) => {
+  if (project.source !== "user") return;
+  announceProject(`The ${project.kind} is stuck: ${project.lastError ?? "unknown problem"}. Tell me to try again once it's sorted.`);
+});
+bus.on("build_project.verified", ({ project }) => {
+  if (project.source !== "user") return;
+  announceProject(`The ${project.structureType.replace(/_/g, " ")} is finished and checked.`);
+});
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
 let dashboardServer: ReturnType<typeof startDashboard> = null;
@@ -201,6 +232,8 @@ interface Session {
   /** Phase 12: session-scoped stockpile manager (dashboard readout). */
   maintenance: StockpileManager;
   dispatcher: TaskDispatcher;
+  /** Fights back when a hostile attacks or closes in. */
+  selfDefense: SelfDefenseReflex;
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
@@ -262,6 +295,17 @@ statusServer = new StatusServer({
     outcomes: taskOutcomes,
     buildProjects: buildProjectManager,
   }),
+  operator: {
+    // Local operator channel: identical to the owner typing in chat, so the
+    // whole deterministic + LLM command path is exercised.
+    command: (text) => {
+      const bot = session?.bot;
+      if (bot === undefined || bot.entity === null || bot.entity === undefined) throw new Error("bot not connected");
+      if (text.length === 0) throw new Error("empty command");
+      (bot.emit as (event: string, ...args: unknown[]) => boolean)("chat", config.agent?.owner ?? "Corey", text, null, null, null);
+      return `delivered as ${config.agent?.owner ?? "Corey"}: ${text}`;
+    },
+  },
 });
 if (config.status?.enabled ?? true) statusServer.start();
 
@@ -283,10 +327,15 @@ process.on("exit", () => {
 const resumeBootstrapIfPending = (): void => {
   if (currentBootstrap !== null && currentBootstrap.currentStage !== null) {
     void currentBootstrap.run().catch((err: unknown) => {
-      logger.error({ err: String(err) }, "supervised bootstrap resume failed");
+      if (String(err).includes("yielded to owner work")) logger.info("bootstrap paused for owner work");
+      else logger.error({ err: String(err) }, "supervised bootstrap resume failed");
     });
   }
 };
+// Owner work never waits behind a multi-minute bootstrap stage.
+bus.on("task.created", ({ task }) => {
+  if (task.source === "user" && currentBootstrap?.isRunning === true) currentBootstrap.yieldNow();
+});
 bus.on("task.completed", resumeBootstrapIfPending);
 bus.on("task.failed", resumeBootstrapIfPending);
 bus.on("task.cancelled", resumeBootstrapIfPending);
@@ -301,6 +350,7 @@ async function shutdown(code: number): Promise<void> {
     viewerManager.stopFor(active.bot);
     active.background.stop();
     active.hostile.detach();
+    active.selfDefense.detach();
     // A service restart is operational, not an owner cancellation. Persist
     // the active task as paused so the next process can resume it.
     scheduler.requestPause();
@@ -407,6 +457,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // delivery runners cover the remaining tools. Every one is deterministic
   // and one-at-a-time; the LLM only picks the registered tool name.
   const ensureItem = new EnsureItemRunner({ bot, state, config, bus, storage, sites, skills, collect, food, logger });
+  maintenance.setCharcoalProducer((quantity, signals) => ensureItem.run("charcoal", quantity, { mode: "ensure", signals }));
   const defense = new DefenseRunner({ bot, state, config, bus, skills, logger });
   const utility = new UtilityRunner({ bot, state, config, storage, logger });
   const delivery = new DeliveryRunner({ bot, state, config, storage, logger });
@@ -425,7 +476,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // the rest of the bot wiring; detached when the connection ends.
   const hostile = new HostileTracker(bot, bus);
   hostile.attach();
-  session = { bot, background, hostile, maintenance, dispatcher };
+  const selfDefense = new SelfDefenseReflex({ bot, bus, scheduler, logger });
+  selfDefense.attach();
+  session = { bot, background, hostile, maintenance, dispatcher, selfDefense };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -451,7 +504,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
     void bootstrap.run().catch((err: unknown) => {
-      logger.error({ err: String(err) }, "supervised bootstrap run failed");
+      if (String(err).includes("yielded to owner work")) logger.info("bootstrap paused for owner work");
+      else logger.error({ err: String(err) }, "supervised bootstrap run failed");
     });
     // Phase 8: with the world available, resume a rehydrated ACTIVE task
     // (crashed mid-skill) from its persisted resume state, then reclaim the
@@ -490,6 +544,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // sensor via `shutdown`.
   background.stop();
   hostile.detach();
+  selfDefense.detach();
   dispatcher.dispose();
   session = null;
   currentBootstrap = null;

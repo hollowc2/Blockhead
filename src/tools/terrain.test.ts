@@ -56,11 +56,44 @@ test("owner-front mineshaft rejects an absent owner instead of guessing", () => 
   } finally { h.close(); }
 });
 
+test("clear defaults to the owner-facing footprint, outside the owner's safety buffer", () => {
+  const h = harness();
+  try {
+    const bot = {
+      game: { dimension: "overworld" },
+      // Mineflayer yaw PI faces south (+Z).
+      players: { Corey: { entity: { position: { x: 0.5, y: 64, z: 0.5 }, yaw: Math.PI } } },
+    };
+    const reply = h.registry.get("clear_area")!.handler({ width: 5, length: 5 }, context(h.scheduler, h.manager, bot));
+    assert.match(String(reply), /bounds -3,64,2 to 1,67,6/);
+    const project = h.manager.currentWorldProject()?.project;
+    if (project?.payload.type === "terrain") assert.deepEqual(project.payload.plan.bounds, { minX: -3, maxX: 1, minY: 64, maxY: 67, minZ: 2, maxZ: 6 });
+    else assert.fail("expected clear terrain project");
+  } finally { h.close(); }
+});
+
 test("terrain schemas reject oversized and XOR-invalid requests", () => {
   const h = harness();
   try {
     assert.throws(() => h.registry.validateArgs("excavate_volume", { width: 32, length: 32, depth: 9 }));
     assert.throws(() => h.registry.validateArgs("dig_mineshaft", { depth: 3, targetY: 10 }));
     assert.throws(() => h.registry.validateArgs("dig_mineshaft", {}));
+  } finally { h.close(); }
+});
+
+test("an owner-front mineshaft starts level with the ground the owner stands on", () => {
+  const h = harness();
+  try {
+    const bot = {
+      game: { dimension: "overworld" },
+      // Owner feet at y=64 (standing on the y=63 ground), facing south.
+      players: { Corey: { entity: { position: { x: 0.5, y: 64, z: 0.5 }, yaw: Math.PI } } },
+    };
+    h.registry.get("dig_mineshaft")!.handler({ targetY: 60, anchor: "owner_front" }, context(h.scheduler, h.manager, bot));
+    const project = h.manager.currentWorldProject()?.project;
+    if (project?.payload.type !== "terrain") return assert.fail("expected mineshaft terrain project");
+    const plan = project.payload.plan;
+    assert.equal(plan.anchor.y, 63, "segment 0's floor is the owner's ground block");
+    assert.deepEqual({ z: plan.anchor.z, minY: plan.bounds.minY, maxY: plan.bounds.maxY }, { z: 2, minY: 59, maxY: 65 });
   } finally { h.close(); }
 });

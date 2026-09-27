@@ -70,7 +70,10 @@ export type SkillErrorCode =
  * first radius and expand one step at a time; every meaningful expansion is
  * announced with `expansionMessage`.
  */
-export const SEARCH_RADIUS_SEQUENCE: readonly number[] = [32, 64, 128, 256, 512, 1024];
+// Capped at 256: chunks past view distance (~128 blocks) are not loaded, and
+// a synchronous block scan at 512-1024 stalls the event loop long enough for
+// the server to time the connection out.
+export const SEARCH_RADIUS_SEQUENCE: readonly number[] = [32, 64, 128, 256];
 
 /** The largest radius a search will reach before giving up. */
 export const MAX_SEARCH_RADIUS = SEARCH_RADIUS_SEQUENCE[SEARCH_RADIUS_SEQUENCE.length - 1] ?? 1024;
@@ -289,7 +292,7 @@ export async function recoverLowHealth(
     return {
       ok: false,
       code: "LOW_HEALTH",
-      reason: `health too low (${healthText(health)}/20) to hunt and hunger ${healthText(hunger)}/20 cannot regenerate — feed CobbleBob or let it die to respawn`,
+      reason: `health too low (${healthText(health)}/20) to hunt and hunger ${healthText(hunger)}/20 cannot regenerate — no food carried or nearby; give CobbleBob food`,
     };
   }
   const deadline = Date.now() + HEALTH_RECOVERY_WAIT_MS;

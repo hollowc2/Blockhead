@@ -3,13 +3,13 @@ import type { Bot } from "mineflayer";
 import type { WorldProjectManager } from "../agent/world-projects.js";
 import type { Scheduler } from "../agent/scheduler.js";
 import { normalizeDimension } from "../minecraft/protection.js";
-import { resolveFootprintBounds, resolveOwnerFrontAnchor, snapCardinalYaw } from "../terrain/geometry.js";
+import { resolveFootprintBounds, resolveOwnerFrontAnchor, resolveOwnerFrontBounds, snapCardinalYaw } from "../terrain/geometry.js";
 import { createFrozenTerrainPlan, MineshaftSpecSchema, type BlockBounds, type CardinalDirection, type TerrainAnchor, type TerrainSpec } from "../terrain/schema.js";
 import type { ToolContext, ToolResult } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
 
 const AnchorSchema = z.enum(["owner", "owner_front", "current", "home"]);
-export const ClearAreaArgsSchema = z.object({ width: z.number().int().min(1).max(32), length: z.number().int().min(1).max(32), height: z.number().int().min(1).max(16).default(4), anchor: AnchorSchema.default("owner") });
+export const ClearAreaArgsSchema = z.object({ width: z.number().int().min(1).max(32), length: z.number().int().min(1).max(32), height: z.number().int().min(1).max(16).default(4), anchor: AnchorSchema.default("owner_front") });
 export const FlattenAreaArgsSchema = z.object({ width: z.number().int().min(1).max(32), length: z.number().int().min(1).max(32), anchor: AnchorSchema.default("owner") });
 export const ExcavateVolumeArgsSchema = z.object({ width: z.number().int().min(1).max(32), length: z.number().int().min(1).max(32), depth: z.number().int().min(1).max(32), anchor: AnchorSchema.default("owner") }).refine((v) => v.width * v.length * v.depth <= 8192, "excavation volume must not exceed 8192 blocks");
 export const DigMineshaftArgsSchema = z.object({ width: z.union([z.literal(1), z.literal(2)]).default(1), height: z.union([z.literal(2), z.literal(3)]).default(2), targetY: z.number().int().optional(), depth: z.number().int().min(1).optional(), direction: z.enum(["north", "south", "east", "west"]).optional(), anchor: AnchorSchema.default("owner_front") }).superRefine((v, ctx) => { if ((v.targetY === undefined) === (v.depth === undefined)) ctx.addIssue({ code: "custom", path: ["targetY"], message: "exactly one of targetY or depth is required" }); });
@@ -52,7 +52,13 @@ function terrainPlan(ctx: ToolContext, kind: "clear" | "flatten" | "excavate" | 
   let specification: TerrainSpec;
   if (kind === "clear") {
     const value = args as z.infer<typeof ClearAreaArgsSchema>;
-    bounds = resolveFootprintBounds({ x, y, z }, value.width, value.length, y, y + value.height - 1);
+    // Front-facing surface projects use an outward footprint instead of
+    // centring on the front anchor.  Centring a 5x5 at two blocks ahead still
+    // includes its owner and causes the safety preflight to reject every job.
+    const owner = anchorKind === "owner_front" ? visibleOwner(ctx.bot, ownerName(ctx)) : null;
+    bounds = owner === null
+      ? resolveFootprintBounds({ x, y, z }, value.width, value.length, y, y + value.height - 1)
+      : resolveOwnerFrontBounds({ position: { x: Math.floor(owner.x), y: Math.floor(owner.y), z: Math.floor(owner.z), dimension: owner.dimension }, yaw: owner.yaw }, value.width, value.length, y, y + value.height - 1);
     specification = { kind, anchor: anchorKind, width: value.width, length: value.length, height: value.height };
   } else if (kind === "flatten") {
     const value = args as z.infer<typeof FlattenAreaArgsSchema>;
@@ -65,12 +71,18 @@ function terrainPlan(ctx: ToolContext, kind: "clear" | "flatten" | "excavate" | 
   } else {
     const value = args as z.infer<typeof DigMineshaftArgsSchema>;
     const direction: CardinalDirection = value.direction ?? (anchorKind === "owner_front" && resolved.yaw !== undefined ? snapCardinalYaw(resolved.yaw) : "south");
-    const segments = value.depth ?? Math.max(1, y - (value.targetY ?? y - 1));
-    if (value.targetY !== undefined && value.targetY >= y) return "targetY must be below the entrance";
+    // Segment 0's floor is the anchor Y. Owner/current anchors are feet
+    // positions, so step down to the ground block: otherwise the first
+    // "floor" is the air in front of the owner and the shaft opens by
+    // building a step up (or bridging over any dip in the terrain).
+    const floorY = anchorKind === "home" ? y : y - 1;
+    const segments = value.depth ?? Math.max(1, floorY - (value.targetY ?? floorY - 1));
+    if (value.targetY !== undefined && value.targetY >= floorY) return "targetY must be below the entrance";
     const endX = x + (direction === "east" ? segments : direction === "west" ? -segments : 0);
     const endZ = z + (direction === "south" ? segments : direction === "north" ? -segments : 0);
-    bounds = { minX: Math.min(x, endX) - Math.floor(value.width / 2), maxX: Math.max(x, endX) + Math.ceil(value.width / 2) - 1, minY: y - segments - 1, maxY: y + value.height, minZ: Math.min(z, endZ) - Math.floor(value.width / 2), maxZ: Math.max(z, endZ) + Math.ceil(value.width / 2) - 1 };
+    bounds = { minX: Math.min(x, endX) - Math.floor(value.width / 2), maxX: Math.max(x, endX) + Math.ceil(value.width / 2) - 1, minY: floorY - segments - 1, maxY: floorY + value.height, minZ: Math.min(z, endZ) - Math.floor(value.width / 2), maxZ: Math.max(z, endZ) + Math.ceil(value.width / 2) - 1 };
     specification = MineshaftSpecSchema.parse({ kind, anchor: anchorKind, width: value.width, height: value.height, targetY: value.targetY, depth: value.depth, direction });
+    return createFrozenTerrainPlan({ world: ctx.config.server.world_key, dimension, anchor: { x, y: floorY, z, dimension }, bounds, specification });
   }
   return createFrozenTerrainPlan({ world: ctx.config.server.world_key, dimension, anchor: { x, y, z, dimension }, bounds, specification });
 }

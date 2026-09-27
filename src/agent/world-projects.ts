@@ -57,12 +57,26 @@ export class WorldProjectManager extends BuildProjectManager {
     });
     this.worldBus.on("task.failed", ({ task }) => {
       if (task.type === "world_project_slice" || task.type === "world_project_verify") this.setAuthorizationState(task, "revoked");
+      // A child that threw bypasses settleChildTask. Don't leave its project
+      // "active" with no task behind it: park it so the owner's next command
+      // resumes it and status views stop showing phantom work.
+      if (task.projectId === undefined || !task.type.startsWith("world_project_")) return;
+      const project = this.worldProjects.get(task.projectId);
+      if (project === null || project.status !== "active") return;
+      project.status = "paused";
+      project.lastError = task.lastError ?? "project child task failed";
+      project.updatedAt = new Date().toISOString();
+      this.worldProjects.update(project);
     });
   }
 
   createTerrainProject(input: CreateTerrainProjectInput): CreateTerrainProjectResult {
     const existing = this.worldProjects.findLive(input.plan.specification.kind, input.plan.world, input.plan.dimension, input.plan.geometryHash);
     if (existing !== null) {
+      if (existing.status === "verifying") {
+        const verifyTask = this.worldScheduler.resumeBlockedByWorkKey(`world-project-verify:${existing.id}:${existing.currentPhaseId ?? "root"}`);
+        if (verifyTask !== null) return { project: existing, task: verifyTask, resumed: true };
+      }
       const task = this.scheduleTerrainChild(existing);
       return { project: existing, task, resumed: true };
     }
@@ -104,12 +118,29 @@ export class WorldProjectManager extends BuildProjectManager {
 
   /** Schedule one bounded terrain slice. */
   private scheduleTerrainChild(project: WorldProject): Task {
-    const task = this.worldScheduler.enqueue({
+    const workKey = `world-project:${project.id}:${project.currentPhaseId ?? "root"}`;
+    const resumedTask = this.worldScheduler.resumeBlockedByWorkKey(workKey);
+    if (resumedTask !== null || project.status === "paused") {
+      const now = new Date().toISOString();
+      project.status = "active";
+      project.lastError = undefined;
+      project.updatedAt = now;
+      this.worldProjects.update(project);
+      const phase = project.currentPhaseId === undefined
+        ? undefined
+        : this.worldProjects.getPhases(project.id).find((item) => item.id === project.currentPhaseId);
+      if (phase?.status === "blocked") {
+        phase.status = "active";
+        phase.lastError = undefined;
+        this.worldProjects.updatePhase(phase);
+      }
+    }
+    const task = resumedTask ?? this.worldScheduler.enqueue({
       type: "world_project_slice", priority: TaskPriority.FOREGROUND, source: project.source,
       objective: `Prepare ${project.kind} terrain project ${project.id}.`,
       parameters: { projectId: project.id, phaseId: project.currentPhaseId, kind: project.kind, geometryHash: project.geometryHash },
       projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
-      workKey: `world-project:${project.id}:${project.currentPhaseId ?? "root"}`,
+      workKey,
     });
     if (project.payload.type === "terrain") this.issueTerrainAuthorization(project, task);
     this.worldProjects.appendEvent({ projectId: project.id, phaseId: project.currentPhaseId, taskId: task.id, kind: "slice_scheduled", details: { geometryHash: project.geometryHash }, createdAt: new Date().toISOString() });
@@ -125,7 +156,7 @@ export class WorldProjectManager extends BuildProjectManager {
     if (project === null) return "none";
     const phase = project.currentPhaseId === undefined ? null : this.worldProjects.getPhases(project.id).find((item) => item.id === project.currentPhaseId) ?? null;
     const now = new Date().toISOString();
-    if (task.type === "world_project_deposit" || task.type === "world_project_replace_tool" || task.type === "world_project_return") {
+    if (task.type === "world_project_deposit" || task.type === "world_project_replace_tool" || task.type === "world_project_return" || task.type === "world_project_acquire") {
       if (result.status === "completed") {
         project.status = "active";
         project.lastError = undefined;
@@ -175,7 +206,29 @@ export class WorldProjectManager extends BuildProjectManager {
         this.scheduleTerrainChild(project);
         return "complete";
       }
-      if (result.status === "blocked") { project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project verification blocked"; project.updatedAt = now; this.worldProjects.update(project); return "block"; }
+      if (result.status === "blocked") {
+        const verification = result.data as { inspected?: unknown; verified?: unknown; mismatches?: unknown[] } | undefined;
+        const mismatches = verification?.mismatches ?? [];
+        const reopens = typeof project.verificationState.reopens === "number" ? project.verificationState.reopens : 0;
+        // Keep the evidence: a bare "verification failed" is undiagnosable.
+        project.verificationState = { lastVerifiedAt: now, inspected: verification?.inspected ?? 0, verified: verification?.verified ?? 0, mismatches: mismatches.slice(0, 8), reopens };
+        project.updatedAt = now;
+        // Leftover rock, fallen gravel or an unloaded chunk is more slice
+        // work, not a dead end: reopen the dig a bounded number of times.
+        if (reopens < MAX_VERIFY_REOPENS && mismatches.length > 0 && mismatches.every(isReworkableMismatch)) {
+          project.verificationState.reopens = reopens + 1;
+          project.status = "active";
+          project.lastError = `${result.message ?? "verification failed"}; reopening the dig (${reopens + 1}/${MAX_VERIFY_REOPENS})`;
+          if (phase) { phase.status = "active"; phase.lastError = project.lastError; this.worldProjects.updatePhase(phase); }
+          this.worldProjects.update(project);
+          this.worldProjects.appendEvent({ projectId: project.id, phaseId: task.projectPhaseId, taskId: task.id, kind: "verification_reopened", details: { mismatches: mismatches.slice(0, 8) }, createdAt: now });
+          this.scheduleTerrainChild(project);
+          return "complete";
+        }
+        project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project verification blocked"; this.worldProjects.update(project);
+        this.worldBus.emit("world_project.blocked", { project, task });
+        return "block";
+      }
       return result.retryable === true || result.status === "partial" || result.status === "interrupted" ? "requeue" : "fail";
     }
     if (result.status === "completed") {
@@ -183,16 +236,59 @@ export class WorldProjectManager extends BuildProjectManager {
       project.updatedAt = now;
       this.worldProjects.update(project);
       if (phase) { phase.status = "completed"; this.worldProjects.updatePhase(phase); }
-      const verifyTask = this.worldScheduler.enqueue({
+      const verifyWorkKey = `world-project-verify:${project.id}:${project.currentPhaseId ?? "root"}`;
+      // A verify task left blocked by an earlier run owns the work key, so
+      // enqueue would hand it back still blocked; wake it instead.
+      const verifyTask = this.worldScheduler.resumeBlockedByWorkKey(verifyWorkKey) ?? this.worldScheduler.enqueue({
         type: "world_project_verify", priority: TaskPriority.FOREGROUND, source: project.source,
         objective: `Verify ${project.kind} terrain project ${project.id}.`,
         parameters: { projectId: project.id, phaseId: project.currentPhaseId, geometryHash: project.geometryHash },
         projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
-        workKey: `world-project-verify:${project.id}:${project.currentPhaseId ?? "root"}`,
+        workKey: verifyWorkKey,
       });
       this.worldProjects.appendEvent({ projectId: project.id, phaseId: project.currentPhaseId, taskId: verifyTask.id, kind: "verification_scheduled", details: {}, createdAt: now });
     }
-    else if (result.status === "blocked") { project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project blocked"; project.updatedAt = now; this.worldProjects.update(project); }
+    else if (result.status === "blocked" && result.errorCode === "INSUFFICIENT_MATERIALS" && result.retryable === true && task.type === "world_project_slice") {
+      // Out of throwaway blocks to bridge a cave floor: fetch a stack (the
+      // home chest usually has plenty), then resume.
+      project.status = "blocked";
+      project.lastError = result.message ?? result.errorCode;
+      project.updatedAt = now;
+      this.worldProjects.update(project);
+      this.worldScheduler.enqueue({
+        type: "world_project_acquire", priority: TaskPriority.FOREGROUND, source: project.source,
+        objective: `Fetch bridging blocks for terrain project ${project.id}.`,
+        parameters: { projectId: project.id, phaseId: project.currentPhaseId, item: "cobblestone", quantity: BRIDGE_BLOCK_STOCK },
+        projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
+        workKey: `world-project-maintenance:${project.id}:material`,
+      });
+      return "block" as const;
+    }
+    else if (result.status === "blocked" && (result.errorCode === "TOOL_REQUIRED" || result.errorCode === "INVENTORY_FULL") && task.type === "world_project_slice") {
+      // A worn-out tool or a full inventory is routine maintenance, not a
+      // dead end: craft a replacement / drop off the haul, then resume.
+      project.status = "blocked";
+      project.lastError = result.message ?? result.errorCode;
+      project.updatedAt = now;
+      this.worldProjects.update(project);
+      const replaceTool = result.errorCode === "TOOL_REQUIRED";
+      const item = replaceTool ? toolForMessage(result.message ?? "") : undefined;
+      this.worldScheduler.enqueue({
+        type: replaceTool ? "world_project_replace_tool" : "world_project_deposit",
+        priority: TaskPriority.FOREGROUND, source: project.source,
+        objective: replaceTool ? `Replace the ${item} for terrain project ${project.id}.` : `Deposit the haul for terrain project ${project.id}.`,
+        parameters: { projectId: project.id, phaseId: project.currentPhaseId, ...(item === undefined ? {} : { item }) },
+        projectId: project.id, projectPhaseId: project.currentPhaseId, executionPolicy: "resumable",
+        workKey: `world-project-maintenance:${project.id}:${replaceTool ? "tool" : "deposit"}`,
+      });
+      return "block" as const;
+    }
+    // Chunks still streaming in is a wait, not a blocker.
+    else if (result.status === "blocked" && result.errorCode === "WORLD_NOT_OBSERVED") return "requeue" as const;
+    else if (result.status === "blocked") {
+      project.status = "blocked"; project.lastError = result.message ?? result.errorCode ?? "world project blocked"; project.updatedAt = now; this.worldProjects.update(project);
+      this.worldBus.emit("world_project.blocked", { project, task });
+    }
     else if (result.status === "interrupted" || result.status === "partial" || result.retryable === true) return "requeue" as const;
     else { project.status = "failed"; project.lastError = result.message ?? result.errorCode ?? "world project failed"; project.updatedAt = now; this.worldProjects.update(project); }
     return result.status === "completed" ? "complete" as const : project.status === "blocked" ? "block" as const : "fail" as const;
@@ -236,3 +332,22 @@ export class WorldProjectManager extends BuildProjectManager {
 
 export { BuildProjectManager };
 export type { BuildProjectStatusView };
+
+const MAX_VERIFY_REOPENS = 3;
+/** Throwaway blocks fetched when a shaft runs out of cave-bridging material. */
+const BRIDGE_BLOCK_STOCK = 32;
+
+/** Mismatches another dig pass can fix, as opposed to lava or bedrock. */
+function isReworkableMismatch(value: unknown): boolean {
+  const code = (value as { errorCode?: unknown } | null)?.errorCode;
+  const state = (value as { state?: unknown } | null)?.state;
+  if (code === "LAVA_HAZARD" || code === "PROTECTED_FIXTURE") return false;
+  return state === "solid" || state === "falling" || state === "unobserved" || state === "passable" || code === "WATER_HAZARD";
+}
+
+/** Which tool a "cannot harvest X" terrain block needs replaced. */
+function toolForMessage(message: string): string {
+  if (/_log|_wood|planks/.test(message)) return "stone_axe";
+  if (/dirt|grass|sand|gravel|clay|mud|snow|soul/.test(message)) return "stone_shovel";
+  return "stone_pickaxe";
+}

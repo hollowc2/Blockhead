@@ -306,6 +306,34 @@ test("a stuck food crisis re-enqueues at most once per cooldown window and retri
   h.manager.stop();
 });
 
+test("repeated restore failures back off exponentially and a success resets the streak", async () => {
+  const h = newHarness(12, 19);
+  await h.manager.tick();
+  assert.equal(h.issued.length, 1);
+
+  // First failure: 60s. Second consecutive failure: 120s.
+  h.bus.emit("task.failed", { task: failedFoodTask() });
+  h.advance(60_000);
+  await h.manager.tick();
+  assert.equal(h.issued.length, 2, "first retry after the base cooldown");
+  h.bus.emit("task.failed", { task: failedFoodTask() });
+  h.advance(60_000);
+  await h.manager.tick();
+  assert.equal(h.issued.length, 2, "second failure doubles the cooldown");
+  h.advance(60_000);
+  await h.manager.tick();
+  assert.equal(h.issued.length, 3, "retried once the doubled cooldown expires");
+
+  // A completed restore resets the streak back to the base cooldown.
+  h.bus.emit("task.completed", { task: { ...failedFoodTask(), status: TaskStatus.COMPLETED } });
+  h.bus.emit("task.failed", { task: failedFoodTask() });
+  h.advance(60_000);
+  await h.manager.tick();
+  assert.equal(h.issued.length, 4, "streak reset: base cooldown again");
+
+  h.manager.stop();
+});
+
 test("a food crisis is attempted even at unregenerable low health, then stands down into the cooldown", async () => {
   // The evidenced world state: health 2.8/20, hunger 17/20 (< regen 18).
   const h = newHarness(2.8, 17);

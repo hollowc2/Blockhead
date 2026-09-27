@@ -29,8 +29,8 @@ export function classifyObservedBlock(block: Block | null): ObservedBlockState {
   if (UNBREAKABLE.has(name)) return "unbreakable";
   if (FLUIDS.has(name)) return "fluid";
   if (isFallingBlockName(name)) return "falling";
-  if (block.diggable === false) return "unbreakable";
   if (name === "air" || block.boundingBox !== "block") return "passable";
+  if (block.diggable === false) return "unbreakable";
   return "solid";
 }
 

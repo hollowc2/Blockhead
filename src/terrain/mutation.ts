@@ -36,8 +36,8 @@ export class MineflayerToolProvisioner implements ToolProvisioner {
   hasDurabilityReserve(block: Block): boolean {
     const held = this.bot.heldItem;
     if (held === null || held === undefined) return block.canHarvest(null);
-    if (held.maxDurability <= 0) return true;
-    return held.maxDurability - held.durabilityUsed >= this.minimumRemainingUses;
+    if (!Number.isFinite(held.maxDurability) || held.maxDurability <= 0) return true;
+    return held.maxDurability - (held.durabilityUsed ?? 0) >= this.minimumRemainingUses;
   }
 }
 
@@ -53,6 +53,9 @@ export interface BlockStateWaitResult {
   state: ObservedBlockState;
   attempts: number;
 }
+
+/** How many times a cell refilled by falling sand/gravel is re-dug. */
+const MAX_FALLING_REFILLS = 12;
 
 function positionOf(position: { x: number; y: number; z: number }): Vec3 {
   return new Vec3(position.x, position.y, position.z);
@@ -165,7 +168,6 @@ export class TerrainMutationService {
     if (before === "protectedFixture") return failure("PROTECTED_FIXTURE", `refusing to dig protected fixture ${target.name}`);
     if (before === "unbreakable") return failure("UNBREAKABLE_BLOCK", `refusing to dig unbreakable block ${target.name}`);
     if (before === "passable") return failure("UNREACHABLE_BLOCK", "target is already passable");
-    if (before === "falling") return failure("FALLING_BLOCKS_UNSTABLE", "falling block must settle before digging");
     if (this.bot.entity === null) return failure("UNREACHABLE_BLOCK", "bot is not spawned");
     const straightDown = checkDigStraightDown(position, this.bot.entity.position);
     if (!straightDown.allowed) return failure("UNSAFE_GEOMETRY", straightDown.violation?.reason ?? "straight-down digging is unsafe");
@@ -179,17 +181,27 @@ export class TerrainMutationService {
     if (!this.provisioner.hasDurabilityReserve(target)) return failure("TOOL_REQUIRED", "tool has no durability reserve for this atomic operation");
 
     try {
-      await digBlock(this.bot, target, signal);
-      const verified = await waitForAuthoritativeBlockState(this.bot, position, {
-        maxAttempts: this.pollAttempts,
-        pollIntervalMs: this.pollIntervalMs,
-        signal,
-        predicate: (block) => classifyObservedBlock(block) === "passable",
-      });
-      const settled = await settleFallingColumn(this.bot, position, { maxAttempts: this.settleAttempts, pollIntervalMs: this.pollIntervalMs, signal });
+      // Sand/gravel above the cell drops into it after each dig; keep
+      // digging the refilled cell (bounded) until it stays open.
+      let current: Block | null = target;
+      let verified: BlockStateWaitResult = { block: target, state: before, attempts: 0 };
+      for (let refill = 0; refill <= MAX_FALLING_REFILLS && current !== null; refill += 1) {
+        await digBlock(this.bot, current, signal);
+        verified = await waitForAuthoritativeBlockState(this.bot, position, {
+          maxAttempts: this.pollAttempts,
+          pollIntervalMs: this.pollIntervalMs,
+          signal,
+          predicate: (block) => classifyObservedBlock(block) === "passable",
+        });
+        await settleFallingColumn(this.bot, position, { maxAttempts: this.settleAttempts, pollIntervalMs: this.pollIntervalMs, signal });
+        current = this.bot.blockAt(positionOf(position));
+        const state = classifyObservedBlock(current);
+        if (state === "passable") { verified = { block: current, state, attempts: verified.attempts }; break; }
+        if (state !== "falling" && state !== "solid") break;
+        await this.provisioner.equipForBlock(current!, signal ?? new AbortController().signal).catch(() => undefined);
+      }
       const after = classifyObservedBlock(verified.block);
-      if (!settled.stable) return failure("FALLING_BLOCKS_UNSTABLE", "falling-block column did not settle within the bounded limit");
-      if (after !== "passable") return failure(after === "unobserved" ? "WORLD_NOT_OBSERVED" : "UNREACHABLE_BLOCK", "dig was not confirmed by an observed passable block");
+      if (after !== "passable") return failure(after === "unobserved" ? "WORLD_NOT_OBSERVED" : after === "falling" ? "FALLING_BLOCKS_UNSTABLE" : "UNREACHABLE_BLOCK", "dig was not confirmed by an observed passable block");
       return { ok: true, status: "completed", data: { position, before, after, blockName: verified.block?.name ?? null, attempts: verified.attempts, settled: true } };
     } catch (error) {
       if (signal?.aborted) return { ok: false, status: "interrupted", errorCode: "TIMEOUT", message: "terrain mutation was cancelled", retryable: true };

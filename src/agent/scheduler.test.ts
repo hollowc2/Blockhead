@@ -122,6 +122,51 @@ test("requeueActive preserves resumable progress and activates the next task", (
   assert.equal(s.active?.id, next.id);
 });
 
+test("a requeued slice with nothing else queued resumes on the next tick", async () => {
+  const { scheduler: s } = newHarness();
+  const resumable = s.enqueue({ ...userTask("Clear an area."), type: "world_project_slice", executionPolicy: "resumable" });
+  s.claim();
+  assert.equal(s.requeueActive("clear slice checkpointed"), null);
+  assert.equal(s.active, null);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal((s.active as { id: string } | null)?.id, resumable.id);
+});
+
+test("a requeued owner slice is not overtaken by lower-priority background work", async () => {
+  const { scheduler: s } = newHarness();
+  const slice = s.enqueue({ ...userTask("Dig a mine."), type: "world_project_slice", executionPolicy: "resumable" });
+  s.claim();
+  s.enqueue({ type: "stockpile_maintenance", priority: TaskPriority.BACKGROUND, source: "background", objective: "Restore food", parameters: {} });
+  s.signalsFor(slice).checkpoint({ nextIndex: 4 });
+  assert.equal(s.requeueActive("mineshaft slice checkpointed"), null);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal((s.active as { id: string } | null)?.id, slice.id);
+});
+
+test("a task that was active at restart resumes with a live (not aborted) signal", () => {
+  const { scheduler: s, tasks, bus } = newHarness();
+  const task = s.enqueue({ ...userTask("Dig a mine."), type: "world_project_slice", executionPolicy: "resumable" });
+  s.claim();
+  const reloaded = new Scheduler({ bus, tasks });
+  reloaded.loadFromPersistence();
+  assert.equal(reloaded.active?.id, task.id);
+  assert.equal(reloaded.signalsFor(reloaded.active!).signal.aborted, false);
+});
+
+test("a slice requeued repeatedly without progress is blocked instead of spinning", () => {
+  const { scheduler: s } = newHarness();
+  const task = s.enqueue({ ...userTask("Build a room."), type: "build_project_slice", executionPolicy: "resumable" });
+  s.claim();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    s.signalsFor(task).checkpoint({ currentOperationIndex: 0 });
+    s.requeueActive("could not verify operation op-00000");
+    s.activate(task.id);
+  }
+  s.signalsFor(task).checkpoint({ currentOperationIndex: 0 });
+  s.requeueActive("could not verify operation op-00000");
+  assert.equal(task.status, TaskStatus.BLOCKED);
+});
+
 test("blockActive retains blocked work as live persisted task", () => {
   const { scheduler: s, tasks } = newHarness();
   const task = s.enqueue(userTask("Build a design."));

@@ -135,6 +135,9 @@ export class BuildProjectManager {
     const blueprint = compileBuildingDesign(frozenDesign, input.origin);
     const existing = this.projects.findLiveByBlueprintHash(blueprint.hash ?? "");
     if (existing !== null) {
+      // The owner asking again for a blocked build means "try again now":
+      // reopen it instead of refusing because nothing is schedulable.
+      this.reopen(existing);
       const task = this.scheduleNextWork(existing.id);
       if (task === null) throw new Error(`build project ${existing.id} has no schedulable phase`);
       return { project: existing, task, resumed: true };
@@ -191,6 +194,9 @@ export class BuildProjectManager {
     }
 
     const workKey = `build-project:${project.id}:${phase.id}`;
+    // A blocked slice with this work key would otherwise swallow the enqueue.
+    const resumed = this.scheduler.resumeBlockedByWorkKey(workKey, "project reopened");
+    if (resumed !== null) return resumed;
     const task = this.scheduler.enqueue({
       type: "build_project_slice",
       priority: TaskPriority.FOREGROUND,
@@ -205,6 +211,43 @@ export class BuildProjectManager {
     this.projects.appendEvent({ projectId: project.id, phaseId: phase.id, taskId: task.id, kind: "slice_scheduled", details: { operationStart: phase.operationStart, operationEnd: phase.operationEnd, workKey }, createdAt: new Date().toISOString() });
     this.bus.emit("build_project.scheduled", { project, phase, task });
     return task;
+  }
+
+  /** Clear a blocked/paused project's blockers so its work can be scheduled again. */
+  private reopen(project: BuildProject): void {
+    if (project.status !== "blocked" && project.status !== "paused") return;
+    project.status = "active";
+    project.lastError = undefined;
+    project.shortages = [];
+    project.resumeState = { ...project.resumeState, retryAfter: undefined };
+    project.updatedAt = new Date().toISOString();
+    this.projects.update(project);
+    for (const phase of this.projects.getPhases(project.id)) {
+      if (phase.status !== "blocked") continue;
+      phase.status = "active";
+      phase.lastError = undefined;
+      this.projects.updatePhase(phase);
+    }
+  }
+
+  /** "finish the house": reopen and schedule the most recently touched unfinished build. */
+  resumeLatest(): { project: BuildProject; task: Task } | null {
+    const project = this.projects.loadUnfinished()
+      .filter((candidate) => candidate.status !== "verifying")
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (project === undefined) return null;
+    this.reopen(project);
+    const task = this.scheduleNextWork(project.id);
+    return task === null ? null : { project, task };
+  }
+
+  /** The newest unfinished project of this type anchored at exactly this origin. */
+  findUnfinishedAt(structureType: string, origin: { x: number; y: number; z: number; dimension: string }): BuildProject | null {
+    return this.projects.loadUnfinished()
+      .filter((project) => project.structureType === structureType
+        && project.origin.x === origin.x && project.origin.y === origin.y && project.origin.z === origin.z
+        && project.origin.dimension === origin.dimension)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
   }
 
   getProject(projectId: string): BuildProject | null {
@@ -378,6 +421,8 @@ export class BuildProjectManager {
       const quantity = Math.max(0, Math.ceil(shortage.required - shortage.available));
       if (quantity <= 0) continue;
       const workKey = `build-project:${project.id}:${phase.id}:acquire:${shortage.material}`;
+      const retried = this.scheduler.resumeBlockedByWorkKey(workKey, "retrying acquisition");
+      if (retried !== null) { tasks.push(retried); continue; }
       const task = this.scheduler.enqueue({
         type: "build_project_acquire",
         priority: TaskPriority.FOREGROUND,
@@ -415,7 +460,9 @@ export class BuildProjectManager {
     if (result.status === "completed") {
       const requested = Number(task.parameters.quantity ?? 0);
       const acquisition = asAcquisitionData(result.data);
-      if (acquisition?.item !== undefined && acquisition.item !== material) {
+      const woodFamily = (name: string | undefined): string | null => name === undefined ? null : name.endsWith("_planks") ? "planks" : (name.endsWith("_door") && !name.startsWith("iron_")) ? "door" : null;
+      const samePlankFamily = woodFamily(acquisition?.item) !== null && woodFamily(acquisition?.item) === woodFamily(material);
+      if (acquisition?.item !== undefined && acquisition.item !== material && !samePlankFamily) {
         return this.blockAcquisition(project, phase, task, `acquisition reconciled the wrong item (${acquisition.item})`, now);
       }
       if (acquisition?.availableAtEnd === undefined || acquisition.availableAtEnd < requested) {

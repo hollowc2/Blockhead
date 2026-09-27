@@ -31,9 +31,11 @@ export function snapCardinalYaw(yaw: number): CardinalDirection {
   if (!Number.isFinite(yaw)) throw new Error("owner yaw must be finite");
   const quarterTurns = Math.round(yaw / (Math.PI / 2));
   switch (((quarterTurns % 4) + 4) % 4) {
-    case 0: return "south";
+    // Mineflayer yaw is PI - notchian yaw: 0 faces north (-Z), PI/2 west,
+    // PI south, 3PI/2 east.
+    case 0: return "north";
     case 1: return "west";
-    case 2: return "north";
+    case 2: return "south";
     default: return "east";
   }
 }

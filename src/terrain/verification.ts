@@ -65,6 +65,12 @@ function errorCodeFor(state: ObservedBlockState, blockName: string | null): Veri
   }
 }
 
+/** Water cannot be dug out; clear/excavate leave it in place. */
+function isWater(name: string | undefined): boolean {
+  const bare = name?.replace(/^minecraft:/, "");
+  return bare === "water" || bare === "flowing_water" || bare === "bubble_column";
+}
+
 /** Independently inspect every cell in an excavation AABB. */
 export function verifyExcavationVolume(bot: Bot, bounds: BlockBounds, maxMismatches = 64): SkillResult<ExcavationVerification> {
   const mismatches: VerificationMismatch[] = [];
@@ -76,7 +82,7 @@ export function verifyExcavationVolume(bot: Bot, bounds: BlockBounds, maxMismatc
         inspected += 1;
         const block = bot.blockAt(new Vec3(x, y, z));
         const state = classifyObservedBlock(block);
-        if (state === "passable") {
+        if (state === "passable" || isWater(block?.name)) {
           verified += 1;
         } else if (mismatches.length < maxMismatches) {
           mismatches.push({ position: { x, y, z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) });
@@ -92,10 +98,10 @@ export function verifyExcavationVolume(bot: Bot, bounds: BlockBounds, maxMismatc
   return { ok: true, status: "completed", data, message: "excavation volume verified" };
 }
 
-function mismatch(bot: Bot, x: number, y: number, z: number, allowSolid = false): VerificationMismatch | null {
+function mismatch(bot: Bot, x: number, y: number, z: number, allowSolid = false, allowWater = false): VerificationMismatch | null {
   const block = bot.blockAt(new Vec3(x, y, z));
   const state = classifyObservedBlock(block);
-  if (state === "passable" || (allowSolid && state === "solid")) return null;
+  if (state === "passable" || (allowWater && isWater(block?.name)) || (allowSolid && state === "solid")) return null;
   return { position: { x, y, z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) };
 }
 
@@ -108,7 +114,7 @@ export function verifyClearArea(bot: Bot, bounds: BlockBounds, maxMismatches = 6
     for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
       for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
         inspected += 1;
-        const found = mismatch(bot, x, y, z);
+        const found = mismatch(bot, x, y, z, false, true);
         if (found === null) verified += 1;
         else if (mismatches.length < maxMismatches) mismatches.push(found);
       }
@@ -168,24 +174,29 @@ function routeCells(bot: Bot, plan: FrozenTerrainPlan, direction: CardinalDirect
     const corridor = mineshaftSegment(plan.anchor, direction, spec.width, spec.height, segment);
     for (let y = corridor.minY; y <= corridor.maxY; y += 1) for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
       inspected += 1;
-      const found = mismatch(bot, x, y, z);
+      const found = mismatch(bot, x, y, z, false, true);
       if (found === null) verified += 1;
       else if (mismatches.length < maxMismatches) mismatches.push(found);
     }
     for (let z = corridor.minZ; z <= corridor.maxZ; z += 1) for (let x = corridor.minX; x <= corridor.maxX; x += 1) {
       inspected += 1;
       const found = mismatch(bot, x, corridor.minY - 1, z, true);
-      if (found === null) verified += 1;
+      // A settled gravel/sand step still carries the walker.
+      if (found === null || found.state === "falling") verified += 1;
       else if (mismatches.length < maxMismatches) mismatches.push({ ...found, errorCode: found.state === "passable" ? "CAVE_OPENING" : found.errorCode });
     }
     const exposed = direction === "north" || direction === "south"
       ? [{ x: corridor.minX - 1, z: corridor.minZ }, { x: corridor.maxX + 1, z: corridor.minZ }]
       : [{ x: corridor.minX, z: corridor.minZ - 1 }, { x: corridor.minX, z: corridor.maxZ + 1 }];
+    // Side walls are normally solid rock; a cave beside the stairway is
+    // tolerated. Only lava or an unloaded cell next to the route is a fault.
     for (const face of exposed) for (let y = corridor.minY; y <= corridor.maxY; y += 1) {
       inspected += 1;
-      const found = mismatch(bot, face.x, y, face.z);
-      if (found === null) verified += 1;
-      else if (mismatches.length < maxMismatches) mismatches.push({ ...found, errorCode: found.state === "passable" ? "CAVE_OPENING" : found.errorCode });
+      const block = bot.blockAt(new Vec3(face.x, y, face.z));
+      const state = classifyObservedBlock(block);
+      const lava = state === "fluid" && String(block?.name ?? "").includes("lava");
+      if (!lava && state !== "unobserved") { verified += 1; continue; }
+      if (mismatches.length < maxMismatches) mismatches.push({ position: { x: face.x, y, z: face.z }, state, blockName: block?.name ?? null, errorCode: errorCodeFor(state, block?.name ?? null) });
     }
   }
   return { inspected, verified };

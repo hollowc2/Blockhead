@@ -1,5 +1,6 @@
 import type { ProtectedRegion, RegionPoint } from "../minecraft/protection.js";
 import { canPerform, regionContains } from "../minecraft/protection.js";
+import { isNaturalBlock } from "../minecraft/natural-blocks.js";
 
 /**
  * Deterministic block-action protection policy (spec sections 8.2, 34:
@@ -79,7 +80,7 @@ export function classifyBlock(name: string): BlockClass {
   const bare = name.replace(/^minecraft:/, "");
   if (INFRASTRUCTURE_BLOCK_NAMES.has(bare) || bare.endsWith("_bed")) return "infrastructure";
   if (bare.endsWith("_sign") || bare.endsWith("_hanging_sign")) return "infrastructure";
-  if (TERRAIN_BLOCK_NAMES.has(bare)) return "terrain";
+  if (TERRAIN_BLOCK_NAMES.has(bare) || isNaturalBlock(bare)) return "terrain";
   if (/_(log|leaves|ore)$/.test(bare) || /^deepslate_.+_ore$/.test(bare)) return "terrain";
   for (const suffix of STRUCTURAL_SUFFIXES) {
     if (bare.endsWith(suffix)) return "structural";
@@ -131,7 +132,8 @@ export function checkBlockPlacement(
   if (region === null || !regionContains(region, point)) return { allowed: true };
   const bare = blockName.replace(/^minecraft:/, "");
   let action: "fire" | "lava" | "place";
-  if (bare === "fire" || bare === "campfire" || bare === "torch") {
+  // Torches are lighting, not fire: a lit base is the point of placing them.
+  if (bare === "fire" || bare === "campfire") {
     action = "fire";
   } else if (bare === "lava" || bare === "flowing_lava") {
     action = "lava";

@@ -64,6 +64,11 @@ export class WorldProjectsRepository {
     return row ? toProject(row) : null;
   }
 
+  /** Mineshafts that exist in the world (dug in full or in part). */
+  loadMineshafts(world: string, dimension: string): WorldProject[] {
+    return (this.db.sql.prepare(`SELECT ${columns} FROM world_projects WHERE kind = 'mineshaft' AND world = ? AND dimension = ? AND status NOT IN ('cancelled') ORDER BY updated_at DESC LIMIT 32`).all(world, dimension) as ProjectRow[]).map(toProject);
+  }
+
   loadUnfinished(): WorldProject[] {
     return (this.db.sql.prepare(`SELECT ${columns} FROM world_projects WHERE status IN ('active','paused','blocked','verifying') ORDER BY created_at`).all() as ProjectRow[]).map(toProject);
   }

@@ -9,7 +9,7 @@ import { bareName, findItem, hasItem } from "../minecraft/inventory.js";
 import { withdrawFromHomeChest } from "../minecraft/containers.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { travelHomeAndWait } from "../minecraft/movement.js";
-import { HOSTILE_MOB_NAMES } from "../policy/combat.js";
+import { HOSTILE_MOB_NAMES, isMobEntity } from "../policy/combat.js";
 import { TOOL_FAMILIES } from "./expedition.js";
 import { sleep as waitMs, withTimeout, type SkillResult } from "./skill-library.js";
 import { throwIfAborted } from "../agent/world-actions.js";
@@ -290,7 +290,7 @@ export function inspectArea(bot: Bot, state: AgentState): string {
   for (const entity of Object.values(bot.entities)) {
     const distance = Math.hypot(entity.position.x - self.x, entity.position.y - self.y, entity.position.z - self.z);
     if (distance > INSPECT_RADIUS) continue;
-    if (entity.type === "mob" && HOSTILE_MOB_NAMES.has(entity.name ?? "")) hostiles += 1;
+    if (isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "")) hostiles += 1;
     if (entity.type === "player" && entity.name !== bot.username) players.push(entity.name ?? "player");
   }
   if (hostiles > 0) lines.push(`${hostiles} hostile${hostiles === 1 ? "" : "s"} within ${INSPECT_RADIUS} blocks.`);

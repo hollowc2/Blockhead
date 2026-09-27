@@ -45,16 +45,16 @@ llm:
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:
-  world_key: small-survival-2026-09-23-ramp-fix
+  world_key: cobblebob-bootstrap-20260925
   host: eros
   port: 25565
   username: CobbleBob
 
 home:
   dimension: overworld
-  x: -61
-  y: 63
-  z: -11
+  x: -93
+  y: 75
+  z: 247
   protected_size_x: 100
   protected_size_z: 100
 

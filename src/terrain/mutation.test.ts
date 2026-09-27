@@ -4,7 +4,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import { WorldActionExecutor } from "../agent/world-actions.js";
-import { TerrainMutationService, type ToolProvisioner } from "./mutation.js";
+import { MineflayerToolProvisioner, TerrainMutationService, type ToolProvisioner } from "./mutation.js";
 
 type Point = { x: number; y: number; z: number };
 
@@ -31,6 +31,13 @@ const provisioner: ToolProvisioner = {
   equipForBlock: async () => undefined,
   hasDurabilityReserve: () => true,
 };
+
+test("a hand-harvestable block does not require durability fields on the held item", () => {
+  const held = { type: 5 } as Item;
+  const bot = fakeBot(() => null, held);
+  const target = fakeBlock("oak_leaves", { x: 0, y: 64, z: 0 }, { canHarvest: () => true });
+  assert.equal(new MineflayerToolProvisioner(bot).hasDurabilityReserve(target), true);
+});
 
 test("breakAndVerify requires an observed passable postcondition", async () => {
   const target = { x: 11, y: 64, z: 10 };
@@ -92,22 +99,19 @@ test("observed lava beside a target is rejected before digging", async () => {
   assert.equal(digCalls, 0);
 });
 
-test("falling columns have a bounded terminal failure", async () => {
+test("a cell refilled by falling gravel is re-dug until it stays open", async () => {
   const point = { x: 11, y: 64, z: 10 };
-  let dug = false;
+  let digs = 0;
   const bot = fakeBot((position) => {
-    if (position.x === point.x && position.y === point.y && position.z === point.z) return fakeBlock(dug ? "air" : "stone", position);
-    if (position.x === point.x && position.z === point.z && position.y === point.y + 1) return fakeBlock("gravel", position);
+    if (position.x === point.x && position.y === point.y && position.z === point.z) return fakeBlock(digs === 0 ? "stone" : digs === 1 ? "gravel" : "air", position);
     return fakeBlock("air", position);
   }, { type: 1, maxDurability: 0, durabilityUsed: 0 } as unknown as Item);
   const result = await new WorldActionExecutor().run("terrain-falling", new AbortController().signal, async () => {
-    bot.dig = async () => { dug = true; };
-    const outcome = await new TerrainMutationService(bot, { toolProvisioner: provisioner, settleAttempts: 2, pollAttempts: 1, pollIntervalMs: 1 }).breakAndVerify(point);
-    assert.equal(dug, true);
-    return outcome;
+    bot.dig = async () => { digs += 1; };
+    return new TerrainMutationService(bot, { toolProvisioner: provisioner, settleAttempts: 2, pollAttempts: 1, pollIntervalMs: 1 }).breakAndVerify(point);
   });
-  assert.equal(result.ok, false);
-  assert.equal(result.errorCode, "FALLING_BLOCKS_UNSTABLE");
+  assert.equal(result.ok, true, `${result.errorCode ?? ""} ${result.message ?? ""}`);
+  assert.equal(digs, 2);
 });
 
 test("an aborted signal stops before the next mutation", async () => {
