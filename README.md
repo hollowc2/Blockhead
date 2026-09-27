@@ -4,141 +4,112 @@
 
 # Blockhead — CobbleBob, an autonomous Minecraft companion
 
-Blockhead is an experimental TypeScript/Mineflayer agent that joins a private
-Minecraft Java server as CobbleBob. A local llama.cpp model interprets owner
-chat and chooses from registered high-level tools; deterministic skills and
-Mineflayer code perform the actual work.
+A TypeScript/Mineflayer agent that joins a Minecraft Java server as CobbleBob.
+A local llama.cpp model reads owner chat and picks from a fixed set of
+high-level tools; deterministic skills and Mineflayer code do the actual work.
+It is a working end-to-end prototype under active development.
 
-The project is currently a working end-to-end prototype, not a production
-Minecraft bot. The autonomous loop, persistent tasks and goals, bootstrap and
-stockpile maintenance, safety policy, memory, dashboard, and live world viewer
-are implemented and under active development.
-
-## Architecture
-
-The execution boundary is deliberately narrow:
+## How it works
 
 ```text
 owner chat / background director
             ↓
-LLM decision → validated high-level tool → scheduler/task lease
-                                              ↓
-                                    deterministic skill
-                                              ↓
-                               Mineflayer world primitives
+LLM decision → validated tool → scheduler / task lease
+                                      ↓
+                              deterministic skill
+                                      ↓
+                          Mineflayer world primitives
 ```
 
-- `src/llm/` talks to the local llama.cpp HTTP server and validates decisions.
-- `src/tools/` registers the only high-level actions the model may select.
-- `src/agent/` owns scheduling, task dispatch, persistent goals, bootstrap,
-  background maintenance, connection recovery, and watchdogs.
-- `src/skills/` implements deterministic multi-step work such as resource
-  collection, food gathering, storage, base building, combat/defense, torch
-  production, delivery, and death recovery.
-- `src/policy/` applies hard safety rules before dangerous actions.
-- `src/memory/` persists tasks, goals, locations, storage, deaths, actions, and
-  skill history in SQLite.
-- `src/dashboard/` exposes read-only telemetry and a session-scoped Minecraft
-  viewer. The browser cannot control the bot.
+The model never emits code, commands, or block coordinates — only a validated
+tool call. Priority is safety/self-maintenance > owner work > background work.
+Background maintenance keeps wood, food, fuel, and torches at target levels; an
+LLM director proposes idle work, with deterministic fallbacks if the model is
+down.
 
-Safety/self-maintenance has priority over owner work, which has priority over
-background work. Background maintenance keeps wood, food, fuel, and torches at
-configured targets; an LLM director chooses optional idle work when survival
-floors are healthy, with deterministic fallback behavior when the model is
-unavailable.
+| Path | Role |
+| --- | --- |
+| `src/llm/` | llama.cpp client, prompt/context building, decision validation |
+| `src/tools/` | Registry of actions the model may select |
+| `src/agent/` | Scheduler, task dispatch, goals, bootstrap, maintenance, survival interrupts, watchdog, reconnects |
+| `src/skills/` | Multi-step work: gathering, food, crafting/smelting, storage, building, combat, delivery, death recovery |
+| `src/building/` | Declarative `BuildingDesign` schema, validation, templates, compiler |
+| `src/terrain/` | Terrain geometry, classification, verified block mutation |
+| `src/minecraft/` | Mineflayer wrappers: movement, inventory, containers, world, creative mode |
+| `src/policy/` | Hard safety rules checked before dangerous actions |
+| `src/memory/` | SQLite persistence: tasks, goals, projects, locations, storage, deaths, skills |
+| `src/dashboard/`, `src/tui/`, `src/status/` | Read-only web dashboard + viewer, terminal UI, status endpoint |
 
-## Current capabilities
+## Capabilities
 
-- Persistent scheduler with queued, active, paused, blocked, completed, failed,
-  and cancelled tasks.
-- Resumable bootstrap from home through tools, food, bed, storage, furnace,
-  fuel, torches, and opportunistic iron.
-- Resource gathering, hunting/food collection, crafting and smelting, storage
-  organization, delivery, navigation, defense, death recovery, and bounded
-  base construction.
-- Protected-home, health, lava, dimension, PvP, inventory, path, and timeout
-  safeguards.
-- Persistent autonomous goals and an anti-loop watchdog for repeatedly failing
-  actions.
-- Four bounded terrain project tools: `clear_area`, `flatten_area`,
-  `excavate_volume`, and `dig_mineshaft`. Each freezes exact world geometry,
-  resumes through the scheduler, and verifies the observed Minecraft result.
-- Structured logs, terminal dashboard, local SQLite state, and reconnect-safe
-  operation.
-
-Terrain operations are intentionally conservative. Requests are limited to
-small rectangular regions and an excavation volume of at most 8,192 blocks.
-Unknown cells, water, lava, falling blocks, unbreakable blocks, protected
-fixtures, unsafe access geometry, and lost return routes block the project
-instead of being guessed through. Mineshafts are descending stair corridors,
-not vertical shafts, and completion requires a verified route in both
-directions. Inventory pressure, tool replacement, survival interrupts,
-disconnects, death, and owner cancellation checkpoint the project; cancellation
-revokes its bounded destructive authorization and does not automatically restart
-it.
+- Persistent, resumable tasks and goals (queued → active/paused/blocked → done/failed/cancelled).
+- Resumable bootstrap: tools, food, bed, storage, furnace, fuel, torches, opportunistic iron.
+- Gathering, hunting, crafting, smelting, storage organization, delivery,
+  following, navigation, defense, and death-item recovery.
+- Building: `build_structure` for simple rooms/walls/towers, `build_design` for
+  compiled, resumable architectural designs (see [docs/building-architecture.md](docs/building-architecture.md)).
+- Terrain projects: `clear_area`, `flatten_area`, `excavate_volume` (≤ 8,192
+  blocks), and `dig_mineshaft` (stair corridor). Geometry is frozen up front,
+  progress checkpoints through interrupts, and results are verified in-world.
+  Water, lava, falling/unbreakable blocks, protected fixtures, or unsafe access
+  block the project rather than being guessed through.
+- Safeguards for the protected home, health, lava, dimensions, PvP, inventory,
+  pathing, and timeouts, plus an anti-loop watchdog for repeated failures.
 
 ## Run locally
 
-Requirements: Node.js 20+, a reachable Minecraft Java server, and a local
-llama.cpp server.
+Requirements: Node.js 20+, a Minecraft Java server, and a llama.cpp (or other
+OpenAI-compatible) endpoint.
 
-1. Install dependencies:
+```bash
+npm install
+```
 
-   ```bash
-   npm install
-   ```
+```bash
+npm run llm
+```
 
-2. Start llama.cpp, or use another compatible OpenAI-style local endpoint:
+Edit [`config/minecraft.yaml`](config/minecraft.yaml) — at minimum the server,
+username, owner, home coordinates, and `llm.base_url` — then:
 
-   ```bash
-   npm run llm
-   ```
+```bash
+npm start
+```
 
-3. Edit [`config/minecraft.yaml`](config/minecraft.yaml). At minimum, set the
-   Minecraft server, username, owner, home coordinates, and `llm.base_url`.
+State lives in `data/blockhead.db`, logs in `logs/`. Config is validated with
+Zod at startup; prompts in [`prompts/`](prompts/) can be tuned without code
+changes (built-in fallbacks exist).
 
-4. Start CobbleBob:
+## Dashboard, viewer, and TUI
 
-   ```bash
-   npm start
-   ```
+Configured under `dashboard` in the config; all read-only — the browser cannot
+control the bot.
 
-On first connection, the bot resumes or runs its persisted bootstrap. State is
-stored in `data/blockhead.db`; application logs are written under `logs/`.
+| Service | Default | Notes |
+| --- | --- | --- |
+| Dashboard | `127.0.0.1:3000` | `/`, `/api/state`, `/ws`, `/health` |
+| World viewer | `127.0.0.1:3001` | Live prismarine-viewer while connected |
+| Public viewer | `:3003`, off | Redacted, loopback-only, for Tailscale Funnel (`dashboard.public_viewer`) |
+| Status endpoint | `127.0.0.1:8155` | Small process/task health snapshot |
 
-## Dashboard and viewer
+A terminal dashboard runs when stdout is a TTY (`tui.enabled`).
 
-The read-only dashboard is enabled by default and listens on `0.0.0.0:3000`:
-
-- `http://<host>:3000/` — live dashboard
-- `http://<host>:3000/api/state` — JSON snapshot
-- `ws://<host>:3000/ws` — snapshot stream
-- `http://<host>:3000/health` — health check
-
-When a Minecraft session is connected, the viewer is available on port 3001
-using the dashboard as its WebSocket proxy. Configure both services under the
-`dashboard` section. Disable the dashboard with `dashboard.enabled: false`.
-
-The older local status endpoint defaults to `127.0.0.1:8155`; it provides a
-small machine-readable process/task health snapshot.
-
-## Tests and type checking
+## Tests
 
 ```bash
 npm test
+```
+
+```bash
 npm run typecheck
 ```
 
-## Deployment
+`npm run creative:smoke` is an optional live check against a disposable
+creative server (see [docs/creative-provisioning.md](docs/creative-provisioning.md)).
 
-For the actual Maia layout, update procedure, and service commands, see
-[`docs/deployment-maia.md`](docs/deployment-maia.md).
+## Docs
 
-Additional design notes and call graphs are in [`docs/`](docs/).
-
-## Configuration and prompts
-
-The single configuration file is [`config/minecraft.yaml`](config/minecraft.yaml)
-and is validated with Zod at startup. Prompt assets live in [`prompts/`](prompts/)
-and have built-in fallbacks, so local model behavior can be tuned without
-changing the TypeScript decision pipeline.
+- [docs/deployment-maia.md](docs/deployment-maia.md) — deployment and service commands
+- [docs/building-architecture.md](docs/building-architecture.md) — declarative building pipeline
+- [docs/world-action-call-graph.md](docs/world-action-call-graph.md) — world action call graph
+- [docs/creative-provisioning.md](docs/creative-provisioning.md) — creative material provisioning
