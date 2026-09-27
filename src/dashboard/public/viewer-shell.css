@@ -20,3 +20,4 @@ strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-si
 .details span { color: #e8edf7; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .details { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 520px) { .viewer-card { min-height: 300px; } .stats-grid { grid-template-columns: repeat(2, 1fr); } header { align-items: flex-start; flex-direction: column; } }
+[hidden] { display: none !important; }

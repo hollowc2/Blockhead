@@ -68,7 +68,9 @@ import { EventHistory } from "./dashboard/event-history.js";
 import { DashboardTelemetryCollector } from "./dashboard/telemetry.js";
 import { startDashboard } from "./dashboard/lifecycle.js";
 import { ViewerManager } from "./dashboard/viewer.js";
-import { prismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
+import { createPrismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
+import { cachedPublicState } from "./dashboard/public-state.js";
+import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
 import { mineshaftExitRoute, TerrainProjectRunner } from "./skills/terrain-project.js";
@@ -218,7 +220,15 @@ const viewerManager = new ViewerManager({
   port: config.dashboard?.viewer_port ?? 3001,
   distance: config.dashboard?.viewer_distance ?? 6,
   dashboardPort: config.dashboard?.port ?? 3000,
-  adapter: prismarineViewerAdapter,
+  adapter: createPrismarineViewerAdapter({
+    host: config.dashboard?.viewer_host ?? "127.0.0.1",
+    publicViewer: config.dashboard?.public_viewer?.enabled === true
+      ? { port: config.dashboard.public_viewer.port, maxConnections: config.dashboard.public_viewer.max_connections }
+      : null,
+    // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
+    publicState: cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot()),
+    logger,
+  }),
   logger,
 });
 
@@ -311,7 +321,7 @@ if (config.status?.enabled ?? true) statusServer.start();
 
 dashboardServer = startDashboard({
   enabled: config.dashboard?.enabled ?? true,
-  host: config.dashboard?.host ?? "0.0.0.0",
+  host: config.dashboard?.host ?? "127.0.0.1",
   port: config.dashboard?.port ?? 3000,
   logger,
   snapshot: () => dashboardTelemetry.snapshot(),

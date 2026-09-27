@@ -4,7 +4,7 @@ import type { Duplex } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
-import { clientAddress, PUBLIC_VIEWER_HEADER, RateLimiter, SHELL_SECURITY_HEADERS, VIEWER_SECURITY_HEADERS } from "./http-guard.js";
+import { clientAddress, PUBLIC_VIEWER_HEADER, RateLimiter, SHELL_SECURITY_HEADERS, VIEWER_SECURITY_HEADERS, VIEWER_WORKER_SECURITY_HEADERS } from "./http-guard.js";
 
 const SHELL_HTML = fileURLToPath(new URL("./public/viewer-shell.html", import.meta.url));
 const SHELL_CSS = fileURLToPath(new URL("./public/viewer-shell.css", import.meta.url));
@@ -231,7 +231,7 @@ export class ViewerShellServer {
       timeout: 60_000,
     }, (upstreamResponse) => {
       const passed = this.isPublic
-        ? { ...pick(upstreamResponse.headers, PUBLIC_RESPONSE_HEADERS), ...VIEWER_SECURITY_HEADERS }
+        ? { ...pick(upstreamResponse.headers, PUBLIC_RESPONSE_HEADERS), ...(path === "/worker.js" ? VIEWER_WORKER_SECURITY_HEADERS : VIEWER_SECURITY_HEADERS) }
         : upstreamResponse.headers;
       response.writeHead(upstreamResponse.statusCode ?? 502, { ...passed, "cache-control": "no-store" });
       upstreamResponse.pipe(response);

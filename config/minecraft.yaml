@@ -14,15 +14,22 @@ status:
   host: 127.0.0.1
   port: 8155
 
-# Phase 1 dashboard configuration groundwork. The collector is read-only in
-# this phase; no dashboard or viewer server is started yet.
+# Dashboard (3000) and full viewer shell (3001) bind to loopback; tailnet
+# devices reach them through `tailscale serve`. The raw viewer server sits on
+# viewer_port + 1 (loopback). public_viewer is the only listener Tailscale
+# Funnel points at: viewer + redacted status, nothing else.
 dashboard:
   enabled: true
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 3000
   viewer_enabled: true
+  viewer_host: 127.0.0.1
   viewer_port: 3001
   viewer_distance: 6
+  public_viewer:
+    enabled: true
+    port: 3003
+    max_connections: 6
 
 # All keys are Zod-validated against src/config/schema.ts at startup.
 

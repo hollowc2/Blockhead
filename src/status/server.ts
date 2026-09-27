@@ -50,7 +50,8 @@ export class StatusServer {
             const result = command((await readBody(request)).trim());
             send(200, { ok: true, result });
           } catch (error) {
-            send(500, { ok: false, error: error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error) });
+            this.options.logger?.warn({ err: String(error) }, "operator command failed");
+            send(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
           }
         })();
         return;

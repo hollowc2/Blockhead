@@ -2,6 +2,11 @@
   const $ = (id) => document.getElementById(id);
   const text = (value) => value === null || value === undefined || value === "" ? "—" : String(value);
   function render(s) {
+    if (s.public) {
+      // The public listener only sends a redacted status; hide private rows.
+      for (const id of ["position", "action"]) $(id).parentElement.hidden = true;
+      document.querySelector(".details").hidden = true;
+    }
     const self = s.self || {}; const position = self.position;
     $("health").textContent = text(self.health); $("hunger").textContent = text(self.hunger);
     $("position").textContent = position ? `${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}` : "—";
