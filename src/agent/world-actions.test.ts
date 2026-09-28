@@ -272,3 +272,23 @@ test("a lease policy rejection happens before the mutation callback", async () =
   assert.equal(mutated, false);
   assert.equal(executor.activeOwner, null);
 });
+
+test("raceAbort settles with the work, on abort, or on timeout", async () => {
+  const { raceAbort } = await import("./world-actions.js");
+  assert.equal(await raceAbort(Promise.resolve(7), new AbortController().signal), 7);
+
+  const never = new Promise<void>(() => undefined);
+  const controller = new AbortController();
+  let stopped = 0;
+  const aborted = raceAbort(never, controller.signal, { onStop: () => { stopped += 1; } });
+  controller.abort(new Error("task paused"));
+  await assert.rejects(aborted, (err: Error) => err.name === "AbortError" && /task paused/.test(err.message));
+  assert.equal(stopped, 1);
+
+  await assert.rejects(raceAbort(never, undefined, { timeoutMs: 10, label: "dig", onStop: () => { stopped += 1; } }), /dig timed out after 10ms/);
+  assert.equal(stopped, 2);
+
+  const already = new AbortController();
+  already.abort(new Error("gone"));
+  await assert.rejects(raceAbort(never, already.signal), (err: Error) => err.name === "AbortError");
+});

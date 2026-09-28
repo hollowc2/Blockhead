@@ -4,7 +4,7 @@ import type { Entity } from "prismarine-entity";
 import type * as Pathfinder from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { logger } from "../logger.js";
-import { registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { digBudgetMs, raceAbort, registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { enableCreativeFlight, isCreativeMode } from "./mode.js";
 import { isNaturalBlock } from "./natural-blocks.js";
 
@@ -303,6 +303,20 @@ export function waitHere(bot: Bot, signal?: AbortSignal): MovementResult {
  * false when the budget runs out.
  */
 /**
+ * Face and dig one cell for emergency movement. Both calls are raced against
+ * the task's abort signal and a time bound: a bare `bot.dig` that straddles a
+ * death never settles and would wedge the task (see raceAbort).
+ */
+async function digCell(bot: Bot, block: import("prismarine-block").Block, signal: AbortSignal | undefined): Promise<void> {
+  await raceAbort(bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true), signal, { timeoutMs: 2_000, label: "look" });
+  await raceAbort(bot.dig(block, true), signal, {
+    timeoutMs: digBudgetMs(bot, block) ?? 30_000,
+    label: "dig",
+    onStop: () => bot.stopDigging(),
+  });
+}
+
+/**
  * One step of an upward staircase: clear the block over the bot's head and
  * the two cells of the next step (feet+1, feet+2 one block ahead), then jump
  * onto it. Returns false when a cell cannot be cleared or there is no floor.
@@ -314,6 +328,7 @@ async function climbStep(
   dz: number,
   isDiggable: (block: import("prismarine-block").Block | null) => boolean,
   equip: (block: import("prismarine-block").Block) => void,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const floor = bot.blockAt(new Vec3(feet.x + dx, feet.y, feet.z + dz));
   if (floor === null || floor.boundingBox !== "block") return false;
@@ -323,11 +338,11 @@ async function climbStep(
     if (block === null) return false;
     if (block.boundingBox !== "block") continue;
     if (!isDiggable(block)) return false;
+    if (signal?.aborted) return false;
     try {
       equip(block);
       logger.warn({ at: cell, name: block.name }, "walkToward climbing: clearing a stair cell");
-      await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-      await bot.dig(block, true);
+      await digCell(bot, block, signal);
     } catch (err) {
       logger.warn({ at: cell, err: String(err) }, "walkToward climb dig failed");
       return false;
@@ -362,7 +377,9 @@ async function pillarStep(
   feet: Vec3,
   isDiggable: (block: import("prismarine-block").Block | null) => boolean,
   equip: (block: import("prismarine-block").Block) => void,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false;
   const item = bot.inventory.items().find((candidate) => PILLAR_ITEMS.includes(candidate.name.replace(/^minecraft:/, "")));
   if (item === undefined) return false;
   const below = bot.blockAt(feet.offset(0, -1, 0));
@@ -374,8 +391,7 @@ async function pillarStep(
     if (!isDiggable(block)) return false;
     try {
       equip(block);
-      await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-      await bot.dig(block, true);
+      await digCell(bot, block, signal);
     } catch { return false; }
   }
   try {
@@ -498,16 +514,17 @@ export async function walkToward(
           // only lengthens the tunnel.
           if (destinationVec.y - current.position.y >= 3) {
             for (const [dx, dz] of offsets.filter(([ox, oz]) => ox === 0 || oz === 0)) {
-              dug = await climbStep(bot, feet, dx, dz, isDiggable, equipBestForDig);
+              dug = await climbStep(bot, feet, dx, dz, isDiggable, equipBestForDig, options.signal);
               if (dug) break;
             }
             // No step to climb onto in any direction: tower straight up.
-            if (!dug) dug = await pillarStep(bot, feet, isDiggable, equipBestForDig);
+            if (!dug) dug = await pillarStep(bot, feet, isDiggable, equipBestForDig, options.signal);
             if (dug) { stuckTicks = 0; lastDistance = distance; continue; }
           }
           for (const [dx, dz] of offsets) {
-            if (dug) break;
+            if (dug || options.signal?.aborted) break;
             for (const y of [footY, headY]) {
+              if (options.signal?.aborted) break;
               const pos = new Vec3(feet.x + dx, y, feet.z + dz);
               const block = bot.blockAt(pos);
               if (block === null || !isDiggable(block)) continue;
@@ -517,8 +534,7 @@ export async function walkToward(
                 lastDigAt = now;
                 equipBestForDig(block);
                 logger.warn({ at: pos, name: block.name, distance: Number(distance.toFixed(1)), stuckTicks }, "walkToward clearing obstacle");
-                await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-                await bot.dig(block, true);
+                await digCell(bot, block, options.signal);
                 dug = true;
                 stuckTicks = 0;
               } catch (err) {
@@ -543,14 +559,20 @@ export async function walkToward(
         lastDistance = distance;
       }
 
-      // Re-aim toward the destination and walk forward.
-      await bot.lookAt(destinationVec.offset(0, 1, 0), false);
+      if (options.signal?.aborted) break;
+      // Re-aim toward the destination and walk forward. A smooth look waits
+      // on physics ticks, which stall while the bot is dead.
+      try {
+        await raceAbort(bot.lookAt(destinationVec.offset(0, 1, 0), false), options.signal, { timeoutMs: 2_000, label: "look" });
+      } catch {
+        if (options.signal?.aborted) break;
+      }
       bot.setControlState("forward", true);
       bot.setControlState("jump", true); // helps with small obstacles
 
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 250);
         const abort = (): void => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => { options.signal?.removeEventListener("abort", abort); resolve(); }, 250);
         options.signal?.addEventListener("abort", abort, { once: true });
       });
     }

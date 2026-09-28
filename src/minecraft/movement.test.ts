@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, raceTrip, travelHomeAndWait } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, raceTrip, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -120,4 +120,30 @@ test("creative flight has a bounded timeout and cancellation", async () => {
   );
   setTimeout(() => cancelController.abort(), 10);
   assert.deepEqual(await cancelled, { status: "aborted" });
+});
+
+test("walkToward returns on abort even when a dig never settles (death mid-dig)", async () => {
+  const events: string[] = [];
+  const stone = { name: "stone", boundingBox: "block", hardness: 1.5, position: new Vec3(1, 64, 0) };
+  const bot = {
+    entity: { position: new Vec3(0.5, 64, 0.5) },
+    inventory: { items: () => [] },
+    blockAt: (pos: Vec3) => (pos.x === 1 && pos.y === 64 && pos.z === 0 ? stone : null),
+    lookAt: async () => undefined,
+    // Mineflayer settles a dig only on a block update to air, which never
+    // arrives once the bot has died and respawned.
+    dig: () => { events.push("dig"); return new Promise<void>(() => undefined); },
+    stopDigging: () => events.push("stopDigging"),
+    clearControlStates: () => undefined,
+    setControlState: () => undefined,
+  } as any;
+  const controller = new AbortController();
+  const walk = walkToward(bot, { x: 20, y: 64, z: 0 }, { signal: controller.signal, timeoutMs: 60_000 });
+  while (!events.includes("dig")) await new Promise((resolve) => setTimeout(resolve, 20));
+  const abortedAt = Date.now();
+  controller.abort(new Error("task paused"));
+  const result = await walk;
+  assert.equal(result.arrived, false);
+  assert.ok(Date.now() - abortedAt < 500, "walkToward must not wait on the wedged dig");
+  assert.deepEqual(events, ["dig", "stopDigging"]);
 });

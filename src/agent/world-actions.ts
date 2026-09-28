@@ -218,6 +218,57 @@ export function throwIfAborted(signal?: AbortSignal): void {
 }
 
 /**
+ * Await a Mineflayer promise that has no cancellation of its own (dig,
+ * lookAt). Rejects with an AbortError as soon as `signal` aborts, or with a
+ * timeout error after `timeoutMs`; `onStop` releases the primitive either
+ * way. `bot.dig` settles only on a block update to air, so a dig in flight
+ * across a death and respawn never settles; awaiting it bare wedged a food
+ * task until systemd SIGKILLed the process (2026-09-27).
+ */
+export function raceAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+  options: { timeoutMs?: number; label?: string; onStop?: () => void } = {},
+): Promise<T> {
+  // The abandoned promise may still reject later; never let it go unhandled.
+  work.catch(() => undefined);
+  if (signal === undefined && options.timeoutMs === undefined) return work;
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = (error: Error): void => {
+      cleanup();
+      try { options.onStop?.(); } catch { /* best effort */ }
+      reject(error);
+    };
+    const onAbort = (): void => stop(abortError(signal?.reason));
+    const cleanup = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.timeoutMs !== undefined && Number.isFinite(options.timeoutMs)) {
+      timer = setTimeout(() => stop(new Error(`${options.label ?? "world action"} timed out after ${options.timeoutMs}ms`)), options.timeoutMs);
+    }
+    work.then(
+      (value) => { cleanup(); resolve(value); },
+      (error: unknown) => { cleanup(); reject(error); },
+    );
+  });
+}
+
+/** Upper bound for one `bot.dig`: the expected dig time plus slack for lag. */
+export function digBudgetMs(bot: { digTime?: (block: never) => number }, block: unknown): number | undefined {
+  if (typeof bot.digTime !== "function") return undefined;
+  try {
+    const expected = bot.digTime(block as never);
+    return Number.isFinite(expected) ? expected + 10_000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Disconnect/process teardown adapter. This is intentionally unleased: it is
  * the authority that runs when a lease context is unavailable. Calls are
  * serialized per bot, every async cleanup is awaited, and registered dynamic

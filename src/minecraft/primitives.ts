@@ -3,7 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
 import type { Item } from "prismarine-item";
 import type { Recipe } from "prismarine-recipe";
-import { requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { digBudgetMs, raceAbort, requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 
 function beforeMutation(lease: ReturnType<typeof requireWorldActionLease>, action: string, point?: { x: number; y: number; z: number }, blockName?: string, ownBuildReplacement?: boolean): void {
   lease.beforeMutation?.({ action, point, blockName, ownBuildReplacement });
@@ -52,18 +52,27 @@ export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock
   throwIfAborted(signal);
 }
 
+/** `bot.dig` bounded by the lease signal and the block's dig time (see raceAbort). */
+function abortableDig(bot: Bot, block: Parameters<Bot["dig"]>[0], signal: AbortSignal | undefined): Promise<void> {
+  return raceAbort(bot.dig(block), signal, {
+    timeoutMs: digBudgetMs(bot, block),
+    label: "dig",
+    onStop: () => bot.stopDigging(),
+  });
+}
+
 /** Break a block the active build placed itself, for a planned replacement (door/window). */
 export async function digOwnBuildBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "dig", blockPoint(block), block.name, true);
-  await bot.dig(block);
+  await abortableDig(bot, block, signal);
   throwIfAborted(signal);
 }
 
 export async function digBlock(bot: Bot, block: Parameters<Bot["dig"]>[0], signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "dig", blockPoint(block), block.name);
-  await bot.dig(block);
+  await abortableDig(bot, block, signal);
   throwIfAborted(signal);
 }
 
