@@ -355,8 +355,9 @@ bus.on("task.cancelled", resumeBootstrapIfPending);
 // Process shutdown (SIGTERM from `systemctl --user stop`, Ctrl-C in a
 // terminal). Every step is time-bounded and a hard timer backs the whole
 // sequence: a skill that ignores its abort signal must not hold the process
-// until systemd's stop timeout SIGKILLs it (2026-09-27 on maia).
-const SHUTDOWN_HARD_TIMEOUT_MS = 10_000;
+// until systemd's stop timeout SIGKILLs it (2026-09-27 on maia). The maia
+// unit's TimeoutStopSec is 10s; the step bounds below sum to ~7s.
+const SHUTDOWN_HARD_TIMEOUT_MS = 8_000;
 const shutdownCoordinator = new ShutdownCoordinator({
   logger,
   hardTimeoutMs: SHUTDOWN_HARD_TIMEOUT_MS,
