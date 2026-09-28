@@ -373,3 +373,30 @@ test("an active task rehydrated after a crash is dispatched as ACTIVE", () => {
   assert.equal(restarted.active?.id, task.id);
   assert.equal(restarted.queued.length, 0);
 });
+
+test("a halted scheduler pauses the active task without starting the next one", () => {
+  const { scheduler: s, tasks } = newHarness();
+  const first = s.enqueue(userTask("Gather 32 oak logs."));
+  assert.equal(s.claim()?.id, first.id);
+  const second = s.enqueue(userTask("Gather 16 cobblestone."));
+  s.halt();
+  s.requestPause();
+  assert.equal(s.settleInterrupted(), null);
+  assert.equal(s.active, null);
+  assert.equal(first.status, TaskStatus.PAUSED);
+  assert.equal(second.status, TaskStatus.QUEUED);
+  assert.equal(s.activateNext(), null);
+  assert.equal(s.claim(), null);
+  // The paused row is persisted so the next process resumes it.
+  assert.equal(tasks.loadUnfinished().find((task) => task.id === first.id)?.status, TaskStatus.PAUSED);
+});
+
+test("database checkpoint truncates the WAL before close", () => {
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS);
+  const result = db.checkpoint();
+  assert.equal(result.busy, 0);
+  db.close();
+  // Closing twice (shutdown step retried after a timeout) is harmless.
+  db.close();
+});

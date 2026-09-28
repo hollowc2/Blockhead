@@ -16,12 +16,18 @@ export class DebugLog {
   }
 
   write(entry: Record<string, unknown>): void {
+    // A decision still in flight at shutdown must not "write after end".
+    if (this.stream.writableEnded) return;
     this.stream.write(
       `${JSON.stringify({ timestamp: new Date().toISOString(), ...entry })}\n`,
     );
   }
 
-  close(): void {
-    this.stream.end();
+  /** End the stream; resolves once buffered entries reach the file. */
+  close(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.stream.writableFinished) { resolve(); return; }
+      this.stream.end(() => resolve());
+    });
   }
 }

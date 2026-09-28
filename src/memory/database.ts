@@ -32,7 +32,16 @@ export class AppDatabase {
     logger.info({ from: current, to: migrations.length }, "database migrated");
   }
 
+  /**
+   * Fold the WAL back into the main database file and truncate it, so a clean
+   * shutdown leaves a self-contained `blockhead.db` (the checkout is on NFS).
+   */
+  checkpoint(): { busy: number; log: number; checkpointed: number } {
+    const [row] = this.sql.pragma("wal_checkpoint(TRUNCATE)") as { busy: number; log: number; checkpointed: number }[];
+    return row ?? { busy: 0, log: 0, checkpointed: 0 };
+  }
+
   close(): void {
-    this.sql.close();
+    if (this.sql.open) this.sql.close();
   }
 }

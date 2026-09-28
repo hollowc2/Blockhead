@@ -77,6 +77,7 @@ import { mineshaftExitRoute, TerrainProjectRunner } from "./skills/terrain-proje
 import { setEscapeRouteProvider } from "./minecraft/movement.js";
 import { normalizeDimension } from "./minecraft/protection.js";
 import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
+import { ShutdownCoordinator, withTimeout } from "./agent/shutdown.js";
 
 const config = loadConfig("config/minecraft.yaml");
 const connectionState = new ConnectionStateMachine();
@@ -335,6 +336,7 @@ process.on("exit", () => {
 // Phase 8: bootstrap yielded to user work resumes when that work settles —
 // the runner is idempotent and resumes from the persisted stage boundary.
 const resumeBootstrapIfPending = (): void => {
+  if (shuttingDown()) return;
   if (currentBootstrap !== null && currentBootstrap.currentStage !== null) {
     void currentBootstrap.run().catch((err: unknown) => {
       if (String(err).includes("yielded to owner work")) logger.info("bootstrap paused for owner work");
@@ -350,42 +352,101 @@ bus.on("task.completed", resumeBootstrapIfPending);
 bus.on("task.failed", resumeBootstrapIfPending);
 bus.on("task.cancelled", resumeBootstrapIfPending);
 
-let shuttingDown = false;
-async function shutdown(code: number): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  viewerManager.stop();
-  const active = session;
-  if (active !== null) {
-    viewerManager.stopFor(active.bot);
-    active.background.stop();
-    active.hostile.detach();
-    active.selfDefense.detach();
-    // A service restart is operational, not an owner cancellation. Persist
-    // the active task as paused so the next process can resume it.
-    scheduler.requestPause();
-    await active.dispatcher.waitForIdle();
-    await stopWorldPrimitives(active.bot);
-  }
-  goals.dispose();
-  survivalInterrupts.dispose();
-  taskOutcomes.dispose();
-  statusServer?.stop();
-  dashboardServer?.stop();
-  tui.stop();
-  db.close();
-  debugLog.close();
-  closeLogs();
-  if (active !== null) {
-    active.bot.quit();
-    active.bot.once("end", () => process.exit(code));
-  } else {
-    process.exit(code);
-  }
-}
+// Process shutdown (SIGTERM from `systemctl --user stop`, Ctrl-C in a
+// terminal). Every step is time-bounded and a hard timer backs the whole
+// sequence: a skill that ignores its abort signal must not hold the process
+// until systemd's stop timeout SIGKILLs it (2026-09-27 on maia).
+const SHUTDOWN_HARD_TIMEOUT_MS = 10_000;
+const shutdownCoordinator = new ShutdownCoordinator({
+  logger,
+  hardTimeoutMs: SHUTDOWN_HARD_TIMEOUT_MS,
+  steps: () => {
+    const active = session;
+    const bootstrapRunner = currentBootstrap;
+    return [
+      {
+        name: "stop background work",
+        run: () => {
+          // No new task may start while the active one drains: settling it
+          // would otherwise claim the next queued task.
+          scheduler.halt();
+          viewerManager.stop();
+          if (active !== null) {
+            viewerManager.stopFor(active.bot);
+            active.background.stop();
+            active.hostile.detach();
+            active.selfDefense.detach();
+          }
+          goals.dispose();
+          survivalInterrupts.dispose();
+        },
+      },
+      {
+        name: "abort active task",
+        timeoutMs: 3000,
+        run: async () => {
+          // A service restart is operational, not an owner cancellation:
+          // pause (abort the run's signal) so the task stays resumable. A
+          // task that never settles is still ACTIVE in SQLite, which the next
+          // process rehydrates and resumes like a crash.
+          scheduler.requestPause();
+          await Promise.all([
+            bootstrapRunner?.stop(),
+            active?.dispatcher.waitForIdle(),
+          ]);
+        },
+      },
+      {
+        name: "stop world primitives",
+        timeoutMs: 1000,
+        run: async () => { if (active !== null) await stopWorldPrimitives(active.bot); },
+      },
+      {
+        name: "disconnect bot",
+        timeoutMs: 2000,
+        run: async () => {
+          if (active === null) return;
+          const bot = active.bot;
+          const ended = new Promise<void>((resolve) => { bot.once("end", () => resolve()); });
+          try { bot.quit("shutting down"); } catch { /* socket may already be gone */ }
+          if (await withTimeout(ended, 1500) === "timeout") {
+            // The server never acknowledged: drop the TCP connection.
+            bot._client.socket?.destroy();
+          }
+        },
+      },
+      {
+        name: "close servers",
+        run: () => {
+          statusServer?.stop();
+          dashboardServer?.stop();
+          tui.stop();
+          taskOutcomes.dispose();
+        },
+      },
+      {
+        name: "close database",
+        run: () => {
+          const checkpoint = db.checkpoint();
+          db.close();
+          logger.info({ checkpoint }, "database checkpointed and closed");
+        },
+      },
+      {
+        name: "close logs",
+        timeoutMs: 1000,
+        run: async () => {
+          logger.info("shutdown complete; exiting");
+          await Promise.all([debugLog.close(), closeLogs()]);
+        },
+      },
+    ];
+  },
+});
+function shuttingDown(): boolean { return shutdownCoordinator.inProgress; }
 
-process.on("SIGINT", () => { void shutdown(0); });
-process.on("SIGTERM", () => { void shutdown(0); });
+process.on("SIGINT", () => shutdownCoordinator.handleSignal("SIGINT"));
+process.on("SIGTERM", () => shutdownCoordinator.handleSignal("SIGTERM"));
 
 /**
  * Build one full bot session (bot + its skill graph) and run it until the
@@ -510,6 +571,8 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // tool call or a later restart simply continues from the persisted stage.
   bot.once("spawn", () => {
     spawned = true;
+    // A connect that completes mid-shutdown must not start any work.
+    if (shuttingDown()) return;
     if (enableCreativeFlight(bot)) logger.info("creative mode detected; flight enabled");
     void viewerManager.startFor(bot);
     connectionState.transition("SPAWNED");
@@ -551,7 +614,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // Connection is over (never connected, or the game dropped us): tear down
   // the session-bound wiring so the next attempt starts clean. A graceful
   // shutdown already stopped the background manager and detached the hostile
-  // sensor via `shutdown`.
+  // sensor via the shutdown coordinator.
   background.stop();
   hostile.detach();
   selfDefense.detach();
@@ -579,10 +642,10 @@ const sleep = (ms: number): Promise<void> => {
 // Connect loop. Initial failures and post-login disconnects share one
 // supervised backoff loop; process-lifetime state survives server restarts.
 let attempt = 0;
-while (!shuttingDown) {
+while (!shuttingDown()) {
   attempt += 1;
   const outcome = await runSession();
-  if (shuttingDown) break;
+  if (shuttingDown()) break;
   if (outcome === "spawned") {
     logger.warn({ attempt }, "Minecraft connection ended; reconnecting with backoff");
   }

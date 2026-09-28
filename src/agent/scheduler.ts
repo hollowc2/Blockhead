@@ -83,6 +83,8 @@ export class Scheduler {
   /** Interrupt that the active task's executor must settle once its run returns. */
   private interrupt: InterruptReason | null = null;
   private activeController: AbortController | null = null;
+  /** Set once at process shutdown; no task activates afterwards. */
+  private halted = false;
 
   /** Stable birth order of every live task (newest first among ties). */
   private seq = 0;
@@ -212,6 +214,8 @@ export class Scheduler {
    * Returns the activated task, or null when the task must wait.
    */
   claim(): Task | null {
+    // `activate` refuses while halted; the loop below would retry forever.
+    if (this.halted) return null;
     for (;;) {
       const candidate = this.nextCandidate();
       if (!candidate) return null;
@@ -258,8 +262,22 @@ export class Scheduler {
     return this.activate(candidate.id);
   }
 
+  /**
+   * Process shutdown: never activate another task. Settling the active task
+   * (pause/complete/fail) normally claims the next one, which would start a
+   * fresh skill run while the process is trying to drain and exit.
+   */
+  halt(): void {
+    this.halted = true;
+  }
+
+  get isHalted(): boolean {
+    return this.halted;
+  }
+
   /** Move a queued task into ACTIVE state, emitting `task.activated`. */
   activate(id: string): Task | null {
+    if (this.halted) return null;
     const task = this.findQueued(id);
     if (!task) return null;
     // Anti-loop gate: a blocked action stands down into BLOCKED status

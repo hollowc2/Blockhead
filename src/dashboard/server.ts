@@ -73,6 +73,7 @@ export class DashboardServer {
     const server = this.server;
     this.server = null;
     server?.close();
+    server?.closeAllConnections();
   }
 
   address(): { port: number } | null {

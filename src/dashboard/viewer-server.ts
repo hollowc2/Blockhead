@@ -146,6 +146,7 @@ export class ReadOnlyViewerServer {
     this.io?.close();
     this.io = null;
     this.http?.close();
+    this.http?.closeAllConnections();
     this.http = null;
   }
 

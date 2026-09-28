@@ -113,13 +113,16 @@ function underTestRunner(): boolean {
 
 /** Spec 32.1 human-readable file stream (always on outside tests). */
 const fileStream = underTestRunner() ? null : openLogFile("logs/blockhead.log");
-const fileSink: { write(data: string): void; end(): void } = {
+const fileSink: { write(data: string): void; end(): Promise<void> } = {
   write: (data) => {
-    if (fileStream !== null) fileStream.write(humanLine(data));
+    // A late record after shutdown closed the file must not throw
+    // "write after end" from inside the logger.
+    if (fileStream !== null && !fileStream.writableEnded) fileStream.write(humanLine(data));
   },
-  end: () => {
-    if (fileStream !== null) fileStream.end();
-  },
+  end: () => new Promise((resolve) => {
+    if (fileStream === null || fileStream.writableFinished) { resolve(); return; }
+    fileStream.end(() => resolve());
+  }),
 };
 
 /** Console echo; null target means "driven by the TUI, write nothing". */
@@ -145,9 +148,13 @@ export function setLogEcho(enabled: boolean): void {
   echoStream.setTarget(enabled ? process.stdout : null);
 }
 
-/** Flush and close every log stream. Call exactly once at process shutdown. */
-export function closeLogs(): void {
+/**
+ * Flush and close every log stream. Call exactly once at process shutdown;
+ * the promise resolves once the log file has been written, so the caller
+ * can exit without dropping the final records.
+ */
+export function closeLogs(): Promise<void> {
   destination.flushSync();
-  fileSink.end();
   echoStream.end();
+  return fileSink.end();
 }
