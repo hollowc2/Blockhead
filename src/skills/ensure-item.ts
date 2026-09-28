@@ -124,6 +124,12 @@ export interface RecipeCatalog {
   nameForId(id: number): string | null;
   /** Carried + stored count, used to prefer recipes whose inputs are in stock. */
   available?(item: string): number;
+  /**
+   * Tie-break for inputs nothing is stocked of: true for the variant most
+   * likely to be found where the bot is (cobblestone at the surface, the
+   * local log species).
+   */
+  preferred?(item: string): boolean;
 }
 
 /**
@@ -165,15 +171,42 @@ export function rankRecipes(recipes: Recipe[], catalog: RecipeCatalog): Recipe[]
     }
     return total;
   };
-  return recipes.map((recipe, index) => ({ recipe, index, score: score(recipe) }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
+  // With nothing stocked every variant scores 0 and the registry order used
+  // to decide: stone tools planned cobbled deepslate at the surface and
+  // searched 256 blocks for it (long enough to time the bot out).
+  const preference = (recipe: Recipe): number => {
+    let total = 0;
+    for (const delta of recipe.delta) {
+      if (delta.count >= 0) continue;
+      const name = catalog.nameForId(delta.id);
+      if (name !== null && catalog.preferred?.(name) === true) total += 1;
+    }
+    return total;
+  };
+  return recipes.map((recipe, index) => ({ recipe, index, score: score(recipe), preference: preference(recipe) }))
+    .sort((a, b) => b.score - a.score || b.preference - a.preference || a.index - b.index)
     .map((entry) => entry.recipe);
+}
+
+/** The stone-tool material found where the bot stands. */
+function localStone(bot: Bot): string {
+  if (String(bot.game?.dimension ?? "").includes("nether")) return "blackstone";
+  return (bot.entity?.position.y ?? 64) < 0 ? "cobbled_deepslate" : "cobblestone";
 }
 
 /** The live catalog over a connected mineflayer bot. */
 export function makeRecipeCatalog(bot: Bot, available?: (item: string) => number): RecipeCatalog {
+  // Scanned only when a tie needs it, once per catalog.
+  let nearbyLog: string | null = null;
+  const localLog = (): string => (nearbyLog ??= dominantNearbyLog(bot));
   return {
     available,
+    preferred: (item) => {
+      const bare = bareName(item);
+      if (bare === "cobblestone" || bare === "cobbled_deepslate" || bare === "blackstone") return bare === localStone(bot);
+      if (/_log$|_planks$/.test(bare)) return bare === localLog() || bare === localLog().replace(/_log$/, "_planks");
+      return false;
+    },
     // A block is gathered only when it occurs in nature or cannot be
     // crafted: planks, bricks, and the like are blocks too, but searching the
     // world for them instead of crafting from logs/stone never succeeds.

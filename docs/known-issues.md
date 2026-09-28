@@ -47,17 +47,22 @@ Fix (`src/minecraft/movement.ts`): `travelAndWait` / `travelHomeAndWait` poll
 `shouldAbort` and the signal once more when a trip ends short, and then report
 `aborted`. This covers every skill that passes a travel abort probe.
 
-### Open: stone tools planned from cobbled deepslate at the surface
+### Fixed: stone tools planned from cobbled deepslate at the surface
 
-Seen: `ensure_item plan item=stone_axe ... steps=[{"kind":"gather","item":"cobbled_deepslate",...`
+Seen: `ensure_item plan item=stone_axe ... steps=[{"kind":"gather","item":"cobbled_deepslate",...},{"kind":"gather","item":"pale_oak_log",...}]`
 for stone_axe/pickaxe/sword at home (y≈85). Each search runs out to 256 blocks,
 finds nothing, and fails, until the anti-loop watchdog blocks the action for
 10 minutes.
 
-Likely cause: the stone-tool recipes accept any `stone_tool_materials`
-(cobblestone, blackstone, cobbled deepslate), and ensure_item's recipe ranking
-picks deepslate when none are carried. It should prefer cobblestone, or the
-material most likely near the bot's Y. Not yet fixed.
+Cause: `rankRecipes` orders recipe variants by stocked inputs. With nothing
+stocked, cobblestone, blackstone and cobbled deepslate (and every log species
+for the handle) all scored 0, and the registry's order decided: deepslate and
+pale oak.
+
+Fix (`src/skills/ensure-item.ts`): the live catalog's `preferred()`
+tie-break picks the stone found where the bot is (cobblestone, below y=0
+cobbled deepslate, in the Nether blackstone) and the dominant nearby log
+species. Stock still wins over the tie-break.
 
 ### Open: server "Timed out" disconnects during long block searches
 
@@ -68,16 +73,17 @@ bot reconnects about 1 s later.
 Cause: the deepslate searches above run `findBlocks` out to 256 blocks
 synchronously. Two back-to-back searches took about 31 s with long stretches
 on the event loop, so keep-alive replies went out late and the server dropped
-the bot. A disconnect also aborts whatever the bot was doing. Fixing the
-planner removes the trigger. The search itself should also yield to the event
-loop between radii and chunk columns, or cap its synchronous work.
+the bot. A disconnect also aborts whatever the bot was doing. The planner fix
+above removes this trigger. Still open: any long search can do the same, so
+the search should yield to the event loop between radii and chunk columns, or
+cap its synchronous work.
 
 ### Open: losing fights to zombies
 
 Seen: `Defended. 0 hostiles cleared.`, `CobbleBob was slain by Zombie`, with
 the reflex re-triggering every ~60 s at night. Probably the missing stone
-sword (blocked by the deepslate issue) plus the reflex's engagement rules;
-not investigated.
+sword (it was blocked by the deepslate issue, now fixed) plus the reflex's
+engagement rules. Not investigated; re-check once the bot has a sword.
 
 ### npm audit: 12 moderate, no action
 

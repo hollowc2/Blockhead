@@ -136,3 +136,31 @@ test("recipe ranking looks one craft deeper: sticks come from the stocked log sp
   const ranked = rankRecipes(recipes.stick!, stocked);
   assert.equal(stocked.nameForId(ranked[0]!.delta[0]!.id), "birch_planks");
 });
+
+test("with nothing stocked, stone tools plan the stone and wood found where the bot is", async () => {
+  const { createRequire } = await import("node:module");
+  const { makeRecipeCatalog } = await import("./ensure-item.js");
+  const require = createRequire(import.meta.url);
+  const registry = require("prismarine-registry")("1.21.4");
+  const { Recipe: RecipeData } = require("prismarine-recipe")(registry);
+  const liveBot = (y: number, dimension = "minecraft:overworld") => ({
+    registry,
+    game: { dimension },
+    entity: { position: { y } },
+    // An acacia savanna: the only logs around.
+    findBlocks: () => [{ x: 1, y, z: 1 }, { x: 2, y, z: 1 }],
+    blockAt: () => ({ name: "acacia_log" }),
+    recipesAll: (id: number, metadata: number | null, table: boolean) =>
+      (RecipeData.find(id, metadata) as Recipe[]).filter((candidate) => !candidate.requiresTable || table),
+  }) as never;
+  const gathered = (y: number, dimension?: string): string[] => {
+    const plan = resolvePlan("stone_axe", 1, makeRecipeCatalog(liveBot(y, dimension), () => 0));
+    assert.equal(plan.ok, true);
+    return plan.plan.steps.filter((step) => step.kind === "gather").map((step) => (step as { item: string }).item).sort();
+  };
+
+  // Previously the registry's first variants: cobbled_deepslate and pale_oak_log.
+  assert.deepEqual(gathered(85), ["acacia_log", "cobblestone"]);
+  assert.deepEqual(gathered(-30), ["acacia_log", "cobbled_deepslate"]);
+  assert.deepEqual(gathered(70, "minecraft:the_nether"), ["acacia_log", "blackstone"]);
+});
