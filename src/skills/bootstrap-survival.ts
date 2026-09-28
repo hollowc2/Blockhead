@@ -31,6 +31,7 @@ import {
   craftPlanks,
   craftSticks,
   failure,
+  syncInventory,
   type CraftResult,
 } from "../minecraft/crafting.js";
 import type { Item } from "prismarine-item";
@@ -716,6 +717,9 @@ export class BootstrapRunner {
   /** CRAFTING: planks, sticks, table, placement at home, then wooden tools. */
   private async stageCrafting(): Promise<StageOutcome> {
     const bot = this.opts.bot;
+    // Budget from the server's inventory, not a model an earlier desynced
+    // craft left behind (stranded cursor/grid items, phantom planks).
+    await syncInventory(bot, this.signal ?? undefined);
     const needTable = !hasItem(bot, "crafting_table");
     const needPickaxe = !hasItem(bot, "wooden_pickaxe");
     const needAxe = !hasItem(bot, "wooden_axe");
