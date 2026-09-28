@@ -106,6 +106,22 @@ The unit is enabled for the user session and restarts after a process failure.
 Stopping it intentionally is safe; do not use `kill -9` or start a replacement
 with `nohup`.
 
+Maia's user manager sets `DefaultTimeoutStopSec=10s`, so systemd SIGKILLs the
+bot 10 seconds after SIGTERM. Blockhead's shutdown fits inside that: it aborts
+the active task (saved as paused, resumed on the next start), disconnects the
+bot, closes the HTTP/WebSocket servers, checkpoints and closes SQLite, and
+flushes the logs. Every step is time-bounded, and a hard exit fires after 8
+seconds (`SHUTDOWN_HARD_TIMEOUT_MS` in `src/index.ts`). Keep that below the stop
+timeout. A normal stop logs `shutdown requested` and `shutdown complete;
+exiting` and takes well under a second:
+
+```bash
+journalctl --user -u blockhead.service -n 30 --no-pager | grep -E "shutdown|Stopped|timeout"
+```
+
+A `blockhead: shutdown ... forcing exit` line on stderr means a step overran
+its bound; the task is still resumable, but look at what it was doing.
+
 ## Troubleshooting
 
 - **Service is inactive:** run `systemctl --user status blockhead.service` and

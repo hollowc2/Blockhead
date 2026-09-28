@@ -14,6 +14,9 @@ WorkingDirectory=/mnt/Repos/Games/Blockhead
 ExecStart=%h/.local/share/blockhead-runtime/node_modules/.bin/tsx %h/.local/share/blockhead-runtime/src/index.ts
 Restart=always
 RestartSec=5
+# Maia's user manager defaults to 10s. Blockhead's own shutdown hard-exits
+# after 8s (SHUTDOWN_HARD_TIMEOUT_MS in src/index.ts); keep this above it.
+TimeoutStopSec=10s
 Environment=LOG_LEVEL=info
 
 [Install]
