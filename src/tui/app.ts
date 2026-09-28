@@ -113,6 +113,7 @@ export class TuiApp {
   private readonly events: EventFeedItem[] = [];
   private readonly unsubscribers: Array<() => void> = [];
   private timer: NodeJS.Timeout | null = null;
+  private started = false;
   private stopped = false;
   private expeditionTier: "expedition" | "deep" | null = null;
 
@@ -124,6 +125,7 @@ export class TuiApp {
   /** Start the dashboard: subscribe, render the first frame, hide the cursor. */
   start(): void {
     if (this.timer !== null) return;
+    this.started = true;
     this.subscribe();
     this.timer = setInterval(() => this.tick(), REFRESH_MS);
     this.timer.unref?.();
@@ -139,7 +141,9 @@ export class TuiApp {
     }
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers.length = 0;
-    if (this.stopped) return;
+    // Never started (no TTY, e.g. under systemd): the terminal was never
+    // taken over, so writing escape codes would only litter the journal.
+    if (this.stopped || !this.started) return;
     this.stopped = true;
     process.stdout.write("\x1b[?25h\x1b[2J\x1b[H");
   }
