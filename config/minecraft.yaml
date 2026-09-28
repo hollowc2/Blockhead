@@ -52,16 +52,16 @@ llm:
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:
-  world_key: cobblebob-bootstrap-20260925
+  world_key: cobblebob-fresh-20260927
   host: eros
   port: 25565
   username: CobbleBob
 
 home:
   dimension: overworld
-  x: -93
-  y: 75
-  z: 247
+  x: -7
+  y: 90
+  z: 5
   protected_size_x: 100
   protected_size_z: 100
 
