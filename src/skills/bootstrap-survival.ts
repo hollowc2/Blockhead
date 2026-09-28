@@ -28,6 +28,8 @@ import {
 } from "../minecraft/inventory.js";
 import {
   craftItem,
+  craftMorePlanks,
+  craftMoreSticks,
   craftPlanks,
   craftSticks,
   failure,
@@ -830,7 +832,7 @@ export class BootstrapRunner {
             return null;
           }
         }
-        const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST, this.signal ?? undefined);
+        const planks = await craftMorePlanks(bot, TABLE_PLANK_COST, this.signal ?? undefined);
         if (!planks.ok) {
           this.opts.logger.warn({ home: correctedHome, reason: planks.reason }, "crafting: could not craft planks for a new table");
           return null;
@@ -956,7 +958,7 @@ export class BootstrapRunner {
     const missing = stoneTools.filter((name) => !hasItem(bot, name));
     if (missing.length > 0) {
       // Two planks per tool handle; the sword takes one, so this over-buys.
-      const sticks = await craftSticks(bot, countSticks(bot) + missing.length * 2, this.signal ?? undefined);
+      const sticks = await craftMoreSticks(bot, missing.length * 2, this.signal ?? undefined);
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
 
@@ -1251,7 +1253,7 @@ export class BootstrapRunner {
       if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
       const table = await this.ensureTableAtHome();
       if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
-      const planks = await craftPlanks(bot, countPlanks(bot) + 3, this.signal ?? undefined);
+      const planks = await craftMorePlanks(bot, 3, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
       const bed = await this.craftBedAtTable(table);
       if (!bed.ok) return { ok: false, reason: bed.reason };
@@ -1474,10 +1476,10 @@ export class BootstrapRunner {
     if (planksNeeded > 0) {
       const logsPrep = await this.ensureLogs(Math.ceil(planksNeeded / 4));
       if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
-      const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded, this.signal ?? undefined);
+      const planks = await craftMorePlanks(bot, planksNeeded, this.signal ?? undefined);
       if (!planks.ok) return { ok: false, reason: planks.reason };
     }
-    const sticks = await craftSticks(bot, countSticks(bot) + crafts, this.signal ?? undefined);
+    const sticks = await craftMoreSticks(bot, crafts, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
     // This server can acknowledge only part of a multi-recipe craft before
     // Mineflayer attempts the next slot transaction, yielding a misleading
@@ -1565,7 +1567,7 @@ export class BootstrapRunner {
 
     // Two sticks per tool (the sword takes one; over-buying is fine, as in
     // the stone-tools stage).
-      const sticks = await craftSticks(bot, countSticks(bot) + planned.length * 2, this.signal ?? undefined);
+      const sticks = await craftMoreSticks(bot, planned.length * 2, this.signal ?? undefined);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
     const made: string[] = [];

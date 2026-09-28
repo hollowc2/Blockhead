@@ -8,7 +8,7 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countLogs, countPlanks, countSticks, findItem, itemsSummary } from "../minecraft/inventory.js";
-import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
+import { craftItem, craftMorePlanks, craftMoreSticks } from "../minecraft/crafting.js";
 import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, hasAirNeighbor, isRawLog, placeItemAt } from "../minecraft/world.js";
@@ -223,10 +223,10 @@ export class EnsureTorchesRunner {
           if (this.stopRequested) return this.interrupted(data);
           if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
         }
-        const planks = await craftPlanks(bot, countPlanks(bot) + planksNeeded, this.signals?.signal);
+        const planks = await craftMorePlanks(bot, planksNeeded, this.signals?.signal);
         if (!planks.ok) return this.fail(data, "TOOL_REQUIRED", planks.reason);
       }
-      const sticks = await craftSticks(bot, countSticks(bot) + sticksNeeded, this.signals?.signal);
+      const sticks = await craftMoreSticks(bot, sticksNeeded, this.signals?.signal);
       if (!sticks.ok) return this.fail(data, "TOOL_REQUIRED", sticks.reason);
     }
 
@@ -310,7 +310,7 @@ export class EnsureTorchesRunner {
         const gathered = await this.gatherLogs(logsNeeded);
         if (!gathered.ok) return { ok: false, reason: gathered.reason };
       }
-      const planks = await craftPlanks(bot, countPlanks(bot) + TABLE_PLANK_COST, this.signals?.signal);
+      const planks = await craftMorePlanks(bot, TABLE_PLANK_COST, this.signals?.signal);
       if (!planks.ok) return { ok: false, reason: planks.reason };
       const crafted = await craftItem(bot, "crafting_table", { signal: this.signals?.signal });
       if (!crafted.ok) return { ok: false, reason: crafted.reason };
@@ -348,9 +348,9 @@ export class EnsureTorchesRunner {
       const gathered = await this.gatherLogs(logsNeeded);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
     }
-    const planks = await craftPlanks(bot, countPlanks(bot) + 3 + 2, this.signals?.signal);
+    const planks = await craftMorePlanks(bot, 3 + 2, this.signals?.signal);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countSticks(bot) + 2, this.signals?.signal);
+    const sticks = await craftMoreSticks(bot, 2, this.signals?.signal);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
     const made = await craftItem(bot, "wooden_pickaxe", { craftingTable: table, signal: this.signals?.signal });
     if (!made.ok) return { ok: false, reason: made.reason };

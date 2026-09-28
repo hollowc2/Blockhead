@@ -219,6 +219,18 @@ export async function craftPlanks(bot: Bot, targetTotal: number, signal?: AbortS
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   throwIfAborted(signal);
   await syncInventory(bot, signal);
+  return craftPlanksTo(bot, targetTotal, signal);
+}
+
+/** Craft `count` more planks than the (settled) inventory holds. */
+export async function craftMorePlanks(bot: Bot, count: number, signal?: AbortSignal): Promise<CraftResult> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  throwIfAborted(signal);
+  await syncInventory(bot, signal);
+  return craftPlanksTo(bot, countPlanks(bot) + count, signal);
+}
+
+async function craftPlanksTo(bot: Bot, targetTotal: number, signal: AbortSignal): Promise<CraftResult> {
   const initial = countPlanks(bot);
   let planks = initial;
   if (planks >= targetTotal) return failure("planks", "craft request made no inventory change (target already satisfied)");
@@ -251,6 +263,18 @@ export async function craftSticks(bot: Bot, targetTotal: number, signal?: AbortS
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   throwIfAborted(signal);
   await syncInventory(bot, signal);
+  return craftSticksTo(bot, targetTotal, signal);
+}
+
+/** Craft at least `count` more sticks than the (settled) inventory holds. */
+export async function craftMoreSticks(bot: Bot, count: number, signal?: AbortSignal): Promise<CraftResult> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  throwIfAborted(signal);
+  await syncInventory(bot, signal);
+  return craftSticksTo(bot, countSticks(bot) + count, signal);
+}
+
+async function craftSticksTo(bot: Bot, targetTotal: number, signal: AbortSignal): Promise<CraftResult> {
   const initial = countSticks(bot);
   if (initial >= targetTotal) return failure("stick", "craft request made no inventory change (target already satisfied)");
 

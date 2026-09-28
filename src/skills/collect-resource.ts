@@ -10,7 +10,7 @@ import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countLogs, countPlanks, itemsSummary } from "../minecraft/inventory.js";
-import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
+import { craftItem, craftMorePlanks, craftMoreSticks } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog } from "../minecraft/world.js";
@@ -835,9 +835,9 @@ export class CollectResourceRunner {
       const gathered = await this.gatherLogsForTool(logsNeeded);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
     }
-    const planks = await craftPlanks(bot, countPlanks(bot) + 3, this.signals?.signal);
+    const planks = await craftMorePlanks(bot, 3, this.signals?.signal);
     if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftSticks(bot, countItem(bot, "stick") + 2, this.signals?.signal);
+    const sticks = await craftMoreSticks(bot, 2, this.signals?.signal);
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
     const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table, signal: this.signals?.signal });

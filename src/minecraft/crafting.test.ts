@@ -7,7 +7,7 @@ import type { Block } from "prismarine-block";
 import type { Item as PItem } from "prismarine-item";
 import type { Recipe as PRecipe } from "prismarine-recipe";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { craftItem, craftPlanks, craftSticks } from "./crafting.js";
+import { craftItem, craftMorePlanks, craftPlanks, craftSticks } from "./crafting.js";
 import { countItem, itemsSummary } from "./inventory.js";
 
 const require = createRequire(import.meta.url);
@@ -276,4 +276,16 @@ test("crafting recovers ingredients an earlier desynced craft stranded on the cu
   assert.deepEqual(planks, { ok: true, name: "planks", crafted: 28 });
   server.assertConsistent();
   assert.deepEqual(server.serverCounts(), { acacia_planks: 28 });
+});
+
+test("craftMorePlanks counts from the settled inventory, not a stale model", async () => {
+  const server = new FakeServer({ acacia_planks: 4, acacia_log: 2 });
+  server.model.updateSlot(INVENTORY_START, EMPTY); // the model has lost the carried planks
+  assert.equal(countItem(server.bot, "acacia_planks"), 0);
+
+  // `craftPlanks(bot, countPlanks(bot) + 4)` asked for 4 total here and found it already satisfied.
+  const planks = await leased(() => craftMorePlanks(server.bot, 4));
+  assert.deepEqual(planks, { ok: true, name: "planks", crafted: 4 });
+  server.assertConsistent();
+  assert.deepEqual(server.serverCounts(), { acacia_planks: 8, acacia_log: 1 });
 });
