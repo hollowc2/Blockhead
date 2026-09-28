@@ -1099,16 +1099,27 @@ async function climbOutFirst(bot: Bot, destination: { y: number }, options: Trav
   }
 }
 
+/**
+ * A preemption (e.g. the self-defense reflex pausing the task) can end a trip
+ * with `failed: GoalChanged` or `aborted` between two `shouldAbort` polls, so
+ * the skill never learns it was interrupted and reports an unreachable
+ * destination instead. Poll once more when a trip ends short.
+ */
+function interruptedTrip(result: TravelWaitResult, options: TravelWaitOptions): TravelWaitResult {
+  if (result.status === "arrived" || result.status === "already_there") return result;
+  return options.signal?.aborted === true || options.shouldAbort?.() === true ? { status: "aborted" } : result;
+}
+
 export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
   await climbOutFirst(bot, { y: home.y }, options);
   const allowDig = options.allowDig ?? true;
-  const result = await withPathfinderDigging(bot, allowDig, () => travelHomeAndWaitImpl(bot, home, options));
+  const result = interruptedTrip(await withPathfinderDigging(bot, allowDig, () => travelHomeAndWaitImpl(bot, home, options)), options);
   if (allowDig || !isNoPath(result)) return result;
   // A no-dig route can be physically impossible (the bot is in a pit or a
   // sealed cave). Digging only natural terrain is always safe, and staying
   // trapped forever is not.
   logger.warn({ home }, "no walkable route home; retrying with natural-terrain digging");
-  return withPathfinderDigging(bot, true, () => travelHomeAndWaitImpl(bot, home, { ...options, allowDig: true }));
+  return interruptedTrip(await withPathfinderDigging(bot, true, () => travelHomeAndWaitImpl(bot, home, { ...options, allowDig: true })), options);
 }
 
 /**
@@ -1244,8 +1255,8 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
 export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
   await climbOutFirst(bot, location, options);
   const allowDig = options.allowDig ?? true;
-  const result = await withPathfinderDigging(bot, allowDig, () => travelAndWaitImpl(bot, location, options));
+  const result = interruptedTrip(await withPathfinderDigging(bot, allowDig, () => travelAndWaitImpl(bot, location, options)), options);
   if (allowDig || !isNoPath(result)) return result;
   logger.warn({ location }, "no walkable route; retrying with natural-terrain digging");
-  return withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true }));
+  return interruptedTrip(await withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true })), options);
 }

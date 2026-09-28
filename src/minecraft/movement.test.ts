@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, raceTrip, travelHomeAndWait, walkToward } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, raceTrip, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -79,6 +79,33 @@ test("home navigation recognizes the GoalNear boundary without routing forever",
 
   assert.deepEqual(result, { status: "already_there" });
   assert.equal(gotoCalls, 0);
+});
+
+test("a trip cut short by a pause reports aborted, not an unreachable destination", async () => {
+  const registry = minecraftData("1.21.11");
+  let paused = false;
+  const bot = {
+    registry,
+    game: { dimension: "overworld" },
+    entity: { position: new Vec3(0.5, 64, 0.5) },
+    blockAt: () => null,
+    collectBlock: {},
+    pathfinder: {
+      setMovements: () => undefined,
+      // The self-defense reflex pauses the task and replaces the goal before
+      // the trip's next shouldAbort poll.
+      goto: async () => { paused = true; throw new Error("GoalChanged: The goal was changed before it could be completed!"); },
+      stop: () => undefined,
+      setGoal: () => undefined,
+    },
+  } as any;
+
+  const controller = new AbortController();
+  const result = await new WorldActionExecutor().run("paused-trip", controller.signal, () =>
+    travelAndWait(bot, { x: 6, y: 64, z: 0 }, { range: 1, timeoutMs: 5_000, shouldAbort: () => paused }),
+  );
+
+  assert.deepEqual(result, { status: "aborted" });
 });
 
 test("creative flight sends packets and detects arrival without a move event", async () => {
