@@ -1,0 +1,25 @@
+# Minecraft Java server for CobbleBob, run as a systemd user unit on maia.
+# Install: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now minecraft-server
+# Needs lingering (loginctl enable-linger) to start at boot.
+#
+# The server runs inside tmux on a dedicated socket so the console stays usable:
+#   tmux -L mc attach -t java-server            (detach: Ctrl-b d)
+#   tmux -L mc send-keys -t java-server 'list' Enter
+[Unit]
+Description=Minecraft Java server (CobbleBob)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+WorkingDirectory=%h/mc-server
+ExecStart=/usr/bin/tmux -L mc new-session -d -s java-server %h/mc-server/start.sh
+# Ask the server to save and stop, then wait for the tmux session to close.
+ExecStop=/usr/bin/bash -c '/usr/bin/tmux -L mc send-keys -t java-server stop Enter; for i in $$(seq 80); do /usr/bin/tmux -L mc has-session -t java-server 2>/dev/null || exit 0; sleep 1; done'
+TimeoutStopSec=90
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
