@@ -179,6 +179,10 @@ const IRON_TOOL_UPGRADES: readonly [name: string, cost: number][] = [
   ["iron_shovel", 1],
   ["iron_sword", 2],
 ];
+/** Sticks each tool recipe takes: swords take one, every other tool two. */
+function sticksForTools(tools: readonly string[]): number {
+  return tools.reduce((sum, name) => sum + (name.endsWith("_sword") ? 1 : 2), 0);
+}
 /** Wall-clock budget for one smelt pass in the home furnace. */
 const SMELT_TIMEOUT_MS = 120_000;
 /** Attempts per stage before the run gives up (idempotent stages retry safely). */
@@ -957,8 +961,7 @@ export class BootstrapRunner {
     if (wantSword) stoneTools.push("stone_sword");
     const missing = stoneTools.filter((name) => !hasItem(bot, name));
     if (missing.length > 0) {
-      // Two planks per tool handle; the sword takes one, so this over-buys.
-      const sticks = await craftMoreSticks(bot, missing.length * 2, this.signal ?? undefined);
+      const sticks = await this.ensureSticks(sticksForTools(missing));
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
 
@@ -1565,9 +1568,7 @@ export class BootstrapRunner {
       return { ok: true, message: `Smelted ${ingots} iron ingots; no tool needs upgrading.` };
     }
 
-    // Two sticks per tool (the sword takes one; over-buying is fine, as in
-    // the stone-tools stage).
-      const sticks = await craftMoreSticks(bot, planned.length * 2, this.signal ?? undefined);
+    const sticks = await this.ensureSticks(sticksForTools(planned));
     if (!sticks.ok) return { ok: false, reason: sticks.reason };
 
     const made: string[] = [];
@@ -1753,6 +1754,24 @@ export class BootstrapRunner {
    * the world when short (Phase 8 resilience: the crafting stages used to
    * depend on carried leftovers and retried forever once they ran out).
    */
+  /**
+   * Carry at least `total` sticks. Stick crafting converts carried logs into
+   * planks as needed, so only an empty wood supply needs a trip to the trees:
+   * one log makes four planks, which make eight sticks.
+   */
+  private async ensureSticks(total: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const bot = this.opts.bot;
+    const short = total - countSticks(bot);
+    if (short <= 0) return { ok: true };
+    const logsNeeded = Math.ceil(Math.max(0, short - countPlanks(bot) * 2) / 8);
+    if (logsNeeded > 0) {
+      const logs = await this.ensureLogs(logsNeeded);
+      if (!logs.ok) return { ok: false, reason: logs.reason };
+    }
+    const sticks = await craftSticks(bot, total, this.signal ?? undefined);
+    return sticks.ok ? { ok: true } : { ok: false, reason: sticks.reason };
+  }
+
   private async ensureLogs(needed: number): Promise<{ ok: true } | { ok: false; reason: string }> {
     if (countLogs(this.opts.bot) >= needed) return { ok: true };
     const gathered = await this.gatherLogs(needed);

@@ -21,7 +21,13 @@ so the bot does not execute code or dependencies directly from NFS. The
 service's working directory remains the source checkout, so relative paths for
 configuration, SQLite, and logs resolve there.
 
-Minecraft runs on Eros. The local `llama.cpp` server runs on Maia, normally at
+The Minecraft Java server also runs on Maia, from `~/mc-server`, as the user
+service `minecraft-server.service` (unit source: `deploy/minecraft-server.service`).
+It runs inside tmux on its own socket, so the console is
+`tmux -L mc attach -t java-server`. Because the unit restarts the server, stop
+or restart it with `systemctl --user`, not a console `stop`. The bot connects
+over `127.0.0.1:25565`, and the drop-in `deploy/blockhead-after-minecraft.conf`
+starts the bot after the server. The local `llama.cpp` server runs on Maia, normally at
 `127.0.0.1:8080`.
 
 ## Check the live installation
@@ -131,7 +137,7 @@ its bound; the task is still resumable, but look at what it was doing.
 - **Config, database, or log errors:** verify that the service working directory
   is `/mnt/Repos/Games/Blockhead` and that `config/minecraft.yaml`, `data/`, and
   `logs/` exist there.
-- **No Minecraft connection:** check the Eros host and port in
-  `config/minecraft.yaml`.
+- **No Minecraft connection:** check `systemctl --user status minecraft-server`
+  and the host and port in `config/minecraft.yaml`.
 - **LLM failures:** verify that Maia's `llama.cpp` server is running and that
   `llm.base_url` points to it.

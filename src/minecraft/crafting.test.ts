@@ -289,3 +289,20 @@ test("craftMorePlanks counts from the settled inventory, not a stale model", asy
   server.assertConsistent();
   assert.deepEqual(server.serverCounts(), { acacia_planks: 8, acacia_log: 1 });
 });
+
+test("craftSticks turns a log into same-species planks when the carried planks are a mixed pair", async () => {
+  // CobbleBob's stone_tools stall (2026-09-29): one acacia and one oak plank
+  // match no per-species stick recipe, and the logs were never converted.
+  const server = new FakeServer({ acacia_planks: 1, oak_planks: 1, acacia_log: 3, stick: 4 });
+  const sticks = await leased(() => craftSticks(server.bot, 7));
+  assert.deepEqual(sticks, { ok: true, name: "stick", crafted: 4 });
+  server.assertConsistent();
+  assert.deepEqual(server.serverCounts(), { acacia_planks: 3, oak_planks: 1, acacia_log: 2, stick: 8 });
+});
+
+test("craftSticks reports the shortfall when neither planks nor logs can make sticks", async () => {
+  const server = new FakeServer({ acacia_planks: 1, oak_planks: 1 });
+  const sticks = await leased(() => craftSticks(server.bot, 4));
+  assert.equal(sticks.ok, false);
+  assert.match(sticks.ok ? "" : sticks.reason, /no logs/);
+});

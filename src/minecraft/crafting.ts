@@ -280,10 +280,46 @@ async function craftSticksTo(bot: Bot, targetTotal: number, signal: AbortSignal)
 
   const id = itemId(bot, "stick");
   if (id === null) return failure("stick", "unknown item 'stick'");
-  const recipe = bot.recipesAll(id, null, false).find((candidate) => recipeUsable(bot, candidate, 1));
-  if (!recipe) return failure("stick", "missing ingredients (two planks) for sticks");
 
-  const crafted = await craftItem(bot, "stick", { times: Math.ceil((targetTotal - initial) / 4), signal });
+  // Mineflayer lists one stick recipe per plank species, so a mixed pair (one
+  // oak, one acacia plank) matches none although vanilla accepts it. When no
+  // recipe fits the carried planks, turn one log into four planks of a single
+  // species and keep going. One recipe run at a time, each from a settled model.
+  let reason: string | null = null;
+  while (countSticks(bot) < targetTotal) {
+    throwIfAborted(signal);
+    const before = countSticks(bot);
+    if (!stickRecipeUsable(bot, id)) {
+      const log = logForSticks(bot);
+      if (log === null) {
+        reason = `no matching pair of planks and no logs to make sticks (${countPlanks(bot)} planks held)`;
+        break;
+      }
+      const planks = await craftItem(bot, planksForLog(log), { times: 1, signal });
+      if (!planks.ok || !stickRecipeUsable(bot, id)) {
+        reason = planks.ok ? `crafting ${planksForLog(log)} did not enable a stick recipe` : planks.reason;
+        break;
+      }
+    }
+    const crafted = await craftItem(bot, "stick", { times: 1, signal });
+    if (countSticks(bot) <= before) {
+      reason = crafted.ok ? "craft completed without an output delta" : crafted.reason;
+      break;
+    }
+  }
+
   const delta = observedDelta(initial, countSticks(bot), Math.max(1, targetTotal - initial));
-  return delta.delta > 0 ? { ok: true, name: "stick", crafted: delta.delta } : failure("stick", crafted.ok ? "craft completed without an output delta" : crafted.reason);
+  if (countSticks(bot) >= targetTotal && delta.delta > 0) return { ok: true, name: "stick", crafted: delta.delta };
+  return failure("stick", `only ${countSticks(bot)}/${targetTotal} sticks: ${reason ?? "craft completed without an output delta"}`);
+}
+
+function stickRecipeUsable(bot: Bot, stickId: number): boolean {
+  return bot.recipesAll(stickId, null, false).some((candidate) => recipeUsable(bot, candidate, 1));
+}
+
+/** The log to plank for sticks: one whose species already has a loose plank, else the most plentiful. */
+function logForSticks(bot: Bot): string | null {
+  const logs = Object.entries(logsByType(bot)).sort(([, a], [, b]) => b - a);
+  const matching = logs.find(([log]) => countItem(bot, planksForLog(log)) > 0);
+  return (matching ?? logs[0])?.[0] ?? null;
 }
