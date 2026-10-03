@@ -19,6 +19,12 @@ export interface DeathRecoveryManagerOptions {
   config?: MinecraftConfig;
   /** Injectable wall clock (tests advance it to exercise the loop brake). */
   now?: () => number;
+  /**
+   * True while bootstrap is still building the bot's first kit. Bootstrap
+   * rebuilds lost tools itself (wood, table, tools in order); re-arm tasks
+   * queued on top preempted it and failed for want of the same wood.
+   */
+  bootstrapOwnsKit?: () => boolean;
 }
 
 /**
@@ -373,7 +379,12 @@ export class DeathRecoveryManager {
    * and the next job does not stall on a missing pickaxe.
    */
   private queueRearm(): void {
+    if (this.opts.bootstrapOwnsKit?.() === true) return;
+    const scheduler = this.opts.scheduler;
     for (const item of REARM_ITEMS) {
+      // One re-arm per item: repeated deaths piled up duplicates.
+      const workKey = `rearm:${item}`;
+      if (scheduler.active?.workKey === workKey || scheduler.queued.some((task) => task.workKey === workKey)) continue;
       this.opts.scheduler.enqueue({
         type: "ensure_item",
         priority: TaskPriority.MAINTENANCE,

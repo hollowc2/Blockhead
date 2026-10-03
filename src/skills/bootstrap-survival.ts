@@ -7,6 +7,7 @@ import {
   BootstrapStage,
   BOOTSTRAP_STAGES,
   nextBootstrapStage,
+  BOOTSTRAP_STAGE_ORDER,
 } from "../agent/bootstrap.js";
 import type { AgentState } from "../agent/state.js";
 import type { Scheduler } from "../agent/scheduler.js";
@@ -286,6 +287,26 @@ export class BootstrapRunner {
     return this.running;
   }
 
+  /**
+   * A death wipes the kit, but the persisted stage still said "stone tools
+   * done", so bootstrap went on to hunt bare-handed 90 blocks out while
+   * separate re-arm tasks fought it for the same wood. With no pickaxe
+   * carried, rewind to just after HOME and rebuild wood, table and tools in
+   * order (each of those stages is idempotent: a standing table is reused).
+   */
+  private regressForLostTools(): void {
+    const worldId = this.worldId;
+    const completed = this.completedStage;
+    if (worldId === null || completed === null) return;
+    const order = BOOTSTRAP_STAGE_ORDER;
+    const done = order.indexOf(completed);
+    if (done < order.indexOf(BootstrapStage.STONE_TOOLS) || done >= order.indexOf(BootstrapStage.NORMAL_OPERATION)) return;
+    const hasPickaxe = this.opts.bot.inventory.items().some((item) => /_pickaxe$/.test(item.name));
+    if (hasPickaxe) return;
+    this.opts.logger.warn({ completed }, "bootstrap: tools lost; rebuilding from wood");
+    this.opts.stages.save(worldId, BootstrapStage.HOME);
+  }
+
   /** Drive the state machine from where it last stopped. Idempotent. */
   async run(): Promise<void> {
     // A retry/resume hook can fire while the prior run is still waiting on a
@@ -388,6 +409,7 @@ export class BootstrapRunner {
       return;
     }
 
+    this.regressForLostTools();
     this.running = true;
     this.yielding = false;
     this.startedAt = Date.now();

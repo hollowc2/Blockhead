@@ -39,6 +39,7 @@ import { SelfDefenseReflex } from "./agent/self-defense.js";
 import { UtilityRunner } from "./skills/utility.js";
 import { NightShelterRunner } from "./skills/night-shelter.js";
 import { TaskPriority } from "./agent/task.js";
+import { BootstrapStage } from "./agent/bootstrap.js";
 import { NightShelterWatch, ownerWorkPending } from "./agent/night-shelter.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
@@ -195,7 +196,7 @@ registerGoalTools(registry, goals);
 
 // Phase 10: death coordination is bus-only (no bot), so one instance outlives
 // connection attempts and recovery tracking survives a reconnect.
-const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger });
+const deathManager = new DeathRecoveryManager({ bus, scheduler, state, deaths, config, logger, bootstrapOwnsKit: () => currentBootstrap !== null && currentBootstrap.currentStage !== null && currentBootstrap.currentStage !== BootstrapStage.NORMAL_OPERATION });
 const taskOutcomes = new TaskOutcomeTracker({ bus });
 
 // Long projects run across many slices; tell the owner when one finishes or
