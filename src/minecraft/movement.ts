@@ -122,8 +122,41 @@ function getMovements(bot: Bot): Pathfinder.Movements | null {
   return movements;
 }
 
+/**
+ * What the bot believes it is standing in, for stall reports: a frozen
+ * position in open terrain has been seen at the world spawn, and the server
+ * shows open ground there, so record the client's view (null = unloaded).
+ */
+function standingDiagnostics(bot: Bot): Record<string, unknown> {
+  try {
+    return readStandingDiagnostics(bot);
+  } catch {
+    return {};
+  }
+}
+
+function readStandingDiagnostics(bot: Bot): Record<string, unknown> {
+  const entity = bot.entity;
+  if (entity === null || entity === undefined) return {};
+  const feet = entity.position.floored();
+  const around: Record<string, string | null> = {};
+  for (const [label, dx, dy, dz] of [["below", 0, -1, 0], ["feet", 0, 0, 0], ["head", 0, 1, 0], ["n", 0, 0, -1], ["s", 0, 0, 1], ["e", 1, 0, 0], ["w", -1, 0, 0]] as const) {
+    around[label] = bot.blockAt(feet.offset(dx, dy, dz))?.name ?? null;
+  }
+  return {
+    onGround: entity.onGround,
+    velocity: { x: Number(entity.velocity.x.toFixed(3)), y: Number(entity.velocity.y.toFixed(3)), z: Number(entity.velocity.z.toFixed(3)) },
+    controls: Object.entries(bot.controlState ?? {}).filter(([, on]) => on).map(([key]) => key),
+    physicsEnabled: (bot as { physicsEnabled?: boolean }).physicsEnabled,
+    around,
+  };
+}
+
 /** Throwaway blocks the pathfinder may place to tower or bridge. */
-const SCAFFOLD_ITEMS = ["dirt", "cobblestone", "cobbled_deepslate", "netherrack", "andesite", "diorite", "granite", "tuff", "stone", "deepslate"];
+// Cobblestone and its deepslate/stone forms are crafting stock (tools,
+// furnace): towering to an acacia canopy once burned all 31 cobblestone the
+// bot had just mined for stone tools. Dirt and filler stones only.
+const SCAFFOLD_ITEMS = ["dirt", "coarse_dirt", "netherrack", "andesite", "diorite", "granite", "tuff"];
 
 function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   const registry = bot.registry;
@@ -545,7 +578,7 @@ export async function walkToward(
           }
 
           if (!dug && stuckTicks % 20 === 0) {
-            logger.warn({ position: current.position, distance: Number(distance.toFixed(1)), stuckTicks }, "walkToward stalled, no diggable blocks found in adjacency");
+            logger.warn({ position: current.position, distance: Number(distance.toFixed(1)), stuckTicks, ...standingDiagnostics(bot) }, "walkToward stalled, no diggable blocks found in adjacency");
           }
 
           // Much more patient — give the bot time to mine through obstacles.
@@ -879,7 +912,7 @@ export async function raceTrip(
     if (signal.aborted) return { status: "aborted" };
     const winner = await Promise.race([trip, nap]);
     if (winner.status === "timed_out" || winner.status === "aborted" || winner.status === "failed") {
-      logger.info({ status: winner.status, error: winner.status === "failed" ? winner.error : undefined, position: bot.entity?.position }, "pathfinder trip ended without arrival");
+      logger.info({ status: winner.status, error: winner.status === "failed" ? winner.error : undefined, position: bot.entity?.position, ...(winner.status === "aborted" ? {} : standingDiagnostics(bot)) }, "pathfinder trip ended without arrival");
       // resetPathfinder stops the pathfinder and rebuilds its Movements so
       // the next trip starts clean; the explicit stop is contained there.
       resetPathfinder(bot);
