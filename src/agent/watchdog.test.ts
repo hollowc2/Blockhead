@@ -249,3 +249,11 @@ test("survival actions are never blocked: a failed night shelter retries on its 
   assert.equal(watchdog.isBlocked("night_shelter"), false);
   assert.equal(watchdog.isBlocked("defend_self"), false);
 });
+
+test("a parked block on a now-exempt survival action is released at once", () => {
+  now = 0;
+  const h = newHarness({ maxFailures: 1, cooldownMs: 600_000 });
+  // Simulate a block persisted before the exemption existed.
+  (h.watchdog as unknown as { blocks: Map<string, unknown> }).blocks.set("night_shelter", { action: "night_shelter", failures: 3, blockedAt: 0, retryAt: 600_000, lastReason: "x" });
+  assert.equal(h.watchdog.takeExpiredBlock("night_shelter"), true);
+});

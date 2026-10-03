@@ -343,7 +343,11 @@ export class ActionWatchdog {
   /** Consume an expired cooldown, distinguishing it from ordinary failures. */
   takeExpiredBlock(action: string): boolean {
     const block = this.blocks.get(action);
-    if (block === undefined || block.retryAt > this.now()) return false;
+    if (block === undefined) return false;
+    // An exempt action parked by a block persisted before it was exempt is
+    // released at once; left parked it also kept the night watch from
+    // queueing a fresh shelter ("already sheltering").
+    if (block.retryAt > this.now() && !isWatchdogExempt(action)) return false;
     this.blocks.delete(action);
     this.persistence?.remove(action);
     return true;
