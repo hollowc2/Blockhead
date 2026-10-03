@@ -45,26 +45,28 @@ export function isReachableFromGround(bot: Bot, position: Vec3): boolean {
 const TREE_GROUND = /^(grass_block|dirt|coarse_dirt|podzol|rooted_dirt|mycelium|moss_block|mud|muddy_mangrove_roots|stone|deepslate|andesite|diorite|granite|sand|red_sand|gravel|clay|snow_block|terracotta|[a-z_]+_terracotta)$/;
 
 /**
- * A log standing on natural ground with a free side to stand at: always
- * reachable without scaffolding, and mining it opens the trunk above.
- * Acacia canopies and old scaffold pillars fool looser checks.
+ * A trunk log within reach of someone standing on natural ground: soil or
+ * stone at most three blocks below it (through air or more trunk), with an
+ * open standing spot on that ground beside the column. Acacia canopies left
+ * floating over cut stumps, and old scaffold pillars, fail it.
  */
 export function isTrunkBase(bot: Bot, position: Vec3): boolean {
-  const below = bot.blockAt(position.offset(0, -1, 0));
-  if (below === null || !TREE_GROUND.test(below.name.replace(/^minecraft:/, ""))) return false;
+  let groundY: number | null = null;
+  for (let depth = 1; depth <= 3; depth++) {
+    const block = bot.blockAt(position.offset(0, -depth, 0));
+    if (block === null) return false;
+    const name = block.name.replace(/^minecraft:/, "");
+    if (TREE_GROUND.test(name)) { groundY = position.y - depth; break; }
+    if (block.boundingBox !== "empty" && !/_log$/.test(name)) return false;
+  }
+  if (groundY === null) return false;
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-    const feet = bot.blockAt(position.offset(dx, 0, dz));
-    const head = bot.blockAt(position.offset(dx, 1, dz));
-    if (feet !== null && head !== null && feet.boundingBox === "empty" && head.boundingBox === "empty") return true;
+    const floor = bot.blockAt(new Vec3(position.x + dx, groundY, position.z + dz));
+    const feet = bot.blockAt(new Vec3(position.x + dx, groundY + 1, position.z + dz));
+    const head = bot.blockAt(new Vec3(position.x + dx, groundY + 2, position.z + dz));
+    if (floor !== null && TREE_GROUND.test(floor.name.replace(/^minecraft:/, "")) && feet?.boundingBox === "empty" && head?.boundingBox === "empty") return true;
   }
   return false;
-}
-
-/** Trunk bases first, then logs reachable from the ground; canopy logs dropped. */
-export function rankReachableLogs(bot: Bot, positions: readonly Vec3[]): Vec3[] {
-  const bases = positions.filter((position) => isTrunkBase(bot, position));
-  const rest = positions.filter((position) => !bases.includes(position) && isReachableFromGround(bot, position));
-  return [...bases, ...rest];
 }
 
 /** Blocks a movement/placement primitive may stand on or lean against. */
@@ -147,6 +149,24 @@ export function findBlocksNear(
  * capped result after `findBlocks` returns lets the nearest buried stone fill
  * the whole list and hide exposed cave/surface stone.
  */
+/** `findBlocksNearPoint` with a position filter applied inside the scan, so `count` holds only matches that pass it. */
+export function findBlocksNearPointRefined(
+  bot: Bot,
+  point: Vec3,
+  predicate: (block: Block) => boolean,
+  refine: (position: Vec3) => boolean,
+  maxDistance: number,
+  count: number,
+): Vec3[] {
+  return bot.findBlocks({
+    point,
+    matching: (block) => block !== null && predicate(block),
+    useExtraInfo: (block: Block) => refine(block.position),
+    maxDistance,
+    count,
+  });
+}
+
 export function findBlocksNearRefined(
   bot: Bot,
   predicate: (block: Block) => boolean,

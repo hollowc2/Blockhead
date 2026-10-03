@@ -13,7 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary 
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog, rankReachableLogs } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -603,7 +603,12 @@ export class CollectResourceRunner {
         data.expedition = true;
       }
 
-      const found = findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS)
+      // Logs: trunk logs only, filtered inside the scan. Canopy logs each cost
+      // a 5-15 s pathfinder timeout and crowded every real trunk out of the
+      // capped candidate list around a home ringed by felled acacias.
+      const found = (/_log$/.test(bare)
+        ? findBlocksNearPointRefined(bot, anchor, (block) => blockMatchesResource(block, bare), (position) => isTrunkBase(bot, position), radius, SITE_CANDIDATES_PER_RADIUS)
+        : findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS))
         .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`));
       // A matching block can be visible in the world scan while still being
       // completely buried. Such a position is not a useful collection site:
@@ -615,10 +620,6 @@ export class CollectResourceRunner {
       });
       const outside = region ? reachableSurface.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : reachableSurface;
       let candidates = outside.length > 0 ? outside : reachableSurface;
-      // Canopy logs cost a 5-15 s pathfinder timeout each (and, with
-      // scaffolding, the bot's building stock): trunk bases first, the
-      // rest only when reachable from the ground.
-      if (/_log$/.test(bare)) candidates = rankReachableLogs(bot, candidates);
       // Spec 8.2 policy: structural blocks inside the protected home region are
       // only gathered with an explicit owner request. Natural terrain (trees,
       // stone, ores) stays available to the bot's own rails.
@@ -895,9 +896,9 @@ export class CollectResourceRunner {
       if (have >= targetTotal) break;
       this.checkInterrupt();
       if (this.stopRequested) return { ok: false, reason: "interrupted" };
-      const positions = rankReachableLogs(bot, findBlocksNear(bot, isRawLog, radius, 128)
-        .filter((position) => !tried.has(`${position.x},${position.y},${position.z}`)))
-        .slice(0, 24);
+      // Trunk logs only, filtered inside the scan so the count is not spent
+      // on the canopies of trees already felled around home.
+      const positions = findBlocksNearRefined(bot, isRawLog, (position) => isTrunkBase(bot, position) && !tried.has(`${position.x},${position.y},${position.z}`), radius, 24);
       for (const position of positions) tried.add(`${position.x},${position.y},${position.z}`);
       const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) continue;
