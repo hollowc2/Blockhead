@@ -883,14 +883,21 @@ export class CollectResourceRunner {
   private async gatherLogsForTool(targetTotal: number): Promise<{ ok: true } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
     let have = countLogs(bot);
+    // Every radius returns the nearest matches first, so without this the
+    // wider rings re-offered the same unreachable logs and never reached a
+    // new tree (savanna: "only 1/2 logs found nearby" after 3 minutes).
+    const tried = new Set<string>();
     for (const radius of SEARCH_RADIUS_SEQUENCE) {
+      if (have >= targetTotal) break;
       this.checkInterrupt();
       if (this.stopRequested) return { ok: false, reason: "interrupted" };
-      const positions = findBlocksNear(bot, isRawLog, radius, 24);
+      const positions = findBlocksNear(bot, isRawLog, radius, 96)
+        .filter((position) => !tried.has(`${position.x},${position.y},${position.z}`))
+        .slice(0, 24);
+      for (const position of positions) tried.add(`${position.x},${position.y},${position.z}`);
       const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
       if (targets.length === 0) continue;
 
-      const before = have;
       await collectBlocks(
         bot,
         targets,
@@ -901,7 +908,6 @@ export class CollectResourceRunner {
         (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "skipping unreachable log"),
       );
       have = countLogs(bot);
-      if (have <= before) continue;
     }
     have = countLogs(bot);
     if (have < targetTotal) return { ok: false, reason: `only ${have}/${targetTotal} logs found nearby` };
