@@ -64,7 +64,7 @@ import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
 import { stopWorldPrimitives, throwIfAborted } from "../agent/world-actions.js";
 import type { WorldMutation } from "../agent/world-actions.js";
 import { isProtectedFixture, revalidateAction } from "../policy/action-boundary.js";
-import { canonicalMobName, isDroppedItemEntity, isLiveMob } from "../policy/combat.js";
+import { canonicalMobName, HOSTILE_MOB_NAMES, isDroppedItemEntity, isLiveMob } from "../policy/combat.js";
 
 /** Default wood target / search radius when the config omits `bootstrap`. */
 const WOOD_LOG_TARGET = 8;
@@ -142,6 +142,8 @@ const HUNT_OUTWARD_DIRS: readonly [dx: number, dz: number][] = [
 ];
 const HUNT_OUTWARD_STEP = 32;
 const HUNT_OUTWARD_LEGS = 2;
+/** At or below this, the food hunt stays within the base radius of home. */
+const HUNT_CRITICAL_HEALTH = 4;
 const HUNT_OUTWARD_LEG_TIMEOUT_MS = 180_000;
 /** `bot.activateBlock` reach for the crafting table. */
 const TABLE_REACH = 6;
@@ -1019,11 +1021,14 @@ export class BootstrapRunner {
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
     const atNight = !bot.time.isDay;
-    const maxRadius = atNight ? baseRadius : MAX_SEARCH_RADIUS;
+    const maxRadius = atNight || bot.health <= HUNT_CRITICAL_HEALTH ? baseRadius : MAX_SEARCH_RADIUS;
 
     // When the render-distance net comes up empty, walk outward in a few
     // orthogonal legs and re-scan (day only; night hunting stays near home).
-    const outwardLegs = atNight ? 0 : HUNT_OUTWARD_LEGS;
+    // Near death (1 HP after a dawn zombie), a 90-block trek up a mountain
+    // past the night's leftovers killed the bot: hunt only close to home.
+    const critical = bot.health <= HUNT_CRITICAL_HEALTH;
+    const outwardLegs = atNight || critical ? 0 : HUNT_OUTWARD_LEGS;
     // Starving with nothing to eat and no regen (hunger below 18): waiting
     // never heals, so the stage deadlocked asking the owner for food. In
     // daylight keep searching for passive animals, as gather_food does; at
@@ -1080,11 +1085,12 @@ export class BootstrapRunner {
         // Low health only blocks when this radius offers nothing to hunt: a
         // passive animal cannot fight back, and killing it at low health is
         // the only self-recoverable path (auto-eat heals off the meat).
-        if (bot.health <= HUNT_MIN_HEALTH && nearestHuntableMob(bot, radius) === null) {
+        const huntable = (): Entity | null => nearestHuntableMob(bot, radius, { exclude: this.failedMobIds, avoidHostiles: bot.health <= HUNT_MIN_HEALTH });
+        if (bot.health <= HUNT_MIN_HEALTH && huntable() === null) {
           const recovered = await recoverLowHealth(bot);
           if (!recovered.ok && !starvingInDaylight(recovered)) return finish({ ok: false, reason: recovered.reason });
         }
-        const mob = nearestHuntableMob(bot, radius);
+        const mob = huntable();
         if (mob === null) {
           if (leg === 0) {
             announceHunt(
@@ -1098,7 +1104,16 @@ export class BootstrapRunner {
 
         const before = countFoodItems(bot);
         const kill = await this.killMob(mob);
-        if (!kill.ok) return finish({ ok: false, reason: kill.reason });
+        if (!kill.ok) {
+          // An animal up a cliff should not end the stage while others are
+          // reachable; skip it for the rest of this bootstrap run.
+          if (kill.reason.startsWith("could not approach")) {
+            this.failedMobIds.add(mob.id);
+            this.opts.logger.warn({ entityId: mob.id, target: mob.position, reason: kill.reason }, "bootstrap hunt target blacklisted");
+            continue;
+          }
+          return finish({ ok: false, reason: kill.reason });
+        }
         kills += 1;
         have = countFoodItems(bot);
         if (have <= before) {
@@ -2635,14 +2650,22 @@ function countFoodItems(bot: Bot): number {
 }
 
 /** Nearest huntable passive mob within `maxDistance` of the bot, or null. */
-function nearestHuntableMob(bot: Bot, maxDistance: number): Entity | null {
+/** A hostile this close to an animal makes it a bad target for a hurt bot. */
+const HUNT_HOSTILE_CLEARANCE = 12;
+
+function nearestHuntableMob(bot: Bot, maxDistance: number, options: { exclude?: ReadonlySet<number>; avoidHostiles?: boolean } = {}): Entity | null {
   const self = bot.entity;
   if (self === null) return null;
+  const hostiles = options.avoidHostiles === true
+    ? Object.values(bot.entities).filter((entity) => isLiveMob(entity) && HOSTILE_MOB_NAMES.has(canonicalMobName(entity)))
+    : [];
   let best: Entity | null = null;
   let bestDistance = Infinity;
   for (const entity of Object.values(bot.entities)) {
     const name = canonicalMobName(entity);
     if (!isLiveMob(entity) || HUNT_MOB_NAMES[name] !== true) continue;
+    if (options.exclude?.has(entity.id) === true) continue;
+    if (hostiles.some((hostile) => hostile.position.distanceTo(entity.position) <= HUNT_HOSTILE_CLEARANCE)) continue;
     const distance = self.position.distanceTo(entity.position);
     if (distance <= maxDistance && distance < bestDistance) {
       best = entity;

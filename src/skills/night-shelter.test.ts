@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ownerWorkPending, shelterDecision, type ShelterDecisionInput } from "../agent/night-shelter.js";
-import { findShelterSpot, isSealedPocket, isShelterNight, shelterDigCells, shelterPocketFeet, validShelterSpot, type CellLookup } from "./night-shelter.js";
+import { findShelterSpot, isSealedPocket, isShelterNight, shelterDigCells, shelterPocketFeet, validShelterSpot, shelterCanLeave, type CellLookup } from "./night-shelter.js";
 
 /** Flat world: grass at y=63 over dirt (60-62) over stone; air above. */
 function flatWorld(overrides: Record<string, string> = {}): CellLookup {
@@ -103,4 +103,12 @@ test("a sealed pocket is recognized, an open shaft is not", () => {
   assert.equal(isSealedPocket(flatWorld(dug), feet), false);
   // Refill the two shaft cells beside the pocket.
   assert.equal(isSealedPocket(flatWorld({ ...dug, "0,60,0": "dirt", "0,61,0": "dirt" }), feet), true);
+});
+
+test("the shelter opens only in full morning, and waits for nearby hostiles to clear", () => {
+  assert.equal(shelterCanLeave(18_000, false), false, "night");
+  assert.equal(shelterCanLeave(200, false), false, "first light: the night's mobs have not burned yet");
+  assert.equal(shelterCanLeave(2_000, false), true);
+  assert.equal(shelterCanLeave(2_000, true), false, "a zombie at the exit");
+  assert.equal(shelterCanLeave(4_500, true), true, "a mob in shade can linger all day");
 });

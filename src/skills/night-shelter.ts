@@ -6,6 +6,7 @@ import { throwIfAborted } from "../agent/world-actions.js";
 import { bareName } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { digBlock, equipItem, equipToolForBlock, placeBlock } from "../minecraft/primitives.js";
+import { HOSTILE_MOB_NAMES, isMobEntity } from "../policy/combat.js";
 import { TOOL_FAMILIES } from "./expedition.js";
 import { sleep as waitMs, type SkillResult } from "./skill-library.js";
 
@@ -66,6 +67,22 @@ const DIRS = [{ dx: 1, dz: 0 }, { dx: -1, dz: 0 }, { dx: 0, dz: 1 }, { dx: 0, dz
 
 export function isShelterNight(timeOfDay: number): boolean {
   return timeOfDay >= SHELTER_START_TICK;
+}
+
+/**
+ * Leaving at tick 0 walked into the night's zombies and spiders before the
+ * sun had burned them (13:20, down to 1 HP from full). Wait for full morning,
+ * and for the area to clear, but not past mid-morning: a mob in shade can
+ * linger all day.
+ */
+const LEAVE_AFTER_TICK = 1_500;
+const LEAVE_ANYWAY_TICK = 4_000;
+/** Hostiles this close to the pocket keep the bot sealed in. */
+const EXIT_THREAT_RADIUS = 16;
+
+export function shelterCanLeave(timeOfDay: number, hostileNearby: boolean): boolean {
+  if (isShelterNight(timeOfDay) || timeOfDay < LEAVE_AFTER_TICK) return false;
+  return !hostileNearby || timeOfDay >= LEAVE_ANYWAY_TICK;
 }
 
 function passable(name: string | null): boolean {
@@ -238,7 +255,7 @@ export class NightShelterRunner {
     data.sheltered = true;
 
     // Wait out the night, sealed in.
-    while (isShelterNight(bot.time.timeOfDay)) {
+    while (!shelterCanLeave(bot.time.timeOfDay, this.hostileNearby())) {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
       if (this.opts.ownerWorkPending?.() === true) {
@@ -384,6 +401,14 @@ export class NightShelterRunner {
       const block = bot.blockAt(new Vec3(x, y, z));
       return block === null ? null : bareName(block.name);
     };
+  }
+
+  /** A hostile mob within reach of the shelter exit. */
+  private hostileNearby(): boolean {
+    const self = this.opts.bot.entity?.position;
+    if (self === undefined || self === null) return false;
+    return Object.values(this.opts.bot.entities).some((entity) => isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "")
+      && entity.position !== undefined && entity.position.distanceTo(self) <= EXIT_THREAT_RADIUS);
   }
 
   private checkInterrupt(): void {
