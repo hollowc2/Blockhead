@@ -41,6 +41,32 @@ export function isReachableFromGround(bot: Bot, position: Vec3): boolean {
   return false;
 }
 
+/** Soil and stone a tree grows from: a log directly on one is a trunk base. */
+const TREE_GROUND = /^(grass_block|dirt|coarse_dirt|podzol|rooted_dirt|mycelium|moss_block|mud|muddy_mangrove_roots|stone|deepslate|andesite|diorite|granite|sand|red_sand|gravel|clay|snow_block|terracotta|[a-z_]+_terracotta)$/;
+
+/**
+ * A log standing on natural ground with a free side to stand at: always
+ * reachable without scaffolding, and mining it opens the trunk above.
+ * Acacia canopies and old scaffold pillars fool looser checks.
+ */
+export function isTrunkBase(bot: Bot, position: Vec3): boolean {
+  const below = bot.blockAt(position.offset(0, -1, 0));
+  if (below === null || !TREE_GROUND.test(below.name.replace(/^minecraft:/, ""))) return false;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const feet = bot.blockAt(position.offset(dx, 0, dz));
+    const head = bot.blockAt(position.offset(dx, 1, dz));
+    if (feet !== null && head !== null && feet.boundingBox === "empty" && head.boundingBox === "empty") return true;
+  }
+  return false;
+}
+
+/** Trunk bases first, then logs reachable from the ground; canopy logs dropped. */
+export function rankReachableLogs(bot: Bot, positions: readonly Vec3[]): Vec3[] {
+  const bases = positions.filter((position) => isTrunkBase(bot, position));
+  const rest = positions.filter((position) => !bases.includes(position) && isReachableFromGround(bot, position));
+  return [...bases, ...rest];
+}
+
 /** Blocks a movement/placement primitive may stand on or lean against. */
 export function isSolid(block: Block | null): block is Block {
   return block !== null && block.boundingBox === "block";

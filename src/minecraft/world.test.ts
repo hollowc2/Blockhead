@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { collectBlocks, findBlocksNearRefined, isReachableFromGround } from "./world.js";
+import { collectBlocks, findBlocksNearRefined, isReachableFromGround, rankReachableLogs } from "./world.js";
 
 test("refined block search applies exposure before the candidate cap", () => {
   let options: Record<string, unknown> | undefined;
@@ -68,4 +68,15 @@ test("a canopy log 6 above the ground, over leaves, is not", () => {
   const canopy: Record<string, string> = { "0,70,0": "acacia_log" };
   for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (dx || dz) canopy[`${dx},69,${dz}`] = "acacia_leaves";
   assert.equal(isReachableFromGround(flatWorld(canopy), new Vec3(0, 70, 0)), false);
+});
+
+test("trunk bases on soil rank first; logs on scaffold pillars in the canopy are dropped", () => {
+  const extra: Record<string, string> = {
+    "5,65,0": "acacia_log", "5,66,0": "acacia_log",
+    // A floating canopy log whose only nearby "ground" is leaves.
+    "0,71,0": "acacia_log",
+  };
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (dx || dz) extra[`${dx},70,${dz}`] = "acacia_leaves";
+  const ranked = rankReachableLogs(flatWorld(extra), [new Vec3(0, 71, 0), new Vec3(5, 66, 0), new Vec3(5, 65, 0)]);
+  assert.deepEqual(ranked.map((p) => `${p.x},${p.y},${p.z}`), ["5,65,0", "5,66,0"]);
 });

@@ -281,8 +281,10 @@ export class NightShelterRunner {
     data.spot = spot;
     this.opts.logger.info({ spot, hasPickaxe }, "night shelter: digging in");
 
-    // Stand exactly on the shaft column.
-    const start = await travelAndWait(bot, spot.shaft, { range: 0, timeoutMs: STEP_TIMEOUT_MS, allowDig: false, shouldAbort: this.travelAbort, signal });
+    // Stand exactly on the shaft column. Digging is allowed on the way: a bot
+    // perched on an old scaffold pillar in a canopy (4+ blocks up, more than
+    // the pathfinder's 3-block drop) could never get down to dig in.
+    const start = await travelAndWait(bot, spot.shaft, { range: 0, timeoutMs: STEP_TIMEOUT_MS, allowDig: true, shouldAbort: this.travelAbort, signal });
     if (this.stopRequested) return this.interrupted(data);
     if (start.status !== "arrived" && start.status !== "already_there") return this.fail(data, "PATH_UNREACHABLE", `could not reach the shelter spot: ${start.status}`);
 

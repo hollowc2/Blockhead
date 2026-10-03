@@ -13,7 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary 
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog, isReachableFromGround } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog, rankReachableLogs } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -611,13 +611,14 @@ export class CollectResourceRunner {
       // NoPath/Digging aborted failures. Only target exposed blocks here.
       const reachableSurface = found.filter((position) => {
         const block = bot.blockAt(position);
-        if (block === null || !hasAirNeighbor(bot, block.position)) return false;
-        // Canopy logs cost a 5-15 s pathfinder timeout each and, with
-        // scaffolding, the bot's building stock; take the ones within reach.
-        return !/_log$/.test(bare) || isReachableFromGround(bot, block.position);
+        return block !== null && hasAirNeighbor(bot, block.position);
       });
       const outside = region ? reachableSurface.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : reachableSurface;
       let candidates = outside.length > 0 ? outside : reachableSurface;
+      // Canopy logs cost a 5-15 s pathfinder timeout each (and, with
+      // scaffolding, the bot's building stock): trunk bases first, the
+      // rest only when reachable from the ground.
+      if (/_log$/.test(bare)) candidates = rankReachableLogs(bot, candidates);
       // Spec 8.2 policy: structural blocks inside the protected home region are
       // only gathered with an explicit owner request. Natural terrain (trees,
       // stone, ores) stays available to the bot's own rails.
@@ -894,9 +895,8 @@ export class CollectResourceRunner {
       if (have >= targetTotal) break;
       this.checkInterrupt();
       if (this.stopRequested) return { ok: false, reason: "interrupted" };
-      const positions = findBlocksNear(bot, isRawLog, radius, 96)
-        .filter((position) => !tried.has(`${position.x},${position.y},${position.z}`))
-        .filter((position) => isReachableFromGround(bot, position))
+      const positions = rankReachableLogs(bot, findBlocksNear(bot, isRawLog, radius, 128)
+        .filter((position) => !tried.has(`${position.x},${position.y},${position.z}`)))
         .slice(0, 24);
       for (const position of positions) tried.add(`${position.x},${position.y},${position.z}`);
       const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
