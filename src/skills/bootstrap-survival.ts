@@ -58,6 +58,7 @@ import {
   isRawLog,
   isTrunkBase,
   placeItemAt,
+  collectTargetKey,
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
 import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
@@ -504,6 +505,10 @@ export class BootstrapRunner {
   }
 
   private async executeWithRetries(stage: BootstrapStage): Promise<StageOutcome> {
+    // Targets that failed in an earlier cycle (a timeout, a mob in the way)
+    // get another chance; the set was only cleared when a stage completed, so
+    // a stage that kept failing kept every target it had ever tried banned.
+    this.failedTargets.clear();
     let last: StageOutcome = { ok: false, reason: "no attempt ran" };
     const attempts = stage === BootstrapStage.STONE_TOOLS ? 1 : STAGE_ATTEMPTS;
     for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -703,7 +708,10 @@ export class BootstrapRunner {
       // Apply the standable-face check inside Mineflayer's search so a nearby
       // canopy cannot consume the 24-result cap and hide reachable trunk
       // bases farther out in the advertised radius.
-      const positions = findBlocksNearRefined(bot, isRawLog, (position) => isReachableTrunkBase(bot, position), radius, 24);
+      // Failed trees are excluded inside the scan too: otherwise the same 24
+      // blacklisted trunks filled the cap every pass and the stage looped on
+      // "No logs reachable" for half an hour with 300 trunks in range.
+      const positions = findBlocksNearRefined(bot, isRawLog, (position) => isReachableTrunkBase(bot, position) && !this.failedTargets.has(collectTargetKey(bot, position)), radius, 24);
       if (positions.length === 0) {
         this.announce(`No logs within ${radius} blocks. Expanding search.`);
         continue;
@@ -2119,7 +2127,7 @@ export class BootstrapRunner {
     const self = bot.entity;
     if (self !== null) {
       const nearest = bot.findBlocks({ point: self.position, matching: (block) => isCobbleStone(block), maxDistance: 32, count: 48 })
-        .filter((position) => !this.failedTargets.has(blockKey(position)))
+        .filter((position) => !this.failedTargets.has(collectTargetKey(bot, position)))
         .sort((a, b) => a.distanceTo(self.position) - b.distanceTo(self.position))
         .map((position) => bot.blockAt(position))
         .filter((block): block is Block => block !== null);
@@ -2197,7 +2205,7 @@ export class BootstrapRunner {
         STONE_CANDIDATES,
       );
       const targets = exposed
-        .filter((position) => !this.failedTargets.has(blockKey(position)))
+        .filter((position) => !this.failedTargets.has(collectTargetKey(bot, position)))
         .map((position) => bot.blockAt(position))
         .filter((block): block is Block => block !== null);
       this.opts.logger.info({ index, site: reached, loadedExposedStone: targets.length }, "stone search site scan");

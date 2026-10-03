@@ -206,6 +206,11 @@ export function findBlockNear(bot: Bot, name: string, maxDistance: number): Bloc
  * has a 15-second cap. Returns how many new units `countHeld()` gained.
  * Callers own fallbacks (radius expansion).
  */
+/** The key `collectBlocks` records a failed target under (dimension + cell). */
+export function collectTargetKey(bot: Bot, position: { x: number; y: number; z: number }): string {
+  return `${String(bot.game?.dimension ?? "unknown").replace(/^minecraft:/, "")}:${Math.floor(position.x)},${Math.floor(position.y)},${Math.floor(position.z)}`;
+}
+
 /** Extra per-target collection budget for each block of distance to walk. */
 const PER_BLOCK_TRAVEL_MS = 500;
 
@@ -230,7 +235,7 @@ export async function collectBlocks(
     if (countHeld() >= targetTotal) break;
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) break;
-    const targetKey = `${String(bot.game.dimension ?? "unknown").replace(/^minecraft:/, "")}:${block.position.x},${block.position.y},${block.position.z}`;
+    const targetKey = collectTargetKey(bot, block.position);
     if (failedTargets?.has(targetKey)) continue;
     // The budget covers the walk there: a flat 15 s timed out every trunk
     // beyond ~20 blocks once the trees near home were gone (15 in a row).
