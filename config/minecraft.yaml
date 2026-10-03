@@ -52,16 +52,16 @@ llm:
 
 # --- 30.2 minecraft.yaml: server / world / home -----------------------------
 server:
-  world_key: cobblebob-fresh-20260929
+  world_key: cobblebob-fresh-20261003
   host: 127.0.0.1
   port: 25565
   username: CobbleBob
 
 home:
   dimension: overworld
-  x: 4
-  y: 69
-  z: 0
+  x: 8
+  y: 68
+  z: 10
   protected_size_x: 100
   protected_size_z: 100
 
