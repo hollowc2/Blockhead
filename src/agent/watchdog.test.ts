@@ -241,3 +241,11 @@ test("blocked actions are surfaced to the LLM context with a reason and retry ti
   assert.match(block.reason, /no ore in range/);
   assert.ok(block.retryInSeconds > 0 && block.retryInSeconds <= 60, "retry window is within the cooldown");
 });
+
+test("survival actions are never blocked: a failed night shelter retries on its own pace", () => {
+  now = 0;
+  const watchdog = new ActionWatchdog({ maxFailures: 3, now: clock });
+  for (let i = 0; i < 5; i++) watchdog.record("night_shelter", "failure", false, "could not reach the shelter spot");
+  assert.equal(watchdog.isBlocked("night_shelter"), false);
+  assert.equal(watchdog.isBlocked("defend_self"), false);
+});

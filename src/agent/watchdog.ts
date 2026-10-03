@@ -215,6 +215,17 @@ function canonicalScalars(parameters: Record<string, unknown>): string {
  * Tracks failed attempts per action fingerprint. Instances are cheap and
  * process-lifetime (survives reconnect); blocks expire by wall clock.
  */
+/**
+ * Survival actions the watchdog never blocks. They pace their own retries,
+ * and a 10 minute block on the night shelter left the bot in the open for
+ * the rest of the night (two deaths at the world spawn).
+ */
+const WATCHDOG_EXEMPT_TYPES: ReadonlySet<string> = new Set(["night_shelter", "defend_self"]);
+
+export function isWatchdogExempt(action: string): boolean {
+  return WATCHDOG_EXEMPT_TYPES.has(action.split(":")[0] ?? "");
+}
+
 export class ActionWatchdog {
   private readonly maxFailures: number;
   private readonly cooldownMs: number;
@@ -268,6 +279,7 @@ export class ActionWatchdog {
    * accumulates toward a block on its own.
    */
   record(action: string, outcome: AttemptOutcome, ownerIntent = false, reason = ""): void {
+    if (isWatchdogExempt(action)) return;
     if (ownerIntent) this.noteOwnerIntent(action);
     if (outcome === "success") {
       this.failures.delete(action);
@@ -318,6 +330,7 @@ export class ActionWatchdog {
 
   /** The active block for `action`, or null when it may run again. */
   blockFor(action: string): ActionBlock | null {
+    if (isWatchdogExempt(action)) return null;
     const block = this.blocks.get(action);
     if (block === undefined) return null;
     if (block.retryAt <= this.now()) {
