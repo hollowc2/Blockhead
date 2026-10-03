@@ -8,7 +8,7 @@ import { isShelterNight } from "../skills/night-shelter.js";
 import { isBedBlock } from "../skills/utility.js";
 import type { Scheduler } from "./scheduler.js";
 import type { AgentState } from "./state.js";
-import { TaskPriority, type Task } from "./task.js";
+import { TaskPriority, TaskStatus, type Task } from "./task.js";
 
 const CHECK_INTERVAL_MS = 5_000;
 /** A failed shelter run stands down this long before the next attempt. */
@@ -113,10 +113,13 @@ export class NightShelterWatch {
       inWater: (bot.entity as { isInWater?: boolean }).isInWater === true,
       bedAvailable: this.bedAvailable(),
       ownerWorkPending: ownerWorkPending(scheduler),
-      shelterLive: scheduler.active?.workKey === WORK_KEY || scheduler.queued.some((task) => task.workKey === WORK_KEY),
+      shelterLive: scheduler.active?.workKey === WORK_KEY || scheduler.queued.some((task) => task.workKey === WORK_KEY && task.status !== TaskStatus.BLOCKED),
       cooldownActive: this.failedAt !== null && this.now() - this.failedAt < FAILURE_COOLDOWN_MS,
     });
     if (!decision.shelter) return;
+    // A parked (BLOCKED) shelter from a failed run never resumes on its own;
+    // replace it rather than let it stand for a live one.
+    for (const parked of scheduler.queued.filter((task) => task.workKey === WORK_KEY && task.status === TaskStatus.BLOCKED)) scheduler.cancel(parked.id);
     scheduler.enqueue({
       type: "night_shelter",
       priority: TaskPriority.INTERRUPT,

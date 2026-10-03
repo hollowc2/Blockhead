@@ -434,6 +434,9 @@ export class NightShelterRunner {
 
   private fail(data: NightShelterData, errorCode: string, reason: string): SkillResult<NightShelterData> {
     this.opts.logger.warn({ errorCode, reason }, "night shelter failed");
-    return { ok: false, status: "failed", errorCode, message: reason, retryable: true, data };
+    // Not retryable: a requeued shelter re-ran instantly (four times while the
+    // bot lay dead) and was parked BLOCKED. The night watch retries after its
+    // own cooldown, from wherever the bot is by then.
+    return { ok: false, status: "failed", errorCode, message: reason, retryable: false, data };
   }
 }
