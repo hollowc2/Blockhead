@@ -38,6 +38,7 @@ import { DefenseRunner } from "./skills/defense.js";
 import { SelfDefenseReflex } from "./agent/self-defense.js";
 import { UtilityRunner } from "./skills/utility.js";
 import { NightShelterRunner } from "./skills/night-shelter.js";
+import { TaskPriority } from "./agent/task.js";
 import { NightShelterWatch, ownerWorkPending } from "./agent/night-shelter.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
@@ -348,9 +349,11 @@ const resumeBootstrapIfPending = (): void => {
     });
   }
 };
-// Owner work never waits behind a multi-minute bootstrap stage.
+// Owner work and self-defense never wait behind a multi-minute bootstrap
+// stage: a reflex queued behind the FOOD stage let a spider kill the bot.
 bus.on("task.created", ({ task }) => {
-  if (task.source === "user" && currentBootstrap?.isRunning === true) currentBootstrap.yieldNow();
+  const urgent = task.source === "user" || task.priority >= TaskPriority.REFLEX;
+  if (urgent && currentBootstrap?.isRunning === true) currentBootstrap.yieldNow();
 });
 bus.on("task.completed", resumeBootstrapIfPending);
 bus.on("task.failed", resumeBootstrapIfPending);

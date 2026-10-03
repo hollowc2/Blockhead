@@ -60,6 +60,12 @@ const FOLLOW_RANGE = 4;
 const GO_HOME_TIMEOUT_MS = 120_000;
 /** Upper bound for any skill, including plugins that fail to settle. */
 const SKILL_TIMEOUT_MS = 10 * 60_000;
+/** Dusk to dawn is ~9 real minutes; a dug-in night must not hit the 10 min budget. */
+const NIGHT_SHELTER_TIMEOUT_MS = 16 * 60_000;
+
+function skillTimeoutMs(task: Task): number {
+  return task.type === "night_shelter" ? NIGHT_SHELTER_TIMEOUT_MS : SKILL_TIMEOUT_MS;
+}
 /** A task may run longer than this, but must publish a checkpoint/progress. */
 const PROGRESS_STALL_TIMEOUT_MS = 5 * 60_000;
 const PROGRESS_POLL_MS = 5_000;
@@ -212,8 +218,8 @@ export class TaskDispatcher {
           // cancelled, so its persisted progress can be resumed later.
           if (this.isResumable(task)) this.opts.scheduler.requestPause();
           else this.opts.scheduler.requestCancel();
-          reject(new Error(`skill execution timed out after ${SKILL_TIMEOUT_MS}ms`));
-        }, SKILL_TIMEOUT_MS);
+          reject(new Error(`skill execution timed out after ${skillTimeoutMs(task)}ms`));
+        }, skillTimeoutMs(task));
       });
       let result: SkillResult;
       try {
@@ -245,7 +251,7 @@ export class TaskDispatcher {
       this.settleResult(task, result);
     } catch (err) {
       const message = String(err).includes("operation timed out")
-        ? `skill execution timed out after ${SKILL_TIMEOUT_MS}ms`
+        ? `skill execution timed out after ${skillTimeoutMs(task)}ms`
         : `execution threw: ${String(err)}`;
       this.opts.logger.error({ err: String(err), taskId: task.id }, "task execution threw");
       if (timer !== undefined) clearTimeout(timer);
