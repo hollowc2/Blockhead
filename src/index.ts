@@ -37,6 +37,8 @@ import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
 import { SelfDefenseReflex } from "./agent/self-defense.js";
 import { UtilityRunner } from "./skills/utility.js";
+import { NightShelterRunner } from "./skills/night-shelter.js";
+import { NightShelterWatch, ownerWorkPending } from "./agent/night-shelter.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
 import { BaseBuilderRunner } from "./skills/base.js";
@@ -245,6 +247,8 @@ interface Session {
   dispatcher: TaskDispatcher;
   /** Fights back when a hostile attacks or closes in. */
   selfDefense: SelfDefenseReflex;
+  /** Digs in for the night when there is no bed to sleep in. */
+  nightShelter: NightShelterWatch;
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
@@ -377,6 +381,7 @@ const shutdownCoordinator = new ShutdownCoordinator({
             active.background.stop();
             active.hostile.detach();
             active.selfDefense.detach();
+            active.nightShelter.detach();
           }
           goals.dispose();
           survivalInterrupts.dispose();
@@ -532,13 +537,14 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   maintenance.setCharcoalProducer((quantity, signals) => ensureItem.run("charcoal", quantity, { mode: "ensure", signals }));
   const defense = new DefenseRunner({ bot, state, config, bus, skills, logger });
   const utility = new UtilityRunner({ bot, state, config, storage, logger });
+  const nightShelterRunner = new NightShelterRunner({ bot, logger, ownerWorkPending: () => ownerWorkPending(scheduler) });
   const delivery = new DeliveryRunner({ bot, state, config, storage, logger });
 
   // Phase 8: the single executor binding scheduler tasks to skills. Subscribes
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
   const terrainProjects = new TerrainProjectRunner(bot, { logger });
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
@@ -550,7 +556,11 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   hostile.attach();
   const selfDefense = new SelfDefenseReflex({ bot, bus, scheduler, logger });
   selfDefense.attach();
-  session = { bot, background, hostile, maintenance, dispatcher, selfDefense };
+  // A bootstrap stage holds the world lease for minutes; the shelter must not
+  // wait behind it at dusk, so it interrupts the stage like owner work does.
+  const nightShelter = new NightShelterWatch({ bot, bus, scheduler, state, config, logger, yieldBootstrap: () => { if (bootstrap.isRunning) bootstrap.yieldNow(); } });
+  nightShelter.attach();
+  session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -619,6 +629,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   background.stop();
   hostile.detach();
   selfDefense.detach();
+  nightShelter.detach();
   dispatcher.dispose();
   session = null;
   currentBootstrap = null;

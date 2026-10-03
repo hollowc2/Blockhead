@@ -29,6 +29,7 @@ import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
 import type { OrganizeResumeState, OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { BaseBuilderRunner, BaseResumeState, SimpleStructureSpec } from "../skills/base.js";
 import type { UtilityRunner } from "../skills/utility.js";
+import type { NightShelterRunner } from "../skills/night-shelter.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
 import { stopWorldPrimitives } from "./world-actions.js";
@@ -87,6 +88,8 @@ export interface TaskDispatcherOptions {
   defense: DefenseRunner;
   /** Phase 13: sleep / eat / equip_best / replace_equipment. */
   utility: UtilityRunner;
+  /** Night without a bed: dig in and wait for day (`night_shelter`). */
+  nightShelter?: NightShelterRunner;
   /** Phase 13: give_item / store_items / retrieve_items. */
   delivery: DeliveryRunner;
   buildProjects?: WorldProjectManager;
@@ -497,6 +500,9 @@ export class TaskDispatcher {
       }
       case "sleep":
         return this.opts.utility.sleep({ signals });
+      case "night_shelter":
+        if (this.opts.nightShelter === undefined) return this.invalidParams("night_shelter");
+        return this.opts.nightShelter.run({ signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
       case "eat":
         return this.opts.utility.eat({ signals });
       case "equip_best":
