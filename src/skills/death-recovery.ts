@@ -52,6 +52,14 @@ const PICKUP_GRACE_MS = 700;
 const RECOVERY_MIN_HEALTH = 8;
 /** A hostile mob within this many blocks of the site makes recovery too dangerous. */
 const DANGER_PROXIMITY = 4;
+/**
+ * An archer this close to the death site covers it: the trip in is walked
+ * under fire, which is how the bot died a second time to the skeleton that
+ * killed it.
+ */
+const RANGED_GUARD_RADIUS = 16;
+/** Hostile mobs that shoot from range. */
+const RANGED_MOB_NAMES: ReadonlySet<string> = new Set(["skeleton", "stray", "bogged", "pillager", "witch", "blaze", "ghast"]);
 /** Wall-clock budget for the post-recovery trip home. */
 const GO_HOME_TIMEOUT_MS = 120_000;
 /** Scan radius when looking for an already-placed crafting table. */
@@ -213,10 +221,21 @@ export class DeathRecoveryRunner {
     // 3. Travel to the site. Recovery deliberately skips the expedition
     //    supply checks: drops are time-sensitive, and a direct trip needs no
     //    tools. The emergency priority already outranks ordinary work.
+    //    The trip breaks off when the site turns out to be guarded or the bot
+    //    is hurt on the way: dying again there loses the respawn kit too.
+    let guarded: string | null = null;
     const travel = await travelAndWait(bot, { x: params.x, y: params.y, z: params.z }, {
       timeoutMs: RECOVERY_TRAVEL_TIMEOUT_MS,
-      shouldAbort: () => !signals.checkpoint(),
+      shouldAbort: () => {
+        if (!signals.checkpoint()) return true;
+        guarded = deathSiteDanger(bot.health, params, Object.values(bot.entities));
+        return guarded !== null;
+      },
     });
+    if (guarded !== null) {
+      logger.warn({ reason: guarded }, "death site is guarded; aborting recovery");
+      return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
+    }
     if (travel.status === "aborted") {
       return this.finish(params, data, signals, baseline, null, true, startedAt);
     }
@@ -538,4 +557,23 @@ export class DeathRecoveryRunner {
         return undefined;
     }
   }
+}
+
+/**
+ * Why walking to the death site is too dangerous right now, or null: the bot
+ * is below the recovery health floor, or an archer stands within range of the
+ * site.
+ */
+export function deathSiteDanger(
+  health: number,
+  site: { x: number; y: number; z: number },
+  entities: ReadonlyArray<{ type?: string | null; name?: string | null; position: { x: number; y: number; z: number } }>,
+): string | null {
+  if (health < RECOVERY_MIN_HEALTH) return `health ${health} is below ${RECOVERY_MIN_HEALTH}`;
+  for (const entity of entities) {
+    if (!isMobEntity(entity) || !RANGED_MOB_NAMES.has(entity.name ?? "")) continue;
+    const distance = Math.hypot(entity.position.x - site.x, entity.position.y - site.y, entity.position.z - site.z);
+    if (distance <= RANGED_GUARD_RADIUS) return `${entity.name} within ${Math.round(distance)} blocks of the site`;
+  }
+  return null;
 }
