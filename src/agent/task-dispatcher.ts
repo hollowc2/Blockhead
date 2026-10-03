@@ -124,6 +124,8 @@ export class TaskDispatcher {
   private readonly opts: TaskDispatcherOptions;
   private readonly unsubscribe: () => void;
   private readonly executions = new Set<Promise<void>>();
+  /** Task ids with an execution in flight; a second start is ignored. */
+  private readonly running = new Set<string>();
 
   constructor(options: TaskDispatcherOptions) {
     this.opts = options;
@@ -164,6 +166,21 @@ export class TaskDispatcher {
   /** Run the skill for an ACTIVE task and settle it. Boot entry point too. */
   async execute(task: Task): Promise<void> {
     if (task.status !== TaskStatus.ACTIVE) return;
+    // A watch that claims during login activates (and so starts) the task;
+    // the spawn handler then "resumes" the same active task. Run it once.
+    if (this.running.has(task.id)) {
+      this.opts.logger.debug({ taskId: task.id }, "task already executing; duplicate start ignored");
+      return;
+    }
+    this.running.add(task.id);
+    try {
+      await this.executeOnce(task);
+    } finally {
+      this.running.delete(task.id);
+    }
+  }
+
+  private async executeOnce(task: Task): Promise<void> {
     const signals = this.opts.scheduler.signalsFor(task);
     const dimension = normalizeDimension(this.opts.bot.game.dimension ?? this.opts.state.self.dimension ?? "");
     const authorization = task.projectId === undefined || this.opts.destructiveAuthorizations === undefined || this.opts.state.worldId === null
