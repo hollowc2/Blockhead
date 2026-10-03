@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type { Logger } from "pino";
 import type { EventBus } from "../events/bus.js";
-import { HOSTILE_MOB_NAMES, isMobEntity } from "../policy/combat.js";
+import { HOSTILE_MOB_NAMES, isMobEntity, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
 
@@ -116,6 +116,9 @@ export function nearestThreat(bot: Bot): Entity | null {
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const entity of Object.values(bot.entities)) {
     if (!isHostileMob(entity) || entity.position === undefined || entity.position === null) continue;
+    // A neutral mob nearby is not an attack; one that hits the bot still
+    // triggers the reflex through entityHurt.
+    if (PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "")) continue;
     if (Math.abs(entity.position.y - self.y) > REFLEX_TRIGGER_HEIGHT) continue;
     const distance = Math.hypot(entity.position.x - self.x, entity.position.z - self.z);
     if (distance <= REFLEX_TRIGGER_RADIUS && distance < bestDistance) {

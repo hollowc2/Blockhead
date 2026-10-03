@@ -26,6 +26,13 @@ export const ANIMAL_MOB_NAMES: ReadonlySet<string> = new Set([
  * Hostile mobs the bot may hunt as a task (`hunt_target`). Canonical for
  * the combat policy; matches minecraft-data entity names.
  */
+/**
+ * Hostile-listed mobs that stay neutral until provoked. Attacking (or closing
+ * in on) one is what turns it hostile: the reflex went for an enderman on
+ * sight and the enderman killed the bot.
+ */
+export const PROVOKED_ONLY_MOB_NAMES: ReadonlySet<string> = new Set(["enderman", "piglin"]);
+
 export const HOSTILE_MOB_NAMES: ReadonlySet<string> = new Set([
   "zombie",
   "zombie_villager",

@@ -98,3 +98,15 @@ test("sealed in a night shelter, a nearby mob is ignored but damage still calls 
     assert.equal(h.scheduler.queued.filter((task) => task.type === "defend_self").length, 1);
   } finally { h.reflex.detach(); h.db.close(); }
 });
+
+test("an enderman nearby does not trigger the reflex; one that hits the bot does", () => {
+  const h = harness();
+  try {
+    h.bot.entities[7] = { ...zombie(3), name: "enderman" };
+    h.reflex.scan();
+    assert.equal(h.scheduler.active, null, "looking at it is what provokes it");
+    h.reflex.attach();
+    (h.bot as unknown as EventEmitter).emit("entityHurt", h.self, { ...zombie(2), name: "enderman" });
+    assert.equal(activeType(h), "defend_self");
+  } finally { h.reflex.detach(); h.db.close(); }
+});

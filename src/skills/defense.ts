@@ -9,7 +9,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
-import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES } from "../policy/combat.js";
+import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import { belowHealthRetreat, checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 
@@ -287,6 +287,9 @@ export class DefenseRunner {
       if (exclude !== undefined && entity.id === exclude) continue;
       if (!isLiveEntity(entity)) continue;
       const distance = distanceBetween(entity.position, origin);
+      // Neutral until provoked: only one already in melee range of the bot
+      // (attacking it) is a target; picking one off at range starts the fight.
+      if (PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "") && (bot.entity === null || distanceBetween(entity.position, bot.entity.position) > MELEE_RADIUS)) continue;
       if (distance <= radius && distance < bestDistance) {
         best = entity;
         bestDistance = distance;
