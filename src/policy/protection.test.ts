@@ -117,4 +117,6 @@ test("the boundary refuses digs and fights only at critical health; animals are 
   assert.equal(revalidateAction(at(8), "dig", outside, config, region, { blockName: "birch_leaves" }).allowed, true);
   assert.equal(revalidateAction(at(5), "dig", outside, config, region, { blockName: "stone" }).allowed, true);
   assert.equal(revalidateAction(at(4), "dig", outside, config, region, { blockName: "stone" }).allowed, false);
+  const starving = { ...at(1), food: 0 };
+  assert.equal(revalidateAction(starving, "dig", outside, config, region, { blockName: "dirt" }).allowed, true, "no regen to wait for: it may dig into a shelter");
 });

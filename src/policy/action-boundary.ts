@@ -9,6 +9,8 @@ import { DestructiveAuthorizationRegistry, destructiveActionForMutation, type Mu
 
 /** At or below this health even digging or a fight stops; the bot heals first. */
 const DIG_CRITICAL_HEALTH = 4;
+/** Health regenerates only at or above this hunger. */
+const REGEN_HUNGER = 18;
 
 export type DangerousAction = "dig" | "place" | "container" | "combat" | "dimension" | "craft" | "smelt";
 
@@ -38,7 +40,10 @@ export function revalidateAction(
     // past the retreat threshold, and blocking every dig there left the bot
     // unable even to clear leaves off a build site. Only critical health
     // stops digging (lava and falling blocks are checked separately).
-    if (action === "dig") {
+    // Waiting only helps a bot that can regenerate (hunger 18+). Starving, the
+    // gate froze it in place: at 1 HP it could not even dig into its night
+    // shelter, the one move that keeps it alive.
+    if (action === "dig" && (Number.isFinite(bot.food) ? bot.food : 20) >= REGEN_HUNGER) {
       const critical = checkHealthRetreat(bot.health, Math.min(threshold, DIG_CRITICAL_HEALTH));
       if (!critical.allowed) return critical;
     }
