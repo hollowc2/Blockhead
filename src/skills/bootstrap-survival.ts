@@ -966,7 +966,11 @@ export class BootstrapRunner {
         this.opts.logger.info({ ok: fed.ok, reason: fed.ok ? fed.message : fed.reason, health: bot.health, food: bot.food }, "stone_tools: emergency food run settled");
         recovered = await recoverLowHealth(bot);
       }
-      if (!recovered.ok) return { ok: false, reason: `unsafe to gather stone prerequisites: ${recovered.reason}` };
+      if (!recovered.ok && recovered.code === "LOW_HEALTH" && safeDaylight(bot)) {
+        this.opts.logger.warn({ health: bot.health, food: bot.food }, "stone_tools: starving and weak, but mid-day with no hostiles near; mining anyway");
+      } else if (!recovered.ok) {
+        return { ok: false, reason: `unsafe to gather stone prerequisites: ${recovered.reason}` };
+      }
     }
 
     const travel = await travelHomeAndWait(bot, home, {
@@ -1052,13 +1056,13 @@ export class BootstrapRunner {
 
     const baseRadius = config?.search_radius ?? SEARCH_RADIUS;
     const atNight = !bot.time.isDay;
-    const maxRadius = atNight || bot.health <= HUNT_CRITICAL_HEALTH ? baseRadius : MAX_SEARCH_RADIUS;
+    const maxRadius = atNight || (bot.health <= HUNT_CRITICAL_HEALTH && !safeDaylight(bot)) ? baseRadius : MAX_SEARCH_RADIUS;
 
     // When the render-distance net comes up empty, walk outward in a few
     // orthogonal legs and re-scan (day only; night hunting stays near home).
     // Near death (1 HP after a dawn zombie), a 90-block trek up a mountain
     // past the night's leftovers killed the bot: hunt only close to home.
-    const critical = bot.health <= HUNT_CRITICAL_HEALTH;
+    const critical = bot.health <= HUNT_CRITICAL_HEALTH && !safeDaylight(bot);
     const outwardLegs = atNight || critical ? 0 : HUNT_OUTWARD_LEGS;
     // Starving with nothing to eat and no regen (hunger below 18): waiting
     // never heals, so the stage deadlocked asking the owner for food. In
@@ -2681,6 +2685,20 @@ function countFoodItems(bot: Bot): number {
 }
 
 /** Nearest huntable passive mob within `maxDistance` of the bot, or null. */
+/**
+ * Mid-day with no hostile close: the night's mobs have burned, so a bot too
+ * weak to fight can still walk out, hunt, and mine surface stone. Starving
+ * (no regen), waiting for health that never comes deadlocked bootstrap at
+ * 1 HP for hours.
+ */
+function safeDaylight(bot: Bot): boolean {
+  const time = bot.time?.timeOfDay ?? 0;
+  if (time < 1_500 || time > 11_500) return false;
+  const self = bot.entity?.position;
+  if (self === undefined || self === null) return false;
+  return !Object.values(bot.entities).some((entity) => isLiveMob(entity) && HOSTILE_MOB_NAMES.has(canonicalMobName(entity)) && entity.position.distanceTo(self) <= 16);
+}
+
 /** A hostile this close to an animal makes it a bad target for a hurt bot. */
 const HUNT_HOSTILE_CLEARANCE = 12;
 
