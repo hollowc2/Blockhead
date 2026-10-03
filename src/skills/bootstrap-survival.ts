@@ -1024,6 +1024,11 @@ export class BootstrapRunner {
     // When the render-distance net comes up empty, walk outward in a few
     // orthogonal legs and re-scan (day only; night hunting stays near home).
     const outwardLegs = atNight ? 0 : HUNT_OUTWARD_LEGS;
+    // Starving with nothing to eat and no regen (hunger below 18): waiting
+    // never heals, so the stage deadlocked asking the owner for food. In
+    // daylight keep searching for passive animals, as gather_food does; at
+    // night the roaming risk outweighs it.
+    const starvingInDaylight = (recovered: { code: string }): boolean => recovered.code === "LOW_HEALTH" && !atNight;
     const homeForLegs = this.opts.state.home;
     const announceHunt = (message: string): void => {
       // Surface the same hunt status at most once per throttle window so a
@@ -1042,7 +1047,7 @@ export class BootstrapRunner {
       // only recovery a starving bot can reach alone.
       if (leg > 0 && bot.health <= HUNT_MIN_HEALTH) {
         const recovered = await recoverLowHealth(bot);
-        if (!recovered.ok) return finish({ ok: false, reason: recovered.reason });
+        if (!recovered.ok && !starvingInDaylight(recovered)) return finish({ ok: false, reason: recovered.reason });
       }
       if (leg > 0 && homeForLegs !== null) {
         const dirIndex = (leg - 1) % HUNT_OUTWARD_DIRS.length;
@@ -1077,7 +1082,7 @@ export class BootstrapRunner {
         // the only self-recoverable path (auto-eat heals off the meat).
         if (bot.health <= HUNT_MIN_HEALTH && nearestHuntableMob(bot, radius) === null) {
           const recovered = await recoverLowHealth(bot);
-          if (!recovered.ok) return finish({ ok: false, reason: recovered.reason });
+          if (!recovered.ok && !starvingInDaylight(recovered)) return finish({ ok: false, reason: recovered.reason });
         }
         const mob = nearestHuntableMob(bot, radius);
         if (mob === null) {

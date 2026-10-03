@@ -28,8 +28,21 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
+# `npm ci` on the NFS checkout takes 10+ minutes; skip it when the lockfile
+# matches the one last installed (stamp kept inside node_modules).
+lock_sum() { sha256sum package-lock.json | cut -d' ' -f1; }
+ci_if_changed() {
+  stamp=node_modules/.deploy-lock-sha256
+  if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$(lock_sum)" ]; then
+    printf 'Dependencies unchanged in %s; skipping npm ci\n' "$PWD"
+  else
+    npm ci
+    lock_sum >"$stamp"
+  fi
+}
+
 printf '%s\n' 'Installing and checking source checkout...'
-npm ci
+ci_if_changed
 npm run typecheck
 npm test
 
@@ -43,7 +56,7 @@ rsync -a --delete \
   "$source_repo/" "$runtime_dir/"
 
 cd -- "$runtime_dir"
-npm ci
+ci_if_changed
 
 printf 'Restarting user service: %s\n' "$service"
 systemctl --user daemon-reload

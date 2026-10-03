@@ -9,8 +9,8 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
-import { bareName, countItem, countLogs, countPlanks, itemsSummary } from "../minecraft/inventory.js";
-import { craftItem, craftMorePlanks, craftMoreSticks } from "../minecraft/crafting.js";
+import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
+import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog } from "../minecraft/world.js";
@@ -105,6 +105,23 @@ const DROPPED_ITEM_BY_BLOCK: Record<string, string> = {
   redstone_ore: "redstone",
   deepslate_redstone_ore: "redstone",
 };
+
+/**
+ * Drops asked for by item name whose natural source is a different block.
+ * Searching the world for a `cobblestone` block finds only placed ones
+ * (usually the home's own, refused as PROTECTED_REGION), never the stone
+ * that every surface quarry is made of.
+ */
+const SOURCE_BLOCK_BY_ITEM: Record<string, string> = {
+  cobblestone: "stone",
+  cobbled_deepslate: "deepslate",
+};
+
+/** The block to mine for `resource`: its natural source when that differs. */
+export function sourceBlockName(resource: string): string {
+  const bare = bareName(resource);
+  return SOURCE_BLOCK_BY_ITEM[bare] ?? bare;
+}
 
 /**
  * The carried item a `collect_resource` run accounts for and delivers. The
@@ -258,6 +275,7 @@ export class CollectResourceRunner {
         message: `already gathering ${resourceLabel(resource)}`,
       };
     }
+    resource = sourceBlockName(resource);
     this.running = true;
     this.startedAt = Date.now();
     this.signals = options.signals ?? null;
@@ -830,15 +848,25 @@ export class CollectResourceRunner {
     // logs or planks survive (a wiped inventory, a tool that broke in the
     // field), gather logs for them first — otherwise the craft dies here
     // and the run aborts before its search ever starts.
-    const logsNeeded = Math.max(0, Math.ceil((3 + 2 - countPlanks(bot)) / 4) - countLogs(bot));
+    // Sticks are made from planks, so plan planks for both up front: crafting
+    // 3 planks and then 2 sticks from them left 1 plank short of the head.
+    await syncInventory(bot, this.signals?.signal);
+    const sticksNeeded = countSticks(bot) < 2;
+    const planksNeeded = 3 + (sticksNeeded ? 2 : 0);
+    const logsNeeded = Math.max(0, Math.ceil((planksNeeded - countPlanks(bot)) / 4) - countLogs(bot));
     if (logsNeeded > 0) {
       const gathered = await this.gatherLogsForTool(logsNeeded);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
+      await syncInventory(bot, this.signals?.signal);
     }
-    const planks = await craftMorePlanks(bot, 3, this.signals?.signal);
-    if (!planks.ok) return { ok: false, reason: planks.reason };
-    const sticks = await craftMoreSticks(bot, 2, this.signals?.signal);
-    if (!sticks.ok) return { ok: false, reason: sticks.reason };
+    if (countPlanks(bot) < planksNeeded) {
+      const planks = await craftPlanks(bot, planksNeeded, this.signals?.signal);
+      if (!planks.ok) return { ok: false, reason: planks.reason };
+    }
+    if (sticksNeeded) {
+      const sticks = await craftSticks(bot, 2, this.signals?.signal);
+      if (!sticks.ok) return { ok: false, reason: sticks.reason };
+    }
 
     const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table, signal: this.signals?.signal });
     if (!made.ok) return { ok: false, reason: made.reason };
