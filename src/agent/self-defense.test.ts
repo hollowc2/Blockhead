@@ -84,3 +84,17 @@ test("the defense reflex preempts an emergency death-recovery trip", () => {
     assert.equal(h.scheduler.interruptPending, true, "death recovery is asked to pause for the fight");
   } finally { h.reflex.detach(); h.db.close(); }
 });
+
+test("sealed in a night shelter, a nearby mob is ignored but damage still calls the reflex", () => {
+  const h = harness();
+  try {
+    const shelter = h.scheduler.enqueue({ type: "night_shelter", priority: TaskPriority.INTERRUPT, source: "maintenance", objective: "dig in", parameters: {} });
+    assert.equal(h.scheduler.claim()?.id, shelter.id);
+    h.bot.entities[7] = { ...zombie(3), name: "creeper" };
+    h.reflex.scan();
+    assert.equal(h.scheduler.queued.filter((task) => task.type === "defend_self").length, 0, "a creeper in the next cave is behind solid ground");
+    h.reflex.attach();
+    (h.bot as unknown as EventEmitter).emit("entityHurt", h.self, zombie(1));
+    assert.equal(h.scheduler.queued.filter((task) => task.type === "defend_self").length, 1);
+  } finally { h.reflex.detach(); h.db.close(); }
+});

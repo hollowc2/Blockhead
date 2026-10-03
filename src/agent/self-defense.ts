@@ -77,6 +77,10 @@ export class SelfDefenseReflex {
 
   /** Enqueue one defense pass unless one is live or cooling down. Exposed for tests. */
   scan(): void {
+    // Sealed in a night shelter, a mob "near" is on the far side of solid
+    // ground (a creeper in an adjacent cave pulled the bot out at midnight).
+    // Only real damage (entityHurt) calls the reflex there.
+    if (this.opts.scheduler.active?.type === "night_shelter") return;
     const threat = nearestThreat(this.opts.bot);
     if (threat !== null) this.trigger(`${threat.name ?? "hostile"} within ${REFLEX_TRIGGER_RADIUS} blocks`);
   }
