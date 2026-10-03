@@ -10,7 +10,7 @@ import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES } from "../policy/combat.js";
-import { checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
+import { belowHealthRetreat, checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 
 /**
@@ -31,12 +31,44 @@ const REFLEX_CRITICAL_HEALTH = 4;
 const CORNERED_RADIUS = 4;
 /** Wall-clock budget for one kill (approach, fight, stop). */
 const KILL_TIMEOUT_MS = 60_000;
+/**
+ * Budget for walking up to a target before the fight. mineflayer-pvp follows
+ * the target itself, so this only closes the gap; a long approach is how a
+ * skeleton up a slope kept the bot walking while a spider ate it.
+ */
+const APPROACH_TIMEOUT_MS = 12_000;
+/** A hostile this close is landing (or about to land) melee hits. */
+const MELEE_RADIUS = 3.5;
+/** A fight whose target stays this far away is not reachable from here. */
+const UNREACHABLE_DISTANCE = 6;
+/** How long a target may stay out of reach before the fight is abandoned. */
+const UNREACHABLE_MS = 8_000;
+/** Poll interval for the in-fight retarget / retreat checks. */
+const FIGHT_POLL_MS = 250;
+/** How far a retreat runs from the threats. */
+const RETREAT_DISTANCE = 16;
+/** Wall-clock budget for one retreat run. */
+const RETREAT_TIMEOUT_MS = 10_000;
+/** Hostiles within this radius steer the retreat direction. */
+const RETREAT_THREAT_RADIUS = 24;
+/** A cap on mid-fight target switches within one pass. */
+const MAX_RETARGETS = 6;
 /** Wall-clock budget for the whole defense pass. */
 const TOTAL_TIMEOUT_MS = 180_000;
 /** Max hostiles cleared in one pass (bounds a single task). */
 const MAX_KILLS_PER_PASS = 3;
 /** Distance the defended player may be for the bot to still fight for them. */
 const DEFEND_PLAYER_RANGE = 48;
+
+/** World actions the runner drives; injectable so the fight logic is testable. */
+export interface DefenseActions {
+  travel: typeof travelAndWait;
+  attack: typeof pvpAttack;
+  stop: typeof pvpStop;
+  equip: typeof equipItem;
+}
+
+const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem };
 
 export interface DefenseOptions {
   bot: Bot;
@@ -46,6 +78,7 @@ export interface DefenseOptions {
   /** Skill success records (spec 20.2). */
   skills: SkillsRepository;
   logger: Logger;
+  actions?: Partial<DefenseActions>;
 }
 
 export interface DefenseData {
@@ -57,6 +90,8 @@ export interface DefenseData {
   interruptions: number;
   /** Wall-clock budget exceeded. */
   timeout: boolean;
+  /** The pass ran away from the threats instead of fighting on. */
+  retreated: boolean;
 }
 
 interface KillResult {
@@ -64,7 +99,13 @@ interface KillResult {
   killed?: string;
   reason?: string;
   blocked?: boolean;
+  /** Another hostile closed to melee range while the target was out of reach. */
+  retarget?: boolean;
+  /** Health fell to the retreat floor with nothing in melee range. */
+  retreat?: boolean;
 }
+
+type FightBreak = "retarget" | "retreat" | "unreachable";
 
 /**
  * Deterministic defense runner: clears nearby hostile mobs, never human
@@ -75,8 +116,11 @@ export class DefenseRunner {
   private signals: TaskSignals | null = null;
   private stopRequested = false;
   private interruptions = 0;
+  private readonly actions: DefenseActions;
 
-  constructor(private readonly opts: DefenseOptions) {}
+  constructor(private readonly opts: DefenseOptions) {
+    this.actions = { ...DEFAULT_ACTIONS, ...opts.actions };
+  }
 
   get isRunning(): boolean {
     return this.running;
@@ -126,23 +170,24 @@ export class DefenseRunner {
       blocked: 0,
       interruptions: this.interruptions,
       timeout: false,
+      retreated: false,
     };
 
     if (bot.entity === null) {
       return this.fail(data, "NOT_READY", "bot is not spawned", false);
     }
 
-    // Spec 34: dangerous work retreats below the health floor. Fighting at
-    // low health risks another death; the bot waits for regen instead.
-    // A reflex pass with the attacker already in melee range fights anyway:
-    // standing still at low health only hands the mob free hits.
+    // Spec 34: dangerous work retreats below the health floor. A reflex pass
+    // with an attacker already in melee range fights anyway (running only
+    // hands it free hits); otherwise a hurt bot runs instead of trading blows
+    // it cannot afford with no food to heal.
     const healthGate = checkHealthRetreat(bot.health, HEALTH_RETREAT_THRESHOLD);
-    // Fleeing an archer only hands it free shots, so a reflex pass keeps
-    // fighting until health is critical.
     const cornered = reflex && this.nearestHostile(null, CORNERED_RADIUS) !== null;
-    const stillFighting = reflex && bot.health > REFLEX_CRITICAL_HEALTH;
-    if (!healthGate.allowed && !cornered && !stillFighting) {
-      return this.fail(data, "DANGER_TOO_HIGH", `health ${bot.health} is at/below the retreat threshold ${HEALTH_RETREAT_THRESHOLD}`, false);
+    if (!healthGate.allowed && !cornered) {
+      if (!reflex) {
+        return this.fail(data, "DANGER_TOO_HIGH", `health ${bot.health} is at/below the retreat threshold ${HEALTH_RETREAT_THRESHOLD}`, false);
+      }
+      return this.retreatResult(data, `health ${bot.health} is at/below the retreat threshold`);
     }
 
     // Defending a player requires seeing them.
@@ -160,7 +205,9 @@ export class DefenseRunner {
       if (this.stopRequested) return this.interrupted(data);
     }
 
-    let deadline = startedAt + TOTAL_TIMEOUT_MS;
+    const deadline = startedAt + TOTAL_TIMEOUT_MS;
+    let retargets = 0;
+    let lastFailure: string | null = null;
     while (this.opts.bot.entity !== null && data.kills < MAX_KILLS_PER_PASS) {
       if (this.stopRequested) return this.interrupted(data);
       if (Date.now() > deadline) {
@@ -170,7 +217,7 @@ export class DefenseRunner {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
 
-      const hostile = this.nearestHostile(anchor, radius);
+      const hostile = this.selectTarget(anchor, radius);
       if (hostile === null) break;
       if (hostile.name === "creeper") {
         // Meleeing a creeper lights its fuse at arm's length. Back off
@@ -180,7 +227,7 @@ export class DefenseRunner {
         if (this.stopRequested) return this.interrupted(data);
         break;
       }
-      const kill = await this.killHostile(hostile, data, deadline);
+      const kill = await this.killHostile(hostile, data, deadline, kind === "self");
       if (kill.blocked) {
         data.blocked += 1;
         // A blocked target is still a real threat; stop fighting rather than
@@ -189,8 +236,20 @@ export class DefenseRunner {
       }
       if (!kill.ok) {
         if (this.stopRequested) return this.interrupted(data);
+        lastFailure = kill.reason ?? `could not kill the ${hostile.name ?? "hostile"}`;
+        if (kill.retarget === true && retargets < MAX_RETARGETS) {
+          retargets += 1;
+          continue;
+        }
+        // Defending itself, the bot does not stand in a fight it is losing
+        // or cannot reach (an archer up a slope): it runs.
+        if (kind === "self") {
+          if (data.kills > 0) this.recordSuccess(baseline, startedAt, data);
+          return this.retreatResult(data, lastFailure);
+        }
         break;
       }
+      lastFailure = null;
       data.kills += 1;
       // Re-anchor after movement so the next scan follows the player.
       if (kind === "player") {
@@ -201,6 +260,9 @@ export class DefenseRunner {
 
     if (this.stopRequested) return this.interrupted(data);
     this.announce(data);
+    if (data.kills === 0 && lastFailure !== null) {
+      return this.fail(data, "DANGER_TOO_HIGH", lastFailure, false);
+    }
     if (data.kills === 0 && !data.timeout) {
       return { ok: true, status: "completed", data, message: "no hostiles nearby" };
     }
@@ -211,8 +273,8 @@ export class DefenseRunner {
     return { ok: true, status: "completed", data, message: `cleared ${data.kills} hostiles` };
   }
 
-  /** Nearest hostile mob to `anchor` (the bot when defending itself). */
-  private nearestHostile(anchor: { x: number; y: number; z: number } | null, radius = DEFENSE_VIEW_RADIUS): Entity | null {
+  /** Nearest live hostile mob to `anchor` (the bot when defending itself). */
+  private nearestHostile(anchor: { x: number; y: number; z: number } | null, radius = DEFENSE_VIEW_RADIUS, exclude?: number): Entity | null {
     const bot = this.opts.bot;
     if (bot.entity === null) return null;
     const origin = anchor ?? { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z };
@@ -222,17 +284,48 @@ export class DefenseRunner {
       // THE policy boundary: player entities are never candidates.
       if (entity.type === "player") continue;
       if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
-      const distance = Math.hypot(
-        entity.position.x - origin.x,
-        entity.position.y - origin.y,
-        entity.position.z - origin.z,
-      );
+      if (exclude !== undefined && entity.id === exclude) continue;
+      if (!isLiveEntity(entity)) continue;
+      const distance = distanceBetween(entity.position, origin);
       if (distance <= radius && distance < bestDistance) {
         best = entity;
         bestDistance = distance;
       }
     }
     return best;
+  }
+
+  /**
+   * The hostile to fight next: whatever is already in melee range of the bot
+   * (it is the one landing hits) before the nearest one around the anchor.
+   */
+  private selectTarget(anchor: { x: number; y: number; z: number } | null, radius: number): Entity | null {
+    return this.nearestHostile(null, MELEE_RADIUS) ?? this.nearestHostile(anchor, radius);
+  }
+
+  /**
+   * Why the current fight against `target` should stop, if it should: a
+   * different hostile is in melee range while the target is not, health hit
+   * the retreat floor with nothing in melee range, or the target stayed out of
+   * reach too long. `farSince` carries the out-of-reach clock between polls.
+   */
+  private fightBreak(target: Entity, allowRetreat: boolean, farSince: { at: number | null } | null): FightBreak | null {
+    const bot = this.opts.bot;
+    const self = bot.entity?.position;
+    if (self === undefined || self === null) return null;
+    const targetDistance = distanceBetween(target.position, self);
+    const targetInMelee = targetDistance <= MELEE_RADIUS;
+    if (!targetInMelee && this.nearestHostile(null, MELEE_RADIUS, target.id) !== null) return "retarget";
+    if (allowRetreat && belowHealthRetreat(bot.health) && this.nearestHostile(null, MELEE_RADIUS) === null) return "retreat";
+    if (farSince === null) return null;
+    if (targetDistance > UNREACHABLE_DISTANCE) {
+      const now = Date.now();
+      farSince.at ??= now;
+      if (now - farSince.at >= UNREACHABLE_MS) return "unreachable";
+    } else {
+      farSince.at = null;
+    }
+    return null;
   }
 
   /** Walk straight away from `threat` far enough to be out of blast range. */
@@ -245,11 +338,44 @@ export class DefenseRunner {
     const length = Math.hypot(dx, dz) || 1;
     const target = { x: self.x + (dx / length) * EVADE_DISTANCE, y: self.y, z: self.z + (dz / length) * EVADE_DISTANCE };
     this.opts.logger.info({ threat: threat.name, from: { x: Math.round(self.x), z: Math.round(self.z) } }, "defense: backing away from a creeper");
-    await travelAndWait(bot, target, { range: 3, timeoutMs: 8_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+    await this.actions.travel(bot, target, { range: 3, timeoutMs: 8_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+  }
+
+  /**
+   * Run from the hostiles around the bot, leaning toward home when home is
+   * not back toward them. Best effort: one short trip, whatever its outcome.
+   */
+  private async retreat(reason: string): Promise<void> {
+    const bot = this.opts.bot;
+    const self = bot.entity?.position;
+    if (self === undefined || self === null) return;
+    const threats = Object.values(bot.entities).filter((entity) =>
+      entity.type !== "player" && isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "") && isLiveEntity(entity)
+      && distanceBetween(entity.position, self) <= RETREAT_THREAT_RADIUS);
+    const target = retreatTarget(self, threats.map((entity) => entity.position), this.opts.config.home ?? null);
+    this.opts.logger.warn({
+      reason,
+      threats: threats.map((entity) => entity.name),
+      from: { x: Math.round(self.x), y: Math.round(self.y), z: Math.round(self.z) },
+      to: { x: Math.round(target.x), z: Math.round(target.z) },
+      health: bot.health,
+    }, "defense: retreating");
+    await this.actions.travel(bot, target, { range: 3, timeoutMs: RETREAT_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+  }
+
+  private async retreatResult(data: DefenseData, reason: string): Promise<SkillResult<DefenseData>> {
+    await this.retreat(reason);
+    if (this.stopRequested) return this.interrupted(data);
+    data.retreated = true;
+    this.announce(data);
+    // Running is the defense working, not failing: a failed reflex pass
+    // stands the reflex down, and repeated failures make the watchdog block
+    // defend_self outright.
+    return { ok: true, status: "completed", data, message: `retreated: ${reason}` };
   }
 
   /** Approach and kill one hostile. Belt-and-braces combat guard included. */
-  private async killHostile(hostile: Entity, data: DefenseData, deadline: number): Promise<KillResult> {
+  private async killHostile(hostile: Entity, data: DefenseData, deadline: number, allowRetreat: boolean): Promise<KillResult> {
     const bot = this.opts.bot;
     if (bot.entity === null) return { ok: false, reason: "bot is not spawned" };
 
@@ -257,42 +383,66 @@ export class DefenseRunner {
       this.opts.logger.warn({ target: hostile.name ?? hostile.type }, "defense refused a human target");
       return { ok: false, blocked: true, reason: "human target refused" };
     }
+    const name = hostile.name ?? "hostile";
+    const farSince: { at: number | null } = { at: null };
+    let broke: FightBreak | null = null;
+    const breakResult = (why: FightBreak): KillResult => {
+      this.opts.logger.info({ target: name, why, health: bot.health }, "defense: breaking off the fight");
+      if (why === "retarget") return { ok: false, retarget: true, reason: `another hostile closed in while fighting the ${name}` };
+      if (why === "retreat") return { ok: false, retreat: true, reason: `health ${bot.health} fell to the retreat floor fighting the ${name}` };
+      return { ok: false, reason: `could not reach the ${name}` };
+    };
 
-    const approach = await travelAndWait(bot, hostile.position, {
-      timeoutMs: KILL_TIMEOUT_MS,
-      range: 3,
-      shouldAbort: this.travelAbort,
-      signal: this.signals?.signal,
-    });
-    if (this.stopRequested) return { ok: false, reason: "interrupted" };
-    if (approach.status !== "arrived" && approach.status !== "already_there") {
-      return { ok: false, reason: `could not approach the ${hostile.name ?? "hostile"}` };
+    if (distanceBetween(hostile.position, bot.entity.position) > MELEE_RADIUS) {
+      const approach = await this.actions.travel(bot, hostile.position, {
+        timeoutMs: APPROACH_TIMEOUT_MS,
+        range: 3,
+        shouldAbort: () => {
+          if (this.travelAbort()) return true;
+          // The approach timeout already bounds an out-of-reach target here.
+          broke = this.fightBreak(hostile, allowRetreat, null);
+          return broke !== null;
+        },
+        signal: this.signals?.signal,
+      });
+      if (this.stopRequested) return { ok: false, reason: "interrupted" };
+      if (broke !== null) return breakResult(broke);
+      if (approach.status !== "arrived" && approach.status !== "already_there") {
+        return { ok: false, reason: `could not approach the ${name}` };
+      }
     }
 
     const weapon = findItem(bot, "iron_sword") ?? findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
     if (weapon !== null) {
       try {
-        await equipItem(bot, weapon, this.signals?.signal);
+        await this.actions.equip(bot, weapon, this.signals?.signal);
       } catch {
         // A fist is a last resort; the sword is a speed bonus.
       }
     }
 
+    // mineflayer-pvp chases one target until it dies; watch the fight and
+    // stop it when another mob is doing the damage or the bot must run.
+    const watch = setInterval(() => {
+      if (broke !== null) return;
+      broke = this.fightBreak(hostile, allowRetreat, farSince);
+      if (broke !== null) void this.actions.stop(bot, this.signals?.signal).catch(() => undefined);
+    }, FIGHT_POLL_MS);
     try {
-      await withTimeout(KILL_TIMEOUT_MS, pvpAttack(bot, hostile, this.signals?.signal), async () => {
-        await pvpStop(bot, this.signals?.signal);
+      await withTimeout(KILL_TIMEOUT_MS, this.actions.attack(bot, hostile, this.signals?.signal), async () => {
+        await this.actions.stop(bot, this.signals?.signal);
       }, this.signals?.signal);
     } catch (err) {
-      await pvpStop(bot, this.signals?.signal);
+      await this.actions.stop(bot, this.signals?.signal);
       if (Date.now() > deadline) return { ok: false, reason: "defense budget exceeded" };
-      return { ok: false, reason: `could not kill the ${hostile.name ?? "hostile"}: ${String(err)}` };
+      return { ok: false, reason: `could not kill the ${name}: ${String(err)}` };
     } finally {
-      await pvpStop(bot, this.signals?.signal);
+      clearInterval(watch);
+      await this.actions.stop(bot, this.signals?.signal);
     }
-    if (!combatOutcomeObserved(bot, hostile)) {
-      return { ok: false, reason: `attack settled without an observed defeat of the ${hostile.name ?? "hostile"}` };
-    }
-    return { ok: true, killed: hostile.name ?? "hostile" };
+    if (combatOutcomeObserved(bot, hostile)) return { ok: true, killed: name };
+    if (broke !== null) return breakResult(broke);
+    return { ok: false, reason: `attack settled without an observed defeat of the ${name}` };
   }
 
   // --- plumbing ---
@@ -357,4 +507,43 @@ export class DefenseRunner {
       description: `Cleared ${data.kills} hostiles${data.player === null ? "" : ` near ${data.player}`}.`,
     });
   }
+}
+
+function distanceBetween(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** A mob the server has not reported dead (corpses linger in bot.entities). */
+function isLiveEntity(entity: Entity): boolean {
+  const current = entity as Entity & { health?: number; isValid?: boolean };
+  return current.isValid !== false && !(typeof current.health === "number" && current.health <= 0);
+}
+
+/**
+ * Where to run: `distance` blocks straight away from the threats' centroid,
+ * bent toward home when home does not lie back toward them. With no known
+ * threat the bot heads for home.
+ */
+export function retreatTarget(
+  self: { x: number; y: number; z: number },
+  threats: ReadonlyArray<{ x: number; y: number; z: number }>,
+  home: { x: number; y: number; z: number } | null,
+  distance = RETREAT_DISTANCE,
+): { x: number; y: number; z: number } {
+  const unit = (dx: number, dz: number): { x: number; z: number } | null => {
+    const length = Math.hypot(dx, dz);
+    return length < 1e-6 ? null : { x: dx / length, z: dz / length };
+  };
+  const toHome = home === null ? null : unit(home.x - self.x, home.z - self.z);
+  let away: { x: number; z: number } | null = null;
+  if (threats.length > 0) {
+    const cx = threats.reduce((sum, point) => sum + point.x, 0) / threats.length;
+    const cz = threats.reduce((sum, point) => sum + point.z, 0) / threats.length;
+    away = unit(self.x - cx, self.z - cz);
+  }
+  let direction = away ?? toHome ?? { x: 1, z: 0 };
+  if (away !== null && toHome !== null && away.x * toHome.x + away.z * toHome.z > -0.25) {
+    direction = unit(away.x + toHome.x * 0.6, away.z + toHome.z * 0.6) ?? away;
+  }
+  return { x: self.x + direction.x * distance, y: self.y, z: self.z + direction.z * distance };
 }
