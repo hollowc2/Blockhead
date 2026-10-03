@@ -55,6 +55,7 @@ import {
   isAir,
   isSolid,
   isRawLog,
+  isReachableFromGround,
   placeItemAt,
 } from "../minecraft/world.js";
 import { regionContains } from "../minecraft/protection.js";
@@ -2574,7 +2575,7 @@ function hasStandableMiningFace(bot: Bot, position: Vec3): boolean {
 /** Keep vertical canopies from monopolizing a capped log search. */
 function isReachableTrunkBase(bot: Bot, position: Vec3): boolean {
   const below = bot.blockAt(position.offset(0, -1, 0));
-  return below !== null && !isRawLog(below) && hasStandableMiningFace(bot, position);
+  return below !== null && !isRawLog(below) && hasStandableMiningFace(bot, position) && isReachableFromGround(bot, position);
 }
 
 /** A diagonal cardinal direction whose front corner is diggable. */

@@ -19,6 +19,28 @@ export function isRawLog(block: Block): boolean {
   return !name.startsWith("stripped_") && /^[a-z_]+_log$/.test(name);
 }
 
+/**
+ * True when a block can be reached from real ground without scaffolding: some
+ * cell within two blocks sideways, with feet at most three below the block,
+ * has open feet and head room over a solid floor that is not leaves or a log
+ * (standing in a canopy is how the pathfinder towered for acacia logs). With
+ * a ~4.5 block reach that covers a trunk up to about head height + 2.
+ */
+export function isReachableFromGround(bot: Bot, position: Vec3): boolean {
+  const open = (block: Block | null): boolean => block !== null && block.boundingBox === "empty" && !/water|lava/.test(block.name);
+  const ground = (block: Block | null): boolean => isSolid(block) && !/_leaves$|_log$|_wood$/.test(block.name);
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dz = -2; dz <= 2; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      for (let dy = -3; dy <= 0; dy++) {
+        const feet = position.offset(dx, dy, dz);
+        if (open(bot.blockAt(feet)) && open(bot.blockAt(feet.offset(0, 1, 0))) && ground(bot.blockAt(feet.offset(0, -1, 0)))) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Blocks a movement/placement primitive may stand on or lean against. */
 export function isSolid(block: Block | null): block is Block {
   return block !== null && block.boundingBox === "block";

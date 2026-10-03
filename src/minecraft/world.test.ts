@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { collectBlocks, findBlocksNearRefined } from "./world.js";
+import { collectBlocks, findBlocksNearRefined, isReachableFromGround } from "./world.js";
 
 test("refined block search applies exposure before the candidate cap", () => {
   let options: Record<string, unknown> | undefined;
@@ -48,4 +48,24 @@ test("successful cobblestone collection stops at the requested inventory target"
   assert.equal(gained, 2);
   assert.equal(cobblestone, 2);
   assert.deepEqual(collected, [new Vec3(1, 63, 0), new Vec3(2, 63, 0)]);
+});
+
+/** A flat grass world at y=64 (feet y=65) with extra blocks layered on. */
+function flatWorld(extra: Record<string, string>) {
+  const blockAt = (p: Vec3) => {
+    const key = `${p.x},${p.y},${p.z}`;
+    const name = extra[key] ?? (p.y <= 64 ? "grass_block" : "air");
+    return { name, position: p, boundingBox: name === "air" ? "empty" : "block" };
+  };
+  return { blockAt } as never;
+}
+
+test("a trunk log at head height is reachable from the ground", () => {
+  assert.equal(isReachableFromGround(flatWorld({ "0,65,0": "acacia_log", "0,66,0": "acacia_log" }), new Vec3(0, 66, 0)), true);
+});
+
+test("a canopy log 6 above the ground, over leaves, is not", () => {
+  const canopy: Record<string, string> = { "0,70,0": "acacia_log" };
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (dx || dz) canopy[`${dx},69,${dz}`] = "acacia_leaves";
+  assert.equal(isReachableFromGround(flatWorld(canopy), new Vec3(0, 70, 0)), false);
 });

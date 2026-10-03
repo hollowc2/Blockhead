@@ -13,7 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary 
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, hasAirNeighbor, isRawLog, isReachableFromGround } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -611,7 +611,10 @@ export class CollectResourceRunner {
       // NoPath/Digging aborted failures. Only target exposed blocks here.
       const reachableSurface = found.filter((position) => {
         const block = bot.blockAt(position);
-        return block !== null && hasAirNeighbor(bot, block.position);
+        if (block === null || !hasAirNeighbor(bot, block.position)) return false;
+        // Canopy logs cost a 5-15 s pathfinder timeout each and, with
+        // scaffolding, the bot's building stock; take the ones within reach.
+        return !/_log$/.test(bare) || isReachableFromGround(bot, block.position);
       });
       const outside = region ? reachableSurface.filter((v) => !regionContains(region, { x: v.x, y: v.y, z: v.z })) : reachableSurface;
       let candidates = outside.length > 0 ? outside : reachableSurface;
@@ -893,6 +896,7 @@ export class CollectResourceRunner {
       if (this.stopRequested) return { ok: false, reason: "interrupted" };
       const positions = findBlocksNear(bot, isRawLog, radius, 96)
         .filter((position) => !tried.has(`${position.x},${position.y},${position.z}`))
+        .filter((position) => isReachableFromGround(bot, position))
         .slice(0, 24);
       for (const position of positions) tried.add(`${position.x},${position.y},${position.z}`);
       const targets = positions.map((position) => bot.blockAt(position)).filter((block) => block !== null);
