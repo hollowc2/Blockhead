@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WorldActionExecutor, abortError, registerWorldActionTeardown, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
+import { CANCEL_SETTLE_MS, TEARDOWN_STEP_MS, WorldActionExecutor, abortError, registerWorldActionTeardown, requireWorldActionLease, stopWorldPrimitives } from "./world-actions.js";
 
 test("abortError does not mutate errors with a read-only name", () => {
   const reason = Object.freeze(new DOMException("cancelled", "OperationError"));
@@ -291,4 +291,40 @@ test("raceAbort settles with the work, on abort, or on timeout", async () => {
   const already = new AbortController();
   already.abort(new Error("gone"));
   await assert.rejects(raceAbort(never, already.signal), (err: Error) => err.name === "AbortError");
+});
+
+test("a cancelled action that ignores its signal still releases the lease", async (t) => {
+  // 2026-10-04 13:45: after a server kick the hunger task's primitive never
+  // settled; cancellation was requested every 5 s for 10+ minutes, the lease
+  // stayed held and the session never tore down to reconnect.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const executor = new WorldActionExecutor();
+  const controller = new AbortController();
+  const run = executor.run("hunger", controller.signal, () => new Promise<void>(() => {}));
+  const outcome = run.then(() => "resolved", (error: Error) => error.name);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  controller.abort(new Error("task cancelled"));
+  t.mock.timers.tick(CANCEL_SETTLE_MS);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(5_000); // recovery grace
+  assert.equal(await outcome, "AbortError");
+  assert.equal(executor.activeOwner, null);
+});
+
+test("teardown force-clears a collectblock task that can never finish cancelling", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const emitted: string[] = [];
+  let cleared = false;
+  const bot = {
+    collectBlock: { cancelTask: () => new Promise<void>(() => {}), targets: { clear: () => { cleared = true; } } },
+    emit: (event: string) => { emitted.push(event); return true; },
+  };
+  const stopped = stopWorldPrimitives(bot);
+  for (let step = 0; step < 6; step++) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(TEARDOWN_STEP_MS);
+  }
+  await stopped;
+  assert.equal(cleared, true);
+  assert.deepEqual(emitted, ["collectBlock_finished"]);
 });

@@ -623,7 +623,13 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // with its persisted resume state so the next session can continue it.
   // Process shutdown has its own explicit cancellation path.
   scheduler.requestPause();
-  await dispatcher.waitForIdle();
+  // Bounded: a task wedged on the dead connection must not keep the process
+  // "active" but never reconnecting (2026-10-04 13:45 kick: 10+ minutes).
+  const idle = await Promise.race([
+    dispatcher.waitForIdle().then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), DISCONNECT_IDLE_TIMEOUT_MS)),
+  ]);
+  if (!idle) logger.error({ timeoutMs: DISCONNECT_IDLE_TIMEOUT_MS }, "active task did not settle after disconnect; reconnecting anyway");
   // The end event requests cleanup concurrently; await the same serialized
   // adapter here so reconnect cannot detach the session before windows and
   // movement/combat/collection plugins have actually stopped.
@@ -645,6 +651,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   if (connectionState.state !== "DISCONNECTED") connectionState.transition("DISCONNECTED");
   return spawned ? "spawned" : "never-connected";
 }
+
+/** Longest a disconnect waits for the active task to settle before reconnecting. */
+const DISCONNECT_IDLE_TIMEOUT_MS = 30_000;
 
 /** Backoff between connect attempts, capped at one probe per minute. */
 function retryDelayMs(attempt: number): number {

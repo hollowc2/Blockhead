@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { FOOD_ITEM_NAMES, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
+import { FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -95,4 +95,13 @@ test("waitForDrops gives up after the settle window when nothing drops", async (
   const found = await waitForDrops<string>(() => [], 30, 5);
   assert.deepEqual(found, []);
   assert.ok(Date.now() - started >= 30);
+});
+
+test("the forage block scan never spans the outer hunt rings", () => {
+  // A synchronous findBlocks over the 192-block ring stalled the event loop
+  // ~5 s and the server kicked the bot for floating (2026-10-04 x3).
+  assert.equal(forageScanRadius(48), 48);
+  assert.equal(forageScanRadius(192), FORAGE_SCAN_MAX_RADIUS);
+  assert.equal(forageScanRadius(256), FORAGE_SCAN_MAX_RADIUS);
+  assert.ok(FORAGE_SCAN_MAX_RADIUS <= 64);
 });

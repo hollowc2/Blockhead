@@ -3,7 +3,7 @@ import type { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
 import type { Item } from "prismarine-item";
 import type { Recipe } from "prismarine-recipe";
-import { digBudgetMs, raceAbort, requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { cancelCollectTask, digBudgetMs, raceAbort, requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { junkToShed } from "./inventory.js";
 
 function beforeMutation(lease: ReturnType<typeof requireWorldActionLease>, action: string, point?: { x: number; y: number; z: number }, blockName?: string, ownBuildReplacement?: boolean): void {
@@ -184,7 +184,7 @@ export async function pvpStop(bot: Bot, signal?: AbortSignal): Promise<void> {
 
 export async function cancelCollection(bot: Bot): Promise<void> {
   requireWorldActionCleanupLease();
-  await bot.collectBlock.cancelTask();
+  await cancelCollectTask(bot as unknown as Parameters<typeof cancelCollectTask>[0]);
 }
 
 /** Start a collectblock operation under the same lease/signal boundary as all other mutations. */
@@ -196,7 +196,8 @@ export async function collectBlockOperation(
 ): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "collection");
-  await bot.collectBlock.collect(blocks, options);
+  // collectblock takes no signal; race it so a cancel settles the caller.
+  await raceAbort(bot.collectBlock.collect(blocks, options), signal, { label: "collect", onStop: () => { void cancelCollectTask(bot as unknown as Parameters<typeof cancelCollectTask>[0]); } });
   throwIfAborted(signal);
 }
 

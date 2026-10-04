@@ -101,6 +101,20 @@ const FORAGE_MATURE_AGE: Record<string, number> = {
 /** Candidate forage blocks returned per search radius. */
 const FORAGE_CANDIDATES = 12;
 
+/**
+ * Widest forage block scan. `findBlocks` is synchronous: at the hunt's
+ * 192-block ring it blocked the event loop ~5 s, no movement packets went
+ * out, and the server kicked the bot "for floating too long" (11:58, 12:07
+ * and 13:45 on 2026-10-04, each right after "Expanding search" to 192).
+ * Crops beyond this are also too far for the pathfinder to plan to.
+ */
+export const FORAGE_SCAN_MAX_RADIUS = 64;
+
+/** Block-scan radius for a hunt ring of `radius`. */
+export function forageScanRadius(radius: number): number {
+  return Math.min(radius, FORAGE_SCAN_MAX_RADIUS);
+}
+
 /** Drops swept up after a kill: meat plus leather, wool, feathers, and eggs,
  *  plus common hostile drops (bones, arrows, gunpowder, string, ...). */
 export const LOOT_ITEM_NAMES: Record<string, true> = {
@@ -801,7 +815,7 @@ export class GatherFoodRunner {
     const bot = this.opts.bot;
     const before = countFoodItems(bot);
 
-    const positions = findBlocksNear(bot, isForageFoodBlock, radius, FORAGE_CANDIDATES);
+    const positions = findBlocksNear(bot, isForageFoodBlock, forageScanRadius(radius), FORAGE_CANDIDATES);
     const targets = positions
       .map((v) => bot.blockAt(v))
       .filter((b): b is Block => b !== null);

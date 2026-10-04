@@ -75,6 +75,16 @@ export interface WorldActionDiagnostics {
 }
 
 const RECOVERY_GRACE_MS = 5_000;
+/**
+ * How long a cancelled action may keep running before its lease gives up on
+ * it. Without this bound a primitive that ignores its signal (a plugin
+ * promise on a dead connection) held the lease forever: after a server kick
+ * the task's watchdog requested cancellation every 5 s for 10+ minutes and
+ * the session never tore down to reconnect (2026-10-04).
+ */
+export const CANCEL_SETTLE_MS = 10_000;
+/** Bound for each awaited plugin stop in `stopWorldPrimitives`. */
+export const TEARDOWN_STEP_MS = 2_000;
 
 interface Waiter {
   owner: string; signal: AbortSignal;
@@ -99,13 +109,17 @@ export class WorldActionExecutor {
     let cancelled = false;
     let cancelReason: unknown;
     let cancellationCleanup: Promise<void> = Promise.resolve();
+    const abandoned = Promise.withResolvers<never>();
+    let abandonTimer: ReturnType<typeof setTimeout> | undefined;
     const cancel = (reason: unknown = new Error("world action cancelled")): void => {
       if (cancelled) return;
       cancelled = true;
       cancelReason = reason;
       controller.abort(reason);
       cancellationCleanup = Promise.resolve(options.onCancel?.()).catch(() => undefined);
+      abandonTimer = setTimeout(() => abandoned.reject(abortError(reason)), CANCEL_SETTLE_MS);
     };
+    void abandoned.promise.catch(() => undefined);
     const forwardAbort = (): void => { cancel(signal.reason); };
     if (signal.aborted) forwardAbort();
     else signal.addEventListener("abort", forwardAbort, { once: true });
@@ -127,13 +141,13 @@ export class WorldActionExecutor {
       let result: T;
       try {
         if (timeoutMs === undefined) {
-          result = await actionPromise;
+          result = await Promise.race([actionPromise, abandoned.promise]);
         } else {
           const timeoutResult = new Promise<never>((_, reject) => {
             const handle = setTimeout(() => reject(new Error("world action lease timed out")), timeoutMs);
             void actionPromise.then(() => clearTimeout(handle), () => clearTimeout(handle));
           });
-          result = await Promise.race([actionPromise, timeoutResult]);
+          result = await Promise.race([actionPromise, timeoutResult, abandoned.promise]);
         }
       }
       catch (error) { actionError = error; throw error; }
@@ -144,6 +158,7 @@ export class WorldActionExecutor {
       return result;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
+      if (abandonTimer !== undefined) clearTimeout(abandonTimer);
       signal.removeEventListener("abort", forwardAbort);
       if (cancelled || actionError !== null) {
         await cancellationCleanup;
@@ -268,6 +283,39 @@ export function digBudgetMs(bot: { digTime?: (block: never) => number }, block: 
   }
 }
 
+/** Wait for `work` at most `ms`; errors and late settlement are ignored. */
+async function settleWithin(work: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), ms); });
+  try {
+    return await Promise.race([work.then(() => true, () => true), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface CollectBlockLike {
+  cancelTask?: () => Promise<void> | void;
+}
+
+/**
+ * Cancel the collectblock task, bounded. When the plugin cannot finish on its
+ * own (no physics ticks after a disconnect), clear its targets and emit the
+ * event it waits on, so the next `collect` call does not block forever in its
+ * leading `cancelTask()`.
+ */
+export async function cancelCollectTask(bot: { collectBlock?: CollectBlockLike; emit?: (event: never) => unknown }): Promise<void> {
+  const collect = bot.collectBlock;
+  if (collect?.cancelTask === undefined) return;
+  const settled = await settleWithin(Promise.resolve().then(() => collect.cancelTask?.()), TEARDOWN_STEP_MS);
+  if (settled) return;
+  logger.warn("collectblock did not finish cancelling; force-clearing its task");
+  // `targets` is private in the plugin's typings but is what makes the next
+  // collect() think a task is still running.
+  try { (collect as { targets?: { clear?: () => void } }).targets?.clear?.(); } catch { /* best effort */ }
+  try { (bot.emit as ((event: string) => unknown) | undefined)?.call(bot, "collectBlock_finished"); } catch { /* best effort */ }
+}
+
 /**
  * Disconnect/process teardown adapter. This is intentionally unleased: it is
  * the authority that runs when a lease context is unavailable. Calls are
@@ -276,7 +324,8 @@ export function digBudgetMs(bot: { digTime?: (block: never) => number }, block: 
  */
 export async function stopWorldPrimitives(bot: {
   pathfinder?: { stop?: () => void; setGoal?: (goal: null) => void };
-  collectBlock?: { cancelTask?: () => Promise<void> | void };
+  collectBlock?: CollectBlockLike;
+  emit?: (event: never) => unknown;
   pvp?: { stop?: () => void | Promise<void> };
   currentWindow?: unknown;
 }): Promise<void> {
@@ -287,12 +336,15 @@ export async function stopWorldPrimitives(bot: {
     }
     try { bot.pathfinder?.stop?.(); } catch { /* best effort */ }
     try { bot.pathfinder?.setGoal?.(null); } catch { /* best effort */ }
-    try { await bot.collectBlock?.cancelTask?.(); } catch { /* best effort */ }
-    try { await bot.pvp?.stop?.(); } catch { /* best effort */ }
-    try {
+    // Each plugin stop is bounded: on a dead connection physics never ticks
+    // again, so collectblock's cancelTask (which waits for its own
+    // "finished" event) and similar never resolve.
+    await cancelCollectTask(bot);
+    await settleWithin(Promise.resolve().then(() => bot.pvp?.stop?.()), TEARDOWN_STEP_MS);
+    await settleWithin(Promise.resolve().then(() => {
       const window = bot.currentWindow as { close?: () => Promise<void> | void } | null | undefined;
-      await window?.close?.();
-    } catch { /* best effort */ }
+      return window?.close?.();
+    }), TEARDOWN_STEP_MS);
   });
   teardownChains.set(bot, cleanup);
   await cleanup;
