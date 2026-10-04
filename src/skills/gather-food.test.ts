@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { FOOD_ITEM_NAMES, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint } from "./gather-food.js";
+import { FOOD_ITEM_NAMES, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -80,4 +80,18 @@ test("the hunt radius sequence always scans the configured maximum ring", () => 
   const exact: number[] = [];
   for (let radius = 48; radius <= 96; radius = nextHuntRadius(radius, 96)) exact.push(radius);
   assert.deepEqual(exact, [48, 96]);
+});
+
+test("waitForDrops catches loot that spawns after the kill registers", async () => {
+  let scans = 0;
+  const found = await waitForDrops(() => (++scans >= 3 ? ["porkchop"] : []), 1_000, 5);
+  assert.deepEqual(found, ["porkchop"]);
+  assert.equal(scans, 3);
+});
+
+test("waitForDrops gives up after the settle window when nothing drops", async () => {
+  const started = Date.now();
+  const found = await waitForDrops<string>(() => [], 30, 5);
+  assert.deepEqual(found, []);
+  assert.ok(Date.now() - started >= 30);
 });

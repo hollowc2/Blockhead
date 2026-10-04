@@ -79,8 +79,10 @@ bootstrap:
   search_radius: 48
   # Furthest radius gather_food expands to (and patrols to) before giving
   # up. Keep this bounded so a failed search cannot send CobbleBob hundreds
-  # of blocks from home into terrain the bot has not safely mapped.
-  hunt_max_radius: 128
+  # of blocks from home into terrain the bot has not safely mapped. 256
+  # matches navigation.expedition_threshold: 128 starved the bot once the
+  # animals near home were eaten (they do not respawn).
+  hunt_max_radius: 256
   cobblestone: 12
   stone_sword: true
   food_items: 8

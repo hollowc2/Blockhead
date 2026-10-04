@@ -118,6 +118,13 @@ export const LOOT_ITEM_NAMES: Record<string, true> = {
 
 /** Radius around the kill site that dropped items are swept for. */
 const LOOT_RADIUS = 24;
+/**
+ * How long the post-kill sweep waits for drops to appear. The server spawns
+ * loot on death, but its spawn packet can land after the client already saw
+ * the kill, so a single immediate scan misses the meat.
+ */
+const LOOT_SETTLE_MS = 1_500;
+const LOOT_POLL_MS = 100;
 /** Wall-clock budget for one kill: approach, fight, and drop sweep. */
 const KILL_TIMEOUT_MS = 90_000;
 /** Wall-clock budget for one drop-collection pass. */
@@ -292,6 +299,26 @@ function isLootDropItem(drop: Entity): boolean {
 }
 
 /** Dropped-item entities within `radius` of the bot that carry loot. */
+/**
+ * Re-run `scan` every `intervalMs` until it finds something or `settleMs`
+ * elapses; returns the last scan. Lets a post-kill sweep catch drops whose
+ * spawn packets arrive a few ticks after the death.
+ */
+export async function waitForDrops<T>(
+  scan: () => T[],
+  settleMs: number,
+  intervalMs: number,
+  signal?: AbortSignal,
+): Promise<T[]> {
+  const deadline = Date.now() + settleMs;
+  let found = scan();
+  while (found.length === 0 && Date.now() < deadline && signal?.aborted !== true) {
+    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+    found = scan();
+  }
+  return found;
+}
+
 function lootDropsNear(bot: Bot, radius: number): Entity[] {
   const self = bot.entity;
   if (self === null) return [];
@@ -722,7 +749,7 @@ export class GatherFoodRunner {
   /** Pick up every loot drop within `LOOT_RADIUS` of the bot. */
   private async collectLoot(): Promise<{ ok: true; items: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const drops = lootDropsNear(bot, LOOT_RADIUS);
+    const drops = await waitForDrops(() => lootDropsNear(bot, LOOT_RADIUS), LOOT_SETTLE_MS, LOOT_POLL_MS, this.signals?.signal);
     if (drops.length === 0) return { ok: true, items: 0 };
     try {
       await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signals?.signal), async () => {
