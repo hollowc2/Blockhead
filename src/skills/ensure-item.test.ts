@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recipe } from "prismarine-recipe";
-import { ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
+import { charcoalLogsFor, fuelFor, ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
 
 /** Tiny fake recipe catalog (ids are arbitrary but consistent). */
 function recipe(id: number, outputCount: number, deltas: [number, number][], requiresTable = false): Recipe {
@@ -163,4 +163,28 @@ test("with nothing stocked, stone tools plan the stone and wood found where the 
   assert.deepEqual(gathered(85), ["acacia_log", "cobblestone"]);
   assert.deepEqual(gathered(-30), ["acacia_log", "cobbled_deepslate"]);
   assert.deepEqual(gathered(70, "minecraft:the_nether"), ["acacia_log", "blackstone"]);
+});
+
+test("charcoal fuels its own run: 76 logs net 64, no separate fuel step", () => {
+  // Previously the plan reserved a burned log per charcoal (128 logs for 64)
+  // and failed outright holding 45.
+  assert.equal(charcoalLogsFor(64), 76);
+  assert.equal(charcoalLogsFor(16), 20);
+  assert.equal(charcoalLogsFor(0), 0);
+  const plan = resolvePlan("charcoal", 64, catalog);
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.plan.steps, [
+    { kind: "gather", item: "oak_log", quantity: 76 },
+    { kind: "smelt", item: "charcoal", quantity: 64 },
+  ]);
+  assert.equal(plan.plan.needsFurnace, true);
+});
+
+test("a smelt's fuel step asks for one coal per 8 items, not one per item", () => {
+  assert.equal(fuelFor(3), 1);
+  assert.equal(fuelFor(16), 2);
+  assert.equal(fuelFor(17), 3);
+  const plan = resolvePlan("iron_ingot", 16, catalog);
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.plan.steps.find((step) => step.kind === "fuel"), { kind: "fuel", quantity: 2 });
 });

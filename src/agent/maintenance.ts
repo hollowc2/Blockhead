@@ -34,6 +34,17 @@ export type StockpileKind = "wood" | "food" | "fuel" | "torches";
 /** The default ranking of shortages (spec 29: 1. food, 2. torches, 3. wood, 4. fuel). */
 export const STOCKPILE_PRIORITY_ORDER: readonly StockpileKind[] = ["food", "torches", "wood", "fuel"];
 
+/** Charcoal made per fuel restore when no coal is reachable (~20 logs). */
+export const CHARCOAL_BATCH = 16;
+
+/**
+ * The charcoal producer (`ensure_item`) ensures a *total*: asking it for the
+ * batch alone was a no-op whenever that much charcoal already sat in stock.
+ */
+export function charcoalTarget(onHand: number, batch: number): number {
+  return Math.max(0, onHand) + batch;
+}
+
 /** Spec 29 targets; the config `background.stockpiles` section overrides them. */
 export const DEFAULT_STOCKPILE_TARGETS: Record<StockpileKind, number> = {
   wood: 64,
@@ -198,6 +209,7 @@ export class StockpileManager {
     let food = 0;
     let fuel = 0;
     let torches = 0;
+    this.charcoalOnHand = (carried["charcoal"] ?? 0) + (stored["charcoal"] ?? 0);
     for (const [name, count] of Object.entries(carried)) {
       const bare = bareName(name);
       if (isRawLogItemName(bare)) wood += count;
@@ -307,6 +319,8 @@ export class StockpileManager {
   private lastLoggedLevels: string | null = null;
 
   private charcoal: ((quantity: number, signals?: TaskSignals) => Promise<SkillResult>) | null = null;
+  /** Carried + stored charcoal at the last check (the producer's target is a total). */
+  private charcoalOnHand = 0;
 
   setCharcoalProducer(producer: (quantity: number, signals?: TaskSignals) => Promise<SkillResult>): void {
     this.charcoal = producer;
@@ -333,10 +347,15 @@ export class StockpileManager {
         // `collect_resource` counts the drop ("coal") and delivers it to the
         // home chest, so the fuel stockpile sees real coal. With no coal in
         // reach, smelt charcoal from logs instead of failing forever.
+        // Charcoal comes in batches: each restore that lands one counts as
+        // progress, where an all-or-nothing 64 needing 75 logs failed
+        // outright and tripped the anti-loop watchdog.
         return this.opts.collect.run("coal_ore", deficit.deficit, options).then((result) => {
           if (result.ok || this.charcoal === null) return result;
-          this.opts.logger.info({ reason: result.message }, "fuel: no coal reachable; smelting charcoal instead");
-          return this.charcoal(deficit.deficit, signals);
+          if (result.status === "partial" && (result.data?.gathered ?? 0) > 0) return result;
+          const batch = Math.min(deficit.deficit, CHARCOAL_BATCH);
+          this.opts.logger.info({ reason: result.message, batch }, "fuel: no coal reachable; smelting charcoal instead");
+          return this.charcoal(charcoalTarget(this.charcoalOnHand, batch), signals);
         });
       case "torches":
         return this.opts.torches.run(deficit.deficit, options);

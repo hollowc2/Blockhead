@@ -90,6 +90,25 @@ export const ORE_SOURCE_BY_DROP: Record<string, string> = {
   redstone: "redstone_ore",
 };
 
+/** Items one piece of coal or charcoal smelts. */
+export const ITEMS_PER_FUEL = 8;
+
+/**
+ * Logs to net `charcoal` pieces from a furnace that fuels itself: one log
+ * lights it, then charcoal from the run burns at one piece per ~8 smelts.
+ * Budgeted at 6 net per burned piece for the burn lost between passes.
+ * (Burning a log per smelt needed 2 logs per charcoal: 128 for 64.)
+ */
+export function charcoalLogsFor(charcoal: number): number {
+  if (charcoal <= 0) return 0;
+  return Math.ceil((charcoal * (ITEMS_PER_FUEL - 1)) / (ITEMS_PER_FUEL - 2)) + 1;
+}
+
+/** Coal/charcoal pieces needed to smelt `items` items. */
+export function fuelFor(items: number): number {
+  return Math.ceil(Math.max(0, items) / ITEMS_PER_FUEL);
+}
+
 /** Fuel the smelt steps burn (coal or charcoal). */
 const FUEL_ITEM_NAMES: ReadonlySet<string> = new Set(["coal", "charcoal"]);
 
@@ -271,12 +290,18 @@ export function resolvePlan(item: string, quantity: number, catalog: RecipeCatal
   if (oreSource !== undefined) {
     return okPlan([{ kind: "gather", item: oreSource, quantity }]);
   }
+  if (bare === "charcoal") {
+    // Charcoal fuels its own run: logs only, no separate fuel step.
+    const logs = resolvePlan(SMELT_INPUT_BY_OUTPUT[bare]!, charcoalLogsFor(quantity), catalog, depth + 1);
+    if (!logs.ok) return logs;
+    return okPlan([...logs.plan.steps, { kind: "smelt", item: bare, quantity }], logs.plan.needsTable, true);
+  }
   const smeltInput = SMELT_INPUT_BY_OUTPUT[bare];
   if (smeltInput !== undefined) {
     const inputPlan = resolvePlan(smeltInput, quantity, catalog, depth + 1);
     if (!inputPlan.ok) return inputPlan;
     return okPlan(
-      [...inputPlan.plan.steps, { kind: "fuel", quantity }, { kind: "smelt", item: bare, quantity }],
+      [...inputPlan.plan.steps, { kind: "fuel", quantity: fuelFor(quantity) }, { kind: "smelt", item: bare, quantity }],
       inputPlan.plan.needsTable,
       true,
     );
@@ -651,36 +676,61 @@ export class EnsureItemRunner {
       }
     }
 
-    // 2. Produce charcoal from logs (each pass burns one fuel log, so a pass
-    // needs two logs total). Depth-capped to one level; never recurses back
-    // into this step.
+    // 2. Produce charcoal from logs.
     const charcoalMissing = Math.max(0, step.quantity - this.availableFuel());
-    if (charcoalMissing > 0) {
-      const logsNeeded = charcoalMissing * 2;
-      // Burn whichever log species is actually stocked (or grows nearby).
-      const logName = ["oak_log", "spruce_log", "birch_log", "jungle_log", "acacia_log", "dark_oak_log", "mangrove_log", "cherry_log", "pale_oak_log"]
-        .reduce((best, name) => (this.available(name) > this.available(best) ? name : best), dominantNearbyLog(this.opts.bot));
-      const logs = await this.materialize(logName, logsNeeded);
-      if (!logs.ok) {
-        return { errorCode: "INSUFFICIENT_MATERIALS", reason: `no coal and no logs for charcoal (${logs.reason})`, retryable: false };
-      }
-      const furnace = await this.ensureFurnace();
-      if (furnace === null) {
-        return { errorCode: "NOT_READY", reason: "no furnace at home for charcoal", retryable: true };
-      }
-      const smelt = await smeltItems(this.opts.bot, furnace, {
+    if (charcoalMissing > 0) return this.produceCharcoal(charcoalMissing, data);
+    return null;
+  }
+
+  /**
+   * Net `count` more charcoal into the inventory: chop logs when the chest is
+   * short, then smelt with the run fueling itself. Too few logs still smelts
+   * what there is, so a failed restore leaves more fuel than it found.
+   */
+  private async produceCharcoal(count: number, data: EnsureItemData): Promise<StepFailure | null> {
+    const bot = this.opts.bot;
+    const logName = this.bestLogSpecies();
+    const logsNeeded = charcoalLogsFor(count);
+    const gathered = await this.stepGather({ item: logName, quantity: logsNeeded }, data);
+    if (this.stopRequested) return null;
+    const usable = Math.min(logsNeeded, this.available(logName));
+    if (gathered !== null && usable < 2) {
+      return { ...gathered, reason: `no coal and no logs for charcoal (${gathered.reason})` };
+    }
+    await this.materialize(logName, usable);
+    const furnace = await this.ensureFurnace();
+    if (furnace === null) {
+      return { errorCode: "NOT_READY", reason: "no furnace at home for charcoal", retryable: true };
+    }
+    const start = countItem(bot, "charcoal");
+    let lastReason = gathered?.reason ?? "ran out of logs";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const remaining = count - (countItem(bot, "charcoal") - start);
+      const logs = countItem(bot, logName);
+      if (remaining <= 0 || logs === 0) break;
+      const smelt = await smeltItems(bot, furnace, {
         inputName: logName,
-        fuelName: logName,
+        fuelName: ["coal", "charcoal", logName],
         outputName: "charcoal",
-        times: charcoalMissing,
+        times: Math.min(logs, Math.ceil((remaining * ITEMS_PER_FUEL) / (ITEMS_PER_FUEL - 1))),
         signal: this.signals?.signal,
       });
       if (!smelt.ok) {
-        return { errorCode: "NOT_READY", reason: `charcoal production failed: ${smelt.reason}`, retryable: true };
+        lastReason = smelt.reason;
+        break;
       }
-      this.stored["charcoal"] = (this.stored["charcoal"] ?? 0) + charcoalMissing;
     }
-    return null;
+    const made = countItem(bot, "charcoal") - start;
+    data.smelted += Math.max(0, made);
+    this.opts.logger.info({ wanted: count, made, logName, logsLeft: countItem(bot, logName) }, "ensure_item charcoal run settled");
+    if (made >= count) return null;
+    return { errorCode: "INSUFFICIENT_MATERIALS", reason: `made ${Math.max(0, made)}/${count} charcoal: ${lastReason}`, retryable: true };
+  }
+
+  /** Log species with the largest carried + stored supply, else what grows nearby. */
+  private bestLogSpecies(): string {
+    return ["oak_log", "spruce_log", "birch_log", "jungle_log", "acacia_log", "dark_oak_log", "mangrove_log", "cherry_log", "pale_oak_log"]
+      .reduce((best, name) => (this.available(name) > this.available(best) ? name : best), dominantNearbyLog(this.opts.bot));
   }
 
   /** A craft step: run `quantity` craft passes of `item` at the table. */
@@ -733,6 +783,12 @@ export class EnsureItemRunner {
   /** A smelt step: run `quantity` smelt passes of `item` in the furnace. */
   private async stepSmelt(step: { item: string; quantity: number }, furnace: Block | null, data: EnsureItemData): Promise<StepFailure | null> {
     const bare = bareName(step.item);
+    if (bare === "charcoal") {
+      const missing = Math.max(0, step.quantity - this.available("charcoal"));
+      if (missing === 0) return null;
+      const failure = await this.produceCharcoal(missing, data);
+      return failure;
+    }
     const input = SMELT_INPUT_BY_OUTPUT[bare];
     if (input === undefined) {
       return { errorCode: "INVALID_RESOURCE", reason: `'${bare}' has no smelting recipe`, retryable: false };
@@ -741,8 +797,8 @@ export class EnsureItemRunner {
     if (!within.ok) {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: within.reason, retryable: false };
     }
-    if (this.availableFuel() < step.quantity) {
-      const fuel = await this.materializeFuel(step.quantity);
+    if (this.availableFuel() < fuelFor(step.quantity)) {
+      const fuel = await this.materializeFuel(fuelFor(step.quantity));
       if (!fuel.ok) {
         return { errorCode: "INSUFFICIENT_MATERIALS", reason: fuel.reason, retryable: false };
       }
