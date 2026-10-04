@@ -51,6 +51,11 @@ const TERRAIN_BLOCK_NAMES: ReadonlySet<string> = new Set([
   "dandelion",
   "poppy",
   "flower",
+  // Crops: harvesting one is how the bot's own farm is tended (it replants).
+  "wheat",
+  "carrots",
+  "potatoes",
+  "beetroots",
 ]);
 
 /** Registered storage; destroying it would scatter the owner's items. */

@@ -57,7 +57,6 @@ test("isForageFoodBlock harvests mature crops and always-ripe forage", () => {
 
 test("FOOD_ITEM_NAMES counts farmed and foraged food as food", () => {
   for (const name of [
-    "wheat",
     "bread",
     "carrot",
     "potato",
@@ -72,6 +71,8 @@ test("FOOD_ITEM_NAMES counts farmed and foraged food as food", () => {
   ]) {
     assert.equal(FOOD_ITEM_NAMES[name], true, `${name} is food`);
   }
+  // Wheat cannot be eaten; the farm bakes it into bread.
+  assert.equal(FOOD_ITEM_NAMES.wheat, undefined);
 });
 test("the hunt radius sequence always scans the configured maximum ring", () => {
   const radii: number[] = [];

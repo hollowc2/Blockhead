@@ -13,6 +13,7 @@ import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { tendFarm } from "./farm.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
@@ -57,8 +58,8 @@ export const FOOD_ITEM_NAMES: Record<string, true> = {
   cooked_porkchop: true,
   cooked_mutton: true,
   cooked_chicken: true,
-  // Farmed crops and forage (built from wheat, gathered or harvested).
-  wheat: true,
+  // Farmed crops and forage. Wheat itself is not edible: the farm bakes it
+  // into bread, and counting it let a starving bot believe it had food.
   bread: true,
   carrot: true,
   potato: true,
@@ -477,6 +478,22 @@ export class GatherFoodRunner {
     if (this.stopRequested) return this.interrupted(data);
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       return this.fail(data, "PATH_UNREACHABLE", `could not return home: ${travel.status}`);
+    }
+
+    // The farm first: ripe wheat and bread at home beat a long hunt, and
+    // the animals near home do not come back once eaten.
+    if (this.targetMob === null) {
+      try {
+        const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal: this.signals?.signal, shouldAbort: this.travelAbort });
+        this.opts.logger.info(farm, "gather_food tended farm");
+        if (farm.harvested > 0 || farm.bread > 0 || farm.planted > 0) {
+          this.announce(`Farm: harvested ${farm.harvested} wheat, baked ${farm.bread} bread, planted ${farm.planted}.`);
+        }
+      } catch (err) {
+        if (this.signals?.signal.aborted === true) throw err;
+        this.opts.logger.warn({ err: String(err) }, "gather_food: farm tending failed");
+      }
+      if (this.stopRequested) return this.interrupted(data);
     }
 
     const config = this.opts.config.bootstrap;

@@ -58,6 +58,19 @@ export async function placeBlock(bot: Bot, reference: Parameters<Bot["placeBlock
   throwIfAborted(signal);
 }
 
+/**
+ * Right-click `block` with the held item (a hoe tilling soil, seeds onto
+ * farmland). The policy sees it as placing `resultName` at the block, since
+ * that is the world change. `bot.activateBlock` resolves on the packet send,
+ * not on the server's answer, so callers verify the block afterwards.
+ */
+export async function useHeldItemOn(bot: Bot, block: Block, face: Parameters<Bot["activateBlock"]>[1], resultName: string, signal?: AbortSignal): Promise<void> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  beforeMutation(lease, "place", blockPoint(block), resultName);
+  await raceAbort(bot.activateBlock(block, face), signal, { timeoutMs: EQUIP_TIMEOUT_MS, label: "use item" });
+  throwIfAborted(signal);
+}
+
 /** `bot.dig` bounded by the lease signal and the block's dig time (see raceAbort). */
 function abortableDig(bot: Bot, block: Parameters<Bot["dig"]>[0], signal: AbortSignal | undefined): Promise<void> {
   return raceAbort(bot.dig(block), signal, {
