@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, travelHomeAndWait, walkToward } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -217,4 +217,12 @@ test("unwedge moves a bot pinned on a block face toward its cell centre", async 
   assert.ok(Math.abs(entity.position.z - -2.38) < 1e-9, "off the z=-2 face by 0.08");
   assert.ok(Math.abs(entity.position.x - 43.78) < 1e-9);
   assert.equal(entity.velocity.x, 0);
+});
+
+test("a cell the pathfinder kept failing costs extra for a few minutes", () => {
+  avoidStuckCell({ x: 44.2, y: 92, z: -2.7 }, 1_000);
+  assert.ok(stuckCellCost({ x: 44, y: 92, z: -3 }, 2_000) > 0);
+  assert.ok(stuckCellCost({ x: 45, y: 93, z: -2 }, 2_000) > 0, "its neighbours too");
+  assert.equal(stuckCellCost({ x: 50, y: 92, z: -3 }, 2_000), 0);
+  assert.equal(stuckCellCost({ x: 44, y: 92, z: -3 }, 1_000 + 4 * 60_000), 0, "expires");
 });

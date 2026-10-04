@@ -165,8 +165,32 @@ const PATH_THINK_TIMEOUT_MS = 12_000;
 // bot had just mined for stone tools. Dirt and filler stones only.
 const SCAFFOLD_ITEMS = ["dirt", "coarse_dirt", "netherrack", "andesite", "diorite", "granite", "tuff"];
 
+/**
+ * Cells a trip got physically stuck stepping into (a jump the pathfinder
+ * thinks is possible but physics cannot make: a one-high step under a low
+ * ceiling). Steps into them cost extra for a few minutes so the next plan
+ * routes around instead of retrying the same jump forever.
+ */
+const stuckCells: Array<{ x: number; y: number; z: number; until: number }> = [];
+const STUCK_CELL_COST = 40;
+const STUCK_CELL_TTL_MS = 3 * 60_000;
+
+export function avoidStuckCell(cell: { x: number; y: number; z: number }, now = Date.now()): void {
+  for (let i = stuckCells.length - 1; i >= 0; i--) if (stuckCells[i]!.until <= now) stuckCells.splice(i, 1);
+  stuckCells.push({ x: Math.floor(cell.x), y: Math.floor(cell.y), z: Math.floor(cell.z), until: now + STUCK_CELL_TTL_MS });
+}
+
+export function stuckCellCost(position: { x: number; y: number; z: number }, now = Date.now()): number {
+  for (const cell of stuckCells) {
+    if (cell.until <= now) continue;
+    if (Math.abs(position.x - cell.x) <= 1 && Math.abs(position.z - cell.z) <= 1 && position.y >= cell.y - 1 && position.y <= cell.y + 2) return STUCK_CELL_COST;
+  }
+  return 0;
+}
+
 function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   const registry = bot.registry;
+  (movements as unknown as { exclusionAreasStep: Array<(block: { position: Vec3 }) => number> }).exclusionAreasStep.push((block) => stuckCellCost(block.position));
   for (const block of registry.blocksArray) {
     if (!isNaturalBlock(block.name) || !block.diggable) movements.blocksCantBreak.add(block.id);
   }
@@ -968,8 +992,10 @@ export async function raceTrip(
   // plans the same leg in 81 ms (probe on maia), needs the pathfinder's own
   // view. Log the first few plan results and every reset, per trip.
   let updates = 0;
-  const onPathUpdate = (result: { status: string; path: unknown[]; visitedNodes?: number; time?: number }): void => {
+  let nextNode: { x: number; y: number; z: number } | null = null;
+  const onPathUpdate = (result: { status: string; path: Array<{ x: number; y: number; z: number }>; visitedNodes?: number; time?: number }): void => {
     updates += 1;
+    nextNode = result.path[0] ?? null;
     if (updates > 4 && result.status === "success") return;
     if (updates > 12) return;
     logger.info({ status: result.status, pathLength: result.path.length, visitedNodes: result.visitedNodes, ms: result.time }, "trip: path update");
@@ -983,10 +1009,15 @@ export async function raceTrip(
     logger.info({ reason }, "trip: path reset");
     if (reason !== "stuck" || bot.entity === null || bot.entity === undefined) return;
     const here = bot.entity.position;
-    if (stuckAt !== null && here.distanceTo(stuckAt) < 0.05) stuckResets += 1;
+    if (stuckAt !== null && here.distanceTo(stuckAt) < 0.3) stuckResets += 1;
     else { stuckAt = here.clone(); stuckResets = 1; }
-    if (stuckResets >= 2) {
-      unwedge(bot);
+    if (stuckResets === 2) unwedge(bot);
+    if (stuckResets >= 4) {
+      // The nudge did not help: the move itself is impossible here. Route
+      // around the step it keeps failing.
+      const cell = nextNode ?? { x: here.x, y: here.y, z: here.z };
+      avoidStuckCell(cell);
+      logger.warn({ at: { x: Math.floor(here.x), y: Math.floor(here.y), z: Math.floor(here.z) }, avoiding: { x: Math.floor(cell.x), y: Math.floor(cell.y), z: Math.floor(cell.z) } }, "pathfinder keeps failing the same move; routing around it");
       stuckResets = 0;
       stuckAt = null;
     }
