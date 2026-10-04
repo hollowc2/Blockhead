@@ -4,6 +4,7 @@ import type { Entity } from "prismarine-entity";
 import type { Item } from "prismarine-item";
 import type { Recipe } from "prismarine-recipe";
 import { digBudgetMs, raceAbort, requireWorldActionCleanupLease, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import { junkToShed } from "./inventory.js";
 
 function beforeMutation(lease: ReturnType<typeof requireWorldActionLease>, action: string, point?: { x: number; y: number; z: number }, blockName?: string, ownBuildReplacement?: boolean): void {
   lease.beforeMutation?.({ action, point, blockName, ownBuildReplacement });
@@ -116,6 +117,22 @@ export async function tossItem(bot: Bot, type: number, metadata: number | null, 
   beforeMutation(lease, "drop");
   await bot.toss(type, metadata, count);
   throwIfAborted(signal);
+}
+
+/**
+ * Toss junk (see `junkToShed`) when the inventory is nearly full, so a gather
+ * or hunt has room for what it picks up. Returns the number of items dropped.
+ */
+export async function shedJunk(bot: Bot, protect: readonly string[] = [], signal?: AbortSignal): Promise<number> {
+  const plan = junkToShed(bot.inventory.items(), bot.inventory.emptySlotCount(), protect);
+  let dropped = 0;
+  for (const [name, count] of Object.entries(plan)) {
+    const id = bot.registry.itemsByName[name]?.id;
+    if (id === undefined) continue;
+    await tossItem(bot, id, null, count, signal);
+    dropped += count;
+  }
+  return dropped;
 }
 
 /**

@@ -5,7 +5,7 @@ import type { TaskSignals } from "../agent/scheduler.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { StorageRepository } from "../memory/storage.js";
 import { bareName, countItem, findItem } from "../minecraft/inventory.js";
-import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { deliverCarried, describeDeliveryFailure, type DeliveryFailure, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { tossItem } from "../minecraft/primitives.js";
 import { resourceStem } from "./skill-library.js";
@@ -132,15 +132,24 @@ export class DeliveryRunner {
       };
       const names = [...new Set(bot.inventory.items().map((item) => bareName(item.name)))].filter(matches);
       let delivered = 0;
+      let failure: DeliveryFailure | undefined;
       for (const name of names) {
         const result = await deliverCarried(bot, this.opts.state, this.opts.storage, name, this.opts.logger, this.signals?.signal);
         delivered += result.delivered;
+        failure ??= result.failure;
         if (this.stopRequested) return this.interruptedResult(data);
+        // Every later item would hit the same missing or unreachable chest.
+        if (result.failure === "no_chest" || result.failure === "unreachable") break;
       }
       data.handled = delivered;
-      return delivered > 0
-        ? { ok: true, message: `Stored ${delivered} items.`, data }
-        : { ok: true, message: "Nothing to store.", data };
+      if (delivered > 0) {
+        const note = failure === undefined ? "" : ` (${describeDeliveryFailure(failure)})`;
+        return { ok: true, message: `Stored ${delivered} items${note}.`, data };
+      }
+      if (failure !== undefined) {
+        return { ok: false, message: `Could not store anything: ${describeDeliveryFailure(failure)}.`, errorCode: failure === "no_chest" ? "STORAGE_NOT_FOUND" : "PATH_UNREACHABLE", retryable: failure !== "no_chest", data };
+      }
+      return { ok: true, message: "Nothing to store.", data };
     });
   }
 

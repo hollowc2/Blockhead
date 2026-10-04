@@ -94,3 +94,61 @@ export function itemsSummary(bot: Bot): Record<string, number> {
   }
   return summary;
 }
+/** Free slots below which gathering first sheds junk to make room. */
+export const MIN_FREE_SLOTS_FOR_GATHER = 4;
+
+/**
+ * Junk the bot picks up while digging and pathing, with how many to keep.
+ * Cobblestone is kept for stone tools, furnaces and scaffolding; the rest has
+ * no use for the bot. Seeds and low-tier tools are deliberately absent (the
+ * farm plants seeds; a wooden pickaxe may be the only pickaxe).
+ */
+const JUNK_KEEP: Readonly<Record<string, number>> = {
+  cobblestone: 64,
+  cobbled_deepslate: 0,
+  dirt: 0,
+  gravel: 0,
+  granite: 0,
+  diorite: 0,
+  andesite: 0,
+  tuff: 0,
+  netherrack: 0,
+  rotten_flesh: 0,
+  poppy: 0,
+  dandelion: 0,
+  azure_bluet: 0,
+  oxeye_daisy: 0,
+  cornflower: 0,
+  red_tulip: 0,
+  orange_tulip: 0,
+  white_tulip: 0,
+  pink_tulip: 0,
+  allium: 0,
+  blue_orchid: 0,
+  lily_of_the_valley: 0,
+};
+
+/**
+ * Plan which junk to drop when the inventory is short of room: item name ->
+ * count to toss. Empty when `freeSlots` is already enough. `protect` names an
+ * item the caller is gathering, which is never dropped.
+ */
+export function junkToShed(
+  items: readonly { name: string; count: number }[],
+  freeSlots: number,
+  protect: readonly string[] = [],
+): Record<string, number> {
+  if (freeSlots >= MIN_FREE_SLOTS_FOR_GATHER) return {};
+  const totals: Record<string, number> = {};
+  for (const item of items) {
+    const name = bareName(item.name);
+    if (JUNK_KEEP[name] === undefined || protect.some((kept) => bareName(kept) === name)) continue;
+    totals[name] = (totals[name] ?? 0) + item.count;
+  }
+  const plan: Record<string, number> = {};
+  for (const [name, count] of Object.entries(totals)) {
+    const surplus = count - (JUNK_KEEP[name] ?? 0);
+    if (surplus > 0) plan[name] = surplus;
+  }
+  return plan;
+}

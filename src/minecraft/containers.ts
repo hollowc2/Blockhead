@@ -10,6 +10,7 @@ import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.
 import { closeWindow, deposit, openContainer, withdraw } from "./primitives.js";
 import { observedTransfer } from "../status/deltas.js";
 import { canPerform } from "./protection.js";
+import { walkIntoReach } from "./movement.js";
 
 /** Re-check container policy at the last safe point before each window mutation. */
 function assertContainerAllowed(state: AgentState, block: Block): void {
@@ -122,6 +123,54 @@ export async function countStoredItems(
   return totals;
 }
 
+/**
+ * Why a deposit moved nothing: no chest exists at home, the chest could not
+ * be reached or opened, or it is full. Callers report these differently —
+ * "no chest" for a failed open sent the owner looking for a chest that was
+ * standing right there.
+ */
+export type DeliveryFailure = "no_chest" | "unreachable" | "chest_full" | "deposit_failed";
+
+export interface DeliveryResult {
+  delivered: number;
+  failure?: DeliveryFailure;
+}
+
+/** Owner-facing phrase for a delivery failure. */
+export function describeDeliveryFailure(failure: DeliveryFailure | undefined): string {
+  switch (failure) {
+    case "no_chest": return "no chest at home to deposit into";
+    case "unreachable": return "could not reach the home chest";
+    case "chest_full": return "the home chest is full";
+    default: return "the deposit into the home chest failed";
+  }
+}
+
+function classifyDepositError(err: unknown): DeliveryFailure {
+  const text = String(err);
+  if (/out of reach|within reach|windowOpen/i.test(text)) return "unreachable";
+  if (/full/i.test(text)) return "chest_full";
+  return "deposit_failed";
+}
+
+/**
+ * Walk within reach of the chest, then open it. Returning home only gets the
+ * bot within its home arrival range, which can leave a chest a few blocks off
+ * beyond window reach ("chest is out of reach (5.5 blocks away)").
+ */
+async function approachAndOpen(bot: Bot, state: AgentState, chest: Block, signal?: AbortSignal) {
+  let reached: boolean;
+  try {
+    reached = await walkIntoReach(bot, chest, signal);
+  } catch (err) {
+    throwIfAborted(signal);
+    throw new Error(`could not walk within reach of the ${chest.name}: ${String(err)}`);
+  }
+  if (!reached) throw new Error(`could not walk within reach of the ${chest.name}`);
+  assertContainerAllowed(state, chest);
+  return openContainer(bot, chest, signal);
+}
+
 /** Deposit every carried instance of `itemName` into the home chest. */
 export async function deliverCarried(
   bot: Bot,
@@ -130,13 +179,13 @@ export async function deliverCarried(
   itemName: string,
   logger: Logger,
   signal?: AbortSignal,
-): Promise<{ delivered: number }> {
+): Promise<DeliveryResult> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
     logger.warn("no chest at home to deposit into");
-    return { delivered: 0 };
+    return { delivered: 0, failure: "no_chest" };
   }
   const before = countItem(bot, itemName);
   if (before === 0) return { delivered: 0 };
@@ -148,8 +197,7 @@ export async function deliverCarried(
   }
 
   try {
-    assertContainerAllowed(state, chest);
-    const container = await openContainer(bot, chest, signal);
+    const container = await approachAndOpen(bot, state, chest, signal);
     throwIfAborted(signal);
     try {
       assertContainerAllowed(state, chest);
@@ -160,7 +208,9 @@ export async function deliverCarried(
   } catch (err) {
     throwIfAborted(signal);
     logger.warn({ err: String(err), item: itemName }, "chest deposit failed");
-    return { delivered: 0 };
+    // A deposit that filled the chest mid-way still moved some items.
+    const moved = Math.max(0, before - countItem(bot, itemName));
+    return { delivered: moved, failure: classifyDepositError(err) };
   }
   return { delivered: Math.max(0, before - countItem(bot, itemName)) };
 }
@@ -180,21 +230,21 @@ export async function deliverCarriedItems(
   logger: Logger,
   signal?: AbortSignal,
   options: { keep?: number } = {},
-): Promise<{ delivered: number }> {
+): Promise<DeliveryResult> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null) {
     logger.warn("no chest at home to deposit into");
-    return { delivered: 0 };
+    return { delivered: 0, failure: "no_chest" };
   }
   let delivered = 0;
   // `keep` leaves that many items (across all the names) in the inventory.
   let surplus = itemNames.reduce((sum, name) => sum + countItem(bot, name), 0) - (options.keep ?? 0);
   if (surplus <= 0) return { delivered: 0 };
+  let failure: DeliveryFailure | undefined;
   try {
-    assertContainerAllowed(state, chest);
-    const container = await openContainer(bot, chest, signal);
+    const container = await approachAndOpen(bot, state, chest, signal);
     throwIfAborted(signal);
     try {
       for (const name of itemNames) {
@@ -215,6 +265,7 @@ export async function deliverCarriedItems(
         } catch (err) {
           throwIfAborted(signal);
           logger.warn({ err: String(err), item: name }, "chest deposit failed");
+          failure = classifyDepositError(err);
         }
       }
     } finally {
@@ -223,9 +274,9 @@ export async function deliverCarriedItems(
   } catch (err) {
     throwIfAborted(signal);
     logger.warn({ err: String(err) }, "chest deposit failed");
-    return { delivered: 0 };
+    return { delivered, failure: classifyDepositError(err) };
   }
-  return { delivered };
+  return failure === undefined ? { delivered } : { delivered, failure };
 }
 
 /** Withdraw up to `count` of `itemName` from the home chest into the inventory. */
@@ -252,8 +303,7 @@ export async function withdrawFromHomeChest(
   }
   const before = countItem(bot, itemName);
   try {
-    assertContainerAllowed(state, chest);
-    const container = await openContainer(bot, chest, signal);
+    const container = await approachAndOpen(bot, state, chest, signal);
     throwIfAborted(signal);
     try {
       assertContainerAllowed(state, chest);
@@ -410,8 +460,7 @@ export async function transferItem(
   let destinationBefore = 0;
   let destinationAfter = 0;
   try {
-    assertContainerAllowed(state, from);
-    const source = await openContainer(bot, from, signal);
+    const source = await approachAndOpen(bot, state, from, signal);
     throwIfAborted(signal);
     try {
       sourceBefore = source.containerCount(itemId, null);
@@ -427,8 +476,7 @@ export async function transferItem(
     return { moved: 0 };
   }
   try {
-    assertContainerAllowed(state, to);
-    const target = await openContainer(bot, to, signal);
+    const target = await approachAndOpen(bot, state, to, signal);
     throwIfAborted(signal);
     try {
       destinationBefore = target.containerCount(itemId, null);

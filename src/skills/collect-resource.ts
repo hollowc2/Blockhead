@@ -11,7 +11,8 @@ import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
-import { deliverCarried } from "../minecraft/containers.js";
+import { deliverCarried, describeDeliveryFailure, type DeliveryFailure } from "../minecraft/containers.js";
+import { shedJunk } from "../minecraft/primitives.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
@@ -351,6 +352,17 @@ export class CollectResourceRunner {
       this.opts.logger.info({ resource: bare, quantity }, "already carrying the requested quantity; going straight to delivery");
     }
 
+    // A nearly full inventory silently stops picking up drops mid-gather.
+    if (remaining > 0) {
+      try {
+        const dropped = await shedJunk(bot, [carriedName, bare], this.signals?.signal);
+        if (dropped > 0) this.opts.logger.info({ dropped }, "dropped junk to make inventory room");
+      } catch (err) {
+        if (this.signals?.signal.aborted === true) throw err;
+        this.opts.logger.warn({ err: String(err) }, "dropping junk failed");
+      }
+    }
+
     // Stage 6: ensure equipment before the first gather pass.
     if (remaining > 0) {
       const tool = await this.ensureTool(bare);
@@ -388,15 +400,18 @@ export class CollectResourceRunner {
     // exactly as the player asked.
     const home = this.opts.state.home;
     const sameDimension = home !== null && normalizeDimension(bot.game.dimension ?? "") === home.dimension;
+    let deliveryFailure: DeliveryFailure | undefined;
     if (sameDimension && this.deliver) {
       const returned = await this.returnHome();
       if (this.stopRequested) return this.interrupted(data);
       if (returned.status !== "arrived" && returned.status !== "already_there") {
         // Travel failure: log, keep items, report delivery as impossible.
         this.opts.logger.warn({ status: returned.status }, "could not return home to deliver");
+        deliveryFailure = "unreachable";
       } else if (carried > 0 || data.carriedAtStart > 0) {
         const delivered = await deliverCarried(bot, this.opts.state, this.opts.storage, carriedName, this.opts.logger, this.signals?.signal);
         if (delivered.delivered > 0) data.delivered = delivered.delivered;
+        deliveryFailure = delivered.failure;
       }
       // Phase 9: the run is home — end expedition mode with its status message
       // (no-op when the run never left the threshold, or when home is unreachable).
@@ -437,7 +452,7 @@ export class CollectResourceRunner {
       const reason = !sameDimension
         ? `home is in another dimension`
         : data.delivered === 0
-          ? "no chest at home to deposit into"
+          ? describeDeliveryFailure(deliveryFailure)
           : "could not deposit everything into the home chest";
       // The owner asked for the items and the bot has them: a full or
       // missing chest is worth reporting, not a reason to fail and re-run

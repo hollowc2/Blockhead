@@ -12,7 +12,7 @@ import { deliverCarriedItems } from "../minecraft/containers.js";
 import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlocksNear } from "../minecraft/world.js";
-import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
+import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop, shedJunk } from "../minecraft/primitives.js";
 import { tendFarm } from "./farm.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity } from "../policy/combat.js";
 import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
@@ -446,6 +446,17 @@ export class GatherFoodRunner {
     }
   }
 
+  /** Drop junk when nearly full, so drops and harvests have room. */
+  private async makeRoom(): Promise<void> {
+    try {
+      const dropped = await shedJunk(this.opts.bot, [], this.signals?.signal);
+      if (dropped > 0) this.opts.logger.info({ dropped }, "gather_food: dropped junk to make inventory room");
+    } catch (err) {
+      if (this.signals?.signal.aborted === true) throw err;
+      this.opts.logger.warn({ err: String(err) }, "gather_food: dropping junk failed");
+    }
+  }
+
   private async execute(quantity: number): Promise<SkillResult<GatherFoodData>> {
     const bot = this.opts.bot;
     const startedAt = Date.now();
@@ -464,6 +475,7 @@ export class GatherFoodRunner {
     }
     // Eat as soon as anything edible exists (plugin call is idempotent).
     bot.autoEat.enableAuto();
+    await this.makeRoom();
 
     const home = this.opts.state.home;
     if (home === null) {
