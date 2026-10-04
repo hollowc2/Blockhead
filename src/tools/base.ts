@@ -5,6 +5,8 @@ import type { BuildingDesign } from "../building/schema.js";
 import { z } from "zod";
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import { Vec3 } from "vec3";
+import { isProtectedFixture } from "../policy/action-boundary.js";
 
 /**
  * Register the centralized-stockpile tool (spec 4.3 "improve basic
@@ -82,7 +84,14 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
         const self = ctx.bot.entity;
         if (self === null) return "I cannot start a structure build until I am spawned.";
         let point: { x: number; y: number; z: number; dimension: string } | null = null;
-        if (anchorKind === "home") point = ctx.state.home;
+        if (anchorKind === "home" && ctx.state.home !== null) {
+          // The home point is ringed by the bot's own chest, furnace and
+          // table: a room anchored on it was "blocked by furnace" 23 blocks
+          // in. Build on the nearest clear plot beside them instead.
+          const home = ctx.state.home;
+          const plot = clearPlotNear(ctx.bot, home, width, length, height);
+          point = plot === null ? home : { ...plot, dimension: home.dimension };
+        }
         else if (anchorKind === "current") point = { ...self.position, dimension: String(ctx.bot.game.dimension ?? "overworld") };
         else {
           const owner = ctx.config.agent?.owner ?? "Corey";
@@ -119,6 +128,43 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
   for (const tool of tools) {
     registry.register(tool);
   }
+}
+
+/**
+ * The corner of the nearest width x length plot (with a one-block margin)
+ * that holds none of the bot's fixtures, searching rings around `centre`.
+ * Null when the world is not loaded or no plot within 16 blocks is clear.
+ */
+export function clearPlotNear(
+  bot: { findBlocks?: (options: { point: Vec3; matching: (block: { name: string } | null) => boolean; maxDistance: number; count: number }) => Vec3[] },
+  centre: { x: number; y: number; z: number },
+  width: number,
+  length: number,
+  height: number,
+): { x: number; y: number; z: number } | null {
+  if (typeof bot.findBlocks !== "function") return null;
+  const fixtures = bot.findBlocks({
+    point: new Vec3(centre.x, centre.y, centre.z),
+    matching: (block) => block !== null && isProtectedFixture(block.name),
+    maxDistance: 24 + Math.max(width, length),
+    count: 128,
+  });
+  const cx = Math.floor(centre.x);
+  const cz = Math.floor(centre.z);
+  const y = Math.floor(centre.y);
+  const clear = (ox: number, oz: number): boolean => !fixtures.some((f) =>
+    f.x >= ox - 1 && f.x <= ox + width && f.z >= oz - 1 && f.z <= oz + length && f.y >= y - 1 && f.y <= y + height);
+  for (let r = 0; r <= 16; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const ox = cx + dx;
+        const oz = cz + dz;
+        if (clear(ox, oz)) return { x: ox, y, z: oz };
+      }
+    }
+  }
+  return null;
 }
 
 /**
