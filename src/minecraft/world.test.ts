@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { collectBlocks, findBlocksNearRefined, isReachableFromGround, isTrunkBase } from "./world.js";
+import { collectBlocks, findBlocksNearRefined, hasAirNeighbor, isReachableFromGround, isTrunkBase } from "./world.js";
 
 test("refined block search applies exposure before the candidate cap", () => {
   let options: Record<string, unknown> | undefined;
@@ -80,4 +80,30 @@ test("trunk logs over soil qualify; a canopy log floating over leaves does not",
   assert.equal(isTrunkBase(w, new Vec3(5, 67, 0)), true, "two logs up the trunk");
   assert.equal(isTrunkBase(w, new Vec3(9, 66, 0)), true, "over a felled stump");
   assert.equal(isTrunkBase(w, new Vec3(0, 71, 0)), false, "canopy");
+});
+
+test("ore beside cave air counts as exposed", () => {
+  // Coal in a cave wall borders cave_air: an air-only check saw none of it.
+  const cells = new Map<string, string>([["0,11,0", "cave_air"]]);
+  const blockAt = (p: Vec3) => ({ name: cells.get(`${p.x},${p.y},${p.z}`) ?? "stone", position: p });
+  const bot = { blockAt } as unknown as Parameters<typeof hasAirNeighbor>[0];
+  assert.equal(hasAirNeighbor(bot, new Vec3(0, 10, 0)), true);
+  assert.equal(hasAirNeighbor(bot, new Vec3(0, 5, 0)), false);
+});
+
+test("the state-id exposure check treats cave air as open and unloaded chunks as closed", () => {
+  const AIR = 0;
+  const CAVE_AIR = 12000;
+  const STONE = 1;
+  const states = new Map<string, number>([["0,11,0", CAVE_AIR]]);
+  const bot = {
+    registry: { blocksByName: { air: { minStateId: AIR }, cave_air: { minStateId: CAVE_AIR }, void_air: { minStateId: 12001 } } },
+    world: {
+      getColumnAt: (p: Vec3) => (p.x < 16 ? {} : null),
+      // An unloaded column reads as state 0 (air) in prismarine-world.
+      getBlockStateId: (p: Vec3) => (p.x >= 16 ? AIR : states.get(`${p.x},${p.y},${p.z}`) ?? STONE),
+    },
+  } as unknown as Parameters<typeof hasAirNeighbor>[0];
+  assert.equal(hasAirNeighbor(bot, new Vec3(0, 10, 0)), true);
+  assert.equal(hasAirNeighbor(bot, new Vec3(15, 10, 0)), false, "the neighbor across the edge is unloaded, not air");
 });

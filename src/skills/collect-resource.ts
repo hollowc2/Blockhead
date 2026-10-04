@@ -13,7 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary 
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, digsNearHome, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
@@ -60,6 +60,11 @@ import {
  *         completion, return a structured SkillResult, and on full success
  *         record a SkillSuccess (spec 20.2).
  */
+
+/** A site candidate not yet tried and outside the home keep-clear radius. */
+export function isUsefulSite(position: { x: number; y: number; z: number }, resource: string, attempted: ReadonlySet<string>, home: { x: number; z: number } | null): boolean {
+  return !attempted.has(`${position.x},${position.y},${position.z}`) && !digsNearHome(position, home, resource);
+}
 
 // --- deterministic policy constants ---
 
@@ -605,11 +610,19 @@ export class CollectResourceRunner {
       // Logs: trunk logs only, filtered inside the scan. Canopy logs each cost
       // a 5-15 s pathfinder timeout and crowded every real trunk out of the
       // capped candidate list around a home ringed by felled acacias.
-      const found = (/_log$/.test(bare)
-        ? findBlocksNearPointRefined(bot, anchor, (block) => blockMatchesResource(block, bare), (position) => isTrunkBase(bot, position), radius, SITE_CANDIDATES_PER_RADIUS)
-        : findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS))
-        .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`))
-        .filter((position) => !digsNearHome(position, this.opts.state.home, bare));
+      // Every site filter runs inside the scan: filtering the capped result
+      // afterwards let the nearest buried or near-home ore fill all 24 slots
+      // at every radius, so "No coal within 256 blocks" came back in
+      // milliseconds while exposed cave coal sat unsearched.
+      const found = findBlocksNearPointRefined(
+        bot,
+        anchor,
+        (block) => blockMatchesResource(block, bare),
+        (position) => isUsefulSite(position, bare, attempted, this.opts.state.home)
+          && (/_log$/.test(bare) ? isTrunkBase(bot, position) : hasAirNeighbor(bot, position)),
+        radius,
+        SITE_CANDIDATES_PER_RADIUS,
+      );
       // A matching block can be visible in the world scan while still being
       // completely buried. Such a position is not a useful collection site:
       // pathfinder cannot reach the block to start a dig, producing repeated
@@ -708,7 +721,13 @@ export class CollectResourceRunner {
       if (abort !== null) return { gained, abort };
 
       const self = bot.entity;
-      const targets = findBlocksNear(bot, (block) => blockMatchesResource(block, bare), GATHER_RADIUS, GATHER_BLOCKS_PER_PASS)
+      const targets = findBlocksNearRefined(
+        bot,
+        (block) => blockMatchesResource(block, bare),
+        (position) => !digsNearHome(position, this.opts.state.home, bare) && hasAirNeighbor(bot, position),
+        GATHER_RADIUS,
+        GATHER_BLOCKS_PER_PASS,
+      )
         .map((v) => bot.blockAt(v))
         .filter((block) => block !== null)
         .filter((block) => hasAirNeighbor(bot, block.position))
@@ -854,9 +873,11 @@ export class CollectResourceRunner {
 
     const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
     if (table === null) return { ok: false, reason: "no crafting table at home" };
+    // Within reach is enough; demanding the adjacent cell failed on a table
+    // with no walkable neighbor. craftItem re-checks reach after the log run.
     const tableTravel = await travelAndWait(bot, table.position, {
       timeoutMs: TRAVEL_TIMEOUT_MS,
-      range: 1,
+      range: 3,
       shouldAbort: this.travelAbort,
       signal: this.signals?.signal,
     });

@@ -93,18 +93,49 @@ export function isPlaceableAir(block: Block | null): boolean {
   return block.name === "air" || block.name === "cave_air" || block.name === "void_air";
 }
 
-/** True when any orthogonal neighbor of `position` is air (world-facing). */
+const NEIGHBOR_OFFSETS: readonly [number, number, number][] = [
+  [0, 1, 0],
+  [0, -1, 0],
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+/** Registry state ids of `air`, `cave_air`, `void_air` (each has one state). */
+const airStateIdCache = new WeakMap<Bot, Set<number> | null>();
+
+function openAirStateIds(bot: Bot): Set<number> | null {
+  if (airStateIdCache.has(bot)) return airStateIdCache.get(bot) ?? null;
+  const ids = readOpenAirStateIds(bot);
+  airStateIdCache.set(bot, ids);
+  return ids;
+}
+
+function readOpenAirStateIds(bot: Bot): Set<number> | null {
+  const byName = (bot as { registry?: { blocksByName?: Record<string, { minStateId?: number }> } }).registry?.blocksByName;
+  if (byName === undefined) return null;
+  const ids = ["air", "cave_air", "void_air"].map((name) => byName[name]?.minStateId).filter((id): id is number => typeof id === "number");
+  return ids.length > 0 ? new Set(ids) : null;
+}
+
+/**
+ * True when any orthogonal neighbor of `position` is open air (world-facing).
+ * Cave air counts: ore exposed in a cave borders `cave_air`, and an `air`-only
+ * check never saw any of it as reachable. Reads raw state ids (no Block
+ * objects) because site scans call it on every matching block.
+ */
 export function hasAirNeighbor(bot: Bot, position: Vec3): boolean {
-  const offsets: [number, number, number][] = [
-    [0, 1, 0],
-    [0, -1, 0],
-    [1, 0, 0],
-    [-1, 0, 0],
-    [0, 0, 1],
-    [0, 0, -1],
-  ];
-  for (const [dx, dy, dz] of offsets) {
-    if (isAir(bot.blockAt(position.offset(dx, dy, dz)))) return true;
+  const world = (bot as { world?: { getBlockStateId?: (p: Vec3) => number; getColumnAt?: (p: Vec3) => unknown } }).world;
+  const air = world?.getBlockStateId !== undefined && world.getColumnAt !== undefined ? openAirStateIds(bot) : null;
+  for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {
+    const neighbor = position.offset(dx, dy, dz);
+    if (air !== null && world !== undefined) {
+      // An unloaded column reads as state 0 (air); it is unknown, not open.
+      if (world.getColumnAt!(neighbor) && air.has(world.getBlockStateId!(neighbor))) return true;
+    } else if (isPlaceableAir(bot.blockAt(neighbor))) {
+      return true;
+    }
   }
   return false;
 }
