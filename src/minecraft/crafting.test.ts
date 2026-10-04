@@ -7,7 +7,7 @@ import type { Block } from "prismarine-block";
 import type { Item as PItem } from "prismarine-item";
 import type { Recipe as PRecipe } from "prismarine-recipe";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { craftItem, craftMorePlanks, craftPlanks, craftSticks } from "./crafting.js";
+import { craftItem, craftMorePlanks, craftPlanks, craftSpeciesPlanks, craftSticks } from "./crafting.js";
 import { countItem, itemsSummary } from "./inventory.js";
 
 const require = createRequire(import.meta.url);
@@ -305,4 +305,19 @@ test("craftSticks reports the shortfall when neither planks nor logs can make st
   const sticks = await leased(() => craftSticks(server.bot, 4));
   assert.equal(sticks.ok, false);
   assert.match(sticks.ok ? "" : sticks.reason, /no logs/);
+});
+
+test("craftSpeciesPlanks tops up one species so a chest recipe can match", async () => {
+  // STORAGE (2026-10-03): 4 oak + 4 birch planks matched no per-species chest recipe.
+  const server = new FakeServer({ oak_planks: 4, birch_planks: 4, birch_log: 2 });
+  const result = await leased(() => craftSpeciesPlanks(server.bot, 8));
+  assert.equal(result.ok, true);
+  server.assertConsistent();
+  assert.equal(server.serverCounts().birch_planks, 8);
+});
+
+test("craftSpeciesPlanks reports when no single species can reach the count", async () => {
+  const server = new FakeServer({ oak_planks: 4, birch_planks: 4 });
+  const result = await leased(() => craftSpeciesPlanks(server.bot, 8));
+  assert.equal(result.ok, false);
 });

@@ -313,6 +313,35 @@ async function craftSticksTo(bot: Bot, targetTotal: number, signal: AbortSignal)
   return failure("stick", `only ${countSticks(bot)}/${targetTotal} sticks: ${reason ?? "craft completed without an output delta"}`);
 }
 
+/**
+ * Make sure `count` planks of one species are carried. Minecraft accepts any
+ * planks for a chest (or a table), but Mineflayer lists one recipe per
+ * species: 4 oak + 4 birch planks matched no chest recipe and the STORAGE
+ * stage failed "missing ingredients" with 8 planks in hand. Planks the
+ * species with the most planks-plus-logs from its own logs.
+ */
+export async function craftSpeciesPlanks(bot: Bot, count: number, signal?: AbortSignal): Promise<CraftResult> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  await syncInventory(bot, signal);
+  const logs = logsByType(bot);
+  let best: { log: string; planks: string; have: number; supply: number } | null = null;
+  for (const [log, logCount] of Object.entries(logs)) {
+    const planks = planksForLog(log);
+    const have = countItem(bot, planks);
+    const supply = have + 4 * logCount;
+    if (best === null || supply > best.supply) best = { log, planks, have, supply };
+  }
+  for (const item of bot.inventory.items()) {
+    const name = bareName(item.name);
+    if (!name.endsWith("_planks") || item.count < count) continue;
+    return { ok: true, name, crafted: 0 };
+  }
+  if (best === null || best.supply < count) return failure("planks", `no single wood species can make ${count} planks`);
+  if (best.have >= count) return { ok: true, name: best.planks, crafted: 0 };
+  const times = Math.ceil((count - best.have) / 4);
+  return craftItem(bot, best.planks, { times, signal });
+}
+
 function stickRecipeUsable(bot: Bot, stickId: number): boolean {
   return bot.recipesAll(stickId, null, false).some((candidate) => recipeUsable(bot, candidate, 1));
 }

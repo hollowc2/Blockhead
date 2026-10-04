@@ -32,6 +32,7 @@ import {
   craftMorePlanks,
   craftMoreSticks,
   craftPlanks,
+  craftSpeciesPlanks,
   craftSticks,
   failure,
   syncInventory,
@@ -1391,6 +1392,14 @@ export class BootstrapRunner {
       }
       if (countPlanks(bot) < CHEST_PLANK_COST) {
         return { ok: false, reason: `only ${countPlanks(bot)}/${CHEST_PLANK_COST} planks for a chest` };
+      }
+      let species = await craftSpeciesPlanks(bot, CHEST_PLANK_COST, this.signal ?? undefined);
+      if (!species.ok) {
+        // Mixed species: two more logs of one kind make up the difference.
+        const logsPrep = await this.ensureLogs(countLogs(bot) + 2);
+        if (!logsPrep.ok) return { ok: false, reason: logsPrep.reason };
+        species = await craftSpeciesPlanks(bot, CHEST_PLANK_COST, this.signal ?? undefined);
+        if (!species.ok) return { ok: false, reason: species.reason };
       }
       const chest = await this.craftAtTable("chest", table);
       if (!chest.ok) return { ok: false, reason: chest.reason };
