@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import type { Bot } from "mineflayer";
+import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
+import { cookPlan, FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, fuelForCooking, huntOutcomeMessage, MAX_COOK_PER_RUN, watchEaten, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -104,4 +106,39 @@ test("the forage block scan never spans the outer hunt rings", () => {
   assert.equal(forageScanRadius(192), FORAGE_SCAN_MAX_RADIUS);
   assert.equal(forageScanRadius(256), FORAGE_SCAN_MAX_RADIUS);
   assert.ok(FORAGE_SCAN_MAX_RADIUS <= 64);
+});
+
+test("a hunt whose drop auto-eat consumed is reported as eaten, not 'no food dropped'", () => {
+  // Server stats 2026-10-04: 169 porkchops picked up, 138 eaten raw; the
+  // inventory count alone made nearly every hunt read "no food dropped".
+  assert.equal(huntOutcomeMessage("pig", 0, 2), "Hunted pig; ate 2 on the spot.");
+  assert.equal(huntOutcomeMessage("cow", -1, 0), "Hunted cow; no food dropped.");
+  assert.equal(huntOutcomeMessage("sheep", 2, 1), null);
+});
+
+test("watchEaten counts food auto-eat finishes until stopped", () => {
+  const autoEat = new EventEmitter();
+  const watch = watchEaten({ autoEat } as unknown as Bot);
+  autoEat.emit("eatFinish", { food: { name: "porkchop" } });
+  autoEat.emit("eatFinish", { food: { name: "cooked_beef" } });
+  watch.stop();
+  autoEat.emit("eatFinish", { food: { name: "porkchop" } });
+  assert.equal(watch.count(), 2);
+});
+
+test("raw food is planned for cooking, capped per run, with fuel at 8 items per piece", () => {
+  const plan = cookPlan([
+    { name: "porkchop", count: 10 },
+    { name: "minecraft:beef", count: 3 },
+    { name: "bread", count: 4 },
+    { name: "cooked_mutton", count: 2 },
+  ]);
+  assert.deepEqual(plan, [
+    { raw: "porkchop", cooked: "cooked_porkchop", count: 10 },
+    { raw: "beef", cooked: "cooked_beef", count: 3 },
+  ]);
+  const capped = cookPlan([{ name: "porkchop", count: 64 }, { name: "beef", count: 5 }]);
+  assert.deepEqual(capped, [{ raw: "porkchop", cooked: "cooked_porkchop", count: MAX_COOK_PER_RUN }]);
+  assert.equal(fuelForCooking(13), 2);
+  assert.equal(fuelForCooking(8), 1);
 });

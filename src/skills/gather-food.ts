@@ -8,10 +8,11 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
-import { deliverCarriedItems } from "../minecraft/containers.js";
-import { bareName, findItem, itemsSummary } from "../minecraft/inventory.js";
+import { deliverCarriedItems, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { bareName, countItem, findItem, itemsSummary } from "../minecraft/inventory.js";
+import { smeltItems } from "../minecraft/smelting.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { findBlocksNear } from "../minecraft/world.js";
+import { findBlockNear, findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop, shedJunk } from "../minecraft/primitives.js";
 import { tendFarm } from "./farm.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity } from "../policy/combat.js";
@@ -97,6 +98,72 @@ const FORAGE_MATURE_AGE: Record<string, number> = {
   beetroots: 3,
   sweet_berry_bush: 3,
 };
+
+/** Raw food -> what the home furnace turns it into. */
+export const COOKED_BY_RAW: Readonly<Record<string, string>> = {
+  beef: "cooked_beef",
+  porkchop: "cooked_porkchop",
+  mutton: "cooked_mutton",
+  chicken: "cooked_chicken",
+  potato: "baked_potato",
+};
+
+/** Most raw items cooked per run (~10 s each), so cooking cannot stall the queue. */
+export const MAX_COOK_PER_RUN = 16;
+/** Items one coal or charcoal cooks. */
+const ITEMS_PER_FUEL = 8;
+/** Scan radius for the home furnace. */
+const FURNACE_SCAN_RADIUS = 12;
+
+/**
+ * Which carried raw food to cook, capped at `max` items. Raw meat restores
+ * 2-3 hunger, cooked 6-8: eating the haul raw (138 of 169 porkchops picked up
+ * on 2026-10-04 were eaten raw) kept food below its floor no matter how many
+ * animals were hunted.
+ */
+export function cookPlan(items: readonly { name: string; count: number }[], max: number = MAX_COOK_PER_RUN): { raw: string; cooked: string; count: number }[] {
+  const totals: Record<string, number> = {};
+  for (const item of items) {
+    const name = bareName(item.name);
+    if (COOKED_BY_RAW[name] !== undefined) totals[name] = (totals[name] ?? 0) + item.count;
+  }
+  const plan: { raw: string; cooked: string; count: number }[] = [];
+  let left = max;
+  for (const [raw, count] of Object.entries(totals)) {
+    const take = Math.min(count, left);
+    if (take <= 0) break;
+    plan.push({ raw, cooked: COOKED_BY_RAW[raw]!, count: take });
+    left -= take;
+  }
+  return plan;
+}
+
+/** Coal/charcoal needed to cook `items` items. */
+export function fuelForCooking(items: number): number {
+  return Math.ceil(items / ITEMS_PER_FUEL);
+}
+
+/**
+ * Owner-facing result of one hunt. A drop that auto-eat consumed the moment
+ * it was picked up is food, not "no food dropped".
+ */
+export function huntOutcomeMessage(mob: string, gained: number, eaten: number): string | null {
+  if (gained > 0) return null;
+  if (eaten > 0) return `Hunted ${mob}; ate ${eaten} on the spot.`;
+  return `Hunted ${mob}; no food dropped.`;
+}
+
+/** Count food auto-eat finishes until `stop` is called. */
+export function watchEaten(bot: Bot): { count: () => number; stop: () => void } {
+  let eaten = 0;
+  const emitter = bot.autoEat as unknown as { on?: (event: string, fn: (opts: { food?: { name?: string } }) => void) => void; off?: (event: string, fn: (opts: { food?: { name?: string } }) => void) => void } | undefined;
+  const onFinish = (opts: { food?: { name?: string } }): void => {
+    const name = opts?.food?.name;
+    if (name === undefined || FOOD_ITEM_NAMES[bareName(name)] === true) eaten += 1;
+  };
+  emitter?.on?.("eatFinish", onFinish);
+  return { count: () => eaten, stop: () => emitter?.off?.("eatFinish", onFinish) };
+}
 
 /** Candidate forage blocks returned per search radius. */
 const FORAGE_CANDIDATES = 12;
@@ -460,6 +527,60 @@ export class GatherFoodRunner {
     }
   }
 
+  /**
+   * Cook carried raw food in the home furnace before it is stored or eaten,
+   * fetching coal/charcoal from the home chest when none is carried. Best
+   * effort: no furnace or no fuel leaves the food raw.
+   */
+  private async cookCarried(): Promise<number> {
+    const bot = this.opts.bot;
+    const plan = cookPlan(bot.inventory.items());
+    if (plan.length === 0) return 0;
+    const furnace = findBlockNear(bot, "furnace", FURNACE_SCAN_RADIUS);
+    if (furnace === null) {
+      this.opts.logger.info("gather_food: no furnace at home; keeping food raw");
+      return 0;
+    }
+    const total = plan.reduce((sum, step) => sum + step.count, 0);
+    try {
+      const fuel = (): number => countItem(bot, "charcoal") + countItem(bot, "coal");
+      const needed = fuelForCooking(total);
+      for (const name of ["charcoal", "coal"]) {
+        if (fuel() >= needed) break;
+        await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, needed - fuel(), this.opts.logger, this.signals?.signal);
+      }
+      if (fuel() === 0) {
+        this.opts.logger.info({ raw: total }, "gather_food: no fuel to cook; keeping food raw");
+        return 0;
+      }
+      let cooked = 0;
+      for (const step of plan) {
+        // Auto-eat may have eaten some of it on the way home.
+        const times = Math.min(step.count, countItem(bot, step.raw), fuel() * ITEMS_PER_FUEL);
+        if (times <= 0) continue;
+        const result = await smeltItems(bot, furnace, {
+          inputName: step.raw,
+          fuelName: ["charcoal", "coal"],
+          outputName: step.cooked,
+          times,
+          signal: this.signals?.signal,
+        });
+        if (!result.ok) {
+          this.opts.logger.warn({ item: step.raw, reason: result.reason }, "gather_food: cooking stopped");
+          break;
+        }
+        cooked += result.smelted;
+      }
+      this.opts.logger.info({ cooked }, "gather_food cooked food");
+      if (cooked > 0) this.announce(`Cooked ${cooked} food.`);
+      return cooked;
+    } catch (err) {
+      if (this.signals?.signal.aborted === true) throw err;
+      this.opts.logger.warn({ err: String(err) }, "gather_food: cooking failed");
+      return 0;
+    }
+  }
+
   /** Drop junk when nearly full, so drops and harvests have room. */
   private async makeRoom(): Promise<void> {
     try {
@@ -639,7 +760,13 @@ export class GatherFoodRunner {
         return this.fail(data, "DANGER_TOO_HIGH", `health ${bot.health} is at/below the retreat threshold ${HEALTH_RETREAT_THRESHOLD}; not engaging a hostile ${mob.name ?? "mob"}`);
       }
       engagements += 1;
-      const kill = await this.killMob(mob);
+      const eaten = watchEaten(bot);
+      let kill: Awaited<ReturnType<GatherFoodRunner["killMob"]>>;
+      try {
+        kill = await this.killMob(mob);
+      } finally {
+        eaten.stop();
+      }
       if (this.stopRequested) return this.interrupted(data);
       if (!kill.ok) {
         // A cow that bolts mid-fight is not a danger; try again (it or the
@@ -651,8 +778,11 @@ export class GatherFoodRunner {
       }
       data.kills += 1;
       have = meter();
-      if (countsFood && have <= before) {
-        this.announce(`Hunted ${kill.name}; no food dropped.`);
+      if (countsFood) {
+        const gained = have - before;
+        this.opts.logger.info({ mob: kill.name, gained, eaten: eaten.count(), food: bot.food }, "gather_food hunt result");
+        const message = huntOutcomeMessage(kill.name, gained, eaten.count());
+        if (message !== null) this.announce(message);
       }
     }
 
@@ -665,6 +795,8 @@ export class GatherFoodRunner {
         // reserve the bot eats from.
         await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
         if (this.stopRequested) return this.interrupted(data);
+        await this.cookCarried();
+        if (this.stopRequested) return this.interrupted(data);
         const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
         data.delivered = partial.delivered;
       }
@@ -676,6 +808,8 @@ export class GatherFoodRunner {
       // Walk home before opening the chest, and keep a meal reserve on hand:
       // the bot eats from its inventory, not from the chest.
       await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+      if (this.stopRequested) return this.interrupted(data);
+      await this.cookCarried();
       if (this.stopRequested) return this.interrupted(data);
       const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
       data.delivered = delivered.delivered;

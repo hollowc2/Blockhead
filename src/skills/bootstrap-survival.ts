@@ -61,6 +61,7 @@ import {
   placeItemAt,
   collectTargetKey,
 } from "../minecraft/world.js";
+import { huntOutcomeMessage, watchEaten } from "./gather-food.js";
 import { regionContains } from "../minecraft/protection.js";
 import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
@@ -1139,7 +1140,13 @@ export class BootstrapRunner {
         }
 
         const before = countFoodItems(bot);
-        const kill = await this.killMob(mob);
+        const eaten = watchEaten(bot);
+        let kill: Awaited<ReturnType<typeof this.killMob>>;
+        try {
+          kill = await this.killMob(mob);
+        } finally {
+          eaten.stop();
+        }
         if (!kill.ok) {
           // An animal up a cliff should not end the stage while others are
           // reachable; skip it for the rest of this bootstrap run.
@@ -1152,11 +1159,9 @@ export class BootstrapRunner {
         }
         kills += 1;
         have = countFoodItems(bot);
-        if (have <= before) {
-          announceHunt(`Hunted ${kill.name}; no food dropped.`);
-        } else {
-          foundHere = true;
-        }
+        const message = huntOutcomeMessage(kill.name, have - before, eaten.count());
+        if (message !== null) announceHunt(message);
+        if (have > before || eaten.count() > 0) foundHere = true;
       }
     }
 
