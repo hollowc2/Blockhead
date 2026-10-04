@@ -452,6 +452,27 @@ async function pillarStep(
   }
 }
 
+/** The deepest fall a blind fallback walk may take (the pathfinder's own limit). */
+const MAX_SAFE_DROP = 3;
+
+/** Blocks of open air under the cell one step toward `target` (0 = level or rising ground). */
+export function dropAhead(bot: Bot, from: Vec3, target: Vec3): number {
+  if (typeof bot.blockAt !== "function") return 0;
+  const dx = target.x - from.x;
+  const dz = target.z - from.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 0.5) return 0;
+  const step = new Vec3(Math.floor(from.x + dx / length), Math.floor(from.y), Math.floor(from.z + dz / length));
+  // Rising ground or a wall ahead: no drop.
+  if (bot.blockAt(step)?.boundingBox === "block") return 0;
+  for (let depth = 1; depth <= MAX_SAFE_DROP + 2; depth++) {
+    const block = bot.blockAt(step.offset(0, -depth, 0));
+    if (block === null) return 0;
+    if (block.boundingBox === "block" || /water/.test(block.name)) return depth - 1;
+  }
+  return MAX_SAFE_DROP + 2;
+}
+
 export async function walkToward(
   bot: Bot,
   destination: Location,
@@ -606,6 +627,12 @@ export async function walkToward(
         await raceAbort(bot.lookAt(destinationVec.offset(0, 1, 0), false), options.signal, { timeoutMs: 2_000, label: "look" });
       } catch {
         if (options.signal?.aborted) break;
+      }
+      // Never walk off an edge: this fallback stepped off a dirt bridge the
+      // pathfinder had built over a valley (25-block fall, death 3).
+      if (dropAhead(bot, current.position, destinationVec) > MAX_SAFE_DROP) {
+        logger.warn({ position: current.position, destination }, "walkToward refusing to step off a drop");
+        break;
       }
       bot.setControlState("forward", true);
       bot.setControlState("jump", true); // helps with small obstacles
@@ -1262,11 +1289,16 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     const leg = Math.min(TRAVEL_LEG_LENGTH, distance);
     const fraction = leg / distance;
     const finalLeg = distance <= TRAVEL_LEG_LENGTH + range;
-    const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
+    const goalX = current.position.x + (location.x - current.position.x) * fraction;
+    const goalZ = current.position.z + (location.z - current.position.z) * fraction;
+    // The goal column's own surface: at the bot's altitude a leg across a
+    // valley ended in mid-air, the pathfinder bridged out on dirt, and the
+    // walk fallback stepped off the bridge (25-block fall, death 3).
+    const transitY = surfaceStandingY(bot, goalX, goalZ, Math.floor(current.position.y));
     const goal: Location = {
-      x: current.position.x + (location.x - current.position.x) * fraction,
+      x: goalX,
       y: finalLeg ? location.y : transitY,
-      z: current.position.z + (location.z - current.position.z) * fraction,
+      z: goalZ,
     };
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { status: "timed_out" };

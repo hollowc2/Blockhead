@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, raceTrip, stepOffPartialBlock, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -196,4 +196,16 @@ test("a bot standing on the home chest walks off it before planning a trip", asy
   } as never;
   await stepOffPartialBlock(bot);
   assert.deepEqual(controls, ["forward:true", "forward:false"]);
+});
+
+test("dropAhead sees a valley past a bridge edge and level ground", async () => {
+  const { Vec3 } = await import("vec3");
+  const ground = (groundY: (x: number) => number) => ({
+    blockAt: (p: InstanceType<typeof Vec3>) => (p.y <= groundY(p.x) ? { name: "dirt", boundingBox: "block" } : { name: "air", boundingBox: "empty" }),
+  }) as never;
+  // Standing on a bridge at feet y=97 (block 96 under x<=82), valley floor at 71 beyond.
+  const bridge = ground((x) => (x <= 82 ? 96 : 71));
+  assert.ok(dropAhead(bridge, new Vec3(82.5, 97, 0.5), new Vec3(90, 97, 0.5)) > 3);
+  const flat = ground(() => 96);
+  assert.equal(dropAhead(flat, new Vec3(82.5, 97, 0.5), new Vec3(90, 97, 0.5)), 0);
 });
