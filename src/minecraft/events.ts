@@ -280,7 +280,15 @@ export function updateEmergencyFoodPolicy(bot: Bot): void {
   const starving = Number.isFinite(bot.food) && bot.food <= EMERGENCY_FOOD_HUNGER;
   const banned = starving ? ALWAYS_BANNED_FOOD : [...ALWAYS_BANNED_FOOD, "rotten_flesh"];
   if (bot.autoEat.opts.bannedFood.length !== banned.length) bot.autoEat.setOpts({ bannedFood: banned });
+  // A full stomach cannot eat: the low-health trigger then starts an eat the
+  // server never completes, wedging auto-eat until the watch clears it, every
+  // few seconds while health regenerates. Only use it when there is room.
+  const minHealth = Number.isFinite(bot.food) && bot.food >= 20 ? 0 : AUTO_EAT_MIN_HEALTH;
+  if (bot.autoEat.opts.minHealth !== minHealth) bot.autoEat.setOpts({ minHealth });
 }
+
+/** Eat below this health (when there is room to eat), regardless of hunger. */
+const AUTO_EAT_MIN_HEALTH = 14;
 
 /** An eat takes ~1.6 s; anything past this is the plugin wedged, not eating. */
 const EATING_WEDGE_MS = 8_000;
@@ -325,7 +333,7 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     // Eating is a reflex, not a task: keep auto-eat on for the whole session
     // so carried food is always used before hunger turns into starvation.
     if (bot.autoEat !== undefined) {
-      bot.autoEat.setOpts({ minHunger: 16, minHealth: 14, returnToLastItem: true });
+      bot.autoEat.setOpts({ minHunger: 16, minHealth: AUTO_EAT_MIN_HEALTH, returnToLastItem: true });
       bot.autoEat.enableAuto();
       const stopWatch = watchAutoEat(bot, logger);
       bot.once("end", stopWatch);
