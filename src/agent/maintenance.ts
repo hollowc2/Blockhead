@@ -14,7 +14,7 @@ import type { CollectResourceRunner } from "../skills/collect-resource.js";
 import type { EnsureTorchesRunner } from "../skills/ensure-torches.js";
 import type { GatherFoodRunner } from "../skills/gather-food.js";
 import type { SkillResult } from "../skills/skill-library.js";
-import { FOOD_ITEM_NAMES } from "../skills/gather-food.js";
+import { countFoodItems, FOOD_ITEM_NAMES } from "../skills/gather-food.js";
 
 /**
  * Phase 7: deterministic background stockpile maintenance (spec sections
@@ -321,7 +321,11 @@ export class StockpileManager {
       case "food":
         // Crisis runs may search past the night cap: the food floor is
         // breached, so the bot's survival depends on finding an animal.
-        return this.opts.food.run(deficit.deficit, {
+        // gather_food hunts until `quantity` food is *carried*, while the
+        // deficit is how many more are needed: passing the deficit alone
+        // finished instantly once the bot carried that many, and the crisis
+        // check re-queued the same no-op every second ("Done. 8 food on me").
+        return this.opts.food.run(countFoodItems(this.opts.bot) + deficit.deficit, {
           ...options,
           expandAtNight: deficit.crisis === true,
         });
