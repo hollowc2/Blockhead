@@ -6,6 +6,7 @@ import {
   checkDigStraightDown,
   checkHealthRetreat,
   DEFAULT_ALLOWED_DIMENSIONS,
+  digsNearHome,
   HEALTH_RETREAT_THRESHOLD,
   isStraightDownTarget,
 } from "./safety.js";
@@ -78,4 +79,13 @@ test("spec 34: explicit dimension policy permits listed dimensions", () => {
 test("lavaAvoidanceRadius falls back to the default without config", () => {
   const config = configWith({});
   assert.equal(config.policy?.lava_avoidance_radius, 4);
+});
+
+test("resource gathering keeps clear of the ground around home, except tree trunks", () => {
+  const home = { x: 65, z: 51 };
+  assert.equal(digsNearHome({ x: 65, z: 51 }, home, "stone"), true);
+  assert.equal(digsNearHome({ x: 57, z: 51 }, home, "iron_ore"), true);
+  assert.equal(digsNearHome({ x: 65, z: 64 }, home, "stone"), false);
+  assert.equal(digsNearHome({ x: 66, z: 52 }, home, "birch_log"), false);
+  assert.equal(digsNearHome({ x: 65, z: 51 }, null, "stone"), false);
 });

@@ -15,7 +15,7 @@ import { deliverCarried } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
-import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
+import { checkLavaEntry, digsNearHome, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
 import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import {
@@ -608,7 +608,8 @@ export class CollectResourceRunner {
       const found = (/_log$/.test(bare)
         ? findBlocksNearPointRefined(bot, anchor, (block) => blockMatchesResource(block, bare), (position) => isTrunkBase(bot, position), radius, SITE_CANDIDATES_PER_RADIUS)
         : findBlocksNearPoint(bot, anchor, (block) => blockMatchesResource(block, bare), radius, SITE_CANDIDATES_PER_RADIUS))
-        .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`));
+        .filter((position) => !attempted.has(`${position.x},${position.y},${position.z}`))
+        .filter((position) => !digsNearHome(position, this.opts.state.home, bare));
       // A matching block can be visible in the world scan while still being
       // completely buried. Such a position is not a useful collection site:
       // pathfinder cannot reach the block to start a dig, producing repeated
@@ -714,6 +715,8 @@ export class CollectResourceRunner {
         // Spec 34: never dig straight down blindly — a target directly beneath
         // the feet is skipped; the bot digs sideways instead.
         .filter((block) => self === null || !isStraightDownTarget(block.position, self.position))
+        // Never quarry the ground under the base and farm.
+        .filter((block) => !digsNearHome(block.position, this.opts.state.home, bare))
         // Logs: trunk logs only, as in the site search; canopy logs are what
         // collectblock's sight-line goal could never reach.
         .filter((block) => !/_log$/.test(bare) || isTrunkBase(bot, block.position));

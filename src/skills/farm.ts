@@ -30,8 +30,13 @@ const PLOT_OFFSETS: ReadonlyArray<{ dx: number; dz: number }> = [
   { dx: 8, dz: 0 },
   { dx: 0, dz: -8 },
 ];
-/** Ground may sit this far above/below home's Y and still count. */
-const GROUND_SEARCH_DY = 3;
+/**
+ * Each column is scanned top-down this far above/below home's Y for its
+ * surface soil. Wide on purpose: the persisted home Y can drift (a pit under
+ * the base once snapped it ten blocks down) while the plots stay on the
+ * surface.
+ */
+const GROUND_SEARCH_DY = 12;
 /** Farmland within this horizontal distance of water is hydrated (vanilla). */
 const HYDRATION_RANGE = 4;
 /** Fully grown wheat. */

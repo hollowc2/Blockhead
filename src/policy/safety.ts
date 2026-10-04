@@ -69,6 +69,24 @@ export function checkHealthRetreat(health: number, threshold: number = HEALTH_RE
  * pattern the policy refuses: it is the classic fall-to-death / lava-plunge
  * move, and a sideways or angled dig is always available instead.
  */
+/**
+ * Horizontal radius around home that resource gathering never digs: the
+ * base, its fixtures, and the farm plots (8 blocks out, 2 wide) stand on
+ * this ground. Stone runs that started at home quarried a 7x9 pit ten
+ * blocks deep under the base and left the furnace floating over it.
+ */
+export const HOME_KEEP_CLEAR_RADIUS = 12;
+
+/**
+ * True when gathering `resource` at `target` would dig into the ground
+ * around home. Tree logs are exempt: felling a trunk leaves the ground
+ * intact. Horizontal only, so a home Y that drifted cannot open a hole.
+ */
+export function digsNearHome(target: { x: number; z: number }, home: { x: number; z: number } | null, resource: string): boolean {
+  if (home === null || /_log$/.test(resource)) return false;
+  return Math.hypot(target.x + 0.5 - (home.x + 0.5), target.z + 0.5 - (home.z + 0.5)) <= HOME_KEEP_CLEAR_RADIUS;
+}
+
 export function isStraightDownTarget(target: { x: number; y: number; z: number }, self: { x: number; y: number; z: number }): boolean {
   // Block coordinates are floors. Rounding misread a bot standing at a block
   // centre (z = 276.5, on block 276) as standing on block 277 next to it.

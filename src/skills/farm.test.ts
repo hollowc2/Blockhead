@@ -57,3 +57,9 @@ test("sowing fills empty farmland before tilling, and leaves growing wheat alone
   assert.equal(order.length, 23);
   assert.deepEqual(cells.filter(isMatureWheat).map((c) => [c.x, c.z]), [[-8, 2]]);
 });
+
+test("chooseFarmCells finds the surface when home's Y has drifted below it", () => {
+  const cells = chooseFarmCells({ x: 0, y: 54, z: 0 }, world());
+  assert.equal(cells.length, 25);
+  assert.ok(cells.every((c) => c.y === 63));
+});
