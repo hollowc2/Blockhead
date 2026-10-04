@@ -17,7 +17,6 @@ import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPoint, find
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
 import { classifyBlock } from "../policy/protection.js";
-import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
 import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import {
   ChatThrottle,
@@ -714,14 +713,28 @@ export class CollectResourceRunner {
         .filter((block) => hasAirNeighbor(bot, block.position))
         // Spec 34: never dig straight down blindly — a target directly beneath
         // the feet is skipped; the bot digs sideways instead.
-        .filter((block) => self === null || !isStraightDownTarget(block.position, self.position));
+        .filter((block) => self === null || !isStraightDownTarget(block.position, self.position))
+        // Logs: trunk logs only, as in the site search; canopy logs are what
+        // collectblock's sight-line goal could never reach.
+        .filter((block) => !/_log$/.test(bare) || isTrunkBase(bot, block.position));
       if (targets.length === 0) return { gained, abort: null };
 
       const before = countItem(bot, carriedName);
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
-          await cancelCollection(bot);
-        }, this.signals?.signal);
+        // collectBlocks walks up to each target and digs it directly when in
+        // reach; collectblock alone planned a sight line to a face and timed
+        // out on forest logs (one 240 s pass, then "0/1 oak logs").
+        const ordered = self === null ? targets : [...targets].sort((a, b) => a.position.distanceTo(self.position) - b.position.distanceTo(self.position));
+        await collectBlocks(
+          bot,
+          ordered,
+          () => countItem(bot, carriedName),
+          Number.POSITIVE_INFINITY,
+          () => {},
+          COLLECT_TIMEOUT_MS,
+          (block, err) => this.opts.logger.debug({ at: block.position, err: String(err) }, "skipping an unreachable block"),
+          this.signals?.signal,
+        );
       } catch (err) {
         this.opts.logger.warn({ err: String(err), resource: bare }, "collect pass failed");
         if (family === "pickaxe" && !hasFamilyTool(bot, family)) {
