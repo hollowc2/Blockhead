@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, raceTrip, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, raceTrip, stepOffPartialBlock, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -173,4 +173,27 @@ test("walkToward returns on abort even when a dig never settles (death mid-dig)"
   assert.equal(result.arrived, false);
   assert.ok(Date.now() - abortedAt < 500, "walkToward must not wait on the wedged dig");
   assert.deepEqual(events, ["dig", "stopDigging"]);
+});
+
+test("a bot standing on the home chest walks off it before planning a trip", async () => {
+  const { Vec3 } = await import("vec3");
+  const position = new Vec3(65.5, 97.875, 49.5);
+  const controls: string[] = [];
+  const blockAt = (p: InstanceType<typeof Vec3>) => {
+    const key = `${p.x},${p.y},${p.z}`;
+    if (key === "65,97,49") return { name: "chest", boundingBox: "block" };
+    if (p.y <= 96) return { name: "grass_block", boundingBox: "block" };
+    return { name: "air", boundingBox: "empty" };
+  };
+  const bot = {
+    entity: { position },
+    blockAt,
+    lookAt: async () => undefined,
+    setControlState: (control: string, on: boolean) => {
+      controls.push(`${control}:${on}`);
+      if (on) position.x = 66.5; // walking east lands on open ground
+    },
+  } as never;
+  await stepOffPartialBlock(bot);
+  assert.deepEqual(controls, ["forward:true", "forward:false"]);
 });

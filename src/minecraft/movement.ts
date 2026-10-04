@@ -1126,7 +1126,42 @@ const ESCAPE_MIN_RISE = 6;
  * staircase to the surface does not finish, and the straight-line fallback
  * then tunnels sideways at depth instead of climbing.
  */
+/**
+ * Standing on a chest (or slab, bed, ...) puts the bot's feet inside that
+ * block's cell, and the pathfinder cannot plan from there: every trip from
+ * the top of the home chest timed out without the bot moving (the "frozen at
+ * home/spawn" stalls). Walk off onto an open neighbouring cell first.
+ */
+export async function stepOffPartialBlock(bot: Bot, options: TravelWaitOptions = {}): Promise<void> {
+  const entity = bot.entity;
+  if (entity === null || entity === undefined || typeof bot.blockAt !== "function") return;
+  const feet = entity.position.floored();
+  const under = bot.blockAt(feet);
+  if (under === null || under.boundingBox === "empty") return;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const cell = feet.offset(dx, 0, dz);
+    const open = (block: ReturnType<Bot["blockAt"]>): boolean => block !== null && block.boundingBox === "empty" && !/water|lava/.test(block.name);
+    if (!open(bot.blockAt(cell)) || !open(bot.blockAt(cell.offset(0, 1, 0)))) continue;
+    if (bot.blockAt(cell.offset(0, -1, 0))?.boundingBox !== "block") continue;
+    logger.info({ on: under.name, at: { x: feet.x, y: feet.y, z: feet.z }, toward: { x: cell.x, z: cell.z } }, "stepping off a partial block before travelling");
+    await bot.lookAt(new Vec3(cell.x + 0.5, entity.position.y + 1.6, cell.z + 0.5), true);
+    bot.setControlState("forward", true);
+    try {
+      const deadline = Date.now() + 1_500;
+      while (Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        if (options.signal?.aborted === true) return;
+        if (bot.blockAt(bot.entity.position.floored())?.boundingBox === "empty") return;
+      }
+    } finally {
+      bot.setControlState("forward", false);
+    }
+    return;
+  }
+}
+
 async function climbOutFirst(bot: Bot, destination: { y: number }, options: TravelWaitOptions): Promise<void> {
+  await stepOffPartialBlock(bot, options);
   const self = bot.entity?.position;
   if (escapeRouteProvider === null || self === undefined || destination.y - self.y < ESCAPE_MIN_RISE) return;
   const route = escapeRouteProvider({ x: self.x, y: self.y, z: self.z }, String(bot.game?.dimension ?? ""));
