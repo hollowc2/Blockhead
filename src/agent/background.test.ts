@@ -480,6 +480,25 @@ test("the LLM director maps choices to background tasks and honors wait", async 
   h.manager.stop();
 });
 
+test("a blocked user build left in the queue does not silence the director", async () => {
+  const h = newHarness(12, 19);
+  h.crisis = null;
+  h.shortage = null;
+  h.queued.push({
+    id: "blocked-build",
+    type: "build_project_slice",
+    priority: TaskPriority.FOREGROUND,
+    source: "user",
+    status: TaskStatus.BLOCKED,
+    lastError: "design blocked at 68,99,53 by birch_log",
+  } as unknown as Task);
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 1);
+  // Durable blocks are not pruned: the owner decides what to do with the build.
+  assert.ok(!h.cancelled.includes("blocked-build"));
+  h.manager.stop();
+});
+
 test("the director consults the LLM at most once per interval and then stands by", async () => {
   const h = newHarness(12, 19);
   h.crisis = null;

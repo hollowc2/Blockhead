@@ -90,6 +90,15 @@ export interface BackgroundManagerOptions {
 }
 
 /**
+ * Work that can actually take the bot: QUEUED or PAUSED. A BLOCKED task (a
+ * build stopped by an obstacle, an anti-loop cooldown) also sits in the
+ * queue; counting it as pending work silenced the idle loop for good.
+ */
+function isRunnable(task: Task): boolean {
+  return task.status === TaskStatus.QUEUED || task.status === TaskStatus.PAUSED;
+}
+
+/**
  * Why a stockpile kind is standing down this tick. Logged once per state
  * entry; the loop stays silent while the block holds.
  */
@@ -306,7 +315,7 @@ export class BackgroundManager {
     // starving crises.
     const userBound =
       (scheduler.active !== null && scheduler.active.source === "user") ||
-      scheduler.queued.some((task) => task.source === "user") ||
+      scheduler.queued.some((task) => task.source === "user" && isRunnable(task)) ||
       scheduler.interruptPending;
     const repairCooldownMs = (this.opts.config.background?.restore_cooldown_seconds ?? 60) * 1000;
     const tickNow = this.now();
@@ -376,7 +385,7 @@ export class BackgroundManager {
     // work always owns the floor, and a running task is left alone — the
     // task-settled hook re-checks the moment a run ends.
     if (scheduler.active !== null) return;
-    if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND)) return;
+    if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND && isRunnable(task))) return;
 
     // Night without owner work: go home and stay there. Background errands
     // far from home at night are how the bot dies and loses its inventory.
