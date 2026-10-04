@@ -943,6 +943,21 @@ export async function raceTrip(
     options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS,
   );
 
+  // Trip trace: a 60 s leg with the bot motionless, where a fresh pathfinder
+  // plans the same leg in 81 ms (probe on maia), needs the pathfinder's own
+  // view. Log the first few plan results and every reset, per trip.
+  let updates = 0;
+  const onPathUpdate = (result: { status: string; path: unknown[]; visitedNodes?: number; time?: number }): void => {
+    updates += 1;
+    if (updates > 4 && result.status === "success") return;
+    if (updates > 12) return;
+    logger.info({ status: result.status, pathLength: result.path.length, visitedNodes: result.visitedNodes, ms: result.time }, "trip: path update");
+  };
+  const onPathReset = (reason: string): void => logger.info({ reason }, "trip: path reset");
+  const pathEvents = bot as unknown as Partial<NodeJS.EventEmitter>;
+  pathEvents.on?.("path_update", onPathUpdate);
+  pathEvents.on?.("path_reset", onPathReset);
+
   // Stall detector: if the pathfinder stays "active" (has a goal and
   // considers itself moving) for PATHFINDER_STALL_MS without settling,
   // the A* solver is wedged. Force-reset it so the next trip starts
@@ -992,6 +1007,8 @@ export async function raceTrip(
     clearTimeout(timer);
     clearInterval(stallPoll);
     if (stallTimer !== undefined) clearTimeout(stallTimer);
+    pathEvents.off?.("path_update", onPathUpdate);
+    pathEvents.off?.("path_reset", onPathReset);
     removeAbort();
   }
 }
