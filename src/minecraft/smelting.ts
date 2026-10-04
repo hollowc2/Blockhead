@@ -72,15 +72,19 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
     if (delta.status === "COMPLETE") return { ok: true, smelted: delta.delta };
     return { ok: false, reason: delta.delta > 0 ? `smelting made partial progress (${delta.delta}/${options.times}): ${failure}` : failure };
   };
+  let failure: string | null;
   try {
     window = await openFurnace(bot, furnaceBlock, signal);
     throwIfAborted(signal);
-    const failure = await runPasses(window);
+    failure = await runPasses(window);
     await reclaimFuel(window);
-    return settle(failure ?? "smelting made no output change");
   } finally {
     if (window !== null) await closeFurnace(window).catch(() => undefined);
   }
+  // Count only after the window closes: while it is open the taken output
+  // sits in the window's mirror of the inventory, and counting then read a
+  // cooked porkchop that was in hand as "no output change" (2026-10-04).
+  return settle(failure ?? "smelting made no output change");
 
   async function runPasses(window: Furnace): Promise<string | null> {
     for (let pass = 0; pass < options.times; pass++) {
