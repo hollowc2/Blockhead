@@ -41,6 +41,7 @@ import { NightShelterRunner } from "./skills/night-shelter.js";
 import { TaskPriority } from "./agent/task.js";
 import { BootstrapStage } from "./agent/bootstrap.js";
 import { NightShelterWatch, ownerWorkPending } from "./agent/night-shelter.js";
+import { HungerWatch } from "./agent/hunger-watch.js";
 import { DeliveryRunner } from "./skills/delivery.js";
 import { OrganizeStorageRunner } from "./skills/organize-storage.js";
 import { BaseBuilderRunner } from "./skills/base.js";
@@ -564,6 +565,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // wait behind it at dusk, so it interrupts the stage like owner work does.
   const nightShelter = new NightShelterWatch({ bot, bus, scheduler, state, config, logger, yieldBootstrap: () => { if (bootstrap.isRunning) bootstrap.yieldNow(); } });
   nightShelter.attach();
+  const hungerWatch = new HungerWatch({ bot, bus, scheduler, logger });
+  hungerWatch.attach();
+  bot.once("end", () => hungerWatch.detach());
   session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter };
   currentBootstrap = bootstrap;
 
