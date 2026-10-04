@@ -1,12 +1,13 @@
 import type { Bot } from "mineflayer";
+import type { Block } from "prismarine-block";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
-import { craftItem, craftSticks } from "../minecraft/crafting.js";
-import { bareName, countItem, findItem } from "../minecraft/inventory.js";
+import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
+import { bareName, countItem, countPlanks, findItem } from "../minecraft/inventory.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { digBlock, equipItem, useHeldItemOn } from "../minecraft/primitives.js";
-import { collectBlocks, findBlockNear, findBlocksNear } from "../minecraft/world.js";
+import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, placeItemAt } from "../minecraft/world.js";
 
 /**
  * A wheat farm beside home: the food source that does not run out. Animals
@@ -46,6 +47,8 @@ const WHEAT_PER_BREAD = 3;
 const SEED_GRASS_PER_RUN = 48;
 const SEED_SEARCH_RADIUS = 24;
 const TABLE_SCAN_RADIUS = 16;
+/** A crafting table is four planks. */
+const TABLE_PLANK_COST = 4;
 /** Reach for right-clicking a farm cell. */
 const WORK_RANGE = 3;
 const CELL_TRAVEL_TIMEOUT_MS = 20_000;
@@ -219,6 +222,31 @@ function findHoe(bot: Bot) {
 }
 
 /**
+ * The home crafting table, or a new one crafted from carried logs and set
+ * down beside the bot (which is at home). Bread and the hoe both need it.
+ * Placed around the bot's own height, not home's stored Y, which can drift.
+ */
+async function ensureTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
+  const existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+  if (existing !== null) return existing;
+  const self = bot.entity;
+  if (self === null) return null;
+  if (findItem(bot, "crafting_table") === null) {
+    if (countPlanks(bot) < TABLE_PLANK_COST) await craftPlanks(bot, TABLE_PLANK_COST, signal);
+    const crafted = await craftItem(bot, "crafting_table", { signal });
+    if (!crafted.ok) {
+      logger.warn({ reason: crafted.reason }, "farm: could not craft a crafting table");
+      return null;
+    }
+  }
+  const item = findItem(bot, "crafting_table");
+  const spot = findPlacementSpot(bot, { x: home.x, y: self.position.y, z: home.z });
+  if (item === null || spot === null) return null;
+  const placed = await placeItemAt(bot, item, spot, signal);
+  return placed !== null && placed.name === "crafting_table" ? placed : null;
+}
+
+/**
  * One pass over the farm. Harvests ripe wheat, bakes bread at the home
  * table, gathers seeds from grass when short, tills and plants as many cells
  * as seeds allow (bare farmland with no crop reverts to dirt, so nothing is
@@ -257,8 +285,10 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   if (aborted()) return result;
 
   // 2. Bake. Wheat is not edible; bread is.
-  const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
   const loaves = Math.floor(countItem(bot, "wheat") / WHEAT_PER_BREAD);
+  const table = loaves > 0
+    ? await ensureTable(bot, home, logger, signal)
+    : findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
   if (loaves > 0 && table !== null) {
     if (bot.entity !== null && bot.entity.position.distanceTo(table.position) > WORK_RANGE) {
       await travelAndWait(bot, table.position, { range: WORK_RANGE, timeoutMs: CELL_TRAVEL_TIMEOUT_MS, shouldAbort: opts.shouldAbort, signal });
@@ -282,13 +312,20 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   }
 
   // 4. A hoe, when there is soil to till and seeds to put in it.
-  const needsTilling = toSow.slice(0, countItem(bot, "wheat_seeds")).some((c) => c.soil === "tillable");
-  if (needsTilling && findHoe(bot) === null && table !== null) {
-    if (countItem(bot, "stick") < 2) await craftSticks(bot, 2, signal);
-    const hoe = countItem(bot, "cobblestone") >= 2
-      ? await craftItem(bot, "stone_hoe", { craftingTable: table, signal })
-      : await craftItem(bot, "wooden_hoe", { craftingTable: table, signal });
-    if (!hoe.ok) logger.warn({ reason: hoe.reason }, "farm: could not craft a hoe");
+  const seeds = countItem(bot, "wheat_seeds");
+  const needsTilling = toSow.slice(0, seeds).some((c) => c.soil === "tillable");
+  logger.info({ plotCells: cells.length, openCells: toSow.length, seeds, hasHoe: findHoe(bot) !== null }, "farm: sowing");
+  if (needsTilling && findHoe(bot) === null) {
+    const hoeTable = table ?? await ensureTable(bot, home, logger, signal);
+    if (hoeTable === null) {
+      logger.warn("farm: no crafting table for a hoe");
+    } else {
+      if (countItem(bot, "stick") < 2) await craftSticks(bot, 2, signal);
+      const hoe = countItem(bot, "cobblestone") >= 2
+        ? await craftItem(bot, "stone_hoe", { craftingTable: hoeTable, signal })
+        : await craftItem(bot, "wooden_hoe", { craftingTable: hoeTable, signal });
+      if (!hoe.ok) logger.warn({ reason: hoe.reason }, "farm: could not craft a hoe");
+    }
   }
 
   // 5. Till and plant, one cell at a time.
