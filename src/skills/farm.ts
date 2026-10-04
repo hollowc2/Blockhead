@@ -229,6 +229,11 @@ function findHoe(bot: Bot) {
 async function ensureTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
   const existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
   if (existing !== null) return existing;
+  return placeNewTable(bot, home, logger, signal);
+}
+
+/** Craft (if not carried) and place a crafting table beside the bot. */
+async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
   const self = bot.entity;
   if (self === null) return null;
   if (findItem(bot, "crafting_table") === null) {
@@ -274,6 +279,18 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
     }
   };
 
+  // A table click from beyond reach never opens its window (a 20 s timeout per try).
+  // Returns false when the table cannot be reached (buried, walled off).
+  const walkToTable = async (table: Block): Promise<boolean> => {
+    const self = bot.entity;
+    if (self === null) return false;
+    if (self.position.distanceTo(table.position.offset(0.5, 0.5, 0.5)) <= WORK_RANGE + 1) return true;
+    const walked = await travelAndWait(bot, table.position, { range: WORK_RANGE, timeoutMs: CELL_TRAVEL_TIMEOUT_MS, shouldAbort: opts.shouldAbort, signal });
+    const reached = walked.status === "arrived" || walked.status === "already_there";
+    if (!reached) logger.warn({ table: [table.position.x, table.position.y, table.position.z], status: walked.status }, "farm: cannot reach the crafting table");
+    return reached;
+  };
+
   // 1. Harvest. Collecting the crop breaks it and picks up wheat + seeds.
   let cells = chooseFarmCells(home, lookup);
   const ripe = cells.filter(isMatureWheat).map((c) => new Vec3(c.x, c.y + 1, c.z));
@@ -289,10 +306,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   const table = loaves > 0
     ? await ensureTable(bot, home, logger, signal)
     : findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
-  if (loaves > 0 && table !== null) {
-    if (bot.entity !== null && bot.entity.position.distanceTo(table.position) > WORK_RANGE) {
-      await travelAndWait(bot, table.position, { range: WORK_RANGE, timeoutMs: CELL_TRAVEL_TIMEOUT_MS, shouldAbort: opts.shouldAbort, signal });
-    }
+  if (loaves > 0 && table !== null && await walkToTable(table)) {
     const baked = await craftItem(bot, "bread", { times: loaves, craftingTable: table, signal });
     if (baked.ok) result.bread = baked.crafted;
     else logger.warn({ reason: baked.reason }, "farm: could not bake bread");
@@ -316,7 +330,8 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   const needsTilling = toSow.slice(0, seeds).some((c) => c.soil === "tillable");
   logger.info({ plotCells: cells.length, openCells: toSow.length, seeds, hasHoe: findHoe(bot) !== null }, "farm: sowing");
   if (needsTilling && findHoe(bot) === null) {
-    const hoeTable = table ?? await ensureTable(bot, home, logger, signal);
+    let hoeTable = table ?? await ensureTable(bot, home, logger, signal);
+    if (hoeTable !== null && !(await walkToTable(hoeTable))) hoeTable = await placeNewTable(bot, home, logger, signal);
     if (hoeTable === null) {
       logger.warn("farm: no crafting table for a hoe");
     } else {
