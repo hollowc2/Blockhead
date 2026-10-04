@@ -835,6 +835,9 @@ function surfaceStandingY(bot: Bot, x: number, z: number, fallback: number): num
     // shaft with open space above its floor) is standable open space, and
     // requiring literal "air" skips every cave/shaft floor.
     if (above !== null && above.boundingBox === "block") continue;
+    // A lake bed under water is not a standing surface: picked as "ground"
+    // it sent every home leg from a lake to y=44, deep under the land.
+    if (above !== null && /water|lava/.test(above.name)) continue;
     const stand = y + 1;
     const dist = Math.abs(stand - currentY);
     if (best === null || dist < best.dist || (dist === best.dist && stand > best.y)) {
@@ -1007,11 +1010,15 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     const leg = verticalOnly ? 0 : Math.min(HOME_LEG_LENGTH, distance);
     const fraction = verticalOnly ? 1 : leg / distance;
     const finalLeg = verticalOnly || distance <= HOME_LEG_LENGTH + arrivalRange;
-    const transitY = surfaceStandingY(bot, current.position.x, current.position.z, Math.floor(current.position.y));
+    const goalX = current.position.x + (home.x - current.position.x) * fraction;
+    const goalZ = current.position.z + (home.z - current.position.z) * fraction;
+    // The leg ends at the goal column's surface, not the bot's own altitude:
+    // 48 blocks away the ground can be 20+ blocks higher or lower.
+    const transitY = surfaceStandingY(bot, goalX, goalZ, Math.floor(current.position.y));
     const goal: Location = {
-      x: current.position.x + (home.x - current.position.x) * fraction,
+      x: goalX,
       y: finalLeg ? homeSurfaceY : transitY,
-      z: current.position.z + (home.z - current.position.z) * fraction,
+      z: goalZ,
     };
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { status: "timed_out" };
