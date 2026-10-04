@@ -33,14 +33,20 @@ function windowBlockName(window: object): string | undefined {
 export async function equipItem(bot: Bot, item: Item, signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "equipment");
-  await bot.equip(item, "hand");
+  // `bot.equip` waits for the server's inventory confirmation and never times
+  // out; on 1.21 that update can be lost, and an unbounded equip wedged the
+  // bootstrap hunt for 23 minutes next to a pig.
+  await raceAbort(bot.equip(item, "hand"), signal, { timeoutMs: EQUIP_TIMEOUT_MS, label: "equip" });
   throwIfAborted(signal);
 }
+
+/** Generous for a held-item swap: one click round-trip plus a resync. */
+const EQUIP_TIMEOUT_MS = 5_000;
 
 export async function equipToolForBlock(bot: Bot, block: Parameters<NonNullable<Bot["tool"]>["equipForBlock"]>[0], signal?: AbortSignal): Promise<void> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   beforeMutation(lease, "equipment", blockPoint(block), block.name);
-  await bot.tool.equipForBlock(block);
+  await raceAbort(bot.tool.equipForBlock(block), signal, { timeoutMs: EQUIP_TIMEOUT_MS, label: "equip" });
   throwIfAborted(signal);
 }
 
