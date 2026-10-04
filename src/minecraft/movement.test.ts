@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, travelHomeAndWait, walkToward } from "./movement.js";
+import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -208,4 +208,13 @@ test("dropAhead sees a valley past a bridge edge and level ground", async () => 
   assert.ok(dropAhead(bridge, new Vec3(82.5, 97, 0.5), new Vec3(90, 97, 0.5)) > 3);
   const flat = ground(() => 96);
   assert.equal(dropAhead(flat, new Vec3(82.5, 97, 0.5), new Vec3(90, 97, 0.5)), 0);
+});
+
+test("unwedge moves a bot pinned on a block face toward its cell centre", async () => {
+  const { Vec3 } = await import("vec3");
+  const entity = { position: new Vec3(43.86, 91.42, -2.3), velocity: new Vec3(0.1, 0, 0.1), onGround: false };
+  unwedge({ entity } as never);
+  assert.ok(Math.abs(entity.position.z - -2.38) < 1e-9, "off the z=-2 face by 0.08");
+  assert.ok(Math.abs(entity.position.x - 43.78) < 1e-9);
+  assert.equal(entity.velocity.x, 0);
 });

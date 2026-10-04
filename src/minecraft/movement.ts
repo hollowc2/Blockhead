@@ -922,6 +922,27 @@ function legSurfaceY(bot: Bot, x: number, z: number, fallback: number): number {
 }
 
 /**
+ * Break a physics wedge: move the bot a few hundredths of a block toward the
+ * centre of its cell (well inside the server's movement tolerance) so an edge
+ * resting exactly on a block face no longer pins it, and drop its velocity.
+ */
+export function unwedge(bot: Bot): void {
+  const entity = bot.entity;
+  if (entity === null || entity === undefined) return;
+  const p = entity.position;
+  const toward = (v: number): number => {
+    const centre = Math.floor(v) + 0.5;
+    return Math.abs(centre - v) < 0.01 ? v : v + Math.sign(centre - v) * Math.min(0.08, Math.abs(centre - v));
+  };
+  const from = { x: p.x, y: p.y, z: p.z };
+  p.x = toward(p.x);
+  p.z = toward(p.z);
+  entity.velocity.x = 0;
+  entity.velocity.z = 0;
+  logger.warn({ from, to: { x: p.x, y: p.y, z: p.z }, onGround: entity.onGround }, "pathfinder stuck in place; nudging the bot free");
+}
+
+/**
  * Race a pathfinder trip against the wall-clock timeout and the cooperative
  * abort probe. Used by both travel helpers so their interrupt behavior is
  * identical.
@@ -953,7 +974,23 @@ export async function raceTrip(
     if (updates > 12) return;
     logger.info({ status: result.status, pathLength: result.path.length, visitedNodes: result.visitedNodes, ms: result.time }, "trip: path update");
   };
-  const onPathReset = (reason: string): void => logger.info({ reason }, "trip: path reset");
+  // The pathfinder resetting "stuck" while the bot does not move at all is
+  // the physics wedge (box edge exactly on a step face, frozen mid-jump at
+  // y+0.42 with zero velocity; the server agreed). Nudge it free.
+  let stuckAt: Vec3 | null = null;
+  let stuckResets = 0;
+  const onPathReset = (reason: string): void => {
+    logger.info({ reason }, "trip: path reset");
+    if (reason !== "stuck" || bot.entity === null || bot.entity === undefined) return;
+    const here = bot.entity.position;
+    if (stuckAt !== null && here.distanceTo(stuckAt) < 0.05) stuckResets += 1;
+    else { stuckAt = here.clone(); stuckResets = 1; }
+    if (stuckResets >= 2) {
+      unwedge(bot);
+      stuckResets = 0;
+      stuckAt = null;
+    }
+  };
   const pathEvents = bot as unknown as Partial<NodeJS.EventEmitter>;
   pathEvents.on?.("path_update", onPathUpdate);
   pathEvents.on?.("path_reset", onPathReset);
