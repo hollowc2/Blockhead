@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDeterministicBuildCommand, parseDeterministicGatherCommand, parseDeterministicTerrainCommand } from "./events.js";
+import { parseDeterministicBuildCommand, parseDeterministicGatherCommand, parseDeterministicTerrainCommand, watchAutoEat } from "./events.js";
 
 test("terrain phrases map to bounded tools without an LLM call", () => {
   assert.deepEqual(parseDeterministicTerrainCommand("flatten 10x10 here"), { tool: "flatten_area", args: { width: 10, length: 10, anchor: "owner" } });
@@ -65,4 +65,26 @@ test("broader terrain phrasing: clear areas and mines", () => {
   assert.deepEqual(parseDeterministicTerrainCommand("clear this area"), { tool: "clear_area", args: { width: 8, length: 8, height: 4, anchor: "owner_front" } });
   assert.deepEqual(parseDeterministicTerrainCommand("dig a mine"), { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: 16, anchor: "owner_front" } });
   assert.deepEqual(parseDeterministicTerrainCommand("dig a mine down to y=-20"), { tool: "dig_mineshaft", args: { width: 1, height: 2, targetY: -20, anchor: "owner_front" } });
+});
+
+test("a wedged auto-eat flag is cleared so the bot eats again", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let clock = 0;
+  let cancelled = 0;
+  const autoEat = { _eating: true, get isEating() { return this._eating; }, cancelEat() { cancelled += 1; } };
+  const bot = { autoEat, food: 0, health: 1 } as never;
+  const warnings: string[] = [];
+  const logger = { warn: (_: unknown, msg: string) => warnings.push(msg) } as never;
+  const stop = watchAutoEat(bot, logger, () => clock);
+  try {
+    t.mock.timers.tick(1_000);
+    clock = 5_000;
+    t.mock.timers.tick(1_000);
+    assert.equal(autoEat._eating, true, "a real eat takes under 8 s");
+    clock = 9_000;
+    t.mock.timers.tick(1_000);
+    assert.equal(autoEat._eating, false);
+    assert.equal(cancelled, 1);
+    assert.deepEqual(warnings, ["auto-eat wedged; resetting"]);
+  } finally { stop(); }
 });

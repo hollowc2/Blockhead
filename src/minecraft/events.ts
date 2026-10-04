@@ -282,6 +282,33 @@ export function updateEmergencyFoodPolicy(bot: Bot): void {
   if (bot.autoEat.opts.bannedFood.length !== banned.length) bot.autoEat.setOpts({ bannedFood: banned });
 }
 
+/** An eat takes ~1.6 s; anything past this is the plugin wedged, not eating. */
+const EATING_WEDGE_MS = 8_000;
+
+/**
+ * mineflayer-auto-eat 5.0.3 sets `_eating` before awaiting the food equip and
+ * never clears it when that equip throws or hangs (1.21 can drop the
+ * confirmation). From then on every hunger check sees "already eating" and
+ * skips: the bot starved to 1 HP carrying five pieces of raw meat. Clear a
+ * wedged flag so the next check eats again.
+ */
+export function watchAutoEat(bot: Bot, logger: Logger, now: () => number = Date.now): () => void {
+  let eatingSince: number | null = null;
+  const timer = setInterval(() => {
+    const autoEat = bot.autoEat as unknown as { isEating: boolean; _eating: boolean; cancelEat(): void } | undefined;
+    if (autoEat === undefined) return;
+    if (!autoEat.isEating) { eatingSince = null; return; }
+    eatingSince ??= now();
+    if (now() - eatingSince < EATING_WEDGE_MS) return;
+    logger.warn({ food: bot.food, health: bot.health, wedgedMs: now() - eatingSince }, "auto-eat wedged; resetting");
+    try { autoEat.cancelEat(); } catch { /* nothing bound to cancel */ }
+    autoEat._eating = false;
+    eatingSince = null;
+  }, 1_000);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger, ctx: AgentContext): void {
   bot.once("login", () => {
     const runtime = bot as Bot & { version?: string; _client?: { version?: string; protocolVersion?: number } };
@@ -300,6 +327,8 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     if (bot.autoEat !== undefined) {
       bot.autoEat.setOpts({ minHunger: 16, minHealth: 14, returnToLastItem: true });
       bot.autoEat.enableAuto();
+      const stopWatch = watchAutoEat(bot, logger);
+      bot.once("end", stopWatch);
     }
     updateEmergencyFoodPolicy(bot);
   });
