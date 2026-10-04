@@ -897,6 +897,31 @@ export function skySurfaceY(bot: Bot, x: number, z: number): number | null {
 }
 
 /**
+ * Where a transit leg should end in a column: the top of the ground, with
+ * leaves and logs ignored (a canopy picked by "nearest the bot's altitude"
+ * sent a lakeside leg to y=87 over a lake at 62) and water counted as the
+ * surface (the bot can swim there; a lake bed was y=44 under the land).
+ * Falls back to the bot-relative scan when the column is not loaded.
+ */
+function legSurfaceY(bot: Bot, x: number, z: number, fallback: number): number {
+  if (typeof bot.blockAt !== "function") return fallback;
+  const bx = Math.floor(x);
+  const bz = Math.floor(z);
+  let sawLoaded = false;
+  for (let y = 319; y >= -63; y--) {
+    const block = bot.blockAt(new Vec3(bx, y, bz));
+    if (block === null) { if (sawLoaded) break; continue; }
+    sawLoaded = true;
+    const name = block.name.replace(/^minecraft:/, "");
+    if (/water|seagrass|kelp/.test(name)) return y + 1;
+    if (block.boundingBox !== "block") continue;
+    if (name.endsWith("_leaves") || name.endsWith("_log")) continue;
+    return y + 1;
+  }
+  return surfaceStandingY(bot, x, z, fallback);
+}
+
+/**
  * Race a pathfinder trip against the wall-clock timeout and the cooperative
  * abort probe. Used by both travel helpers so their interrupt behavior is
  * identical.
@@ -1041,7 +1066,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     const goalZ = current.position.z + (home.z - current.position.z) * fraction;
     // The leg ends at the goal column's surface, not the bot's own altitude:
     // 48 blocks away the ground can be 20+ blocks higher or lower.
-    const transitY = surfaceStandingY(bot, goalX, goalZ, Math.floor(current.position.y));
+    const transitY = legSurfaceY(bot, goalX, goalZ, Math.floor(current.position.y));
     const goal: Location = {
       x: goalX,
       y: finalLeg ? homeSurfaceY : transitY,
@@ -1294,7 +1319,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     // The goal column's own surface: at the bot's altitude a leg across a
     // valley ended in mid-air, the pathfinder bridged out on dirt, and the
     // walk fallback stepped off the bridge (25-block fall, death 3).
-    const transitY = surfaceStandingY(bot, goalX, goalZ, Math.floor(current.position.y));
+    const transitY = legSurfaceY(bot, goalX, goalZ, Math.floor(current.position.y));
     const goal: Location = {
       x: goalX,
       y: finalLeg ? location.y : transitY,
