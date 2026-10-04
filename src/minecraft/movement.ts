@@ -108,6 +108,10 @@ function getMovements(bot: Bot): Pathfinder.Movements | null {
     movements = new Movements(bot);
     configureMovements(bot, movements);
     bot.pathfinder.setMovements(movements);
+    // The stock 5 s planning budget covers ~12k nodes here; a 30-45 block
+    // route through forest canopy or broken terrain needs more, and every
+    // trunk 20+ blocks out failed "Took to long to decide path".
+    bot.pathfinder.thinkTimeout = PATH_THINK_TIMEOUT_MS;
     // collectblock builds its own Movements in its constructor and calls
     // `setMovements` on every collect(), clobbering this config. Point it at
     // the shared instance so digging costs/avoid rules stay consistent.
@@ -151,6 +155,9 @@ function readStandingDiagnostics(bot: Bot): Record<string, unknown> {
     around,
   };
 }
+
+/** Wall-clock planning budget per pathfinder search. */
+const PATH_THINK_TIMEOUT_MS = 12_000;
 
 /** Throwaway blocks the pathfinder may place to tower or bridge. */
 // Cobblestone and its deepslate/stone forms are crafting stock (tools,
