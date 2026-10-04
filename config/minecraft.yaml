@@ -132,8 +132,8 @@ background:
   # MAINTENANCE priority, preempting even a foreground user task.
   stockpile_minimums:
     wood: 16
-    food: 16
-    fuel: 16
+    food: 8
+    fuel: 4
     torches: 8
   check_interval_seconds: 30
   # A failed stockpile restore backs off this long before the same kind is
