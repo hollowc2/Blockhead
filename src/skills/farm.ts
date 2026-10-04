@@ -5,9 +5,8 @@ import { craftItem, craftSticks } from "../minecraft/crafting.js";
 import { bareName, countItem, findItem } from "../minecraft/inventory.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import { travelAndWait } from "../minecraft/movement.js";
-import { cancelCollection, collectBlockOperation, digBlock, equipItem, useHeldItemOn } from "../minecraft/primitives.js";
-import { findBlockNear, findBlocksNear } from "../minecraft/world.js";
-import { withTimeout } from "./skill-library.js";
+import { digBlock, equipItem, useHeldItemOn } from "../minecraft/primitives.js";
+import { collectBlocks, findBlockNear, findBlocksNear } from "../minecraft/world.js";
 
 /**
  * A wheat farm beside home: the food source that does not run out. Animals
@@ -44,13 +43,13 @@ const WHEAT_MATURE_AGE = 7;
 /** Bread is three wheat in a row. */
 const WHEAT_PER_BREAD = 3;
 /** Grass blocks broken per run looking for seeds (each drops one 1/8 of the time). */
-const SEED_GRASS_PER_RUN = 24;
+const SEED_GRASS_PER_RUN = 48;
 const SEED_SEARCH_RADIUS = 24;
 const TABLE_SCAN_RADIUS = 16;
 /** Reach for right-clicking a farm cell. */
 const WORK_RANGE = 3;
 const CELL_TRAVEL_TIMEOUT_MS = 20_000;
-const COLLECT_TIMEOUT_MS = 60_000;
+const COLLECT_TIMEOUT_MS = 90_000;
 const VERIFY_TIMEOUT_MS = 1_000;
 const VERIFY_POLL_MS = 100;
 /** Below this hunger the run skips sowing and goes straight to the hunt. */
@@ -231,13 +230,16 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   const result: TendFarmResult = { harvested: 0, bread: 0, tilled: 0, planted: 0 };
   const aborted = (): boolean => signal?.aborted === true || opts.shouldAbort?.() === true;
   const lookup = botLookup(bot);
-  const collect = async (positions: Vec3[]): Promise<void> => {
+  // One block at a time, nearest first: an unreachable grass tuft is
+  // skipped instead of failing the whole pass (a batch collect gave up on
+  // the first "took too long to decide path" and planted nothing).
+  const collect = async (positions: Vec3[], countHeld: () => number, target: number): Promise<void> => {
+    const self = bot.entity;
     const blocks = positions.map((p) => bot.blockAt(p)).filter((b) => b !== null);
+    if (self !== null) blocks.sort((a, b) => a.position.distanceTo(self.position) - b.position.distanceTo(self.position));
     if (blocks.length === 0) return;
     try {
-      await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, blocks, { ignoreNoPath: true }, signal), async () => {
-        await cancelCollection(bot);
-      }, signal);
+      await collectBlocks(bot, blocks, countHeld, target, () => {}, COLLECT_TIMEOUT_MS, () => {}, signal);
     } catch (err) {
       if (signal?.aborted === true) throw err;
       logger.warn({ err: String(err) }, "farm: collection pass failed");
@@ -249,7 +251,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   const ripe = cells.filter(isMatureWheat).map((c) => new Vec3(c.x, c.y + 1, c.z));
   if (ripe.length > 0) {
     const before = countItem(bot, "wheat");
-    await collect(ripe);
+    await collect(ripe, () => countItem(bot, "wheat"), before + ripe.length);
     result.harvested = Math.max(0, countItem(bot, "wheat") - before);
   }
   if (aborted()) return result;
@@ -275,7 +277,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   if (toSow.length === 0) return result;
   if (countItem(bot, "wheat_seeds") < toSow.length) {
     const grass = findBlocksNear(bot, (b) => SEED_GRASS.has(bareName(b.name)), SEED_SEARCH_RADIUS, SEED_GRASS_PER_RUN);
-    await collect(grass);
+    await collect(grass, () => countItem(bot, "wheat_seeds"), toSow.length);
     if (aborted()) return result;
   }
 
