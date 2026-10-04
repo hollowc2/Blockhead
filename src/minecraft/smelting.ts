@@ -5,6 +5,7 @@ import { itemId } from "./crafting.js";
 import { countItem, findItem } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { closeFurnace, openFurnace, putFuel, putInput, takeOutput } from "./primitives.js";
+import { walkIntoReach } from "./movement.js";
 import { observedDelta } from "../status/deltas.js";
 
 /**
@@ -19,8 +20,13 @@ export type SmeltResult = { ok: true; smelted: number } | { ok: false; reason: s
 export interface SmeltOptions {
   /** Item name to place in the input slot ("oak_log", "cobblestone", ...). */
   inputName: string;
-  /** Item name to burn ("oak_log", "coal", ...) — any burnable the bot holds. */
-  fuelName: string;
+  /**
+   * Item name(s) to burn ("oak_log", "coal", ...), most preferred first; the
+   * first one carried is used. Listing the output (charcoal) lets a charcoal
+   * run fuel itself once its first piece is out: one charcoal smelts 8 items,
+   * one log only 1.5.
+   */
+  fuelName: string | readonly string[];
   /** Item the furnace must produce in the output slot ("charcoal"). */
   outputName: string;
   /** How many input items to convert (each takes ~10s of burn time). */
@@ -34,10 +40,15 @@ export interface SmeltOptions {
 const SMELT_POLL_MS = 500;
 const DEFAULT_SMELT_TIMEOUT_MS = 120_000;
 
+/** Seconds one smelt takes; refuel when less burn time than this remains. */
+const SMELT_SECONDS = 10;
+
 /**
  * Smelt `times` input items in a placed furnace. The window stays open across
- * passes: each pass drops one fuel item and one input item in, waits for the
- * output slot to fill, and takes the result into the inventory.
+ * passes: each pass drops one input item in, adds one fuel item only when the
+ * remaining burn time cannot finish it, waits for the output slot to fill,
+ * and takes the result into the inventory. Fuel left unburnt in the slot is
+ * taken back at the end.
  */
 export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOptions): Promise<SmeltResult> {
   const lease = requireWorldActionLease(options.signal);
@@ -47,42 +58,80 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   if (outputId === null) {
     return { ok: false, reason: `unknown item '${options.outputName}'` };
   }
+  const fuelNames = typeof options.fuelName === "string" ? [options.fuelName] : options.fuelName;
 
+  if (!(await walkIntoReach(bot, furnaceBlock, signal))) return { ok: false, reason: "could not reach the furnace" };
   throwIfAborted(signal);
   let window: Furnace | null = null;
   const beforeOutput = countItem(bot, options.outputName);
+  // Output burned as fuel was produced all the same.
+  let outputBurned = 0;
+  const produced = (): number => countItem(bot, options.outputName) + outputBurned - beforeOutput;
+  const settle = (failure: string): SmeltResult => {
+    const delta = observedDelta(0, produced(), options.times);
+    if (delta.status === "COMPLETE") return { ok: true, smelted: delta.delta };
+    return { ok: false, reason: delta.delta > 0 ? `smelting made partial progress (${delta.delta}/${options.times}): ${failure}` : failure };
+  };
   try {
     window = await openFurnace(bot, furnaceBlock, signal);
     throwIfAborted(signal);
+    const failure = await runPasses(window);
+    await reclaimFuel(window);
+    return settle(failure ?? "smelting made no output change");
+  } finally {
+    if (window !== null) await closeFurnace(window).catch(() => undefined);
+  }
+
+  async function runPasses(window: Furnace): Promise<string | null> {
     for (let pass = 0; pass < options.times; pass++) {
       throwIfAborted(signal);
       const input = findItem(bot, options.inputName);
-      if (input === null) return { ok: false, reason: `no ${options.inputName} to smelt` };
-      const fuel = findItem(bot, options.fuelName);
-      if (fuel === null) return { ok: false, reason: `no ${options.fuelName} to burn` };
-
-      await putFuel(window, fuel.type, null, 1, signal);
+      if (input === null) return `no ${options.inputName} to smelt`;
+      if (needsFuel(window as FuelGauge)) {
+        const fuel = fuelNames.map((name) => findItem(bot, name)).find((item) => item !== null) ?? null;
+        if (fuel === null) return `no ${fuelNames.join("/")} to burn`;
+        await putFuel(window, fuel.type, null, 1, signal);
+        if (fuel.name === options.outputName) outputBurned += 1;
+      }
       await putInput(window, input.type, null, 1, signal);
 
-      const done = await awaitOutput(window, outputId, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, signal);
-      if (!done) return { ok: false, reason: "smelting timed out" };
+      const done = await awaitOutput(window, outputId!, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, signal);
+      if (!done) return "smelting timed out";
       try {
         throwIfAborted(signal);
         await takeOutput(window, signal);
       } catch (err) {
         throwIfAborted(signal);
-        return { ok: false, reason: `could not take smelted item: ${String(err)}` };
+        return `could not take smelted item: ${String(err)}`;
       }
     }
-    const delta = observedDelta(beforeOutput, countItem(bot, options.outputName), options.times);
-    return delta.status === "COMPLETE"
-      ? { ok: true, smelted: delta.delta }
-      : { ok: false, reason: delta.delta > 0
-        ? `smelting made partial progress (${delta.delta}/${options.times})`
-        : "smelting made no output change" };
-  } finally {
-    if (window !== null) await closeFurnace(window).catch(() => undefined);
+    return null;
   }
+
+  /** Take back unburnt fuel; a charcoal run otherwise strands a piece per run. */
+  async function reclaimFuel(window: Furnace): Promise<void> {
+    const leftover = window.fuelItem();
+    if (leftover === null || leftover === undefined) return;
+    try {
+      await window.takeFuel();
+      if (leftover.name === options.outputName) outputBurned = Math.max(0, outputBurned - leftover.count);
+    } catch {
+      // Left in the furnace; the next run burns it first.
+    }
+  }
+}
+
+/** The furnace window's burn gauge (mineflayer sets `fuelSeconds` but does not type it). */
+export interface FuelGauge {
+  fuelItem(): { name: string; count: number } | null;
+  fuelSeconds?: number | null;
+}
+
+/** True when the fuel slot is empty and the current burn cannot finish another item. */
+export function needsFuel(window: FuelGauge): boolean {
+  const slot = window.fuelItem();
+  if (slot !== null && slot !== undefined) return false;
+  return (window.fuelSeconds ?? 0) < SMELT_SECONDS;
 }
 
 /** Poll the furnace's output slot (index 2) until it holds `outputId` or the budget runs out. */

@@ -5,6 +5,7 @@ import type { Recipe } from "prismarine-recipe";
 import { bareName, countItem, countPlanks, countSticks, logsByType, planksForLog } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { craftRecipe } from "./primitives.js";
+import { walkIntoReach } from "./movement.js";
 import { observedDelta } from "../status/deltas.js";
 
 /**
@@ -177,6 +178,12 @@ export async function craftItem(bot: Bot, name: string, options: CraftOptions = 
   if (!recipe) {
     return failure(name, recipes.length === 0 ? `no recipe for '${name}'` : `missing ingredients for '${name}'`);
   }
+
+  // A click from beyond reach never opens the table's window.
+  if (table !== undefined && !(await walkIntoReach(bot, table, signal))) {
+    return failure(name, "could not reach the crafting table");
+  }
+  throwIfAborted(signal);
 
   // One recipe run at a time, each checked against the settled inventory:
   // mineflayer's multi-run craft keeps clicking on its own predictions.

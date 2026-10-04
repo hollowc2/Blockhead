@@ -1484,3 +1484,26 @@ export async function travelAndWait(bot: Bot, location: Location, options: Trave
   logger.warn({ location }, "no walkable route; retrying with natural-terrain digging");
   return interruptedTrip(await withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true })), options);
 }
+
+/** Distance from which a block's window reliably opens (vanilla reach is ~4.5). */
+const STATION_REACH = 4;
+/** How close to stand when walking up to a station. */
+const STATION_RANGE = 3;
+const STATION_TRAVEL_TIMEOUT_MS = 60_000;
+
+/**
+ * Walk within reach of a crafting table / furnace before clicking it. A click
+ * from beyond reach never opens the window, so every craft or smelt try then
+ * burns a 20 s windowOpen timeout. Returns false when the station cannot be
+ * reached.
+ */
+export async function walkIntoReach(bot: Bot, station: { position: Location }, signal?: AbortSignal): Promise<boolean> {
+  const self = bot.entity;
+  if (!self) return true;
+  const { x, y, z } = station.position;
+  if (self.position.distanceTo(new Vec3(x + 0.5, y + 0.5, z + 0.5)) <= STATION_REACH) return true;
+  const walked = await travelAndWait(bot, station.position, { range: STATION_RANGE, timeoutMs: STATION_TRAVEL_TIMEOUT_MS, signal });
+  const reached = walked.status === "arrived" || walked.status === "already_there";
+  if (!reached) logger.warn({ station: [x, y, z], status: walked.status }, "could not walk within reach of the station");
+  return reached;
+}
