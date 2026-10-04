@@ -5,7 +5,8 @@ import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
-import { cancelCollection, collectBlockOperation, equipItem, placeBlock } from "./primitives.js";
+import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipToolForBlock, placeBlock } from "./primitives.js";
+import { isDroppedItemEntity } from "../policy/combat.js";
 import { travelAndWait } from "./movement.js";
 
 /**
@@ -212,6 +213,27 @@ export function collectTargetKey(bot: Bot, position: { x: number; y: number; z: 
   return `${String(bot.game?.dimension ?? "unknown").replace(/^minecraft:/, "")}:${Math.floor(position.x)},${Math.floor(position.y)},${Math.floor(position.z)}`;
 }
 
+/** Eye-to-block-centre distance a block may be dug from without moving. */
+const DIRECT_DIG_REACH = 4.3;
+
+function withinDirectReach(bot: Bot, position: Vec3): boolean {
+  const eye = bot.entity?.position.offset(0, 1.62, 0);
+  return eye !== undefined && eye.distanceTo(position.offset(0.5, 0.5, 0.5)) <= DIRECT_DIG_REACH;
+}
+
+/** Walk over the item drops a dig left near `position` (best effort, bounded). */
+async function pickUpDropsNear(bot: Bot, position: Vec3, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 300));
+  const drops = Object.values(bot.entities)
+    .filter((entity) => isDroppedItemEntity(entity) && entity.position.distanceTo(position) <= 4)
+    .slice(0, 4);
+  for (const drop of drops) {
+    throwIfAborted(signal);
+    if (bot.entities[drop.id] === undefined) continue;
+    await travelAndWait(bot, drop.position, { range: 1, timeoutMs: 4_000, signal });
+  }
+}
+
 /** Beyond this distance a collect target is walked to before collectblock takes over. */
 const APPROACH_FIRST_DISTANCE = 4;
 
@@ -257,6 +279,24 @@ export async function collectBlocks(
         skipped++;
         failedTargets?.add(targetKey);
         logSkip?.(block, new Error(`could not approach: ${approach.status}`));
+        continue;
+      }
+    }
+    // Within reach, dig directly: the server checks reach, not sight lines,
+    // and collectblock's look-at goal made the bot tower on dirt to see a log
+    // from above, then dig out its own footing (two fall deaths).
+    if (withinDirectReach(bot, block.position)) {
+      try {
+        try { await equipToolForBlock(bot, block, signal); } catch (err) { throwIfAborted(signal); }
+        await digBlock(bot, block, signal);
+        await pickUpDropsNear(bot, block.position, signal);
+        continue;
+      } catch (err) {
+        throwIfAborted(signal);
+        if (err instanceof Error && err.name === "AbortError") throw err;
+        skipped++;
+        failedTargets?.add(targetKey);
+        logSkip?.(block, err);
         continue;
       }
     }
