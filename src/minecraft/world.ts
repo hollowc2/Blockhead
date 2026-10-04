@@ -6,6 +6,7 @@ import { Vec3 } from "vec3";
 import { withTimeout } from "../skills/skill-library.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { cancelCollection, collectBlockOperation, equipItem, placeBlock } from "./primitives.js";
+import { travelAndWait } from "./movement.js";
 
 /**
  * Deterministic world perception and block-placement primitives: find blocks
@@ -211,6 +212,9 @@ export function collectTargetKey(bot: Bot, position: { x: number; y: number; z: 
   return `${String(bot.game?.dimension ?? "unknown").replace(/^minecraft:/, "")}:${Math.floor(position.x)},${Math.floor(position.y)},${Math.floor(position.z)}`;
 }
 
+/** Beyond this distance a collect target is walked to before collectblock takes over. */
+const APPROACH_FIRST_DISTANCE = 4;
+
 /** Extra per-target collection budget for each block of distance to walk. */
 const PER_BLOCK_TRAVEL_MS = 500;
 
@@ -241,8 +245,23 @@ export async function collectBlocks(
     // beyond ~20 blocks once the trees near home were gone (15 in a row).
     const distance = bot.entity?.position.distanceTo(block.position) ?? 0;
     const targetBudgetMs = perTargetTimeoutMs + Math.round(distance * PER_BLOCK_TRAVEL_MS);
+    // collectblock plans with GoalLookAtBlock (a clear sight line to a face).
+    // In a forest the leaves and neighbouring trunks block that line, and the
+    // search ran out on every log (~30k nodes) while a plain GoalNear found
+    // the same trunks in under half a second. Walk up first; the look-and-dig
+    // from two blocks away is then trivial.
+    if (distance > APPROACH_FIRST_DISTANCE) {
+      const approach = await travelAndWait(bot, block.position, { range: 2, timeoutMs: Math.max(1, Math.min(targetBudgetMs, remainingMs)), signal });
+      throwIfAborted(signal);
+      if (approach.status !== "arrived" && approach.status !== "already_there") {
+        skipped++;
+        failedTargets?.add(targetKey);
+        logSkip?.(block, new Error(`could not approach: ${approach.status}`));
+        continue;
+      }
+    }
     try {
-      await withTimeout(Math.max(1, Math.min(targetBudgetMs, remainingMs)), collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
+      await withTimeout(Math.max(1, Math.min(perTargetTimeoutMs, deadline - Date.now())), collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
       }, signal);
     } catch (err) {
