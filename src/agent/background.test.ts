@@ -836,3 +836,15 @@ test("free time with every stockpile at target develops the land; a shortage doe
   assert.ok(!h.enqueued.some((t) => t.type === "develop_land"), "restocking comes first");
   h.manager.stop();
 });
+
+test("a queued build-project slice is never pruned as stale goal work", async () => {
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  const slice = { id: "slice-1", type: "build_project_slice", source: "goal", status: TaskStatus.QUEUED, projectId: "village-1", priority: TaskPriority.FOREGROUND, objective: "Build", parameters: {}, createdAt: new Date().toISOString() } as Task;
+  const stale = { id: "stale-1", type: "ensure_item", source: "goal", status: TaskStatus.QUEUED, priority: TaskPriority.BACKGROUND, objective: "x", parameters: {}, createdAt: new Date().toISOString() } as Task;
+  h.queued.push(slice, stale);
+  await h.manager.tick();
+  assert.ok(h.cancelled.includes("stale-1"));
+  assert.ok(!h.cancelled.includes("slice-1"), "the build's slice survives");
+  h.manager.stop();
+});

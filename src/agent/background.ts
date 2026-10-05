@@ -286,8 +286,12 @@ export class BackgroundManager {
     // next goal decision re-plans. PAUSED work is a resumable checkpoint and
     // must remain available. User tasks are never touched.
     for (const task of [...scheduler.queued]) {
+      // A build project's slice carries the project with it: cancelling it
+      // cancels the whole build (a reopened development cottage, 16:47
+      // 2026-10-05). Project work is never pruned.
       if (
         task.status === TaskStatus.QUEUED &&
+        task.projectId === undefined &&
         (task.source === "background" || task.source === "director" || task.source === "goal")
       ) {
         scheduler.cancel(task.id);
