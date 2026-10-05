@@ -543,6 +543,81 @@ export async function stepOffPerch(bot: Bot, toward: { x: number; z: number }, s
   return (bot.entity?.position.y ?? startY) < startY - 0.5;
 }
 
+/** How far a swimming bot looks for a bank to climb out onto. */
+const SHORE_SCAN = 6;
+const SHORE_SWIM_MS = 8_000;
+
+/** A cell the bot can stand in: solid floor, two non-liquid open cells. */
+function standable(bot: Bot, cell: Vec3): boolean {
+  const open = (pos: Vec3): boolean => {
+    const block = bot.blockAt(pos);
+    return block !== null && block.boundingBox === "empty" && !/water|lava/.test(block.name);
+  };
+  return bot.blockAt(cell.offset(0, -1, 0))?.boundingBox === "block" && open(cell) && open(cell.offset(0, 1, 0));
+}
+
+/** Nearest standable bank cell within SHORE_SCAN of a swimming bot, preferring the side toward `toward`. */
+export function nearestShore(bot: Bot, toward: { x: number; z: number }): Vec3 | null {
+  const self = bot.entity;
+  if (self === null || self === undefined) return null;
+  const feet = self.position.floored();
+  let best: Vec3 | null = null;
+  let bestScore = Infinity;
+  for (let dx = -SHORE_SCAN; dx <= SHORE_SCAN; dx++) {
+    for (let dz = -SHORE_SCAN; dz <= SHORE_SCAN; dz++) {
+      for (let dy = -1; dy <= 2; dy++) {
+        const cell = feet.offset(dx, dy, dz);
+        if (!standable(bot, cell)) continue;
+        const reach = Math.hypot(dx, dz) + Math.max(0, dy) * 2;
+        const goal = Math.hypot(toward.x - cell.x, toward.z - cell.z) - Math.hypot(toward.x - feet.x, toward.z - feet.z);
+        const score = reach + goal * 0.25;
+        if (score < bestScore) { bestScore = score; best = cell; }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Swim out of water the pathfinder will not plan from: in a cave pool its
+ * start node has no floor and every leg ends "noPath" after one node, so the
+ * bot treaded water until the trip gave up (18:59 2026-10-04, coal haul
+ * stranded). Swims to the nearest bank, holding jump to stay up. Returns true
+ * once the bot stands out of the water.
+ */
+export async function swimToShore(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal): Promise<boolean> {
+  const self = bot.entity;
+  if (self === null || self === undefined || typeof bot.blockAt !== "function") return false;
+  if (!/water/.test(bot.blockAt(self.position.floored())?.name ?? "")) return false;
+  const shore = nearestShore(bot, toward);
+  if (shore === null) return false;
+  logger.warn({ from: self.position.floored(), shore }, "stuck swimming; heading for the bank");
+  bot.clearControlStates();
+  bot.setControlState("jump", true);
+  bot.setControlState("forward", true);
+  try {
+    const deadline = Date.now() + SHORE_SWIM_MS;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) break;
+      const now = bot.entity;
+      if (now === null || now === undefined) break;
+      if (now.onGround && !/water/.test(bot.blockAt(now.position.floored())?.name ?? "")) return true;
+      await raceAbort(bot.lookAt(shore.offset(0.5, 1.2, 0.5), true), signal, { timeoutMs: 1_000, label: "look" }).catch(() => undefined);
+      await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    }
+  } finally {
+    bot.clearControlStates();
+  }
+  const final = bot.entity;
+  return final !== null && final !== undefined && !/water/.test(bot.blockAt(final.position.floored())?.name ?? "");
+}
+
+/** Get unstuck when route legs make no progress: off a perch, or out of water. */
+async function rescueStranded(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal): Promise<boolean> {
+  if (await swimToShore(bot, toward, signal)) return true;
+  return stepOffPerch(bot, toward, signal);
+}
+
 /** Consecutive failed steps before a staircase climb gives up. */
 const CLIMB_MAX_FAILURES = 4;
 
@@ -1378,7 +1453,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     if (horizontalDelta < 0.01 && verticalDelta < 0.05) noProgressLegs += 1;
     else noProgressLegs = 0;
     logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), verticalDelta: Number(verticalDelta.toFixed(3)), noProgressLegs }, "home route progress");
-    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await stepOffPerch(bot, home, signal)) {
+    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, home, signal)) {
       perchRescues += 1;
       noProgressLegs = 0;
       distance = Math.hypot((bot.entity?.position.x ?? home.x) - home.x, (bot.entity?.position.z ?? home.z) - home.z);
@@ -1628,7 +1703,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     if (horizontalDelta < 0.01) noProgressLegs += 1;
     else noProgressLegs = 0;
     logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), noProgressLegs }, "travel route progress");
-    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await stepOffPerch(bot, location, signal)) {
+    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, location, signal)) {
       perchRescues += 1;
       noProgressLegs = 0;
       continue;

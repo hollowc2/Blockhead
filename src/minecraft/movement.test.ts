@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, stepOffPerch, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -353,4 +353,39 @@ test("a perch rescue refuses lava landings, deep drops, and low health", async (
   assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -2, lava)).bot, { x: 50, z: 0 }), false, "lava below");
   assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -4)).bot, { x: 50, z: 0 }), false, "7-block drop");
   assert.equal(await stepOffPerch(perchBot(6, perchWorld(3, -2)).bot, { x: 50, z: 0 }), false, "low health");
+});
+
+/** A pool of water (x < 3, y 58..59) with an andesite bank at x >= 3 whose top is y=59. */
+function poolWorld(pos: Vec3) {
+  const at = pos.floored();
+  let name = "air";
+  if (at.y < 58) name = "andesite";
+  else if (at.x >= 3 && at.y <= 59) name = "andesite";
+  else if (at.x < 3 && at.y <= 59) name = "water";
+  const solid = name === "andesite";
+  return { name, position: at, boundingBox: solid ? "block" : "empty" };
+}
+
+test("a bot treading water in a cave pool swims to the bank", async () => {
+  // 18:59 2026-10-04: in a pool every route leg was noPath after one node and
+  // the coal haul never reached the chest.
+  const position = new Vec3(0.5, 59.4, 0.5);
+  const entity = { position, onGround: false };
+  const bot = {
+    entity,
+    blockAt: poolWorld,
+    lookAt: async () => {},
+    clearControlStates: () => {},
+    setControlState: (control: string, on: boolean) => {
+      if (control === "forward" && on) { position.x = 3.5; position.y = 60; entity.onGround = true; }
+    },
+  } as unknown as Parameters<typeof swimToShore>[0];
+  const shore = nearestShore(bot, { x: 50, z: 0 });
+  assert.ok(shore !== null && shore.x >= 3 && shore.y === 60, `shore ${shore}`);
+  assert.equal(await swimToShore(bot, { x: 50, z: 0 }), true);
+});
+
+test("a bot on dry ground is not sent swimming", async () => {
+  const bot = { entity: { position: new Vec3(4.5, 60, 0.5), onGround: true }, blockAt: poolWorld } as unknown as Parameters<typeof swimToShore>[0];
+  assert.equal(await swimToShore(bot, { x: 50, z: 0 }), false);
 });
