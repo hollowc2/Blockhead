@@ -90,6 +90,19 @@ export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepos
  * Reads the container's own slots (`containerItems`), never the mirrored
  * player inventory the container window also carries.
  */
+/**
+ * Last contents read from each chest, by world and position. A chest out of
+ * reach (the bot 100 blocks out on a hunt) counted as empty, so every stock
+ * check away from home read wood/food/fuel 0 with 54 coal in the chest and
+ * queued restores for all of it (2026-10-04 19:26).
+ */
+const lastChestContents = new Map<string, Record<string, number>>();
+
+/** Record a chest's contents as read (exported for tests). */
+export function rememberChestContents(worldId: number, at: { x: number; y: number; z: number }, contents: Record<string, number>): void {
+  lastChestContents.set(`${worldId}:${at.x},${at.y},${at.z}`, { ...contents });
+}
+
 export async function countStoredItems(
   bot: Bot,
   state: AgentState,
@@ -102,25 +115,44 @@ export async function countStoredItems(
   const totals: Record<string, number> = {};
   for (const location of storage.list(worldId)) {
     throwIfAborted(signal);
-    const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
-    if (block === null || !isChestBlock(block)) continue;
-    try {
-      assertContainerAllowed(state, block);
-      const chest = await openContainer(bot, block, signal);
-      try {
-        for (const item of chest.containerItems()) {
-          const name = bareName(item.name);
-          totals[name] = (totals[name] ?? 0) + item.count;
-        }
-      } finally {
-        await closeWindow(chest);
-      }
-    } catch (err) {
-      // A busy chest must not break the whole stockpile pass.
+    const key = `${worldId}:${location.x},${location.y},${location.z}`;
+    const at = new Vec3(location.x, location.y, location.z);
+    const loaded = bot.blockAt(at);
+    if (loaded !== null && !isChestBlock(loaded)) {
+      lastChestContents.delete(key); // broken or replaced: nothing stored there
       continue;
+    }
+    const contents = loaded === null ? null : await readChest(bot, state, at, signal);
+    if (contents !== null) lastChestContents.set(key, contents);
+    // Unloaded, out of reach or busy: count what it held when last read.
+    for (const [name, count] of Object.entries(contents ?? lastChestContents.get(key) ?? {})) {
+      totals[name] = (totals[name] ?? 0) + count;
     }
   }
   return totals;
+}
+
+/** One chest's contents, or null when it cannot be read right now. */
+async function readChest(bot: Bot, state: AgentState, at: Vec3, signal?: AbortSignal): Promise<Record<string, number> | null> {
+  const block = bot.blockAt(at);
+  if (block === null || !isChestBlock(block)) return null;
+  try {
+    assertContainerAllowed(state, block);
+    const chest = await openContainer(bot, block, signal);
+    try {
+      const contents: Record<string, number> = {};
+      for (const item of chest.containerItems()) {
+        const name = bareName(item.name);
+        contents[name] = (contents[name] ?? 0) + item.count;
+      }
+      return contents;
+    } finally {
+      await closeWindow(chest);
+    }
+  } catch {
+    // A busy chest must not break the whole stockpile pass.
+    return null;
+  }
 }
 
 /**

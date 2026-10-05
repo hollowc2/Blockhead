@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { deliverCarried, describeDeliveryFailure } from "./containers.js";
+import { countStoredItems, deliverCarried, describeDeliveryFailure, rememberChestContents } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -87,4 +87,17 @@ test("junk is shed only when the inventory is nearly full, keeping a stack of co
   assert.deepEqual(junkToShed(items, MIN_FREE_SLOTS_FOR_GATHER), {}, "room to spare");
   assert.deepEqual(junkToShed(items, 1), { cobblestone: 31, granite: 5, gravel: 3, poppy: 2 });
   assert.deepEqual(junkToShed(items, 0, ["minecraft:gravel"]), { cobblestone: 31, granite: 5, poppy: 2 }, "the gathered item is kept");
+});
+
+test("a chest out of range counts what it held when last read, not zero", async () => {
+  const chest = { x: 67, y: 96, z: 49 };
+  const storage = { list: () => [chest] } as unknown as StorageRepository;
+  const state = { worldId: 991 } as unknown as AgentState;
+  const away = { blockAt: () => null } as unknown as Bot;
+  assert.deepEqual(await leased(() => countStoredItems(away, state, storage)), {}, "never read: nothing known");
+  rememberChestContents(991, chest, { coal: 54, oak_log: 33 });
+  assert.deepEqual(await leased(() => countStoredItems(away, state, storage)), { coal: 54, oak_log: 33 });
+  const broken = { blockAt: () => ({ name: "air" }) } as unknown as Bot;
+  assert.deepEqual(await leased(() => countStoredItems(broken, state, storage)), {}, "a loaded non-chest drops the memory");
+  assert.deepEqual(await leased(() => countStoredItems(away, state, storage)), {});
 });
