@@ -2855,7 +2855,8 @@ async function waitForChunks(bot: Bot): Promise<void> {
 }
 
 function chestBlockNear(bot: Bot, radius: number): Block | null {
-  const positions = findBlocksNear(bot, (block) => isChestBlock(block) && chestOpenableAt(bot, block.position), radius, 1);
+  // The scan's matcher sees blocks without a position; check the lid after.
+  const positions = findBlocksNear(bot, isChestBlock, radius, 16).filter((position) => chestOpenableAt(bot, position));
   const first = positions[0];
   return first !== undefined ? bot.blockAt(first) : null;
 }

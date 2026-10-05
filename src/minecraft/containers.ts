@@ -110,7 +110,8 @@ export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepos
       if (usableChest(bot, block)) return block;
     }
   }
-  const positions = findBlocksNear(bot, (block) => usableChest(bot, block), CHEST_SCAN_RADIUS, 1);
+  // The scan's matcher sees blocks without a position; check the lid after.
+  const positions = findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 16).filter((position) => chestOpenableAt(bot, position));
   const first = positions[0];
   if (first === undefined) return null;
   const block = bot.blockAt(first);

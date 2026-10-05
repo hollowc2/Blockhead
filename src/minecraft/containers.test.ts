@@ -140,3 +140,17 @@ test("a chest under a furnace cannot open and is not the home chest", () => {
   const repo = { listByCategory: () => [{ x: 65, y: 96, z: 51 }], list: () => [{ x: 65, y: 96, z: 51 }] } as unknown as StorageRepository;
   assert.equal(findHomeChest(blocked, homeState, repo), null);
 });
+
+test("the home chest scan survives a matcher handed position-less blocks", () => {
+  // mineflayer's findBlocks matches palette entries (Block.fromStateId) that
+  // carry no position; reading .position.x there crashed every tick (20:39).
+  const homeState = { worldId: 1, home: { x: 65, y: 96, z: 51, dimension: "overworld" } } as unknown as AgentState;
+  const repo = { listByCategory: () => [], list: () => [], register() {} } as unknown as StorageRepository;
+  const bot = {
+    entity: { position: new Vec3(65.5, 97, 50.5) },
+    blockAt: (pos: Vec3) => (pos.y === 96 ? { name: "chest", boundingBox: "block", position: pos } : { name: "air", boundingBox: "empty" }),
+    findBlocks: (options: { matching: (block: unknown) => boolean }) =>
+      options.matching({ name: "chest", boundingBox: "block", position: null }) ? [new Vec3(66, 96, 52)] : [],
+  } as unknown as Bot;
+  assert.equal(findHomeChest(bot, homeState, repo)?.name, "chest");
+});
