@@ -107,7 +107,7 @@ export class DecisionMaker {
         continue;
       }
       try {
-        const decision = schema.parse(parsed);
+        const decision = schema.parse(normalizeDecision(parsed));
         if (attempt > 0) this.debugLog.write({ event: `${eventPrefix}_corrected_retry_success`, attempt: attempt + 1 });
         return { decision, raw, startedAt };
       } catch (err) {
@@ -149,6 +149,32 @@ function conciseError(error: unknown): string {
 
 function repairMessages(messages: readonly LlmMessage[], raw: string, error: string, shape: string): LlmMessage[] {
   return [...messages, { role: "assistant", content: raw }, { role: "user", content: `Your previous response was invalid: ${error}. Return only ${shape}. Do not include markdown, prose, or any other structure.` }];
+}
+
+/**
+ * Accept the common near-misses of a small local model before validation:
+ * `"action": "upgrade_equipment"` for `"action": {"type": "upgrade_equipment"}`
+ * (Qwen3.5-9B on its first goal decisions, 2026-10-05) and `reason` for
+ * `rationale`. Arguments given beside a bare action name move into it.
+ */
+export function normalizeDecision(parsed: unknown): unknown {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
+  const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  for (const key of ["action", "task"]) {
+    const value = out[key];
+    if (typeof value !== "string") continue;
+    const inner: Record<string, unknown> = { type: value };
+    for (const [name, arg] of Object.entries(out)) {
+      if (name === key || name === "rationale" || name === "reason") continue;
+      inner[name] = arg;
+      delete out[name];
+    }
+    out[key] = inner;
+  }
+  if (out.rationale === undefined && typeof out.reason === "string") out.rationale = out.reason;
+  delete out.reason;
+  if (typeof out.rationale === "string" && out.rationale.length > 300) out.rationale = out.rationale.slice(0, 300);
+  return out;
 }
 
 export function extractJson(text: string): unknown {

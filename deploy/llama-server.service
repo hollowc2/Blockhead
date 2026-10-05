@@ -1,0 +1,23 @@
+# llama.cpp server for CobbleBob's LLM director, run as a systemd user unit on maia.
+# Prebuilt CUDA 12.8 release (the GTX 1070 Ti is Pascal; CUDA 13 dropped it)
+# under ~/.local/share/llama/bin (llama-b11425-bin-ubuntu-cuda-12.8-x64 and its
+# cudart bundle). The model comes from the shared /mnt/Models NFS mount; all
+# layers fit on the 8 GB card with an 8K context (~6.5 GB used). If the
+# mount is late at boot the server exits and Restart= retries it.
+# Install: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now llama-server
+# The bot reads it at llm.base_url (http://127.0.0.1:8080).
+[Unit]
+Description=llama.cpp server (CobbleBob director)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/llama
+Environment=LD_LIBRARY_PATH=%h/.local/share/llama/bin/llama-b11425:%h/.local/share/llama/bin/cudart-llama-b11425-bin-ubuntu-cuda-12.8-x64
+ExecStart=%h/.local/share/llama/bin/llama-b11425/llama-server -m /mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf --host 127.0.0.1 --port 8080 -c 8192 -ngl 99 --jinja
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

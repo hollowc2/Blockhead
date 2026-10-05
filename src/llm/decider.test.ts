@@ -82,3 +82,15 @@ test("concurrent activity is preserved until the final request finishes", async 
   await b;
   equal(maker.activity.thinking, false);
 });
+
+test("a bare action name from the model is read as that action", async () => {
+  // Qwen3.5-9B's first goal decisions (2026-10-05) answered
+  // {"action": "upgrade_equipment", "reason": "..."} and failed validation twice.
+  const { normalizeDecision } = await import("./decider.js");
+  const { NextGoalActionSchema, NextTaskSchema } = await import("./schemas.js");
+  deepStrictEqual(NextGoalActionSchema.parse(normalizeDecision({ action: "upgrade_equipment", reason: "need iron" })), { action: { type: "upgrade_equipment" }, rationale: "need iron" });
+  deepStrictEqual(NextGoalActionSchema.parse(normalizeDecision({ action: "ensure_item", item: "iron_pickaxe", quantity: 1 })).action, { type: "ensure_item", item: "iron_pickaxe", quantity: 1 });
+  const proper = { action: { type: "complete" }, rationale: "done" };
+  deepStrictEqual(normalizeDecision(proper), proper, "a well-formed reply is unchanged");
+  equal(NextTaskSchema.parse(normalizeDecision({ task: "wait" })).task.type, "wait");
+});

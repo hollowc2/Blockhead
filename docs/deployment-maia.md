@@ -27,8 +27,11 @@ It runs inside tmux on its own socket, so the console is
 `tmux -L mc attach -t java-server`. Because the unit restarts the server, stop
 or restart it with `systemctl --user`, not a console `stop`. The bot connects
 over `127.0.0.1:25565`, and the drop-in `deploy/blockhead-after-minecraft.conf`
-starts the bot after the server. The local `llama.cpp` server runs on Maia, normally at
-`127.0.0.1:8080`.
+starts the bot after the server. The local `llama.cpp` server runs on Maia at
+`127.0.0.1:8080` as the user service `llama-server.service` (unit source:
+`deploy/llama-server.service`): a prebuilt CUDA 12.8 llama.cpp release in
+`~/.local/share/llama/bin` serving `/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf`
+fully on the GTX 1070 Ti.
 
 ## Check the live installation
 
