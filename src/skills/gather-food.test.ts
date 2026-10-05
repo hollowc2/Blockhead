@@ -3,7 +3,7 @@ import type { Bot } from "mineflayer";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { cookPlan, FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, fuelForCooking, huntOutcomeMessage, MAX_COOK_PER_RUN, watchEaten, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops, pickSighting } from "./gather-food.js";
+import { cookPlan, FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, fuelForCooking, huntOutcomeMessage, MAX_COOK_PER_RUN, watchEaten, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops, pickSighting, isFarmFed } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -236,4 +236,11 @@ test("a sighting far below home (a cave or a lake floor) is not walked to", () =
   const field = { x: 90, y: 95, z: 60, at: now - 5_000 };
   assert.deepEqual(pickSighting([deep, field], { x: 65, y: 96, z: 51 }, 192, [], now), field);
   assert.deepEqual(pickSighting([deep], { x: 65, z: 51 }, 192, [], now), deep, "no home height, no filter");
+});
+
+test("with the farm growing and the bot fed, hunts stay near home", () => {
+  // Deaths 74 and 75 were hunts 100 blocks out with 69 wheat just planted.
+  assert.equal(isFarmFed(69, 20), true);
+  assert.equal(isFarmFed(69, 9), false, "hungry: hunt as far as it takes");
+  assert.equal(isFarmFed(5, 20), false, "a farm that is barely started does not feed the bot");
 });

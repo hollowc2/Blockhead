@@ -119,3 +119,29 @@ test("a resumed restore re-plans from the latest stock and settles when already 
   assert.equal(manager.replan({ kind: "fuel", target: 64, current: 10, deficit: 54 }).deficit, 10, "only the remaining shortage");
   assert.equal(manager.replan({ kind: "food", target: 64, current: 0, deficit: 16, crisis: false }).deficit, 16, "never more than queued");
 });
+
+test("an empty food store is a crisis only when the bot is hungry", () => {
+  // Deaths 74 and 75 (23:55, 23:57): just respawned with hunger 20 and no
+  // food carried, the crisis preempted with a hunt that went out bare-handed.
+  const bot = { inventory: { items: () => [], slots: [] }, entity: null, food: 20 } as unknown as Bot & { food: number };
+  const manager = new StockpileManager({
+    bot,
+    state: { worldId: null, home: null },
+    config: {} as MinecraftConfig,
+    bus: new EventBus(),
+    storage: {},
+    scheduler: {},
+    collect: {},
+    food: {},
+    torches: {},
+    logger: quietLogger,
+  } as unknown as StockpileManagerOptions);
+  const snapshot = {
+    levels: { wood: 64, food: 0, fuel: 64, torches: 64 },
+    targets: { wood: 64, food: 64, fuel: 64, torches: 64 },
+    deficits: [{ kind: "food" as const, target: 64, current: 0, deficit: 64 }],
+  };
+  assert.equal(manager.crisisDeficit(snapshot), null, "full hunger: an ordinary shortage");
+  bot.food = 9;
+  assert.equal(manager.crisisDeficit(snapshot)?.kind, "food", "hungry: a crisis");
+});

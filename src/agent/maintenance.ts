@@ -15,6 +15,7 @@ import type { EnsureTorchesRunner } from "../skills/ensure-torches.js";
 import type { GatherFoodRunner } from "../skills/gather-food.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { countFoodItems, FOOD_ITEM_NAMES } from "../skills/gather-food.js";
+import { CRISIS_HUNGER } from "../policy/safety.js";
 
 /**
  * Phase 7: deterministic background stockpile maintenance (spec sections
@@ -274,6 +275,12 @@ export class StockpileManager {
       // torches must never preempt what the owner asked for; they are
       // restored as ordinary background work when the bot is idle.
       if (deficit.kind !== "food") continue;
+      // An empty food store is no crisis to a bot with a full hunger bar:
+      // right after a respawn (carried food lost, hunger 20) the preempting
+      // hunt went out bare-handed and died twice in three minutes (deaths
+      // 74, 75 at 23:55 and 23:57). Real hunger is the hunger watch's job.
+      const hunger = this.opts.bot.food;
+      if (Number.isFinite(hunger) && hunger >= CRISIS_HUNGER) continue;
       const floor = Math.min(minimums[deficit.kind], targets[deficit.kind]);
       if (deficit.current < floor) return deficit;
     }

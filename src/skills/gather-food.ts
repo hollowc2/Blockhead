@@ -17,9 +17,9 @@ import { smeltItems } from "../minecraft/smelting.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { findBlockNear, findBlocksNear } from "../minecraft/world.js";
 import { cancelCollection, collectBlockOperation, equipItem, pvpAttack, pvpStop, shedJunk } from "../minecraft/primitives.js";
-import { tendFarm } from "./farm.js";
+import { farmGrowing, tendFarm } from "./farm.js";
 import { ANIMAL_MOB_NAMES, attackTargetAllowed, canonicalMobName, combatOutcomeObserved, HOSTILE_MOB_NAMES, isDroppedItemEntity, isHumanTarget, isLiveMob, isMobEntity } from "../policy/combat.js";
-import { belowHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
+import { belowHealthRetreat, CRISIS_HUNGER, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
 import { ChatThrottle, gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth, withTimeout, type SkillResult } from "./skill-library.js";
 
 /**
@@ -226,10 +226,20 @@ const SIGHTING_TTL_MS = 30 * 60_000;
 /** A sighting this close to where the bot recently died is not walked to. */
 const DEATH_AVOID_RADIUS = 24;
 const DEATH_AVOID_TTL_MS = 30 * 60_000;
+/** Wheat plants growing that make bread the staple (one plot's worth). */
+const FARM_FED_WHEAT = 24;
 /** A sighting this far below home is in a cave or under a lake. */
 const SIGHTING_MAX_DROP = 16;
 
 export interface Sighting { x: number; y: number; z: number; at: number }
+
+/**
+ * True when bread from the growing farm is the staple and a hunt stays near
+ * home: at least a plot's worth of wheat growing and a bot that is not hungry.
+ */
+export function isFarmFed(growingWheat: number, hunger: number): boolean {
+  return growingWheat >= FARM_FED_WHEAT && hunger >= CRISIS_HUNGER;
+}
 
 /**
  * The most recent live sighting within `maxRadius` of home, skipping any near
@@ -719,6 +729,8 @@ export class GatherFoodRunner {
 
     // The farm first: ripe wheat and bread at home beat a long hunt, and
     // the animals near home do not come back once eaten.
+    let farmFed = false;
+    let growing = 0;
     if (this.targetMob === null) {
       try {
         const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal: this.signals?.signal, shouldAbort: this.travelAbort });
@@ -731,6 +743,12 @@ export class GatherFoodRunner {
         this.opts.logger.warn({ err: String(err) }, "gather_food: farm tending failed");
       }
       if (this.stopped()) return this.interrupted(data);
+      // Bread is the staple once the farm is growing: no long hunts while the
+      // bot is not hungry. Deaths 74 and 75 (23:55, 23:57) were hunts 100
+      // blocks out; hunts went 250 blocks out earlier in the day.
+      growing = farmGrowing(bot, home);
+      farmFed = isFarmFed(growing, bot.food);
+      if (farmFed) this.opts.logger.info({ growing, hunger: bot.food }, "gather_food: the farm is growing; hunting near home only");
     }
     // Armor on before the hunt leaves home: death 74 (23:55) was a zombie
     // fight 100 blocks out with 9 leather in the pack.
@@ -744,7 +762,7 @@ export class GatherFoodRunner {
     // Nights normally cap the search near home (spec 9.2). A below-floor
     // food crisis lifts that cap: the bot is starving, so the wider sweep is
     // the difference between recovery and another death.
-    const maxRadius = atNight && !this.expandAtNight ? baseRadius : huntMaxRadius;
+    const maxRadius = farmFed || (atNight && !this.expandAtNight) ? baseRadius : huntMaxRadius;
 
     // The hunt meter: passive/hostile-any hunts count carried food (kills
     // deliver raw meat); a specific hostile target counts kills (its drops —
@@ -894,6 +912,11 @@ export class GatherFoodRunner {
         if (this.stopped()) return this.interrupted(data);
         const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
         data.delivered = partial.delivered;
+      }
+      // Farm-fed food is progress: the next restore harvests what has grown.
+      if (farmFed && have > data.carriedAtStart) {
+        this.announce(`${have} food on hand and ${growing} wheat growing; no long hunt.`);
+        return { ok: true, status: "completed", data, message: `farm-fed: ${have} food carried, ${growing} wheat growing` };
       }
       return this.fail(data, "RESOURCE_NOT_FOUND", `only ${have}/${quantity} ${countsFood ? "food" : "kills"} nearby`);
     }

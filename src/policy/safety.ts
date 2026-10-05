@@ -19,6 +19,9 @@ import { findBlocksNearPoint } from "../minecraft/world.js";
 /** Health at or below which dangerous work (mining at risk, hunting, combat) retreats. */
 export const HEALTH_RETREAT_THRESHOLD = 8;
 
+/** At or above this hunger an empty food store is an ordinary shortage, not a crisis. */
+export const CRISIS_HUNGER = 14;
+
 /** Blocks the bot must keep between its working position and a lava pool. */
 export const DEFAULT_LAVA_AVOIDANCE_RADIUS = 4;
 

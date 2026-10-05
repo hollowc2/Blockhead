@@ -265,6 +265,11 @@ export async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger
   return placed !== null && placed.name === "crafting_table" ? placed : null;
 }
 
+/** Wheat plants standing in the farm now (what the next harvests will bring). */
+export function farmGrowing(bot: Bot, home: HomeLocation): number {
+  return chooseFarmCells(home, botLookup(bot), countItem(bot, "wheat_seeds")).filter((cell) => cell.above === "wheat").length;
+}
+
 /**
  * One pass over the farm. Harvests ripe wheat, bakes bread at the home
  * table, gathers seeds from grass when short, tills and plants as many cells
