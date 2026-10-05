@@ -13,6 +13,7 @@ import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary 
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried, describeDeliveryFailure, type DeliveryFailure } from "../minecraft/containers.js";
 import { shedJunk } from "../minecraft/primitives.js";
+import { craftPickaxeInField } from "./field-craft.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
@@ -890,6 +891,9 @@ export class CollectResourceRunner {
   /** Stage 11: announce and re-craft a tool that broke mid-run. */
   private async replaceTool(family: "axe" | "pickaxe"): Promise<{ ok: true } | { ok: false; reason: string }> {
     this.announce(`${family[0]?.toUpperCase()}${family.slice(1)} broke. Replacing it.`);
+    // A pickaxe is made on the spot from the stone just mined, not by a
+    // round trip home that has to dig its way out by hand.
+    if (family === "pickaxe" && await craftPickaxeInField(this.opts.bot, this.opts.logger, this.signals?.signal) !== null) return { ok: true };
     return this.craftWoodenTool(family);
   }
 
@@ -1001,6 +1005,14 @@ export class CollectResourceRunner {
   private async returnHome(): Promise<{ status: string }> {
     const home = this.opts.state.home;
     if (home === null) return { status: "no_home" };
+    // Below home with no pickaxe, every stair cell out is dug by hand at
+    // 7.5 s per stone block: make one here first.
+    const self = this.opts.bot.entity?.position;
+    if (self !== undefined && self.y < home.y - 3 && !hasFamilyTool(this.opts.bot, "pickaxe")) {
+      await craftPickaxeInField(this.opts.bot, this.opts.logger, this.signals?.signal).catch((err) => {
+        this.opts.logger.warn({ err: String(err) }, "field craft failed before the trip home");
+      });
+    }
     return travelHomeAndWait(this.opts.bot, home, {
       dimension: home.dimension,
       timeoutMs: TRAVEL_TIMEOUT_MS,
