@@ -453,3 +453,17 @@ test("the door is made from the plank species carried", async () => {
   assert.equal(doorForPlanks([{ name: "oak_planks", count: 2 }, { name: "spruce_planks", count: 7 }]), "spruce_door");
   assert.equal(doorForPlanks([]), "oak_door");
 });
+
+test("a foreign block in the door gap is blocked, not a door to build", () => {
+  // 2026-10-05: a plank in the lower door cell (65,96,54) kept build_base
+  // re-running every cooldown for a door it could never place.
+  const world = airWorld();
+  const l = layout();
+  for (const cell of l.wallCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
+  for (const cell of l.roofCells) world[`${cell.x},${cell.y},${cell.z}`] = "planks";
+  world[`${l.doorCells[0]!.x},${l.doorCells[0]!.y},${l.doorCells[0]!.z}`] = "solid";
+  const m = measureStructure(stubBot(world), l);
+  assert.equal(m.doorMissing, false);
+  assert.equal(m.blocked, 1);
+  assert.equal(m.planksNeeded, 0, "nothing placeable left");
+});

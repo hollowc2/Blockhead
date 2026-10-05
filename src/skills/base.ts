@@ -275,19 +275,13 @@ export function measureStructure(bot: Bot, layout: BaseLayout): StructureMeasure
 
   const lower = bot.blockAt(layout.doorCells[0]!);
   const upper = bot.blockAt(layout.doorCells[1]!);
-  let doorMissing = false;
+  // A door needs the whole two-high gap. Something foreign in it (a plank
+  // at 65,96,54, 2026-10-05) is blocked, not a missing door: breaking it is
+  // out of scope, and counting it as missing re-ran build_base forever.
   for (const doorBlock of [lower, upper]) {
-    if (doorBlock === null) {
-      blocked++;
-      doorMissing = true;
-    } else if (isAir(doorBlock)) {
-      doorMissing = true;
-    } else if (!isDoorBlock(doorBlock)) {
-      // Something foreign occupies the gap; breaking it is out of scope.
-      blocked++;
-      doorMissing = true;
-    }
+    if (doorBlock === null || (!isAir(doorBlock) && !isDoorBlock(doorBlock))) blocked++;
   }
+  const doorMissing = lower !== null && upper !== null && isAir(lower) && isAir(upper);
 
   const planksNeeded = missingWalls + missingRoof + (doorMissing ? DOOR_PLANK_COST : 0);
   return { missingWalls, missingRoof, doorMissing, blocked, planksNeeded, needsWork: planksNeeded > 0 || blocked > 0 };
@@ -1411,9 +1405,13 @@ export class BaseBuilderRunner {
       doorMissing: measurement.doorMissing,
       needsWork: measurement.needsWork,
     });
+    // Only placeable work starts a build: blocked cells alone (a foreign
+    // block in the gap) cannot be fixed by building and looped every
+    // cooldown from 10:10 on 2026-10-05.
+    const actionable = measurement.planksNeeded > 0;
     return {
-      needsWork: measurement.needsWork,
-      reason: measurement.needsWork
+      needsWork: actionable,
+      reason: actionable
         ? `${measurement.missingWalls} wall, ${measurement.missingRoof} roof blocks, door ${measurement.doorMissing ? "missing" : "ok"}`
         : null,
     };
