@@ -10,7 +10,10 @@ test("cancelled movement waits for the underlying pathfinder promise to settle",
   const events: string[] = [];
   let resolveGoto!: () => void;
   const goto = new Promise<void>((resolve) => { resolveGoto = resolve; });
-  const bot = { pathfinder: { stop: () => events.push("stop") } } as never;
+  // Wait for the stop itself, not a fixed sleep: under full-suite load the
+  // 5 ms timeout had not fired after 15 ms and the test flaked.
+  const stopped = Promise.withResolvers<void>();
+  const bot = { pathfinder: { stop: () => { events.push("stop"); stopped.resolve(); } } } as never;
   const executor = new WorldActionExecutor();
   const trip = executor.run("movement-test", new AbortController().signal, () => raceTrip(
     bot,
@@ -18,7 +21,7 @@ test("cancelled movement waits for the underlying pathfinder promise to settle",
     { timeoutMs: 5 },
   ));
 
-  await new Promise((resolve) => setTimeout(resolve, 15));
+  await stopped.promise;
   assert.deepEqual(events, ["stop"]);
   resolveGoto();
   assert.deepEqual(await trip, { status: "timed_out" });
