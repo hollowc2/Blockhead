@@ -1002,7 +1002,10 @@ export class BaseBuilderRunner {
           if (!checkpoint(operation)) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
           continue;
         }
-        const clearable = (name: string): boolean => isNaturalBlock(name) || (options.clearTrees === true && TREE_TRUNK.test(bareName(name)));
+        // The bot's own buildings also take up its own lighting: a torch
+        // home lighting had set on the open site blocked the second cottage
+        // (86,96,51, 2026-10-05); lighting re-plans once the building stands.
+        const clearable = (name: string): boolean => isNaturalBlock(name) || (options.clearTrees === true && (TREE_TRUNK.test(bareName(name)) || /^(wall_)?torch$/.test(bareName(name))));
         if (existing !== null && !isAir(existing) && !isCreativeMode(this.opts.bot) && clearable(existing.name)) {
           // Grass, dirt, or a stone bump where a wall goes is just uneven
           // ground: dig it out rather than abandoning the build.

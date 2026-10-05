@@ -286,8 +286,10 @@ export class DevelopLandRunner {
     const home = this.opts.state.home;
     const self = this.opts.bot.entity?.position;
     if (home === null || self === undefined || self === null) return false;
-    // Unloaded chunks read as unknown; only judge from home.
-    if (Math.hypot(self.x - home.x, self.z - home.z) > 32) return false;
+    // Unloaded chunks read as unknown, so the land is only judged from home.
+    // Away from it there may be work: the run walks home first. Saying "no
+    // work" left the bot standing 46 blocks out after a restart (16:31).
+    if (Math.hypot(self.x - home.x, self.z - home.z) > 32) return true;
     return this.next(home) !== null;
   }
 

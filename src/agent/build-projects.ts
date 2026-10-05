@@ -230,6 +230,23 @@ export class BuildProjectManager {
     }
   }
 
+  /**
+   * Reopen blocked projects matching `matches` that have sat blocked at
+   * least `minBlockedMs`, and schedule their next slice. Returns how many.
+   * The bot's own development builds use it to retry after an obstruction
+   * clears; an owner's build is only reopened by the owner.
+   */
+  retryBlocked(matches: (project: BuildProject) => boolean, minBlockedMs: number, now = Date.now()): number {
+    let reopened = 0;
+    for (const project of this.projects.loadUnfinished()) {
+      if (project.status !== "blocked" || !matches(project)) continue;
+      if (now - Date.parse(project.updatedAt) < minBlockedMs) continue;
+      this.reopen(project);
+      if (this.scheduleNextWork(project.id) !== null) reopened += 1;
+    }
+    return reopened;
+  }
+
   /** "finish the house": reopen and schedule the most recently touched unfinished build. */
   resumeLatest(): { project: BuildProject; task: Task } | null {
     const project = this.projects.loadUnfinished()

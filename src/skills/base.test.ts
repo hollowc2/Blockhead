@@ -503,3 +503,26 @@ test("a trunk in a development building is felled; an owner's build stays blocke
   assert.notEqual(village.result.status, "blocked");
   assert.deepEqual(village.felled, ["birch_log"]);
 });
+
+test("a development building takes up a torch on its site; an owner's build does not", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [{ id: "op-0", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true }],
+    estimates: { blocks: 1, materials: { stone: 1 } },
+    footprint: { width: 1, depth: 1, height: 1 },
+  };
+  for (const clearTrees of [false, true]) {
+    const world: Record<string, string> = { "0,63,0": "stone", "0,64,0": "torch" };
+    const runner = designTestRunner(world);
+    const internals = runner as unknown as { clearNaturalCell: (cell: Vec3, clearable: (name: string) => boolean) => Promise<boolean>; placeSimpleTarget: (cell: Vec3) => Promise<boolean> };
+    internals.clearNaturalCell = async (cell, clearable) => {
+      if (!clearable(world[`${cell.x},${cell.y},${cell.z}`]!)) return false;
+      world[`${cell.x},${cell.y},${cell.z}`] = "air";
+      return true;
+    };
+    internals.placeSimpleTarget = async (cell) => { world[`${cell.x},${cell.y},${cell.z}`] = "stone"; return true; };
+    const result = await runner.runDesignSlice(blueprint, { phaseId: "phase-torch", operationStart: 0, operationEnd: 1, clearTrees });
+    if (clearTrees) assert.notEqual(result.status, "blocked");
+    else assert.match(result.message ?? "", /torch/);
+  }
+});

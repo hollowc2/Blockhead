@@ -368,3 +368,35 @@ test("retryable acquisition failure persists a bounded durable backoff", () => {
     h.db.close();
   }
 });
+
+test("a blocked development build is retried after a while; an owner's blocked build is not", async () => {
+  // 2026-10-05: the second cottage blocked on a torch and, blocked, held the
+  // one-building slot so no further building could start.
+  const { villageDesign } = await import("../building/village.js");
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const block = (projectId: string, at: string) => {
+      const project = h.projects.get(projectId)!;
+      project.status = "blocked";
+      project.lastError = "design blocked at 0,64,0 by torch";
+      project.updatedAt = at;
+      h.projects.update(project);
+      for (const phase of h.projects.getPhases(projectId)) { if (phase.status === "active") { phase.status = "blocked"; h.projects.updatePhase(phase); } }
+    };
+    const village = manager.createOrResume({ userGoal: "Develop the land", structureType: "village:cottage", source: "goal", design: villageDesign("cottage"), origin });
+    h.scheduler.claim();
+    h.scheduler.blockActive("design blocked at 0,64,0 by torch");
+    block(village.project.id, "2026-10-05T22:57:42.000Z");
+    const owner = manager.createOrResume({ userGoal: "Build a castle", structureType: "castle", source: "user", design: landmarkTemplate("castle", "small"), origin: { ...origin, x: 200 } });
+    block(owner.project.id, "2026-10-04T03:18:10.000Z");
+    const isVillage = (p: { structureType?: string }) => p.structureType?.startsWith("village:") === true;
+
+    assert.equal(manager.retryBlocked(isVillage, 5 * 60_000, Date.parse("2026-10-05T22:59:00.000Z")), 0, "not yet: blocked under 5 minutes");
+    assert.equal(manager.retryBlocked(isVillage, 5 * 60_000, Date.parse("2026-10-05T23:10:00.000Z")), 1);
+    assert.equal(h.projects.get(village.project.id)!.status, "active");
+    assert.equal(h.projects.get(owner.project.id)!.status, "blocked", "the owner's build waits for the owner");
+  } finally {
+    h.db.close();
+  }
+});

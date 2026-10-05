@@ -119,3 +119,12 @@ test("a built site is left alone", async () => {
   const next = nextDevelopment(HOME, world(built), new Set(), { buildBusy: false, buildings: 0 });
   assert.notDeepEqual(next?.survey.offset, outer[0]);
 });
+
+test("away from home there may be work: the run walks home and judges there", async () => {
+  // 16:31 (2026-10-05): restarted 46 blocks out, development said "no work"
+  // from there and the bot stood idle.
+  const { DevelopLandRunner } = await import("./develop-land.js");
+  const bot = { entity: { position: { x: 76, y: 97, z: 6 } }, blockAt: () => null } as never;
+  const runner = new DevelopLandRunner({ bot, state: { home: { x: 65, y: 96, z: 51, dimension: "overworld" } }, logger: {} } as never);
+  assert.equal(runner.hasWork(), true);
+});

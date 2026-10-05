@@ -521,7 +521,13 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   const lightHome = new LightHomeRunner({ bot, state, storage, torches, logger, reservedCells: () => buildProjectManager.reservedCells() });
   // The bot's own buildings: one at a time, sourced as goal work (not owner work).
   const developmentBuilds = {
-    busy: () => buildProjectManager.hasUnfinished((project) => project.structureType?.startsWith("village:") === true),
+    busy: () => {
+      // A development build blocked (an obstruction, a failed acquisition)
+      // would hold the one-building slot forever: retry it every 5 minutes.
+      const village = (project: { structureType?: string; source: string }) => project.source === "goal" && project.structureType?.startsWith("village:") === true;
+      buildProjectManager.retryBlocked(village, 5 * 60_000);
+      return buildProjectManager.hasUnfinished(village);
+    },
     count: () => buildProjectManager.countProjects("village:"),
     start: (building: string, design: Parameters<typeof buildProjectManager.createOrResume>[0]["design"], origin: Parameters<typeof buildProjectManager.createOrResume>[0]["origin"]) => {
       buildProjectManager.createOrResume({ userGoal: `Develop the land: build a ${building.replace("_", " ")}`, structureType: `village:${building}`, source: "goal", design, origin });
