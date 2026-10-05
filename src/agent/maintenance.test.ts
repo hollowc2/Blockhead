@@ -107,3 +107,15 @@ test("a resumed fuel restore smelts a charcoal batch at home instead of restarti
   await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 1 });
   assert.equal(coalRuns(), 1);
 });
+
+test("a resumed restore re-plans from the latest stock and settles when already covered", async () => {
+  // 19:09 food crisis queued at 0 with deficit 16; by 19:57 the stock was 23.
+  const { manager } = fuelManager(() => ({ ok: true, status: "completed" }) as SkillResult);
+  (manager as unknown as { lastSnapshot: unknown }).lastSnapshot = { levels: { wood: 30, food: 23, fuel: 54, torches: 0 } };
+  const food = manager.replan({ kind: "food", target: 64, current: 0, deficit: 16, crisis: true });
+  assert.equal(food.deficit, 0);
+  const result = await manager.restore({ kind: "food", target: 64, current: 0, deficit: 16, crisis: true });
+  assert.equal(result.status, "completed");
+  assert.equal(manager.replan({ kind: "fuel", target: 64, current: 10, deficit: 54 }).deficit, 10, "only the remaining shortage");
+  assert.equal(manager.replan({ kind: "food", target: 64, current: 0, deficit: 16, crisis: false }).deficit, 16, "never more than queued");
+});

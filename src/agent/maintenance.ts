@@ -330,7 +330,12 @@ export class StockpileManager {
     this.charcoal = producer;
   }
 
-  restore(deficit: StockpileDeficit, signals?: TaskSignals): Promise<SkillResult> {
+  restore(queued: StockpileDeficit, signals?: TaskSignals): Promise<SkillResult> {
+    const deficit = this.replan(queued);
+    if (deficit.deficit <= 0) {
+      this.opts.logger.info({ kind: deficit.kind, current: deficit.current }, "stockpile restore no longer needed; settling");
+      return Promise.resolve({ ok: true, status: "completed", message: `${stockpileLabel(deficit.kind)} already at ${deficit.current}` } as SkillResult);
+    }
     const options = signals === undefined ? {} : { signals };
     switch (deficit.kind) {
       case "wood":
@@ -372,6 +377,23 @@ export class StockpileManager {
       case "torches":
         return this.opts.torches.run(deficit.deficit, options);
     }
+  }
+
+  /**
+   * Re-plan a queued restore from the latest stock check. Its deficit was
+   * frozen at enqueue: a food crisis queued at 0 kept hunting 16 more for an
+   * hour, 250 blocks out, after bread put the stock over the floor, and the
+   * fuel restore behind it never ran (2026-10-04 19:09-20:05). A crisis only
+   * restores up to its floor.
+   */
+  replan(queued: StockpileDeficit): StockpileDeficit {
+    const levels = this.lastSnapshot?.levels;
+    if (levels === undefined) return queued;
+    const current = levels[queued.kind];
+    const goal = queued.crisis === true
+      ? Math.min(stockpileMinimums(this.opts.config)[queued.kind], queued.target)
+      : queued.target;
+    return { ...queued, current, deficit: Math.min(queued.deficit, Math.max(0, goal - current)) };
   }
 
   private charcoalBatch(deficit: StockpileDeficit, reason: string | undefined, signals?: TaskSignals): Promise<SkillResult> {
