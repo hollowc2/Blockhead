@@ -324,6 +324,11 @@ export function hardenAutoEat(bot: Bot): void {
   }
   const eat = autoEat.eat.bind(autoEat);
   autoEat.eat = async (opts?: object) => {
+    // A dig equips its tool over the food mid-eat, so every attempt during a
+    // long clear fails and the plugin retries at once: four back-to-back
+    // "wedged" resets at 15:37 (2026-10-05). Wait for the dig to end; the
+    // next hunger check eats.
+    if ((bot as unknown as { targetDigBlock?: unknown }).targetDigBlock != null) return;
     try {
       await eat(opts);
     } catch (err) {

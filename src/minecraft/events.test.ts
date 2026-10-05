@@ -110,3 +110,15 @@ test("a food equip stuck behind a dig's tool equip does not leave auto-eat wedge
   assert.ok(Date.now() - started < 3_000, "the hung equip gives up after ~2 s");
   assert.equal(autoEat._eating, false, "the flag is cleared, so the next check eats");
 });
+
+test("auto-eat does not start an eat while a dig is in progress", async () => {
+  let started = 0;
+  const autoEat = { _eating: false, async eat() { started += 1; } };
+  const bot = { autoEat, util: { inv: { customEquip: async () => true } }, targetDigBlock: { name: "oak_log" } } as never as { targetDigBlock: unknown; autoEat: typeof autoEat };
+  hardenAutoEat(bot as never);
+  await autoEat.eat();
+  assert.equal(started, 0, "no eat mid-dig");
+  bot.targetDigBlock = null;
+  await autoEat.eat();
+  assert.equal(started, 1);
+});
