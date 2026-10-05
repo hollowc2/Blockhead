@@ -57,7 +57,10 @@ export function coveredByTorch(point: { x: number; z: number }, torches: readonl
 /** Ground a floor torch can stand on: a full block that is not foliage, liquid, crop soil or a container. */
 export function torchGround(block: Block | null): boolean {
   if (block === null || block.boundingBox !== "block") return false;
-  return !/leaves|water|lava|farmland|chest|barrel|glass|ice|slab|stairs|fence|wall|door|trapdoor|bed|torch|carpet|snow$|cactus|pumpkin|melon|_log$/.test(block.name);
+  // Clicking an interactive block (a furnace, a table) opens it instead of
+  // placing: the first live torch "landed" on the home furnace and the
+  // server refused it (21:38).
+  return !/leaves|water|lava|farmland|chest|barrel|glass|ice|slab|stairs|fence|wall|door|trapdoor|bed|torch|carpet|snow$|cactus|pumpkin|melon|_log$|furnace|smoker|crafting_table|table$|anvil|loom|stonecutter|grindstone|lectern|hopper|dispenser|dropper|beacon|note_block|jukebox|enchanting|brewing|cauldron|composter|shulker|button|lever|sign/.test(block.name);
 }
 
 function key(x: number, y: number, z: number): string {

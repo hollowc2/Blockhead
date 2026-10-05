@@ -27,7 +27,7 @@ test("torches stand on full ground blocks, not leaves, water, farmland or chests
   const block = (name: string, boundingBox = "block") => ({ name, boundingBox }) as Block;
   assert.equal(torchGround(block("grass_block")), true);
   assert.equal(torchGround(block("stone")), true);
-  for (const name of ["oak_leaves", "water", "farmland", "chest", "oak_slab", "glass"]) assert.equal(torchGround(block(name)), false, name);
+  for (const name of ["oak_leaves", "water", "farmland", "chest", "oak_slab", "glass", "furnace", "crafting_table"]) assert.equal(torchGround(block(name)), false, name);
   assert.equal(torchGround(block("short_grass", "empty")), false);
   assert.equal(torchGround(null), false);
 });
