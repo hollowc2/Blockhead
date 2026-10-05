@@ -265,6 +265,11 @@ export class BuildProjectManager {
     return cells;
   }
 
+  /** True when an unfinished project matches (e.g. the bot's own development builds). */
+  hasUnfinished(matches: (project: BuildProject) => boolean): boolean {
+    return this.projects.loadUnfinished().some(matches);
+  }
+
   getProject(projectId: string): BuildProject | null {
     return this.projects.get(projectId);
   }

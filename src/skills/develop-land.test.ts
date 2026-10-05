@@ -60,3 +60,43 @@ test("a plot of growing wheat is a field already", () => {
   assert.equal(survey.farmland, 25);
   assert.notDeepEqual(nextPlotToDevelop(HOME, world(overrides))?.offset, { dx: -8, dz: 0 });
 });
+
+test("every third outer plot is a building site, and gets its building on open ground", async () => {
+  const { nextDevelopment, siteIndex } = await import("./develop-land.js");
+  const outer = developmentPlots().slice(3);
+  assert.equal(siteIndex(outer[0]!), null);
+  assert.equal(siteIndex(outer[1]!), 0);
+  assert.equal(siteIndex(outer[4]!), 1);
+  // Home plots and the first outer plot are already fields.
+  const fields: Record<string, FarmBlock> = {};
+  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) fields[`${p.dx},63,${p.dz}`] = { name: "farmland" };
+  const next = nextDevelopment(HOME, world(fields));
+  assert.ok(next?.kind === "building");
+  assert.equal(next.building, "cottage");
+  assert.deepEqual(next.origin, { x: outer[1]!.dx - 3, y: 64, z: outer[1]!.dz - 3 });
+});
+
+test("a busy builder keeps making fields; a trunk in the way makes the site a field", async () => {
+  const { nextDevelopment } = await import("./develop-land.js");
+  const outer = developmentPlots().slice(3);
+  const fields: Record<string, FarmBlock> = {};
+  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) fields[`${p.dx},63,${p.dz}`] = { name: "farmland" };
+  const busy = nextDevelopment(HOME, world(fields), new Set(), true);
+  assert.equal(busy?.kind, "field");
+  assert.deepEqual(busy?.survey.offset, outer[2]);
+  const tree = { ...fields };
+  for (let y = 64; y <= 70; y++) tree[`${outer[1]!.dx + 3},${y},${outer[1]!.dz}`] = { name: "oak_log" };
+  const blocked = nextDevelopment(HOME, world(tree));
+  assert.equal(blocked?.kind, "field", "a tall trunk inside the volume");
+  assert.deepEqual(blocked?.survey.offset, outer[1]);
+});
+
+test("a built site is left alone", async () => {
+  const { nextDevelopment } = await import("./develop-land.js");
+  const outer = developmentPlots().slice(3);
+  const built: Record<string, FarmBlock> = {};
+  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) built[`${p.dx},63,${p.dz}`] = { name: "farmland" };
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) built[`${outer[1]!.dx + dx},68,${outer[1]!.dz + dz}`] = { name: "oak_planks" };
+  const next = nextDevelopment(HOME, world(built));
+  assert.notDeepEqual(next?.survey.offset, outer[1]);
+});

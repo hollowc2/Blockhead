@@ -519,7 +519,14 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   const food = new GatherFoodRunner({ bot, state, config, bus, storage, skills, logger, deaths });
   const torches = new EnsureTorchesRunner({ bot, state, config, bus, storage, skills, logger });
   const lightHome = new LightHomeRunner({ bot, state, storage, torches, logger, reservedCells: () => buildProjectManager.reservedCells() });
-  const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => buildProjectManager.reservedCells() });
+  // The bot's own buildings: one at a time, sourced as goal work (not owner work).
+  const developmentBuilds = {
+    busy: () => buildProjectManager.hasUnfinished((project) => project.structureType?.startsWith("village:") === true),
+    start: (building: string, design: Parameters<typeof buildProjectManager.createOrResume>[0]["design"], origin: Parameters<typeof buildProjectManager.createOrResume>[0]["origin"]) => {
+      buildProjectManager.createOrResume({ userGoal: `Develop the land: build a ${building.replace("_", " ")}`, structureType: `village:${building}`, source: "goal", design, origin });
+    },
+  };
+  const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => buildProjectManager.reservedCells(), builds: developmentBuilds });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });
 
   // Phase 11: storage organization (spec 14.4, 22). The runner measures every
