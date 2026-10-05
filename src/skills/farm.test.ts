@@ -115,7 +115,7 @@ test("a plot development just cleared is sown even when seeds are short", () => 
   // 14:41: the cleared plot at 16,0 waited on seed coverage, was never
   // tilled, and development looped on it.
   const fields: Record<string, FarmBlock> = {};
-  for (const [cx, cz] of [[-8, 0], [8, 0], [0, -8]]) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) fields[`${cx + dx},63,${cz + dz}`] = { name: "farmland" };
+  for (const [cx, cz] of [[-8, 0], [8, 0], [0, -8]] as const) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) fields[`${cx + dx},63,${cz + dz}`] = { name: "farmland" };
   const cells = chooseFarmCells(HOME, world(fields), 5, { dx: 16, dz: 0 });
   assert.equal(cells.length, 100, "the three fields and the cleared plot");
   assert.equal(cells.filter((c) => c.x >= 14).length, 25);
