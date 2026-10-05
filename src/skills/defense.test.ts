@@ -211,3 +211,12 @@ test("deathSiteDanger flags an archer covering the site or a hurt bot", () => {
   assert.equal(deathSiteDanger(20, site, [{ type: "hostile", name: "skeleton", position: { x: 40, y: 64, z: 0 } }]), null, "too far to cover the site");
   assert.match(deathSiteDanger(5, site, []) ?? "", /health 5/);
 });
+
+test("deathSiteDanger flags a pack of melee mobs or a creeper at the site", () => {
+  const site = { x: 0, y: 64, z: 0 };
+  const zombie = (x: number) => ({ type: "hostile", name: "zombie", position: { x, y: 64, z: 0 } });
+  assert.equal(deathSiteDanger(20, site, [zombie(2), zombie(5)]), null);
+  assert.match(deathSiteDanger(20, site, [zombie(2), zombie(5), { type: "hostile", name: "zombie_villager", position: { x: 8, y: 64, z: 0 } }]) ?? "", /3 hostiles/);
+  assert.equal(deathSiteDanger(20, site, [zombie(2), zombie(5), zombie(30)]), null, "a far zombie is not part of the nest");
+  assert.match(deathSiteDanger(20, site, [{ type: "hostile", name: "creeper", position: { x: 6, y: 64, z: 0 } }]) ?? "", /creeper/);
+});

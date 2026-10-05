@@ -3,7 +3,7 @@ import type { Bot } from "mineflayer";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { Block } from "prismarine-block";
-import { cookPlan, FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, fuelForCooking, huntOutcomeMessage, MAX_COOK_PER_RUN, watchEaten, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops } from "./gather-food.js";
+import { cookPlan, FOOD_ITEM_NAMES, FORAGE_SCAN_MAX_RADIUS, fuelForCooking, huntOutcomeMessage, MAX_COOK_PER_RUN, watchEaten, forageScanRadius, isForageFoodBlock, nextHuntRadius, patrolHeadingDeg, patrolWaypoint, waitForDrops, pickSighting } from "./gather-food.js";
 
 /**
  * Patrol sweep geometry (Phase 7.2): an empty hunt radius walks the bot to
@@ -141,4 +141,17 @@ test("raw food is planned for cooking, capped per run, with fuel at 8 items per 
   assert.deepEqual(capped, [{ raw: "porkchop", cooked: "cooked_porkchop", count: MAX_COOK_PER_RUN }]);
   assert.equal(fuelForCooking(13), 2);
   assert.equal(fuelForCooking(8), 1);
+});
+
+test("a sighting near a recent death is not walked to again", () => {
+  const now = 10_000_000;
+  const home = { x: 65, z: 51 };
+  const pit = { x: 30.5, y: 71, z: 134.5, at: now - 60_000 };
+  const meadow = { x: 90, y: 96, z: 40, at: now - 120_000 };
+  assert.deepEqual(pickSighting([pit, meadow], home, 1024, [], now), pit, "newest wins with no deaths");
+  const deaths = [{ x: 26.4, y: 71, z: 136.6, at: now - 30_000 }];
+  assert.deepEqual(pickSighting([pit, meadow], home, 1024, deaths, now), meadow);
+  assert.equal(pickSighting([pit], home, 1024, deaths, now), null);
+  const oldDeath = [{ x: 26.4, y: 71, z: 136.6, at: now - 31 * 60_000 }];
+  assert.deepEqual(pickSighting([pit], home, 1024, oldDeath, now), pit, "an old death no longer blocks the spot");
 });

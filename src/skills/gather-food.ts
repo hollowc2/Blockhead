@@ -220,6 +220,33 @@ const MAX_KILL_FAILURES = 3;
 /** Remembered animal sightings (bounded) and how long one stays useful. */
 const MAX_SIGHTINGS = 64;
 const SIGHTING_TTL_MS = 30 * 60_000;
+/** A sighting this close to where the bot recently died is not walked to. */
+const DEATH_AVOID_RADIUS = 24;
+const DEATH_AVOID_TTL_MS = 30 * 60_000;
+
+export interface Sighting { x: number; y: number; z: number; at: number }
+
+/**
+ * The most recent live sighting within `maxRadius` of home, skipping any near
+ * a recent death. A chicken seen in a mob-filled pit (30,71,134) drew every
+ * food-crisis run back into it: three deaths in eight minutes (2026-10-04).
+ */
+export function pickSighting(
+  sightings: Iterable<Sighting>,
+  home: { x: number; z: number },
+  maxRadius: number,
+  deaths: readonly { x: number; y: number; z: number; at: number }[],
+  now: number,
+): Sighting | null {
+  let best: Sighting | null = null;
+  for (const seen of sightings) {
+    if (seen.at < now - SIGHTING_TTL_MS) continue;
+    if (Math.hypot(seen.x - home.x, seen.z - home.z) > maxRadius) continue;
+    if (deaths.some((death) => death.at >= now - DEATH_AVOID_TTL_MS && Math.hypot(seen.x - death.x, seen.y - death.y, seen.z - death.z) <= DEATH_AVOID_RADIUS)) continue;
+    if (best === null || seen.at > best.at) best = seen;
+  }
+  return best;
+}
 /** Wall-clock budget for one outward patrol trip between hunt radii. */
 const PATROL_TRIP_TIMEOUT_MS = 60_000;
 /**
@@ -465,7 +492,9 @@ export class GatherFoodRunner {
    * tracks mobs near the bot, so a herd passed on an errand is invisible
    * from home; remembering it beats sweeping blind compass headings.
    */
-  private readonly sightings = new Map<number, { x: number; y: number; z: number; at: number }>();
+  private readonly sightings = new Map<number, Sighting>();
+  /** Where the bot died lately; sightings near them are not revisited. */
+  private readonly deaths: { x: number; y: number; z: number; at: number }[] = [];
 
   constructor(private readonly opts: GatherFoodOptions) {
     const throttleSeconds = opts.config.background?.announce_throttle_seconds ?? 30;
@@ -482,17 +511,25 @@ export class GatherFoodRunner {
     // the herd is now) or died (a killed animal is pruned on use).
     opts.bot.on?.("entitySpawn", remember);
     opts.bot.on?.("entityGone", remember);
+    opts.bot.on?.("death", () => {
+      const at = opts.bot.entity?.position;
+      if (at === undefined || at === null) return;
+      this.deaths.push({ x: at.x, y: at.y, z: at.z, at: Date.now() });
+      if (this.deaths.length > 8) this.deaths.shift();
+    });
   }
 
-  /** The most recent sighting within `maxRadius` of home, or null. */
-  private recentSighting(home: { x: number; z: number }, maxRadius: number): { x: number; y: number; z: number } | null {
-    const cutoff = Date.now() - SIGHTING_TTL_MS;
-    let best: { x: number; y: number; z: number; at: number } | null = null;
-    for (const [id, seen] of this.sightings) {
-      if (seen.at < cutoff) { this.sightings.delete(id); continue; }
-      if (Math.hypot(seen.x - home.x, seen.z - home.z) > maxRadius) continue;
-      if (best === null || seen.at > best.at) best = seen;
-    }
+  /**
+   * Take the most recent usable sighting within `maxRadius` of home. Taking
+   * consumes it: one that led nowhere (or into a fight) was offered again on
+   * every run.
+   */
+  private takeSighting(home: { x: number; z: number }, maxRadius: number): Sighting | null {
+    const now = Date.now();
+    for (const [id, seen] of this.sightings) if (seen.at < now - SIGHTING_TTL_MS) this.sightings.delete(id);
+    const best = pickSighting(this.sightings.values(), home, maxRadius, this.deaths, now);
+    if (best === null) return null;
+    for (const [id, seen] of this.sightings) if (seen === best) this.sightings.delete(id);
     return best;
   }
 
@@ -662,7 +699,7 @@ export class GatherFoodRunner {
     // Nothing huntable in view: walk to the last place animals were seen
     // before falling back to blind compass sweeps.
     if (countsFood && nearestMatchingMob(bot, baseRadius, huntTargetPredicate(this.targetMob)) === null) {
-      const seen = this.recentSighting(home, maxRadius);
+      const seen = this.takeSighting(home, maxRadius);
       if (seen !== null) {
         const walked = await travelAndWait(bot, seen, { range: 8, timeoutMs: this.patrolTimeoutMs(Math.hypot(seen.x - home.x, seen.z - home.z)), shouldAbort: this.travelAbort, signal: this.signals?.signal });
         if (this.stopRequested) return this.interrupted(data);

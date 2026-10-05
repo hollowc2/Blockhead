@@ -15,7 +15,7 @@ import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
 import { findBlockNear } from "../minecraft/world.js";
 import { ItemPolicy, type ItemValue } from "../policy/item-policy.js";
-import { isDroppedItemEntity, isMobEntity } from "../policy/combat.js";
+import { HOSTILE_MOB_NAMES, isDroppedItemEntity, isMobEntity } from "../policy/combat.js";
 import { Vec3 } from "vec3";
 import { distanceFromHome, hasUsableFamilyTool } from "./expedition.js";
 import { sleep, type SkillResult } from "./skill-library.js";
@@ -60,45 +60,16 @@ const DANGER_PROXIMITY = 4;
 const RANGED_GUARD_RADIUS = 16;
 /** Hostile mobs that shoot from range. */
 const RANGED_MOB_NAMES: ReadonlySet<string> = new Set(["skeleton", "stray", "bogged", "pillager", "witch", "blaze", "ghast"]);
+/**
+ * This many hostiles of any kind around the site make it a nest: one zombie
+ * is the site scan's job, but a pack of six plus creepers killed the bot
+ * again on the way in (2026-10-04 19:17).
+ */
+const CROWD_GUARD_COUNT = 3;
 /** Wall-clock budget for the post-recovery trip home. */
 const GO_HOME_TIMEOUT_MS = 120_000;
 /** Scan radius when looking for an already-placed crafting table. */
 const TABLE_SCAN_RADIUS = 12;
-
-/** Hostile mobs that make a death site too dangerous to work. */
-const HOSTILE_MOB_NAMES: ReadonlySet<string> = new Set([
-  "zombie",
-  "husk",
-  "drowned",
-  "skeleton",
-  "stray",
-  "creeper",
-  "spider",
-  "cave_spider",
-  "enderman",
-  "witch",
-  "slime",
-  "phantom",
-  "blaze",
-  "ghast",
-  "magma_cube",
-  "piglin",
-  "piglin_brute",
-  "hoglin",
-  "zoglin",
-  "wither_skeleton",
-  "wither",
-  "vindicator",
-  "pillager",
-  "ravager",
-  "evoker",
-  "guardian",
-  "elder_guardian",
-  "shulker",
-  "silverfish",
-  "endermite",
-  "vex",
-]);
 
 /** Explicit failure reasons recorded on the death event (spec 26). */
 type RecoveryFailure =
@@ -570,10 +541,13 @@ export function deathSiteDanger(
   entities: ReadonlyArray<{ type?: string | null; name?: string | null; position: { x: number; y: number; z: number } }>,
 ): string | null {
   if (health < RECOVERY_MIN_HEALTH) return `health ${health} is below ${RECOVERY_MIN_HEALTH}`;
+  let crowd = 0;
   for (const entity of entities) {
-    if (!isMobEntity(entity) || !RANGED_MOB_NAMES.has(entity.name ?? "")) continue;
+    if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
     const distance = Math.hypot(entity.position.x - site.x, entity.position.y - site.y, entity.position.z - site.z);
-    if (distance <= RANGED_GUARD_RADIUS) return `${entity.name} within ${Math.round(distance)} blocks of the site`;
+    if (distance > RANGED_GUARD_RADIUS) continue;
+    if (RANGED_MOB_NAMES.has(entity.name ?? "") || entity.name === "creeper") return `${entity.name} within ${Math.round(distance)} blocks of the site`;
+    crowd += 1;
   }
-  return null;
+  return crowd >= CROWD_GUARD_COUNT ? `${crowd} hostiles within ${RANGED_GUARD_RADIUS} blocks of the site` : null;
 }
