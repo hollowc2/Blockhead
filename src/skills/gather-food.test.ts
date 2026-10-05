@@ -204,3 +204,26 @@ test("a trip home cut short by a pause is reported interrupted, not stuck", asyn
   const result = await withWorldActionLease({ owner: "food-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () => runner.run(4, { signals }));
   assert.equal(result.status, "interrupted", result.message);
 });
+
+test("a sheep standing in the lake is not hunted", async () => {
+  // Death 73 (21:58): a sheep by the lake east of home drew the hunt and its
+  // drop sweep into the water, where drowned killed the bot.
+  const { nearestMatchingMob, inWater } = await import("./gather-food.js");
+  const { Vec3 } = await import("vec3");
+  const mob = (id: number, x: number) => ({ id, type: "animal", name: "sheep", position: new Vec3(x, 62, 0), isValid: true, health: 8 });
+  const bot = {
+    entity: { position: new Vec3(0, 63, 0) },
+    entities: { 1: mob(1, 3), 2: mob(2, 9) },
+    blockAt: (pos: { x: number }) => ({ name: pos.x === 3 ? "water" : "grass_block" }),
+  } as unknown as Bot;
+  assert.equal(inWater(bot, { x: 3.4, y: 62, z: 0.2 }), true);
+  assert.equal(nearestMatchingMob(bot, 32, (name) => name === "sheep")?.id, 2, "the nearer sheep in the water is passed over");
+});
+
+test("sightings near a death in the log are skipped after a restart", () => {
+  const now = Date.parse("2026-10-05T05:00:00Z");
+  const death = { x: 104, y: 62, z: 2, at: Date.parse("2026-10-05T04:58:52Z") };
+  const near = { x: 101, y: 76, z: 10, at: now - 60_000 };
+  const far = { x: 20, y: 90, z: 20, at: now - 120_000 };
+  assert.deepEqual(pickSighting([near, far], { x: 65, z: 51 }, 192, [death], now), far);
+});

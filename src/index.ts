@@ -512,7 +512,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // chest stock and restores deficits at BACKGROUND priority, and the
   // coordinator runs the gated idle loop, including the restricted Section
   // 4.3.1 proposal when fully healthy.
-  const food = new GatherFoodRunner({ bot, state, config, bus, storage, skills, logger });
+  const food = new GatherFoodRunner({ bot, state, config, bus, storage, skills, logger, deaths });
   const torches = new EnsureTorchesRunner({ bot, state, config, bus, storage, skills, logger });
   const lightHome = new LightHomeRunner({ bot, state, storage, torches, logger, reservedCells: () => buildProjectManager.reservedCells() });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });

@@ -8,6 +8,8 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
+import { Vec3 } from "vec3";
+import type { DeathEventsRepository } from "../memory/deaths.js";
 import { deliverCarriedItems, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { bareName, countItem, findItem, itemsSummary } from "../minecraft/inventory.js";
 import { smeltItems } from "../minecraft/smelting.js";
@@ -266,6 +268,8 @@ export interface GatherFoodOptions {
   /** Skill success records (spec 20.2). */
   skills: SkillsRepository;
   logger: Logger;
+  /** Recorded deaths: sightings near recent ones are skipped across restarts. */
+  deaths?: Pick<DeathEventsRepository, "list">;
 }
 
 export interface GatherFoodData {
@@ -318,15 +322,26 @@ export function countFoodItems(bot: Bot): number {
   return total;
 }
 
-/** Nearest matching mob within `maxDistance` of the bot, or null. */
-function nearestMatchingMob(bot: Bot, maxDistance: number, matches: (name: string) => boolean): Entity | null {
+/**
+ * True when the spot is in water. A sheep by the lake east of home drew a
+ * hunt (and its drop sweep) into the water, where drowned killed the bot
+ * (death 73, 21:58, 104,62,2).
+ */
+export function inWater(bot: Bot, position: { x: number; y: number; z: number }): boolean {
+  if (typeof bot.blockAt !== "function") return false;
+  const at = bot.blockAt(new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z)));
+  return at !== null && /water|kelp|seagrass|bubble_column/.test(at.name);
+}
+
+/** Nearest matching mob within `maxDistance` of the bot, or null. Mobs in water are not chased. */
+export function nearestMatchingMob(bot: Bot, maxDistance: number, matches: (name: string) => boolean): Entity | null {
   const self = bot.entity;
   if (self === null) return null;
   let best: Entity | null = null;
   let bestDistance = Infinity;
   for (const entity of Object.values(bot.entities)) {
     const name = canonicalMobName(entity);
-    if (!isLiveMob(entity) || !matches(name)) continue;
+    if (!isLiveMob(entity) || !matches(name) || inWater(bot, entity.position)) continue;
     const distance = self.position.distanceTo(entity.position);
     if (distance <= maxDistance && distance < bestDistance) {
       best = entity;
@@ -440,7 +455,8 @@ function lootDropsNear(bot: Bot, radius: number): Entity[] {
   const drops: Entity[] = [];
   for (const entity of Object.values(bot.entities)) {
     if (!isDroppedItemEntity(entity)) continue;
-    if (self.position.distanceTo(entity.position) <= radius && isLootDropItem(entity)) {
+    // A drop floating in a lake is not worth a swim among drowned.
+    if (self.position.distanceTo(entity.position) <= radius && isLootDropItem(entity) && !inWater(bot, entity.position)) {
       drops.push(entity);
     }
   }
@@ -533,10 +549,23 @@ export class GatherFoodRunner {
   private takeSighting(home: { x: number; z: number }, maxRadius: number): Sighting | null {
     const now = Date.now();
     for (const [id, seen] of this.sightings) if (seen.at < now - SIGHTING_TTL_MS) this.sightings.delete(id);
-    const best = pickSighting(this.sightings.values(), home, maxRadius, this.deaths, now);
+    const best = pickSighting(this.sightings.values(), home, maxRadius, this.recentDeaths(), now);
     if (best === null) return null;
     for (const [id, seen] of this.sightings) if (seen === best) this.sightings.delete(id);
     return best;
+  }
+
+  /**
+   * Where the bot died lately: the death log (it survives restarts; the
+   * in-memory list was empty after every deploy) plus any death this
+   * process saw that is not written yet.
+   */
+  private recentDeaths(): { x: number; y: number; z: number; at: number }[] {
+    const worldId = this.opts.state.worldId;
+    const logged = worldId === null || this.opts.deaths === undefined
+      ? []
+      : this.opts.deaths.list(worldId, 16).map((death) => ({ x: death.x, y: death.y, z: death.z, at: Date.parse(death.createdAt) }));
+    return [...logged, ...this.deaths];
   }
 
   get isRunning(): boolean {
@@ -958,16 +987,28 @@ export class GatherFoodRunner {
       }
     }
 
+    // A hit animal bolts; one that runs into a lake is let go rather than
+    // followed in among the drowned (death 73).
+    let wet = false;
+    const watch = setInterval(() => {
+      const at = bot.entity?.position;
+      if (wet || at === undefined || at === null || !inWater(bot, at)) return;
+      wet = true;
+      void pvpStop(bot, this.signals?.signal).catch(() => undefined);
+    }, 250);
     try {
       await withTimeout(KILL_TIMEOUT_MS, pvpAttack(bot, mob, this.signals?.signal), async () => {
         await pvpStop(bot, this.signals?.signal);
       }, this.signals?.signal);
     } catch (err) {
       await pvpStop(bot, this.signals?.signal);
+      if (wet) return { ok: false, reason: `the ${mob.name ?? "animal"} led into water` };
       return { ok: false, reason: `could not kill the ${mob.name ?? "animal"}: ${String(err)}` };
     } finally {
+      clearInterval(watch);
       await pvpStop(bot, this.signals?.signal);
     }
+    if (wet) return { ok: false, reason: `the ${mob.name ?? "animal"} led into water` };
     if (!combatOutcomeObserved(bot, mob)) {
       return { ok: false, reason: `attack settled without an observed defeat of the ${mob.name ?? "animal"}` };
     }
