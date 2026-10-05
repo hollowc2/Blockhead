@@ -857,7 +857,9 @@ export class GatherFoodRunner {
         this.announce(
           atNight && !this.expandAtNight
             ? "No animals or forage close to home; night hunting stays nearby."
-            : `No animals or forage within ${radius} blocks. Expanding search.`,
+            : radius >= maxRadius
+              ? `No animals or forage within ${radius} blocks.`
+              : `No animals or forage within ${radius} blocks. Expanding search.`,
         );
         radius = nextHuntRadius(radius, maxRadius);
         continue;
