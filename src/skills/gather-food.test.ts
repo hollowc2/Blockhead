@@ -227,3 +227,13 @@ test("sightings near a death in the log are skipped after a restart", () => {
   const far = { x: 20, y: 90, z: 20, at: now - 120_000 };
   assert.deepEqual(pickSighting([near, far], { x: 65, z: 51 }, 192, [death], now), far);
 });
+
+test("a sighting far below home (a cave or a lake floor) is not walked to", () => {
+  // 23:16: a sighting at y=44 under the west lake (surface 62) led the bot
+  // into the water among drowned.
+  const now = Date.now();
+  const deep = { x: -45, y: 44, z: 58, at: now - 1_000 };
+  const field = { x: 90, y: 95, z: 60, at: now - 5_000 };
+  assert.deepEqual(pickSighting([deep, field], { x: 65, y: 96, z: 51 }, 192, [], now), field);
+  assert.deepEqual(pickSighting([deep], { x: 65, z: 51 }, 192, [], now), deep, "no home height, no filter");
+});

@@ -226,6 +226,8 @@ const SIGHTING_TTL_MS = 30 * 60_000;
 /** A sighting this close to where the bot recently died is not walked to. */
 const DEATH_AVOID_RADIUS = 24;
 const DEATH_AVOID_TTL_MS = 30 * 60_000;
+/** A sighting this far below home is in a cave or under a lake. */
+const SIGHTING_MAX_DROP = 16;
 
 export interface Sighting { x: number; y: number; z: number; at: number }
 
@@ -236,7 +238,7 @@ export interface Sighting { x: number; y: number; z: number; at: number }
  */
 export function pickSighting(
   sightings: Iterable<Sighting>,
-  home: { x: number; z: number },
+  home: { x: number; y?: number; z: number },
   maxRadius: number,
   deaths: readonly { x: number; y: number; z: number; at: number }[],
   now: number,
@@ -245,6 +247,9 @@ export function pickSighting(
   for (const seen of sightings) {
     if (seen.at < now - SIGHTING_TTL_MS) continue;
     if (Math.hypot(seen.x - home.x, seen.z - home.z) > maxRadius) continue;
+    // Far below home is a cave or a lake floor: 23:16 a sighting at y=44
+    // under the west lake (surface 62) led the bot into the drowned.
+    if (home.y !== undefined && seen.y < home.y - SIGHTING_MAX_DROP) continue;
     if (deaths.some((death) => death.at >= now - DEATH_AVOID_TTL_MS && Math.hypot(seen.x - death.x, seen.y - death.y, seen.z - death.z) <= DEATH_AVOID_RADIUS)) continue;
     if (best === null || seen.at > best.at) best = seen;
   }
@@ -527,6 +532,8 @@ export class GatherFoodRunner {
       // liveness here is only "not killed", not isValid.
       if (!isMobEntity(entity) || HUNT_MOB_NAMES[canonicalMobName(entity)] !== true) return;
       if (typeof entity.health === "number" && entity.health <= 0) return;
+      // An animal in a lake is not worth swimming to among drowned.
+      if (inWater(opts.bot, entity.position)) return;
       this.sightings.set(entity.id, { x: entity.position.x, y: entity.position.y, z: entity.position.z, at: Date.now() });
       if (this.sightings.size > MAX_SIGHTINGS) this.sightings.delete(this.sightings.keys().next().value!);
     };
@@ -547,7 +554,7 @@ export class GatherFoodRunner {
    * consumes it: one that led nowhere (or into a fight) was offered again on
    * every run.
    */
-  private takeSighting(home: { x: number; z: number }, maxRadius: number): Sighting | null {
+  private takeSighting(home: { x: number; y: number; z: number }, maxRadius: number): Sighting | null {
     const now = Date.now();
     for (const [id, seen] of this.sightings) if (seen.at < now - SIGHTING_TTL_MS) this.sightings.delete(id);
     const best = pickSighting(this.sightings.values(), home, maxRadius, this.recentDeaths(), now);
