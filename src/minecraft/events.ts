@@ -300,7 +300,43 @@ const EATING_WEDGE_MS = 8_000;
  * skips: the bot starved to 1 HP carrying five pieces of raw meat. Clear a
  * wedged flag so the next check eats again.
  */
+/** The food equip auto-eat awaits before eating; past this it is stuck behind a tool equip. */
+const FOOD_EQUIP_TIMEOUT_MS = 2_000;
+
+/**
+ * Close the two holes in auto-eat 5.0.3's `eat()` that leave `_eating` set:
+ * the food equip can hang (a dig equipping its tool at the same moment, as
+ * at 19:44:06 and 21:06:12), and a failed equip throws without clearing the
+ * flag. The equip is bounded and the flag cleared whenever `eat()` throws.
+ */
+export function hardenAutoEat(bot: Bot): void {
+  const autoEat = bot.autoEat as unknown as { _eating: boolean; eat(opts?: object): Promise<void>; __hardened?: boolean } | undefined;
+  const inv = (bot as unknown as { util?: { inv?: { customEquip(...args: unknown[]): Promise<boolean> } } }).util?.inv;
+  if (autoEat === undefined || typeof autoEat.eat !== "function" || autoEat.__hardened === true) return;
+  autoEat.__hardened = true;
+  if (inv !== undefined) {
+    const equip = inv.customEquip.bind(inv);
+    inv.customEquip = (...args: unknown[]) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), FOOD_EQUIP_TIMEOUT_MS); });
+      return Promise.race([equip(...args), timeout]).finally(() => clearTimeout(timer));
+    };
+  }
+  const eat = autoEat.eat.bind(autoEat);
+  autoEat.eat = async (opts?: object) => {
+    try {
+      await eat(opts);
+    } catch (err) {
+      // "Already eating!" belongs to the eat in progress; any other throw
+      // happened after the flag was set and left it set.
+      if (!/Already eating/.test(String(err))) autoEat._eating = false;
+      throw err;
+    }
+  };
+}
+
 export function watchAutoEat(bot: Bot, logger: Logger, now: () => number = Date.now): () => void {
+  hardenAutoEat(bot);
   let eatingSince: number | null = null;
   const timer = setInterval(() => {
     const autoEat = bot.autoEat as unknown as { isEating: boolean; _eating: boolean; cancelEat(): void } | undefined;

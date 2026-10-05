@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDeterministicBuildCommand, parseDeterministicGatherCommand, parseDeterministicTerrainCommand, watchAutoEat } from "./events.js";
+import { parseDeterministicBuildCommand, parseDeterministicGatherCommand, parseDeterministicTerrainCommand, hardenAutoEat, watchAutoEat } from "./events.js";
 
 test("terrain phrases map to bounded tools without an LLM call", () => {
   assert.deepEqual(parseDeterministicTerrainCommand("flatten 10x10 here"), { tool: "flatten_area", args: { width: 10, length: 10, anchor: "owner" } });
@@ -87,4 +87,26 @@ test("a wedged auto-eat flag is cleared so the bot eats again", (t) => {
     assert.equal(cancelled, 1);
     assert.deepEqual(warnings, ["auto-eat wedged; resetting"]);
   } finally { stop(); }
+});
+
+test("a food equip stuck behind a dig's tool equip does not leave auto-eat wedged", async () => {
+  // 19:44:06 and 21:06:12: digging equipped a tool while auto-eat awaited its
+  // food equip, which never settled, so the bot could not eat for 8 s.
+  const autoEat = {
+    _eating: false,
+    async eat(this: { _eating: boolean }) {
+      if (this._eating) throw new Error("Already eating!");
+      this._eating = true;
+      const equipped = await inv.customEquip();
+      if (!equipped) throw new Error("Failed to equip: bread!");
+      this._eating = false;
+    },
+  };
+  const inv = { customEquip: () => new Promise<boolean>(() => {}) };
+  const bot = { autoEat, util: { inv } } as never;
+  hardenAutoEat(bot);
+  const started = Date.now();
+  await assert.rejects(autoEat.eat(), /Failed to equip/);
+  assert.ok(Date.now() - started < 3_000, "the hung equip gives up after ~2 s");
+  assert.equal(autoEat._eating, false, "the flag is cleared, so the next check eats");
 });
