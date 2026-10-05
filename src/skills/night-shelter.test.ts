@@ -124,3 +124,12 @@ test("a thunderstorm at noon is shelter time, like night", () => {
   assert.equal(isThundering({ thunderState: 0 }), false);
   assert.equal(isThundering({}), false);
 });
+
+test("a blocked owner task does not hold off the shelter", () => {
+  // The owner's house slice (blocked since 2026-10-04) counted as owner work
+  // and the shelter never triggered; a storm at 13:39 killed the bot.
+  const blocked = { source: "user", status: "blocked" } as never;
+  const queued = { source: "user", status: "queued" } as never;
+  assert.equal(ownerWorkPending({ active: null, queued: [blocked] }), false);
+  assert.equal(ownerWorkPending({ active: null, queued: [blocked, queued] }), true);
+});

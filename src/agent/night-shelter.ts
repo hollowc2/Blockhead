@@ -61,9 +61,12 @@ export interface NightShelterWatchOptions {
   now?: () => number;
 }
 
-/** True when an owner task is active or waiting. */
+/** True when an owner task is active or waiting to run. */
 export function ownerWorkPending(scheduler: Pick<Scheduler, "active" | "queued">): boolean {
-  return scheduler.active?.source === "user" || scheduler.queued.some((task) => task.source === "user");
+  // A blocked owner task waits on the owner, not on the night: the owner's
+  // house slice, blocked since 2026-10-04, kept the shelter from ever
+  // triggering, and a test storm at 13:39 (2026-10-05) killed the bot.
+  return scheduler.active?.source === "user" || scheduler.queued.some((task) => task.source === "user" && task.status !== TaskStatus.BLOCKED);
 }
 
 /**
