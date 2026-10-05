@@ -146,11 +146,13 @@ function plotCells(home: { x: number; y: number; z: number }, offset: { dx: numb
  * most farmland (so the choice is stable once farming starts), else the one
  * with the most workable soil, preferring water nearby (hydrated wheat grows
  * faster). Every other plot that has farmland stays in the farm, and the
- * next best plot is added once all chosen plots are fully tilled: one plot
+ * next best plot is added when the carried seeds cover it too: one plot
  * baked 8 bread a pass while the food floor preempted everything and hunts
- * went 250 blocks out (2026-10-04). Pure over `lookup`.
+ * went 250 blocks out (2026-10-04). (Waiting for the plot to be fully
+ * tilled never fired: harvested farmland dries back to dirt.) Pure over
+ * `lookup`.
  */
-export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup): FarmCell[] {
+export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup, seeds = 0): FarmCell[] {
   const plots = PLOT_OFFSETS.map((offset) => {
     const cells = plotCells(home, offset, lookup);
     let score = 0;
@@ -162,13 +164,12 @@ export function chooseFarmCells(home: { x: number; y: number; z: number }, looku
   }).filter((plot) => plot.score > 0);
   // Stable sort: equal scores keep the PLOT_OFFSETS order.
   plots.sort((a, b) => b.score - a.score);
-  const chosen: FarmCell[][] = [];
+  const chosen: FarmCell[] = [];
   for (const plot of plots) {
-    const filled = chosen.every((cells) => cells.every((cell) => cell.soil === "farmland"));
-    if (chosen.length === 0 || plot.established || filled) chosen.push(plot.cells);
-    else break;
+    const covered = seeds >= chosen.length + plot.cells.length;
+    if (chosen.length === 0 || plot.established || covered) chosen.push(...plot.cells);
   }
-  return chosen.flat();
+  return chosen;
 }
 
 export function isMatureWheat(cell: FarmCell): boolean {
@@ -298,7 +299,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   };
 
   // 1. Harvest. Collecting the crop breaks it and picks up wheat + seeds.
-  let cells = chooseFarmCells(home, lookup);
+  let cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"));
   const ripe = cells.filter(isMatureWheat).map((c) => new Vec3(c.x, c.y + 1, c.z));
   if (ripe.length > 0) {
     const before = countItem(bot, "wheat");
@@ -322,7 +323,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   if (bot.food < STARVING_HUNGER) return result;
 
   // 3. Seeds for every open cell, from grass around home.
-  cells = chooseFarmCells(home, lookup);
+  cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"));
   const toSow = sowingOrder(cells);
   if (toSow.length === 0) return result;
   if (countItem(bot, "wheat_seeds") < toSow.length) {

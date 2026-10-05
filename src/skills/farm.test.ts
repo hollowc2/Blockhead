@@ -64,18 +64,16 @@ test("chooseFarmCells finds the surface when home's Y has drifted below it", () 
   assert.ok(cells.every((c) => c.y === 63));
 });
 
-test("the farm grows by a plot once every chosen plot is tilled", () => {
+test("the farm grows by a plot when the seeds cover it", () => {
   // One plot baked 8 bread a pass while the food floor preempted everything.
+  // Harvested farmland dries back to dirt, so the plot is never all farmland.
   const north: Record<string, FarmBlock> = {};
-  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) north[`${dx},63,${-8 + dz}`] = { name: "farmland" };
-  const full = chooseFarmCells(HOME, world(north));
-  assert.equal(full.length, 50, "the north plot plus the next one");
-  assert.equal(full.filter((c) => c.z <= -6).length, 25, "the north plot is kept whole");
-  const partial = { ...north };
-  delete partial["0,63,-8"];
-  const growing = chooseFarmCells(HOME, world(partial));
-  assert.equal(growing.length, 25, "no new plot while the north one still has soil to till");
-  assert.ok(growing.every((c) => c.z <= -6));
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (dx !== 0) north[`${dx},63,${-8 + dz}`] = { name: "farmland" };
+  assert.equal(chooseFarmCells(HOME, world(north), 30).length, 25, "30 seeds: the north plot only");
+  const grown = chooseFarmCells(HOME, world(north), 110);
+  assert.equal(grown.length, 75, "110 seeds (live 23:25): all three plots");
+  assert.equal(grown.filter((c) => c.z <= -6).length, 25, "the north plot is kept whole");
+  assert.deepEqual(grown.slice(0, 25).map((c) => c.z <= -6), Array(25).fill(true), "and listed first");
 });
 
 test("every plot that already has farmland stays in the farm", () => {
