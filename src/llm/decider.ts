@@ -121,6 +121,15 @@ export class DecisionMaker {
   }
 
   private noteDecision(decision: unknown): void {
+    // Standing by is a steady state, not a loop: an idle director answering
+    // "wait" three times tripped this brake 13 times in 20 minutes
+    // (2026-10-05 10:44-10:58) and dropped to the fallback ladder each time.
+    if (isWaitDecision(decision)) {
+      this.lastDecisionKey = null;
+      this.repeatedDecisions = 0;
+      this.runtime = "READY";
+      return;
+    }
     const key = JSON.stringify(decision);
     if (key === this.lastDecisionKey) this.repeatedDecisions++;
     else { this.lastDecisionKey = key; this.repeatedDecisions = 0; }
@@ -149,6 +158,13 @@ function conciseError(error: unknown): string {
 
 function repairMessages(messages: readonly LlmMessage[], raw: string, error: string, shape: string): LlmMessage[] {
   return [...messages, { role: "assistant", content: raw }, { role: "user", content: `Your previous response was invalid: ${error}. Return only ${shape}. Do not include markdown, prose, or any other structure.` }];
+}
+
+/** A director task or goal action that only waits. */
+function isWaitDecision(decision: unknown): boolean {
+  if (typeof decision !== "object" || decision === null) return false;
+  const record = decision as { task?: { type?: unknown }; action?: { type?: unknown } };
+  return record.task?.type === "wait" || record.action?.type === "wait";
 }
 
 /**

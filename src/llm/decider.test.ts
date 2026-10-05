@@ -94,3 +94,13 @@ test("a bare action name from the model is read as that action", async () => {
   deepStrictEqual(normalizeDecision(proper), proper, "a well-formed reply is unchanged");
   equal(NextTaskSchema.parse(normalizeDecision({ task: "wait" })).task.type, "wait");
 });
+
+test("an idle director may keep answering wait; a repeated real task still trips the brake", async () => {
+  // 2026-10-05 10:44-10:58: three "wait" answers in a row threw "repeated
+  // identical model decisions" 13 times and dropped to the fallback ladder.
+  const waiting = decider(async () => JSON.stringify({ task: { type: "wait" } }));
+  for (let i = 0; i < 5; i++) equal((await waiting.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle")).task.type, "wait");
+  const looping = decider(async () => JSON.stringify({ task: { type: "build_base" } }));
+  for (let i = 0; i < 3; i++) await looping.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle");
+  await rejects(looping.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle"), /repeated identical/);
+});
