@@ -185,6 +185,24 @@ function isDoorBlock(block: Block | null): boolean {
 }
 
 /** The carried door item, or null when none is held. */
+/**
+ * The door the carried planks make: the species with the most planks (a
+ * door takes 6 of one kind). Always asking for an oak door failed with 15
+ * birch planks in hand, and build_base looped on "missing ingredients for
+ * 'oak_door'" (2026-10-05 10:10-10:17).
+ */
+export function doorForPlanks(items: readonly { name: string; count: number }[]): string {
+  const planks = new Map<string, number>();
+  for (const item of items) {
+    const name = item.name.replace(/^minecraft:/, "");
+    if (isPlanksItemName(name)) planks.set(name, (planks.get(name) ?? 0) + item.count);
+  }
+  let best = "oak_planks";
+  let most = 0;
+  for (const [name, count] of planks) if (count > most) { best = name; most = count; }
+  return best.replace(/_planks$/, "_door");
+}
+
 function findDoorItem(bot: Bot): Item | null {
   for (const item of bot.inventory.items()) {
     const name = item.name.replace(/^minecraft:/, "");
@@ -1471,7 +1489,7 @@ export class BaseBuilderRunner {
       if (findDoorItem(bot) !== null) {
         // Creative mode supplied the door directly.
       } else if (table !== null) {
-        const door = await craftItem(bot, "oak_door", { craftingTable: table, signal: this.signals?.signal });
+        const door = await craftItem(bot, doorForPlanks(bot.inventory.items()), { craftingTable: table, signal: this.signals?.signal });
         if (!door.ok) {
           this.opts.logger.warn({ reason: door.reason }, "build_base: could not craft a door; leaving the gap");
         }

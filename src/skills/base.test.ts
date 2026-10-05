@@ -444,3 +444,12 @@ test("final verification observes only the last operation at a replaced coordina
   const result = designTestRunner({ "0,64,0": "oak_door" }).verifyDesignOperations(blueprint);
   assert.deepEqual(result, { operationStart: 0, operationEnd: 2, inspected: 1, verified: 1, mismatches: [] });
 });
+
+test("the door is made from the plank species carried", async () => {
+  // 2026-10-05 10:10-10:17: 15 birch planks in hand, an oak door asked for,
+  // "missing ingredients for 'oak_door'" on every build_base run.
+  const { doorForPlanks } = await import("./base.js");
+  assert.equal(doorForPlanks([{ name: "birch_planks", count: 15 }, { name: "wheat_seeds", count: 40 }]), "birch_door");
+  assert.equal(doorForPlanks([{ name: "oak_planks", count: 2 }, { name: "spruce_planks", count: 7 }]), "spruce_door");
+  assert.equal(doorForPlanks([]), "oak_door");
+});
