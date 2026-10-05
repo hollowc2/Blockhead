@@ -35,3 +35,39 @@ test("a capped run skips known sites beyond the radius from home", () => {
   assert.equal(withinRadiusOfHome({ x: 154, y: 37, z: 142 }, home, Number.POSITIVE_INFINITY), true, "uncapped runs go anywhere");
   assert.equal(withinRadiusOfHome({ x: 154, y: 37, z: 142 }, null, 32), true);
 });
+
+test("a site pass stops at the run's target instead of mining the whole batch", async () => {
+  // 00:10-00:16: a re-arm step asked for 3 stone, mined 56 until the
+  // pickaxe broke: the pass was given no target.
+  const { CollectResourceRunner } = await import("./collect-resource.js");
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const { Vec3 } = await import("vec3");
+  const registry = (await import("prismarine-registry")).default("1.21.4");
+  let cobblestone = 0;
+  const dug: string[] = [];
+  // Eight stone blocks, all within reach of the bot standing at 0.5,65,0.5.
+  const cells = [[1, -1], [1, 0], [1, 1], [1, 2], [2, -1], [2, 0], [2, 1], [2, 2]].map(([x, z]) => `${x},${z}`);
+  const stone = (x: number, z: number) => ({ name: "stone", type: registry.blocksByName.stone!.id, boundingBox: "block", position: new Vec3(x, 64, z), material: "mineable/pickaxe", diggable: true, hardness: 1.5 });
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true, velocity: new Vec3(0, 0, 0), height: 1.8 },
+    registry,
+    health: 20,
+    food: 20,
+    game: { dimension: "overworld", gameMode: "survival" },
+    heldItem: { name: "stone_pickaxe" },
+    inventory: { items: () => [{ name: "stone_pickaxe", count: 1 }, ...(cobblestone > 0 ? [{ name: "cobblestone", count: cobblestone }] : [])], emptySlotCount: () => 30 },
+    findBlocks: (options: { matching: (block: unknown) => boolean }) => cells.map((cell) => { const [x, z] = cell.split(",").map(Number); return new Vec3(x!, 64, z!); }).filter((p) => options.matching(bot.blockAt(p))),
+    blockAt: (p: { x: number; y: number; z: number }) => (p.y === 64 && cells.includes(`${p.x},${p.z}`) && !dug.includes(`${p.x},${p.z}`) ? stone(p.x, p.z) : { name: "air", boundingBox: "empty", position: new Vec3(p.x, p.y, p.z) }),
+    lookAt: async () => undefined,
+    equip: async () => undefined,
+    dig: async (block: { position: { x: number; z: number } }) => { dug.push(`${block.position.x},${block.position.z}`); cobblestone += 1; },
+    stopDigging: () => undefined,
+    pathfinder: { setGoal() {}, stop() {}, isMoving: () => false, goto: async () => undefined, setMovements() {} },
+    digTime: () => 100,
+  };
+  const runner = new CollectResourceRunner({ bot, state: { home: null, worldId: null }, config: {}, logger: { info() {}, warn() {}, debug() {} }, bus: { emit() {} } } as unknown as ConstructorParameters<typeof CollectResourceRunner>[0]);
+  const visit = await withWorldActionLease({ owner: "collect-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () =>
+    (runner as unknown as { gatherAtSite: (p: unknown, bare: string, carried: string, target: number) => Promise<{ gained: number }> }).gatherAtSite(new Vec3(1, 64, 0), "stone", "cobblestone", 3));
+  assert.equal(cobblestone, 3, `mined ${cobblestone}`);
+  assert.equal(visit.gained, 3);
+});

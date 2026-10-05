@@ -601,7 +601,7 @@ export class CollectResourceRunner {
       }
 
       data.sitesVisited += 1;
-      const visit = await this.gatherAtSite(new Vec3(site.x, site.y, site.z), bare, carriedName);
+      const visit = await this.gatherAtSite(new Vec3(site.x, site.y, site.z), bare, carriedName, quantity);
       carried = countItem(this.opts.bot, carriedName);
       if (visit.gained > 0) {
         this.recordSite(site.x, site.y, site.z, bare, dimension);
@@ -713,7 +713,7 @@ export class CollectResourceRunner {
         attempted.add(key);
 
         data.sitesVisited += 1;
-        const visit = await this.gatherAtSite(position, bare, carriedName);
+        const visit = await this.gatherAtSite(position, bare, carriedName, quantity);
         gainedThisRadius += visit.gained;
         carried = countItem(bot, carriedName);
         if (visit.gained > 0) {
@@ -740,6 +740,7 @@ export class CollectResourceRunner {
     position: Vec3,
     bare: string,
     carriedName: string,
+    targetTotal: number,
   ): Promise<{ gained: number; abort: Abort | null }> {
     const bot = this.opts.bot;
     const family = toolFamilyFor(bare);
@@ -769,6 +770,7 @@ export class CollectResourceRunner {
     for (let pass = 0; pass < MAX_PASSES_PER_SITE; pass++) {
       this.checkInterrupt();
       if (this.stopRequested) return { gained, abort: null };
+      if (countItem(bot, carriedName) >= targetTotal) return { gained, abort: null };
       const abort = await this.checkAbort();
       if (abort !== null) return { gained, abort };
 
@@ -803,7 +805,9 @@ export class CollectResourceRunner {
           bot,
           ordered,
           () => countItem(bot, carriedName),
-          Number.POSITIVE_INFINITY,
+          // The run's carried total, not every block in the batch: a 3-stone
+          // re-arm step mined 56 until its pickaxe broke (00:10-00:16).
+          targetTotal,
           () => {},
           COLLECT_TIMEOUT_MS,
           (block, err) => this.opts.logger.debug({ at: block.position, err: String(err) }, "skipping an unreachable block"),
