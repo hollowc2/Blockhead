@@ -81,3 +81,24 @@ test("every plot that already has farmland stays in the farm", () => {
   assert.equal(cells.length, 50);
   assert.equal(cells.filter((c) => c.soil === "farmland").length, 2);
 });
+
+test("a table is not placed from out of reach", async () => {
+  // 23:15 and 23:38: the bot stood at the north plot 8.5 blocks from the
+  // spot beside home; the server never answered and the farm had no table.
+  const { placeNewTable } = await import("./farm.js");
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const { Vec3 } = await import("vec3");
+  const placed: unknown[] = [];
+  const bot = {
+    entity: { position: new Vec3(63.5, 95, 42.5) },
+    inventory: { items: () => [{ name: "crafting_table", type: 1, count: 1 }] },
+    heldItem: { name: "crafting_table" },
+    blockAt: (p: { x: number; y: number; z: number }) => (p.y <= 95 ? { name: "grass_block", boundingBox: "block", position: new Vec3(p.x, p.y, p.z) } : { name: "air", boundingBox: "empty", position: new Vec3(p.x, p.y, p.z) }),
+    placeBlock: async (...args: unknown[]) => { placed.push(args); },
+  } as unknown as import("mineflayer").Bot;
+  const logger = { warn() {}, info() {} } as unknown as import("pino").Logger;
+  const home = { x: 65, y: 96, z: 51, dimension: "overworld" } as import("../minecraft/movement.js").HomeLocation;
+  const table = await withWorldActionLease({ owner: "farm-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () => placeNewTable(bot, home, logger));
+  assert.equal(table, null);
+  assert.deepEqual(placed, [], "no placement packet from 8.5 blocks away");
+});

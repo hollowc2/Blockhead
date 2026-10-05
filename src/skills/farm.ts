@@ -5,7 +5,7 @@ import { Vec3 } from "vec3";
 import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
 import { bareName, countItem, countPlanks, findItem } from "../minecraft/inventory.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { travelAndWait, walkIntoReach } from "../minecraft/movement.js";
 import { digBlock, equipItem, useHeldItemOn } from "../minecraft/primitives.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, placeItemAt } from "../minecraft/world.js";
 
@@ -240,7 +240,7 @@ async function ensureTable(bot: Bot, home: HomeLocation, logger: Logger, signal?
 }
 
 /** Craft (if not carried) and place a crafting table beside the bot. */
-async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
+export async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
   const self = bot.entity;
   if (self === null) return null;
   if (findItem(bot, "crafting_table") === null) {
@@ -254,6 +254,13 @@ async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger, signa
   const item = findItem(bot, "crafting_table");
   const spot = findPlacementSpot(bot, { x: home.x, y: self.position.y, z: home.z });
   if (item === null || spot === null) return null;
+  // The spot is beside home, the bot often out at a plot: a placement from
+  // 8.5 blocks away was never answered (23:15, 23:38), so no table, no hoe,
+  // and 62 open cells went unplanted.
+  if (!(await walkIntoReach(bot, spot.reference, signal))) {
+    logger.warn({ at: [spot.position.x, spot.position.y, spot.position.z] }, "farm: cannot reach the table spot");
+    return null;
+  }
   const placed = await placeItemAt(bot, item, spot, signal);
   return placed !== null && placed.name === "crafting_table" ? placed : null;
 }
