@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { adoptHomeChests, chestOpenableAt, countStoredItems, findHomeChest, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents, withdrawFirstOfEach } from "./containers.js";
+import { adoptHomeChests, chestOpenableAt, countStoredItems, findHomeChest, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents, pruneBlockedChests, withdrawFirstOfEach } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -120,6 +120,7 @@ test("a chest standing at home but missing from the registry is adopted", () => 
   const bot = {
     entity: { position: new Vec3(65.5, 97, 50.5) },
     findBlocks: () => [new Vec3(65, 96, 51), new Vec3(67, 96, 49), new Vec3(120, 70, 51)],
+    blockAt: () => ({ name: "air", boundingBox: "empty" }),
   } as unknown as Bot;
   assert.equal(adoptHomeChests(bot, homeState, repo), 1);
   assert.deepEqual(registered.at(-1), { x: 67, y: 96, z: 49 });
@@ -194,4 +195,21 @@ test("spare tools come from one chest visit, asking only for what it holds", asy
   assert.deepEqual(taken, ["stone_pickaxe"]);
   assert.deepEqual(asked, ["stone_pickaxe"], "no withdraw for spares the chest does not hold");
   assert.equal(opens, 1);
+});
+
+test("a registered chest under the furnace is unregistered; the real one stays", () => {
+  // 65,96,51 sat under the home furnace (65,97,51), could never open, and
+  // stayed registered beside the real home chest at 64,96,52.
+  const rows = [{ id: 3, x: 65, y: 96, z: 51 }, { id: 4, x: 64, y: 96, z: 52 }, { id: 5, x: 200, y: 70, z: 200 }];
+  const removed: number[] = [];
+  const repo = { list: () => rows, remove: (_world: number, id: number) => { removed.push(id); } } as unknown as StorageRepository;
+  const blocks: Record<string, { name: string; boundingBox: string }> = {
+    "65,96,51": { name: "chest", boundingBox: "block" },
+    "65,97,51": { name: "furnace", boundingBox: "block" },
+    "64,96,52": { name: "chest", boundingBox: "block" },
+    "64,97,52": { name: "air", boundingBox: "empty" },
+  };
+  const bot = { blockAt: (p: Vec3) => blocks[`${p.x},${p.y},${p.z}`] ?? null } as unknown as Bot;
+  assert.equal(pruneBlockedChests(bot, state, repo), 1);
+  assert.deepEqual(removed, [3], "the open chest and the unloaded far one are kept");
 });

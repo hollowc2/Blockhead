@@ -87,10 +87,34 @@ export function adoptHomeChests(bot: Bot, state: AgentState, storage: StorageRep
   for (const position of findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 16)) {
     if (Math.hypot(position.x - home.x, position.z - home.z) > CHEST_SCAN_RADIUS) continue;
     if (known.has(`${position.x},${position.y},${position.z}`)) continue;
+    if (!chestOpenableAt(bot, position)) continue;
     storage.register(worldId, { dimension: home.dimension, category: "general", label: "home_chest", x: position.x, y: position.y, z: position.z });
     adopted += 1;
   }
   return adopted;
+}
+
+/**
+ * Unregister chests whose lid is blocked: the chest the 20:14 repair set
+ * under the home furnace (65,96,51) can never open, yet stayed registered
+ * next to the real home chest. Breaking it would mean breaking the furnace,
+ * so it is left in the world and only dropped from the registry. Unloaded
+ * cells are unknown and kept. Returns how many rows were dropped.
+ */
+export function pruneBlockedChests(bot: Bot, state: AgentState, storage: StorageRepository): number {
+  const worldId = state.worldId;
+  if (worldId === null) return 0;
+  let pruned = 0;
+  for (const location of storage.list(worldId)) {
+    const at = new Vec3(location.x, location.y, location.z);
+    const block = bot.blockAt(at);
+    if (block === null || !isChestBlock(block) || bot.blockAt(at.offset(0, 1, 0)) === null) continue;
+    if (chestOpenableAt(bot, at)) continue;
+    storage.remove(worldId, location.id);
+    lastChestContents.delete(`${worldId}:${location.x},${location.y},${location.z}`);
+    pruned += 1;
+  }
+  return pruned;
 }
 
 export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepository): Block | null {
