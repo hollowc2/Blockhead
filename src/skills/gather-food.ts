@@ -665,7 +665,7 @@ export class GatherFoodRunner {
       shouldAbort: this.travelAbort,
       signal: this.signals?.signal,
     });
-    if (this.stopRequested) return this.interrupted(data);
+    if (this.stopped()) return this.interrupted(data);
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       return this.fail(data, "PATH_UNREACHABLE", `could not return home: ${travel.status}`);
     }
@@ -683,7 +683,7 @@ export class GatherFoodRunner {
         if (this.signals?.signal.aborted === true) throw err;
         this.opts.logger.warn({ err: String(err) }, "gather_food: farm tending failed");
       }
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
     }
 
     const config = this.opts.config.bootstrap;
@@ -708,7 +708,7 @@ export class GatherFoodRunner {
       const seen = this.takeSighting(home, maxRadius);
       if (seen !== null) {
         const walked = await travelAndWait(bot, seen, { range: 8, timeoutMs: this.patrolTimeoutMs(Math.hypot(seen.x - home.x, seen.z - home.z)), shouldAbort: this.travelAbort, signal: this.signals?.signal });
-        if (this.stopRequested) return this.interrupted(data);
+        if (this.stopped()) return this.interrupted(data);
         this.opts.logger.info({ to: [Math.round(seen.x), Math.round(seen.z)], status: walked.status }, "gather_food heading to last animal sighting");
       }
     }
@@ -720,7 +720,7 @@ export class GatherFoodRunner {
     const maxEngagements = quantity * 2 + MAX_KILL_FAILURES + 4;
     while (radius <= maxRadius && have < quantity && engagements < maxEngagements) {
       this.checkInterrupt();
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       const matches = huntTargetPredicate(this.targetMob);
       const mob = nearestMatchingMob(bot, radius, matches);
       if (mob === null) {
@@ -729,7 +729,7 @@ export class GatherFoodRunner {
         // survival path an animal-less radius leaves. Try it before the hunt
         // health gate can fail the run.
         const foraged = await this.forageNear(radius);
-        if (this.stopRequested) return this.interrupted(data);
+        if (this.stopped()) return this.interrupted(data);
         if (foraged.food > 0) {
           have = meter();
           this.announce(`Foraged ${foraged.food} food.`);
@@ -778,7 +778,7 @@ export class GatherFoodRunner {
               { x: waypoint.x, y: Math.floor(self.position.y), z: waypoint.z },
               { timeoutMs: this.patrolTimeoutMs(radius), shouldAbort: this.travelAbort, signal: this.signals?.signal },
             );
-            if (this.stopRequested) return this.interrupted(data);
+            if (this.stopped()) return this.interrupted(data);
             this.opts.logger.info(
               { to: [waypoint.x, waypoint.z], status: walked.status },
               "gather_food patrolled",
@@ -810,7 +810,7 @@ export class GatherFoodRunner {
       } finally {
         eaten.stop();
       }
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       if (!kill.ok) {
         // A cow that bolts mid-fight is not a danger; try again (it or the
         // next animal) a few times. A hostile that got away still ends the run.
@@ -831,15 +831,15 @@ export class GatherFoodRunner {
 
     have = meter();
     data.gathered = Math.max(0, have - data.carriedAtStart);
-    if (this.stopRequested) return this.interrupted(data);
+    if (this.stopped()) return this.interrupted(data);
     if (have < quantity) {
       if (have > 0 && countsFood) {
         // Partial kills still deliver what was gathered (spec 23), minus the
         // reserve the bot eats from.
         await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
-        if (this.stopRequested) return this.interrupted(data);
+        if (this.stopped()) return this.interrupted(data);
         await this.cookCarried();
-        if (this.stopRequested) return this.interrupted(data);
+        if (this.stopped()) return this.interrupted(data);
         const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
         data.delivered = partial.delivered;
       }
@@ -851,9 +851,9 @@ export class GatherFoodRunner {
       // Walk home before opening the chest, and keep a meal reserve on hand:
       // the bot eats from its inventory, not from the chest.
       await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       await this.cookCarried();
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
       data.delivered = delivered.delivered;
       // The food exists either way; a full or unreachable chest is a note.
@@ -876,6 +876,17 @@ export class GatherFoodRunner {
   }
 
   // --- Phase 8 cooperative interrupt plumbing ---
+
+  /**
+   * True once the task was paused or cancelled. Polls the signals: a travel
+   * the pause cut short returns "aborted" before its own poll sees the
+   * pause, and that read as a failure (20:11 "Stuck: could not reach home
+   * to craft a pickaxe: aborted", then the fuel restore ran on).
+   */
+  private stopped(): boolean {
+    this.checkInterrupt();
+    return this.stopRequested;
+  }
 
   /** Poll the task signals once and remember the result. */
   private checkInterrupt(): void {

@@ -260,8 +260,9 @@ export class TaskDispatcher {
       if (scheduler.interruptPending) {
         // The interrupt arrived after the skill's last checkpoint; settle it
         // here so a missed checkpoint never wedges the queue. A run that
-        // completed before the interrupt is still a real outcome.
-        this.recordOutcome(task, result);
+        // completed before the interrupt is still a real outcome; a failure
+        // is the interruption itself and does not count toward the watchdog.
+        if (result.status === "completed" || result.status === "partial") this.recordOutcome(task, result);
         this.settleProject(task, result);
         scheduler.settleInterrupted();
         return;

@@ -389,7 +389,7 @@ export class CollectResourceRunner {
     // Stage 6: ensure equipment before the first gather pass.
     if (remaining > 0) {
       const tool = await this.ensureTool(bare);
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       if (!tool.ok) {
         return this.fail(data, "TOOL_REQUIRED", tool.reason);
       }
@@ -406,11 +406,11 @@ export class CollectResourceRunner {
     if (remaining > 0) {
       abort = await this.gatherFromKnownSites(carriedName, bare, quantity, attempted, data);
     }
-    if (this.stopRequested) return this.interrupted(data);
+    if (this.stopped()) return this.interrupted(data);
     if (remaining > 0 && abort === null) {
       abort = await this.gatherFromSearch(anchor, carriedName, bare, quantity, attempted, data);
     }
-    if (this.stopRequested) return this.interrupted(data);
+    if (this.stopped()) return this.interrupted(data);
 
     carried = countItem(bot, carriedName);
     data.carried = carried;
@@ -426,7 +426,7 @@ export class CollectResourceRunner {
     let deliveryFailure: DeliveryFailure | undefined;
     if (sameDimension && this.deliver) {
       const returned = await this.returnHome();
-      if (this.stopRequested) return this.interrupted(data);
+      if (this.stopped()) return this.interrupted(data);
       if (returned.status !== "arrived" && returned.status !== "already_there") {
         // Travel failure: log, keep items, report delivery as impossible.
         this.opts.logger.warn({ status: returned.status }, "could not return home to deliver");
@@ -440,7 +440,7 @@ export class CollectResourceRunner {
       // (no-op when the run never left the threshold, or when home is unreachable).
       this.expedition.leave(bot, this.opts.state.home, expeditionThreshold(this.opts.config));
     }
-    if (this.stopRequested) return this.interrupted(data);
+    if (this.stopped()) return this.interrupted(data);
 
     const targetMet = carried >= quantity;
     // Judge delivery by what is left, not by the pre-trip count: the walk
@@ -512,6 +512,17 @@ export class CollectResourceRunner {
   }
 
   // --- Phase 8 cooperative interrupt plumbing ---
+
+  /**
+   * True once the task was paused or cancelled. Polls the signals: a travel
+   * the pause cut short returns "aborted" before its own poll sees the
+   * pause, and that read as a failure (20:11 "Stuck: could not reach home
+   * to craft a pickaxe: aborted", then the fuel restore ran on).
+   */
+  private stopped(): boolean {
+    this.checkInterrupt();
+    return this.stopRequested;
+  }
 
   /**
    * Poll the task signals once and remember the result. Safe to call from
@@ -910,7 +921,7 @@ export class CollectResourceRunner {
       shouldAbort: this.travelAbort,
       signal: this.signals?.signal,
     });
-    if (this.stopRequested) return { ok: false, reason: "interrupted" };
+    if (this.stopped()) return { ok: false, reason: "interrupted" };
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       return { ok: false, reason: `could not reach home to craft a ${family}: ${travel.status}` };
     }

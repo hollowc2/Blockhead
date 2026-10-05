@@ -168,3 +168,39 @@ test("after an animal kill, waitForDrops holds out for the meat past an early fe
   assert.deepEqual(found, ["feather", "chicken"]);
   assert.ok(scans >= 4, "did not stop at the feather alone");
 });
+
+test("a trip home cut short by a pause is reported interrupted, not stuck", async () => {
+  // Live 21:58:44: the pause aborted the walk home mid-trip, travel
+  // returned "aborted" before its own poll saw the pause, and the run
+  // reported "Stuck: could not return home: aborted" as a failure.
+  const { GatherFoodRunner } = await import("./gather-food.js");
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const { Vec3 } = await import("vec3");
+  const controller = new AbortController();
+  let paused = false;
+  const pause = (): void => { paused = true; controller.abort(new Error("task paused")); };
+  const bot = Object.assign(new EventEmitter(), {
+    entity: { position: new Vec3(100, 64, 0), onGround: true, velocity: new Vec3(0, 0, 0) },
+    game: { dimension: "overworld", gameMode: "survival" },
+    inventory: { items: () => [], emptySlotCount: () => 30 },
+    autoEat: { enableAuto() {} },
+    registry: (await import("prismarine-registry")).default("1.21.4"),
+    pathfinder: { setMovements() {}, setGoal() {}, stop() {}, isMoving: () => false, movements: null, goto: () => new Promise((_, reject) => setTimeout(() => { pause(); reject(new Error("GoalChanged")); }, 20)) },
+    blockAt: () => null,
+    clearControlStates() {},
+    setControlState() {},
+  }) as unknown as Bot;
+  const silent = { info() {}, warn() {}, debug() {}, error() {} };
+  const runner = new GatherFoodRunner({
+    bot,
+    state: { home: { x: 0, y: 64, z: 0, dimension: "overworld" }, worldId: 1 },
+    config: {},
+    bus: { emit() {} },
+    storage: {},
+    skills: { recordSuccess() {} },
+    logger: silent,
+  } as unknown as ConstructorParameters<typeof GatherFoodRunner>[0]);
+  const signals = { signal: controller.signal, get cancelled() { return controller.signal.aborted; }, checkpoint: () => !paused };
+  const result = await withWorldActionLease({ owner: "food-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () => runner.run(4, { signals }));
+  assert.equal(result.status, "interrupted", result.message);
+});
