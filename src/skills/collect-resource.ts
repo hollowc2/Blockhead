@@ -135,6 +135,12 @@ export function woodenToolLogTarget(logs: number, planks: number, sticksNeeded: 
   return Math.max(logs, Math.ceil(Math.max(0, planksNeeded - planks) / 4));
 }
 
+/** True when `site` is within `radius` blocks of home (3D; always true without a home or a cap). */
+export function withinRadiusOfHome(site: { x: number; y: number; z: number }, home: { x: number; y: number; z: number } | null, radius: number): boolean {
+  if (home === null || !Number.isFinite(radius)) return true;
+  return Math.hypot(site.x - home.x, site.y - home.y, site.z - home.z) <= radius;
+}
+
 export function sourceBlockName(resource: string): string {
   const bare = bareName(resource);
   return SOURCE_BLOCK_BY_ITEM[bare] ?? bare;
@@ -234,6 +240,8 @@ export interface CollectRunOptions {
   userRequested?: boolean;
   /** Keep gathered items carried for a composing skill instead of depositing. */
   deliver?: boolean;
+  /** Search no farther than this from home (default: the full radius sequence). */
+  maxRadius?: number;
 }
 
 /** Abort reasons the outer loop breaks on (spec 27 stages 10, 11, and 12). */
@@ -265,6 +273,7 @@ export class CollectResourceRunner {
   /** Whether the current run was explicitly requested by the owner (policy). */
   private userRequested = false;
   private deliver = true;
+  private maxRadius = Number.POSITIVE_INFINITY;
 
   /** Phase 9: expedition lifecycle for the current run (spec 12). */
   private readonly expedition: ExpeditionTracker;
@@ -304,6 +313,7 @@ export class CollectResourceRunner {
     this.currentQuantity = quantity;
     this.userRequested = options.userRequested === true;
     this.deliver = options.deliver !== false;
+    this.maxRadius = options.maxRadius ?? Number.POSITIVE_INFINITY;
     try {
       return await this.execute(resource, quantity);
     } finally {
@@ -487,7 +497,7 @@ export class CollectResourceRunner {
       this.announce(
         carried > 0
           ? `Got ${carried}/${quantity} ${label}. No more ${stem} nearby.`
-          : `No ${stem} within ${SEARCH_RADIUS_SEQUENCE[SEARCH_RADIUS_SEQUENCE.length - 1]} blocks.`,
+          : `No ${stem} within ${Math.min(this.maxRadius, SEARCH_RADIUS_SEQUENCE[SEARCH_RADIUS_SEQUENCE.length - 1] ?? 256)} blocks.`,
       );
     }
 
@@ -564,6 +574,7 @@ export class CollectResourceRunner {
       if (carried >= quantity) return null;
       const key = `${site.x},${site.y},${site.z}`;
       if (attempted.has(key)) continue;
+      if (!withinRadiusOfHome(site, this.opts.state.home, this.maxRadius)) continue;
       attempted.add(key);
 
       // Spec 8.2: structural blocks inside the protected home region need an
@@ -613,6 +624,7 @@ export class CollectResourceRunner {
     const threshold = expeditionThreshold(this.opts.config);
     const family = toolFamilyFor(bare);
     for (const radius of SEARCH_RADIUS_SEQUENCE) {
+      if (radius > this.maxRadius) break;
       this.checkInterrupt();
       if (this.stopRequested) return null;
       if (carried >= quantity) return null;

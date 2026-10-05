@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedItemName, sourceBlockName, woodenToolLogTarget } from "./collect-resource.js";
+import { carriedItemName, sourceBlockName, withinRadiusOfHome, woodenToolLogTarget } from "./collect-resource.js";
 
 test("cobblestone is mined from stone and still accounted as cobblestone", () => {
   // Searching for cobblestone blocks found only the home's own (PROTECTED_REGION).
@@ -25,4 +25,13 @@ test("a wooden tool's log target is a total, so one carried log still gathers a 
   assert.equal(woodenToolLogTarget(0, 4, true), 1);
   assert.equal(woodenToolLogTarget(3, 0, true), 3);
   assert.equal(woodenToolLogTarget(0, 5, true), 0);
+});
+
+test("a capped run skips known sites beyond the radius from home", () => {
+  const home = { x: 65, y: 96, z: 51 };
+  // The 2026-10-04 coal site: ~150 blocks out and ~60 down.
+  assert.equal(withinRadiusOfHome({ x: 154, y: 37, z: 142 }, home, 32), false);
+  assert.equal(withinRadiusOfHome({ x: 80, y: 80, z: 60 }, home, 32), true);
+  assert.equal(withinRadiusOfHome({ x: 154, y: 37, z: 142 }, home, Number.POSITIVE_INFINITY), true, "uncapped runs go anywhere");
+  assert.equal(withinRadiusOfHome({ x: 154, y: 37, z: 142 }, null, 32), true);
 });

@@ -7,7 +7,7 @@ import { EventBus } from "../events/bus.js";
 import type { CollectResourceRunner } from "../skills/collect-resource.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { withWorldActionLease } from "./world-actions.js";
-import { CHARCOAL_BATCH, StockpileManager, type StockpileManagerOptions } from "./maintenance.js";
+import { CHARCOAL_BATCH, FUEL_COAL_RADIUS, StockpileManager, type StockpileManagerOptions } from "./maintenance.js";
 
 const quietLogger = { info: () => undefined, warn: () => undefined, debug: () => undefined } as unknown as Logger;
 
@@ -86,6 +86,17 @@ test("an interrupted coal run is not 'no coal': the restore reports the interrup
   const result = await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 1 });
   assert.equal(result.status, "interrupted");
   assert.deepEqual(asked, []);
+});
+
+test("a fuel restore looks for coal only near home when it can make charcoal", async () => {
+  let radius: number | undefined;
+  const { manager } = fuelManager(() => ({ ok: true, status: "completed" }) as SkillResult);
+  (manager as unknown as { opts: { collect: { run: (r: string, q: number, o: { maxRadius?: number }) => Promise<SkillResult> } } }).opts.collect.run = async (_r, _q, o) => {
+    radius = o.maxRadius;
+    return { ok: true, status: "completed" } as SkillResult;
+  };
+  await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 1 });
+  assert.equal(radius, FUEL_COAL_RADIUS);
 });
 
 test("a resumed fuel restore smelts a charcoal batch at home instead of restarting the coal trip", async () => {

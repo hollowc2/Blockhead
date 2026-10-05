@@ -36,6 +36,8 @@ export const STOCKPILE_PRIORITY_ORDER: readonly StockpileKind[] = ["food", "torc
 
 /** Charcoal made per fuel restore when no coal is reachable (~20 logs). */
 export const CHARCOAL_BATCH = 16;
+/** How far a fuel restore looks for coal ore before smelting charcoal instead. */
+export const FUEL_COAL_RADIUS = 32;
 
 /**
  * The charcoal producer (`ensure_item`) ensures a *total*: asking it for the
@@ -356,7 +358,10 @@ export class StockpileManager {
         // being preempted (food floor, defense), and starting it over each
         // time never finished. A charcoal batch at the home furnace does.
         if (this.charcoal !== null && (deficit.attempts ?? 1) > 1) return this.charcoalBatch(deficit, "resumed after an interrupted coal run", signals);
-        return this.opts.collect.run("coal_ore", deficit.deficit, options).then((result) => {
+        // Coal only close to home: an uncapped search went 150 blocks out
+        // and 60 down, then died climbing back with the haul (2026-10-04).
+        // Past that, charcoal from the home furnace is the safer fuel.
+        return this.opts.collect.run("coal_ore", deficit.deficit, { ...options, maxRadius: this.charcoal === null ? undefined : FUEL_COAL_RADIUS }).then((result) => {
           if (result.ok || this.charcoal === null) return result;
           // Interrupted is not "no coal": falling through started charcoal
           // under the already-paused signal, so it never ran (2026-10-04).
