@@ -235,7 +235,7 @@ export class EnsureTorchesRunner {
     // TORCHES stage. The table-window variant opens the table and has failed
     // with "missing ingredient" on this server.
     if (this.stopRequested) return this.interrupted(data);
-    const torches = await craftItem(bot, "torch", { times: crafts, signal: this.signals?.signal });
+    const torches = await this.craftTorches(crafts);
     if (!torches.ok) {
       return this.fail(data, "TOOL_REQUIRED", torches.reason);
     }
@@ -256,6 +256,29 @@ export class EnsureTorchesRunner {
       message: done ? undefined : "crafted the torches but could not deposit them",
       retryable: !done,
     };
+  }
+
+  /**
+   * Craft `crafts` torch batches, one fuel type at a time. The recipe takes
+   * coal or charcoal, never a mix, so asking for all 11 crafts at once with
+   * 8 coal and 3 charcoal found no usable recipe ("missing ingredients for
+   * 'torch'", 2026-10-04 21:27).
+   */
+  private async craftTorches(crafts: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const bot = this.opts.bot;
+    let left = crafts;
+    let lastReason = "missing ingredients for 'torch'";
+    for (const plan of torchCraftBatches(left, countItem(bot, "coal"), countItem(bot, "charcoal"), countSticks(bot))) {
+      if (this.stopRequested) break;
+      const made = await craftItem(bot, "torch", { times: plan, signal: this.signals?.signal });
+      if (!made.ok) {
+        lastReason = made.reason;
+        this.opts.logger.warn({ batch: plan, reason: made.reason, coal: countItem(bot, "coal"), charcoal: countItem(bot, "charcoal"), sticks: countSticks(bot) }, "torch craft batch failed");
+        continue;
+      }
+      left -= Math.ceil(made.crafted / TORCHES_PER_CRAFT);
+    }
+    return left < crafts ? { ok: true } : { ok: false, reason: lastReason };
   }
 
   // --- Phase 8 cooperative interrupt plumbing ---
@@ -511,4 +534,19 @@ export class EnsureTorchesRunner {
       this.opts.logger.warn({ err: String(err) }, "ensure_torches chat failed");
     }
   }
+}
+
+/**
+ * Torch craft batch sizes: as many as the coal and sticks cover, then the
+ * rest from charcoal. Each batch is one craftItem call (one recipe variant).
+ */
+export function torchCraftBatches(crafts: number, coal: number, charcoal: number, sticks: number): number[] {
+  const batches: number[] = [];
+  let left = Math.min(crafts, sticks);
+  for (const fuel of [coal, charcoal]) {
+    const take = Math.min(left, fuel);
+    if (take > 0) batches.push(take);
+    left -= take;
+  }
+  return batches;
 }
