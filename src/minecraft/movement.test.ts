@@ -419,3 +419,39 @@ test("equipDigTool waits for the pickaxe before a stone dig, and never takes a p
   await equipDigTool(bot, { name: "oak_log", material: "mineable/axe" } as any);
   assert.equal(bot.heldItem.name, "stone_axe");
 });
+
+test("an unloaded home column does not send the trip to the stale stored home Y", async () => {
+  // 19:43 2026-10-04: just spawned, home column unloaded, stored home y=86
+  // under a surface at 98; the leg ended at y=86 and dug under the house.
+  const registry = minecraftData("1.21.11");
+  let homeLoaded = false;
+  const goals: number[] = [];
+  const solid = { name: "stone", boundingBox: "block" };
+  const air = { name: "air", boundingBox: "empty" };
+  const bot = {
+    registry,
+    game: { dimension: "overworld" },
+    entity: { position: new Vec3(40.5, 98, 38.5), onGround: true },
+    blockAt: (pos: Vec3) => (pos.x >= 60 && !homeLoaded ? null : pos.y < 98 ? solid : air),
+    collectBlock: {},
+    pathfinder: {
+      setMovements: () => undefined,
+      goto: async (goal: { x: number; y: number; z: number }) => {
+        goals.push(goal.y);
+        bot.entity.position = new Vec3(goal.x, goal.y, goal.z);
+        homeLoaded = true;
+      },
+      stop: () => undefined,
+      setGoal: () => undefined,
+    },
+  } as any;
+
+  const controller = new AbortController();
+  const result = await new WorldActionExecutor().run("unloaded-home", controller.signal, () =>
+    travelHomeAndWait(bot, { x: 65, y: 86, z: 51, dimension: "overworld" }, { signal: controller.signal, timeoutMs: 10_000 }),
+  );
+
+  assert.ok(goals.length > 0);
+  assert.ok(goals.every((y) => y >= 95), `no leg aimed underground: ${goals.join(",")}`);
+  assert.notEqual(result.status, "timed_out");
+});

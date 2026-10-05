@@ -1363,7 +1363,12 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   const initialDistance = Math.hypot(p.x - home.x, p.z - home.z);
   // Home is on the surface: from a cave under the home column the nearest
   // standing level is the cave floor, which must never count as "home".
-  const homeSurfaceY = skySurfaceY(bot, home.x, home.z) ?? surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
+  // Unloaded right after a spawn, the home column has no sky surface yet and
+  // the fallback ends at the stored home Y, which can be inside the ground:
+  // 19:43 2026-10-04 the bot dug down to y=88 under the house (surface 98)
+  // and then found no crafting table. Re-resolve it on every leg.
+  let skyHomeY = skySurfaceY(bot, home.x, home.z);
+  let homeSurfaceY = skyHomeY ?? surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
   const verticallyAtHome = Math.abs(p.y - homeSurfaceY) <= 3;
   if (initialDistance <= arrivalRange && verticallyAtHome) {
     logger.info({
@@ -1404,9 +1409,14 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     // The leg ends at the goal column's surface, not the bot's own altitude:
     // 48 blocks away the ground can be 20+ blocks higher or lower.
     const transitY = legSurfaceY(bot, goalX, goalZ, Math.floor(current.position.y));
+    if (skyHomeY === null) {
+      skyHomeY = skySurfaceY(bot, home.x, home.z);
+      if (skyHomeY !== null) homeSurfaceY = skyHomeY;
+    }
     const goal: Location = {
       x: goalX,
-      y: finalLeg ? homeSurfaceY : transitY,
+      // Until the home column loads, a final leg ends on the ground there.
+      y: finalLeg && skyHomeY !== null ? homeSurfaceY : transitY,
       z: goalZ,
     };
     const remaining = deadline - Date.now();
