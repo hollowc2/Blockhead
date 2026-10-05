@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, stepOffPerch, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -292,4 +292,65 @@ test("dig tools follow the block's material, not its name", () => {
   assert.equal(digToolKind({ name: "dirt", material: "mineable/shovel" }), "shovel");
   assert.equal(digToolKind({ name: "oak_log", material: "mineable/axe" }), "axe");
   assert.equal(digToolKind({ name: "tuff" }), "pickaxe");
+});
+
+/** An open-air world: a perch column at (0, 0..top-1, 0) over flat ground at y=-1. */
+function perchWorld(top: number, groundY: number, extra: Record<string, string> = {}) {
+  return (pos: Vec3) => {
+    const at = pos.floored();
+    const name = extra[at.toString()] ?? (at.y <= groundY ? "stone" : at.x === 0 && at.z === 0 && at.y < top ? "cobblestone" : "air");
+    const solid = name !== "air" && !/water|lava/.test(name);
+    return { name, position: at, boundingBox: solid ? "block" : "empty", hardness: solid ? 2 : 0, material: "mineable/pickaxe" };
+  };
+}
+
+test("in the open the climb never towers up", async () => {
+  // 18:31 2026-10-04: climbToward pillared three blocks up in open air and
+  // the bot sat stranded on its own cobblestone column for 10+ minutes.
+  let placed = 0;
+  const bot = {
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true },
+    blockAt: perchWorld(0, 63),
+    inventory: { items: () => [{ name: "cobblestone", count: 32 }] },
+    lookAt: async () => {},
+    dig: async () => {},
+    equip: async () => {},
+    placeBlock: async () => { placed += 1; },
+    setControlState: () => {},
+    pathfinder: { setGoal: () => {}, goto: async () => { throw new Error("blocked"); } },
+  } as unknown as Parameters<typeof climbToward>[0];
+  assert.equal(hasRoof(bot, new Vec3(0.5, 64, 0.5)), false);
+  await climbToward(bot, { x: 20, y: 70, z: 0 }, (block) => block !== null && block.boundingBox === "block", () => {}, { deadline: Date.now() + 1_000 });
+  assert.equal(placed, 0);
+});
+
+function perchBot(health: number, blockAt: ReturnType<typeof perchWorld>) {
+  const position = new Vec3(0.5, 3, 0.5); // on a 3-block column; ground at y=-2 is a 4-block drop
+  const controls: Record<string, boolean> = {};
+  const bot = {
+    health,
+    entity: { position, onGround: true },
+    blockAt,
+    lookAt: async () => {},
+    clearControlStates: () => {},
+    setControlState: (control: string, on: boolean) => {
+      controls[control] = on;
+      if (control === "forward" && on) { position.x = 1.5; position.y = 0; }
+    },
+  } as unknown as Parameters<typeof stepOffPerch>[0];
+  return { bot, position };
+}
+
+test("a bot stranded on a perch steps off onto a landing within 5 blocks", async () => {
+  const { bot, position } = perchBot(20, perchWorld(3, -2));
+  assert.equal(await stepOffPerch(bot, { x: 50, z: 0 }), true);
+  assert.equal(position.y, 0);
+});
+
+test("a perch rescue refuses lava landings, deep drops, and low health", async () => {
+  const lava: Record<string, string> = {};
+  for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) lava[new Vec3(x, -2, z).toString()] = "lava";
+  assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -2, lava)).bot, { x: 50, z: 0 }), false, "lava below");
+  assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -4)).bot, { x: 50, z: 0 }), false, "7-block drop");
+  assert.equal(await stepOffPerch(perchBot(6, perchWorld(3, -2)).bot, { x: 50, z: 0 }), false, "low health");
 });

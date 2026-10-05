@@ -461,6 +461,88 @@ function cellTouchesLiquid(bot: Bot, cell: Vec3): boolean {
   return false;
 }
 
+/** True when at least 3 of the 4 cells beside the bot's feet are solid (a shaft or pit). */
+function enclosedAtFeet(bot: Bot, feet: Vec3): boolean {
+  let solid = 0;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    if (bot.blockAt(feet.offset(dx, 0, dz))?.boundingBox === "block") solid += 1;
+  }
+  return solid >= 3;
+}
+
+/** How far up `hasRoof` looks for a ceiling. */
+const ROOF_SCAN = 24;
+
+/** True when a solid block hangs over the bot's head: it is in a cave, not in the open. */
+export function hasRoof(bot: Bot, position: Vec3): boolean {
+  const head = position.floored().offset(0, 2, 0);
+  for (let dy = 0; dy < ROOF_SCAN; dy++) {
+    const block = bot.blockAt(head.offset(0, dy, 0));
+    if (block === null) return false;
+    if (block.boundingBox === "block") return true;
+  }
+  return false;
+}
+
+/** Perch rescues one trip may make before it reports no progress. */
+const MAX_PERCH_RESCUES = 2;
+/** Deepest drop a stranded bot may take to get off a perch (2 hearts of fall damage at most). */
+const RESCUE_MAX_DROP = 5;
+/** Health a perch rescue needs before it risks that fall. */
+const RESCUE_MIN_HEALTH = 10;
+
+/**
+ * Get down from a perch the pathfinder will not leave: open air on every side
+ * and the nearest floor deeper than its 3-block drop limit. Steps off toward
+ * `toward` onto the shallowest landing within RESCUE_MAX_DROP; never into
+ * lava. Returns true when the bot ended lower than it started.
+ */
+export async function stepOffPerch(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal): Promise<boolean> {
+  const self = bot.entity;
+  if (self === null || self === undefined || typeof bot.blockAt !== "function") return false;
+  if ((bot.health ?? 20) < RESCUE_MIN_HEALTH) return false;
+  const feet = self.position.floored();
+  const landings: { dx: number; dz: number; depth: number }[] = [];
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const side = feet.offset(dx, 0, dz);
+    if (bot.blockAt(side)?.boundingBox !== "empty" || bot.blockAt(side.offset(0, 1, 0))?.boundingBox !== "empty") continue;
+    for (let depth = 1; depth <= RESCUE_MAX_DROP + 1; depth++) {
+      const block = bot.blockAt(side.offset(0, -depth, 0));
+      if (block === null) break;
+      if (/lava/.test(block.name)) break;
+      if (block.boundingBox === "block" || /water/.test(block.name)) {
+        if (depth - 1 > MAX_SAFE_DROP && depth - 1 <= RESCUE_MAX_DROP) landings.push({ dx, dz, depth: depth - 1 });
+        break;
+      }
+    }
+  }
+  if (landings.length === 0) return false;
+  const towardX = toward.x - self.position.x;
+  const towardZ = toward.z - self.position.z;
+  landings.sort((a, b) => a.depth - b.depth || (b.dx * towardX + b.dz * towardZ) - (a.dx * towardX + a.dz * towardZ));
+  const pick = landings[0]!;
+  const startY = self.position.y;
+  logger.warn({ at: { x: feet.x, y: feet.y, z: feet.z }, step: [pick.dx, pick.dz], drop: pick.depth }, "stranded on a perch; stepping off");
+  bot.clearControlStates();
+  await raceAbort(bot.lookAt(new Vec3(feet.x + pick.dx + 0.5, self.position.y + 1.6, feet.z + pick.dz + 0.5), true), signal, { timeoutMs: 2_000, label: "look" });
+  bot.setControlState("forward", true);
+  try {
+    const deadline = Date.now() + 2_500;
+    while (Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      if (signal?.aborted) break;
+      const now = bot.entity?.position.y ?? startY;
+      if (now < startY - 1) break;
+    }
+  } finally {
+    bot.setControlState("forward", false);
+  }
+  // Let the fall finish before the next leg plans from mid-air.
+  const settle = Date.now() + 2_000;
+  while (Date.now() < settle && bot.entity?.onGround === false) await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  return (bot.entity?.position.y ?? startY) < startY - 0.5;
+}
+
 /** Consecutive failed steps before a staircase climb gives up. */
 const CLIMB_MAX_FAILURES = 4;
 
@@ -497,7 +579,10 @@ export async function climbToward(
       stepped = await climbStep(bot, feet, dx, dz, isDiggable, equip, options.signal);
       if (stepped) break;
     }
-    if (!stepped && !options.signal?.aborted) stepped = await pillarStep(bot, feet, isDiggable, equip, options.signal);
+    // Tower straight up only inside a shaft. In the open, a pillar strands
+    // the bot on a column it may not dig and cannot drop from (18:31
+    // 2026-10-04: three blocks of cobblestone with a 4-block fall around).
+    if (!stepped && !options.signal?.aborted && enclosedAtFeet(bot, feet)) stepped = await pillarStep(bot, feet, isDiggable, equip, options.signal);
     failures = stepped ? 0 : failures + 1;
   }
   const gained = (bot.entity?.position.y ?? startY) - startY;
@@ -623,7 +708,7 @@ export async function walkToward(
   try {
     // Far below the destination (a cave or mine): climb out first, in one
     // go, rather than waiting for the stall detector to cut each step.
-    if (options.allowDig !== false && destinationVec.y - self.position.y >= 3) {
+    if (options.allowDig !== false && destinationVec.y - self.position.y >= 3 && hasRoof(bot, self.position)) {
       await climbToward(bot, destinationVec, isDiggable, equipBestForDig, { deadline, signal: options.signal });
     }
     while (Date.now() < deadline) {
@@ -1213,6 +1298,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   let distance = initialDistance;
   let legNumber = 0;
   let noProgressLegs = 0;
+  let perchRescues = 0;
   while (distance > arrivalRange || Math.abs((bot.entity?.position.y ?? homeSurfaceY) - homeSurfaceY) > 3) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
@@ -1292,6 +1378,12 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     if (horizontalDelta < 0.01 && verticalDelta < 0.05) noProgressLegs += 1;
     else noProgressLegs = 0;
     logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), verticalDelta: Number(verticalDelta.toFixed(3)), noProgressLegs }, "home route progress");
+    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await stepOffPerch(bot, home, signal)) {
+      perchRescues += 1;
+      noProgressLegs = 0;
+      distance = Math.hypot((bot.entity?.position.x ?? home.x) - home.x, (bot.entity?.position.z ?? home.z) - home.z);
+      continue;
+    }
     if (noProgressLegs >= 2) {
       logger.warn({
         leg: legNumber,
@@ -1466,6 +1558,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
   let distance = initialDistance;
   let legNumber = 0;
   let noProgressLegs = 0;
+  let perchRescues = 0;
   while (distance > range) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
@@ -1535,6 +1628,11 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     if (horizontalDelta < 0.01) noProgressLegs += 1;
     else noProgressLegs = 0;
     logger.info({ leg: legNumber, horizontalDelta: Number(horizontalDelta.toFixed(3)), noProgressLegs }, "travel route progress");
+    if (noProgressLegs >= 2 && perchRescues < MAX_PERCH_RESCUES && await stepOffPerch(bot, location, signal)) {
+      perchRescues += 1;
+      noProgressLegs = 0;
+      continue;
+    }
     if (noProgressLegs >= 2) {
       logger.warn({
         leg: legNumber,
