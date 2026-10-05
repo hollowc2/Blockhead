@@ -22,7 +22,7 @@ import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriteri
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
-import { findHomeChest, homeStorageUnloaded } from "../minecraft/containers.js";
+import { adoptHomeChests, findHomeChest, homeStorageUnloaded } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
 
@@ -337,6 +337,8 @@ export class BackgroundManager {
     // Probes are world reads and container repair can mutate the world. They
     // use the same scheduler lease as foreground tasks, closing the race
     // between an idle tick and a task becoming active.
+    const adopted = adoptHomeChests(bot, this.opts.state, this.opts.storage);
+    if (adopted > 0) logger.info({ adopted }, "registered unregistered chests at home");
     const snapshot = await this.worldProbe((signal) => this.opts.maintenance.check(signal));
 
     // Phase 8 (spec 5.4): a stockpile below its survival floor is a crisis —

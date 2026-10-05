@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { countStoredItems, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
+import { adoptHomeChests, countStoredItems, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -107,4 +107,21 @@ test("a home chest in an unloaded chunk is not reported missing", () => {
   assert.equal(homeStorageUnloaded(unloaded, state, storage), true);
   const loaded = { blockAt: () => ({ name: "air" }) } as unknown as Bot;
   assert.equal(homeStorageUnloaded(loaded, state, storage), false, "loaded and gone: really missing");
+});
+
+test("a chest standing at home but missing from the registry is adopted", () => {
+  // 20:14: the real home chest (67,96,49) was pruned and a new one placed.
+  const registered: Array<{ x: number; y: number; z: number }> = [{ x: 65, y: 96, z: 51 }];
+  const homeState = { worldId: 1, home: { x: 65, y: 96, z: 51, dimension: "overworld" } } as unknown as AgentState;
+  const repo = {
+    list: () => registered.map((at, id) => ({ id, ...at })),
+    register: (_w: number, at: { x: number; y: number; z: number }) => { registered.push({ x: at.x, y: at.y, z: at.z }); },
+  } as unknown as StorageRepository;
+  const bot = {
+    entity: { position: new Vec3(65.5, 97, 50.5) },
+    findBlocks: () => [new Vec3(65, 96, 51), new Vec3(67, 96, 49), new Vec3(120, 70, 51)],
+  } as unknown as Bot;
+  assert.equal(adoptHomeChests(bot, homeState, repo), 1);
+  assert.deepEqual(registered.at(-1), { x: 67, y: 96, z: 49 });
+  assert.equal(adoptHomeChests(bot, homeState, repo), 0, "idempotent");
 });

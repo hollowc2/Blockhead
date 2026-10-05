@@ -1369,6 +1369,11 @@ export class BootstrapRunner {
       if (home === null) return { ok: false, reason: "no home coordinate configured" };
     }
 
+    // Just respawned at home, the chunks may still be arriving; a scan of
+    // unloaded terrain finds no chest and a second one gets placed.
+    await waitForChunks(bot);
+    const homeCell = bot.blockAt(new Vec3(Math.floor(home.x), Math.floor(home.y), Math.floor(home.z)));
+    if (homeCell === null) return { ok: false, reason: "home chunks not loaded yet" };
     const existing = chestBlockNear(bot, CHEST_SCAN_RADIUS);
     if (existing !== null) {
       this.registerChest(existing.position);
@@ -1450,7 +1455,10 @@ export class BootstrapRunner {
     for (const location of this.opts.storage.list(worldId)) {
       if (Math.hypot(location.x - self.position.x, location.z - self.position.z) > CHEST_SCAN_RADIUS) continue;
       const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
-      if (block === null || !isChestBlock(block)) {
+      // Unloaded is unknown, not gone: right after a respawn this pruned the
+      // real home chest (53 coal, 48 logs) and left a new empty one (20:14).
+      if (block === null) continue;
+      if (!isChestBlock(block)) {
         this.opts.storage.remove(worldId, location.id);
         this.opts.logger.info(
           { id: location.id, position: [location.x, location.y, location.z] },
@@ -2826,6 +2834,13 @@ function countFuelItems(bot: Bot): number {
 }
 
 /** Nearest placed chest within `radius` of the bot, or null. */
+/** Wait (bounded) for the chunks around the bot to finish loading. */
+async function waitForChunks(bot: Bot): Promise<void> {
+  const wait = (bot as { waitForChunksToLoad?: () => Promise<void> }).waitForChunksToLoad;
+  if (typeof wait !== "function") return;
+  await Promise.race([wait.call(bot).catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
+}
+
 function chestBlockNear(bot: Bot, radius: number): Block | null {
   const positions = findBlocksNear(bot, isChestBlock, radius, 1);
   const first = positions[0];

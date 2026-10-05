@@ -55,6 +55,28 @@ export function homeStorageUnloaded(bot: Bot, state: AgentState, storage: Storag
   return storage.list(worldId).some((location) => bot.blockAt(new Vec3(location.x, location.y, location.z)) === null);
 }
 
+/**
+ * Register every chest standing within the home radius that the registry
+ * does not know. A wrongly pruned row (or a chest the owner set down) is
+ * otherwise invisible to stock checks for good: after the 20:14 respawn the
+ * real home chest was dropped from the registry and stock read 0.
+ */
+export function adoptHomeChests(bot: Bot, state: AgentState, storage: StorageRepository): number {
+  const worldId = state.worldId;
+  const home = state.home;
+  if (worldId === null || home === null || bot.entity === null || bot.entity === undefined) return 0;
+  if (Math.hypot(bot.entity.position.x - home.x, bot.entity.position.z - home.z) > CHEST_SCAN_RADIUS) return 0;
+  const known = new Set(storage.list(worldId).map((location) => `${location.x},${location.y},${location.z}`));
+  let adopted = 0;
+  for (const position of findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 16)) {
+    if (Math.hypot(position.x - home.x, position.z - home.z) > CHEST_SCAN_RADIUS) continue;
+    if (known.has(`${position.x},${position.y},${position.z}`)) continue;
+    storage.register(worldId, { dimension: home.dimension, category: "general", label: "home_chest", x: position.x, y: position.y, z: position.z });
+    adopted += 1;
+  }
+  return adopted;
+}
+
 export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepository): Block | null {
   const worldId = state.worldId;
   if (worldId !== null) {
