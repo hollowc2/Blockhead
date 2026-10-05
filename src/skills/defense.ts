@@ -7,7 +7,7 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
-import { travelAndWait } from "../minecraft/movement.js";
+import { swimToShore, travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import { belowHealthRetreat, checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
@@ -66,9 +66,10 @@ export interface DefenseActions {
   attack: typeof pvpAttack;
   stop: typeof pvpStop;
   equip: typeof equipItem;
+  shore?: typeof swimToShore;
 }
 
-const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem };
+const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore };
 
 export interface DefenseOptions {
   bot: Bot;
@@ -190,6 +191,14 @@ export class DefenseRunner {
       return this.retreatResult(data, `health ${bot.health} is at/below the retreat threshold`);
     }
 
+    // Swimming, the bot cannot fight: no footing, no crits, and drowned
+    // hit from below and throw tridents. Both drowned deaths (2026-10-04
+    // 16:38, 16:39) were fights started in the water, 20 -> 4 health in
+    // four seconds. Get to the bank first; the reflex re-fires on land.
+    if (kind === "self" && this.swimming()) {
+      return this.retreatResult(data, "attacked in the water");
+    }
+
     // Defending a player requires seeing them.
     let anchor: { x: number; y: number; z: number } | null = null;
     if (kind === "player") {
@@ -271,6 +280,10 @@ export class DefenseRunner {
     }
     this.recordSuccess(baseline, startedAt, data);
     return { ok: true, status: "completed", data, message: `cleared ${data.kills} hostiles` };
+  }
+
+  private swimming(): boolean {
+    return (this.opts.bot.entity as { isInWater?: boolean } | null)?.isInWater === true;
   }
 
   /** Nearest live hostile mob to `anchor` (the bot when defending itself). */
@@ -356,6 +369,10 @@ export class DefenseRunner {
       entity.type !== "player" && isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "") && isLiveEntity(entity)
       && distanceBetween(entity.position, self) <= RETREAT_THREAT_RADIUS);
     const target = retreatTarget(self, threats.map((entity) => entity.position), this.opts.config.home ?? null);
+    // The pathfinder plans poorly from open water; swim to the bank first.
+    if (this.swimming() && this.actions.shore !== undefined) {
+      await this.actions.shore(bot, target, this.signals?.signal);
+    }
     this.opts.logger.warn({
       reason,
       threats: threats.map((entity) => entity.name),

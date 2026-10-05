@@ -220,3 +220,22 @@ test("deathSiteDanger flags a pack of melee mobs or a creeper at the site", () =
   assert.equal(deathSiteDanger(20, site, [zombie(2), zombie(5), zombie(30)]), null, "a far zombie is not part of the nest");
   assert.match(deathSiteDanger(20, site, [{ type: "hostile", name: "creeper", position: { x: 6, y: 64, z: 0 } }]) ?? "", /creeper/);
 });
+
+test("attacked while swimming, the reflex makes for the bank instead of fighting a drowned", async () => {
+  const h = harness();
+  (h.self as { isInWater?: boolean }).isInWater = true;
+  h.add(mob(7, "drowned", { x: 21, y: 63, z: 0 }));
+  const shored: Point[] = [];
+  (h.runner as unknown as { actions: DefenseActions }).actions.shore = async (_bot, toward) => {
+    shored.push({ x: toward.x, y: 0, z: toward.z });
+    (h.self as { isInWater?: boolean }).isInWater = false;
+    return true;
+  };
+
+  const result = await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(h.attacked, [], "no melee from the water");
+  assert.equal(result.data?.retreated, true);
+  assert.match(result.message ?? "", /attacked in the water/);
+  assert.equal(shored.length, 1, "swam for the bank before the retreat trip");
+});
