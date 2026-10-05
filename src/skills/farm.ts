@@ -142,27 +142,33 @@ function plotCells(home: { x: number; y: number; z: number }, offset: { dx: numb
 }
 
 /**
- * The farm's cells: the candidate plot that already holds the most farmland
- * (so the choice is stable once farming starts), else the one with the most
- * workable soil, preferring water nearby (hydrated wheat grows faster).
- * Pure over `lookup`.
+ * The farm's cells. The first plot is the candidate that already holds the
+ * most farmland (so the choice is stable once farming starts), else the one
+ * with the most workable soil, preferring water nearby (hydrated wheat grows
+ * faster). Every other plot that has farmland stays in the farm, and the
+ * next best plot is added once all chosen plots are fully tilled: one plot
+ * baked 8 bread a pass while the food floor preempted everything and hunts
+ * went 250 blocks out (2026-10-04). Pure over `lookup`.
  */
 export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup): FarmCell[] {
-  let best: FarmCell[] = [];
-  let bestScore = 0;
-  for (const offset of PLOT_OFFSETS) {
+  const plots = PLOT_OFFSETS.map((offset) => {
     const cells = plotCells(home, offset, lookup);
     let score = 0;
     for (const cell of cells) {
       score += cell.soil === "farmland" ? 100 : 1;
       if (cell.hydrated) score += 1;
     }
-    if (score > bestScore) {
-      best = cells;
-      bestScore = score;
-    }
+    return { cells, score, established: cells.some((cell) => cell.soil === "farmland") };
+  }).filter((plot) => plot.score > 0);
+  // Stable sort: equal scores keep the PLOT_OFFSETS order.
+  plots.sort((a, b) => b.score - a.score);
+  const chosen: FarmCell[][] = [];
+  for (const plot of plots) {
+    const filled = chosen.every((cells) => cells.every((cell) => cell.soil === "farmland"));
+    if (chosen.length === 0 || plot.established || filled) chosen.push(plot.cells);
+    else break;
   }
-  return best;
+  return chosen.flat();
 }
 
 export function isMatureWheat(cell: FarmCell): boolean {

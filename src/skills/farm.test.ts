@@ -63,3 +63,23 @@ test("chooseFarmCells finds the surface when home's Y has drifted below it", () 
   assert.equal(cells.length, 25);
   assert.ok(cells.every((c) => c.y === 63));
 });
+
+test("the farm grows by a plot once every chosen plot is tilled", () => {
+  // One plot baked 8 bread a pass while the food floor preempted everything.
+  const north: Record<string, FarmBlock> = {};
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) north[`${dx},63,${-8 + dz}`] = { name: "farmland" };
+  const full = chooseFarmCells(HOME, world(north));
+  assert.equal(full.length, 50, "the north plot plus the next one");
+  assert.equal(full.filter((c) => c.z <= -6).length, 25, "the north plot is kept whole");
+  const partial = { ...north };
+  delete partial["0,63,-8"];
+  const growing = chooseFarmCells(HOME, world(partial));
+  assert.equal(growing.length, 25, "no new plot while the north one still has soil to till");
+  assert.ok(growing.every((c) => c.z <= -6));
+});
+
+test("every plot that already has farmland stays in the farm", () => {
+  const cells = chooseFarmCells(HOME, world({ "8,63,0": { name: "farmland" }, "-8,63,0": { name: "farmland" } }));
+  assert.equal(cells.length, 50);
+  assert.equal(cells.filter((c) => c.soil === "farmland").length, 2);
+});
