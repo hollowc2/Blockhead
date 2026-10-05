@@ -4,7 +4,7 @@ import { Vec3 } from "vec3";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import { findBlocksNearPoint } from "../minecraft/world.js";
-import { isShelterNight } from "../skills/night-shelter.js";
+import { isShelterNight, isThundering } from "../skills/night-shelter.js";
 import { isBedBlock } from "../skills/utility.js";
 import type { Scheduler } from "./scheduler.js";
 import type { AgentState } from "./state.js";
@@ -21,6 +21,8 @@ const WORK_KEY = "night-shelter";
 
 export interface ShelterDecisionInput {
   timeOfDay: number;
+  /** A thunderstorm: hostiles spawn under it as at night. */
+  thundering?: boolean;
   dimension: string;
   isSleeping: boolean;
   inWater: boolean;
@@ -35,15 +37,16 @@ export interface ShelterDecisionInput {
 
 /** Pure trigger decision for the night shelter. */
 export function shelterDecision(input: ShelterDecisionInput): { shelter: boolean; reason: string } {
-  if (!isShelterNight(input.timeOfDay)) return { shelter: false, reason: "day" };
+  if (!isShelterNight(input.timeOfDay) && input.thundering !== true) return { shelter: false, reason: "day" };
   if (!input.dimension.replace(/^minecraft:/, "").startsWith("overworld")) return { shelter: false, reason: "not the overworld" };
   if (input.isSleeping) return { shelter: false, reason: "asleep" };
-  if (input.bedAvailable) return { shelter: false, reason: "a bed is available" };
+  // The sleep path covers nights only; a daytime storm still needs the shelter.
+  if (input.bedAvailable && isShelterNight(input.timeOfDay)) return { shelter: false, reason: "a bed is available" };
   if (input.inWater) return { shelter: false, reason: "in water" };
   if (input.ownerWorkPending) return { shelter: false, reason: "owner work pending" };
   if (input.shelterLive) return { shelter: false, reason: "already sheltering" };
   if (input.cooldownActive) return { shelter: false, reason: "cooling down after a failed shelter" };
-  return { shelter: true, reason: "night without a bed" };
+  return { shelter: true, reason: isShelterNight(input.timeOfDay) ? "night without a bed" : "thunderstorm" };
 }
 
 export interface NightShelterWatchOptions {
@@ -108,6 +111,7 @@ export class NightShelterWatch {
     const scheduler = this.opts.scheduler;
     const decision = shelterDecision({
       timeOfDay: bot.time?.timeOfDay ?? 0,
+      thundering: isThundering(bot as { thunderState?: number }),
       dimension: String(bot.game?.dimension ?? "overworld"),
       isSleeping: bot.isSleeping === true,
       inWater: (bot.entity as { isInWater?: boolean }).isInWater === true,
@@ -129,7 +133,7 @@ export class NightShelterWatch {
       workKey: WORK_KEY,
       executionPolicy: "resumable",
     });
-    this.opts.logger.warn({ timeOfDay: bot.time?.timeOfDay }, "night shelter: night without a bed; digging in");
+    this.opts.logger.warn({ timeOfDay: bot.time?.timeOfDay, reason: decision.reason }, "night shelter: digging in");
     this.opts.yieldBootstrap?.();
     scheduler.claim();
   }

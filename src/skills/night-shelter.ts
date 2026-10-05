@@ -70,6 +70,15 @@ export function isShelterNight(timeOfDay: number): boolean {
 }
 
 /**
+ * A thunderstorm darkens the sky enough for hostiles, phantoms included, to
+ * spawn at noon: at frozen noon a storm brought phantoms and zombies down on
+ * home and killed the bot twice (2026-10-05 13:09 fall, 13:17 creeper).
+ */
+export function isThundering(bot: { thunderState?: number }): boolean {
+  return (bot.thunderState ?? 0) > 0;
+}
+
+/**
  * Leaving at tick 0 walked into the night's zombies and spiders before the
  * sun had burned them (13:20, down to 1 HP from full). Wait for full morning,
  * and for the area to clear, but not past mid-morning: a mob in shade can
@@ -246,7 +255,7 @@ export class NightShelterRunner {
     const cell = this.lookup();
 
     if (!isSealedPocket(cell, this.feet())) {
-      if (!isShelterNight(bot.time.timeOfDay)) return { ok: true, status: "completed", data, message: "It is day; no shelter needed." };
+      if (!isShelterNight(bot.time.timeOfDay) && !isThundering(bot)) return { ok: true, status: "completed", data, message: "It is day; no shelter needed." };
       const dug = await this.digIn(data, cell);
       if (dug !== null) return dug;
     } else {
@@ -255,7 +264,7 @@ export class NightShelterRunner {
     data.sheltered = true;
 
     // Wait out the night, sealed in.
-    while (!shelterCanLeave(bot.time.timeOfDay, this.hostileNearby())) {
+    while (isThundering(bot) || !shelterCanLeave(bot.time.timeOfDay, this.hostileNearby())) {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
       if (this.opts.ownerWorkPending?.() === true) {

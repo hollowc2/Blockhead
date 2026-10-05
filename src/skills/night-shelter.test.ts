@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ownerWorkPending, shelterDecision, type ShelterDecisionInput } from "../agent/night-shelter.js";
-import { findShelterSpot, isSealedPocket, isShelterNight, shelterDigCells, shelterPocketFeet, validShelterSpot, shelterCanLeave, type CellLookup } from "./night-shelter.js";
+import { findShelterSpot, isSealedPocket, isShelterNight, isThundering, shelterDigCells, shelterPocketFeet, validShelterSpot, shelterCanLeave, type CellLookup } from "./night-shelter.js";
 
 /** Flat world: grass at y=63 over dirt (60-62) over stone; air above. */
 function flatWorld(overrides: Record<string, string> = {}): CellLookup {
@@ -111,4 +111,16 @@ test("the shelter opens only in full morning, and waits for nearby hostiles to c
   assert.equal(shelterCanLeave(2_000, false), true);
   assert.equal(shelterCanLeave(2_000, true), false, "a zombie at the exit");
   assert.equal(shelterCanLeave(4_500, true), true, "a mob in shade can linger all day");
+});
+
+test("a thunderstorm at noon is shelter time, like night", () => {
+  // 2026-10-05 13:08-13:18 (frozen noon): a storm brought phantoms and
+  // zombies; the bot fought in the open and died twice.
+  const noon = { ...night, timeOfDay: 6_000 };
+  assert.equal(shelterDecision(noon).shelter, false);
+  assert.deepEqual(shelterDecision({ ...noon, thundering: true }), { shelter: true, reason: "thunderstorm" });
+  assert.equal(shelterDecision({ ...noon, thundering: true, bedAvailable: true }).shelter, true, "a bed is no help by day");
+  assert.equal(isThundering({ thunderState: 1 }), true);
+  assert.equal(isThundering({ thunderState: 0 }), false);
+  assert.equal(isThundering({}), false);
 });
