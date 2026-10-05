@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { creativeFlyToAndWait, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -225,4 +225,71 @@ test("a cell the pathfinder kept failing costs extra for a few minutes", () => {
   assert.ok(stuckCellCost({ x: 45, y: 93, z: -2 }, 2_000) > 0, "its neighbours too");
   assert.equal(stuckCellCost({ x: 50, y: 92, z: -3 }, 2_000), 0);
   assert.equal(stuckCellCost({ x: 44, y: 92, z: -3 }, 1_000 + 4 * 60_000), 0, "expires");
+});
+
+/** A solid-stone world with the given air cells; digging turns a cell to air. */
+function stoneWorld(air: Vec3[], extra: Record<string, string> = {}) {
+  const open = new Set(air.map((cell) => cell.toString()));
+  const blockAt = (pos: Vec3) => {
+    const at = pos.floored();
+    const key = at.toString();
+    const name = extra[key] ?? (open.has(key) ? "air" : "stone");
+    const solid = name !== "air" && !/water|lava/.test(name);
+    return { name, position: at, boundingBox: solid ? "block" : "empty", hardness: solid ? 1.5 : 0, material: "mineable/pickaxe" };
+  };
+  return { open, blockAt };
+}
+
+test("a bot in a sealed pocket staircases up to the destination's height", async () => {
+  // Live 2026-10-04: trapped at y=37, the walkToward stall detector climbed
+  // ~1 block per 8 s and the watchdog cancelled the trip every 5 minutes.
+  const world = stoneWorld([new Vec3(0, 60, 0), new Vec3(0, 61, 0)]);
+  const position = new Vec3(0.5, 60, 0.5);
+  const bot = {
+    entity: { position },
+    blockAt: world.blockAt,
+    inventory: { items: () => [] },
+    lookAt: async () => {},
+    dig: async (block: { position: Vec3 }) => { world.open.add(block.position.toString()); },
+    stopDigging: () => {},
+    setControlState: () => {},
+    pathfinder: {
+      setGoal: () => {},
+      goto: async (goal: { x: number; y: number; z: number }) => {
+        // The one-block step succeeds when both cells of the step are open.
+        if (!world.open.has(new Vec3(goal.x, goal.y, goal.z).toString()) || !world.open.has(new Vec3(goal.x, goal.y + 1, goal.z).toString())) throw new Error("blocked");
+        position.x = goal.x + 0.5; position.y = goal.y; position.z = goal.z + 0.5;
+      },
+    },
+  } as unknown as Parameters<typeof climbToward>[0];
+  const gained = await climbToward(bot, { x: 20, y: 70, z: 0 }, (block) => block !== null && block.boundingBox === "block", () => {}, { deadline: Date.now() + 5_000 });
+  assert.ok(gained >= 8, `gained ${gained}`);
+  assert.ok(position.x > 5, "the stair heads toward the destination");
+});
+
+test("the staircase never opens a cell next to lava", async () => {
+  // Lava sits over the head cell every step and the pillar would open, so
+  // the climb must stop rather than dig.
+  const world = stoneWorld([new Vec3(0, 60, 0), new Vec3(0, 61, 0)], { "(0, 63, 0)": "lava" });
+  const dug: string[] = [];
+  const bot = {
+    entity: { position: new Vec3(0.5, 60, 0.5) },
+    blockAt: world.blockAt,
+    inventory: { items: () => [] },
+    lookAt: async () => {},
+    dig: async (block: { position: Vec3 }) => { dug.push(block.position.toString()); world.open.add(block.position.toString()); },
+    stopDigging: () => {},
+    setControlState: () => {},
+    pathfinder: { setGoal: () => {}, goto: async () => { throw new Error("blocked"); } },
+  } as unknown as Parameters<typeof climbToward>[0];
+  await climbToward(bot, { x: 20, y: 70, z: 0 }, (block) => block !== null && block.boundingBox === "block", () => {}, { deadline: Date.now() + 2_000 });
+  assert.deepEqual(dug, []);
+});
+
+test("dig tools follow the block's material, not its name", () => {
+  assert.equal(digToolKind({ name: "andesite", material: "mineable/pickaxe" }), "pickaxe");
+  assert.equal(digToolKind({ name: "coal_ore", material: "mineable/pickaxe" }), "pickaxe");
+  assert.equal(digToolKind({ name: "dirt", material: "mineable/shovel" }), "shovel");
+  assert.equal(digToolKind({ name: "oak_log", material: "mineable/axe" }), "axe");
+  assert.equal(digToolKind({ name: "tuff" }), "pickaxe");
 });

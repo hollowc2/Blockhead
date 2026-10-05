@@ -397,6 +397,8 @@ async function climbStep(
   const floor = bot.blockAt(new Vec3(feet.x + dx, feet.y, feet.z + dz));
   if (floor === null || floor.boundingBox !== "block") return false;
   const cells = [new Vec3(feet.x, feet.y + 2, feet.z), new Vec3(feet.x + dx, feet.y + 1, feet.z + dz), new Vec3(feet.x + dx, feet.y + 2, feet.z + dz)];
+  // Opening a cell next to lava (or under water) floods the stair.
+  if (cells.some((cell) => cellTouchesLiquid(bot, cell))) return false;
   for (const cell of cells) {
     const block = bot.blockAt(cell);
     if (block === null) return false;
@@ -432,6 +434,77 @@ async function climbStep(
   return (bot.entity?.position.y ?? startY) > startY + 0.5;
 }
 
+/**
+ * Tool family that digs `block` fastest, from its registry material
+ * ("mineable/pickaxe", ...). Name guessing sent andesite, diorite, tuff and
+ * ores to the shovel, digging them at hand speed.
+ */
+export function digToolKind(block: { name: string; material?: string | null }): "pickaxe" | "axe" | "shovel" {
+  const material = block.material ?? "";
+  if (/pickaxe/.test(material)) return "pickaxe";
+  if (/(^|\/)axe/.test(material)) return "axe";
+  if (/shovel/.test(material)) return "shovel";
+  const name = block.name.replace(/^minecraft:/, "");
+  if (/_log$|_wood$|_planks$/.test(name)) return "axe";
+  if (/^(dirt|grass_block|sand|red_sand|gravel|clay|coarse_dirt|rooted_dirt|mud|podzol|mycelium|snow_block|soul_sand|soul_soil)$/.test(name)) return "shovel";
+  return "pickaxe";
+}
+
+/** True when digging `cell` would let lava in from any side or water from above. */
+function cellTouchesLiquid(bot: Bot, cell: Vec3): boolean {
+  const offsets = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]] as const;
+  for (const [ox, oy, oz] of offsets) {
+    const name = bot.blockAt(cell.offset(ox, oy, oz))?.name ?? "";
+    if (/lava/.test(name)) return true;
+    if (oy === 1 && /water/.test(name)) return true;
+  }
+  return false;
+}
+
+/** Consecutive failed steps before a staircase climb gives up. */
+const CLIMB_MAX_FAILURES = 4;
+
+/**
+ * Staircase straight up toward `destination` until the bot is within 2
+ * blocks of its height. One tight loop: dig the step, take it, repeat — no
+ * forward walking in between, which dropped the bot back off the stair it had
+ * just cut. Climbing out of a y=37 cave through the walkToward stall detector
+ * managed ~1 block per 8 s and was cancelled by the task watchdog every 5 min
+ * (2026-10-04). Returns the height gained.
+ */
+export async function climbToward(
+  bot: Bot,
+  destination: { x: number; y: number; z: number },
+  isDiggable: (block: import("prismarine-block").Block | null) => boolean,
+  equip: (block: import("prismarine-block").Block) => void,
+  options: { deadline: number; signal?: AbortSignal },
+): Promise<number> {
+  const startY = bot.entity?.position.y ?? 0;
+  let failures = 0;
+  while (Date.now() < options.deadline && failures < CLIMB_MAX_FAILURES) {
+    if (options.signal?.aborted) break;
+    const self = bot.entity;
+    if (self === null || self === undefined) break;
+    if (destination.y - self.position.y < 3) break;
+    const feet = self.position.floored();
+    const towardX = destination.x - self.position.x;
+    const towardZ = destination.z - self.position.z;
+    const directions = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][])
+      .sort((a, b) => (b[0] * towardX + b[1] * towardZ) - (a[0] * towardX + a[1] * towardZ));
+    let stepped = false;
+    for (const [dx, dz] of directions) {
+      if (options.signal?.aborted) break;
+      stepped = await climbStep(bot, feet, dx, dz, isDiggable, equip, options.signal);
+      if (stepped) break;
+    }
+    if (!stepped && !options.signal?.aborted) stepped = await pillarStep(bot, feet, isDiggable, equip, options.signal);
+    failures = stepped ? 0 : failures + 1;
+  }
+  const gained = (bot.entity?.position.y ?? startY) - startY;
+  logger.info({ gained: Number(gained.toFixed(1)), y: Math.floor(bot.entity?.position.y ?? 0), targetY: destination.y }, "staircase climb finished");
+  return gained;
+}
+
 /** Throwaway blocks a trapped bot may stand on while towering up. */
 const PILLAR_ITEMS = ["cobblestone", "dirt", "cobbled_deepslate", "andesite", "diorite", "granite", "netherrack"];
 
@@ -449,6 +522,7 @@ async function pillarStep(
   const below = bot.blockAt(feet.offset(0, -1, 0));
   if (below === null || below.boundingBox !== "block") return false;
   for (const cell of [feet.offset(0, 2, 0)]) {
+    if (cellTouchesLiquid(bot, cell)) return false;
     const block = bot.blockAt(cell);
     if (block === null) return false;
     if (block.boundingBox !== "block") continue;
@@ -514,18 +588,15 @@ export async function walkToward(
   let lastDigAt = 0;
   let lastStrafeAt = 0;
   let strafeSide = false;
-  let equippedTool = false;
+  let equippedKind: string | null = null;
 
   const destinationVec = new Vec3(destination.x, destination.y, destination.z);
 
   // Pick the best tool the bot carries for a block type.
   const equipBestForDig = (block: import("prismarine-block").Block): void => {
-    if (equippedTool) return;
+    const want = digToolKind(block);
+    if (equippedKind === want) return;
     const items = bot.inventory?.items() ?? [];
-    const name = block.name.replace(/^minecraft:/, "");
-    const want = name === "stone" || name === "cobblestone" ? "pickaxe"
-               : name.includes("_log") || name.includes("_wood") ? "axe"
-               : "shovel";
     let best: import("prismarine-item").Item | null = null;
     let bestTier = 0;
     for (const item of items) {
@@ -534,7 +605,7 @@ export async function walkToward(
       if (itemName.includes(want) && tier > bestTier) { best = item; bestTier = tier; }
     }
     if (best !== null) {
-      try { bot.equip(best, "hand"); equippedTool = true; } catch { /* ok */ }
+      try { void bot.equip(best, "hand").catch(() => undefined); equippedKind = want; } catch { /* ok */ }
     }
   };
 
@@ -550,6 +621,11 @@ export async function walkToward(
   };
 
   try {
+    // Far below the destination (a cave or mine): climb out first, in one
+    // go, rather than waiting for the stall detector to cut each step.
+    if (options.allowDig !== false && destinationVec.y - self.position.y >= 3) {
+      await climbToward(bot, destinationVec, isDiggable, equipBestForDig, { deadline, signal: options.signal });
+    }
     while (Date.now() < deadline) {
       if (options.signal?.aborted) break;
       const current = bot.entity;
