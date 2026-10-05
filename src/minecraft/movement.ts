@@ -391,7 +391,7 @@ async function climbStep(
   dx: number,
   dz: number,
   isDiggable: (block: import("prismarine-block").Block | null) => boolean,
-  equip: (block: import("prismarine-block").Block) => void,
+  equip: (block: import("prismarine-block").Block) => Promise<void> | void,
   signal?: AbortSignal,
 ): Promise<boolean> {
   const floor = bot.blockAt(new Vec3(feet.x + dx, feet.y, feet.z + dz));
@@ -406,7 +406,7 @@ async function climbStep(
     if (!isDiggable(block)) return false;
     if (signal?.aborted) return false;
     try {
-      equip(block);
+      await equip(block);
       logger.warn({ at: cell, name: block.name }, "walkToward climbing: clearing a stair cell");
       await digCell(bot, block, signal);
     } catch (err) {
@@ -433,6 +433,30 @@ async function climbStep(
   }
   return (bot.entity?.position.y ?? startY) > startY + 0.5;
 }
+
+/**
+ * Hold the best carried tool for digging `block`, and wait for the swap: dig
+ * time is fixed from the held item when the dig starts. The un-awaited equip
+ * dug every stair cell at hand speed, 7.5 s per stone block, ~22 s per block
+ * climbed (2026-10-04 18:20). Checks the real held item rather than a cached
+ * kind, which went stale when anything else swapped the hand.
+ */
+export async function equipDigTool(bot: Bot, block: import("prismarine-block").Block, signal?: AbortSignal): Promise<void> {
+  const want = digToolKind(block);
+  let best: import("prismarine-item").Item | null = null;
+  let bestTier = 0;
+  for (const item of bot.inventory?.items() ?? []) {
+    const name = item.name.replace(/^minecraft:/, "");
+    // Exact family: "axe" must not match "pickaxe".
+    if (!name.endsWith(`_${want}`)) continue;
+    const tier = TOOL_TIERS[name.slice(0, -want.length - 1)] ?? 0;
+    if (tier > bestTier) { best = item; bestTier = tier; }
+  }
+  if (best === null || bot.heldItem?.name === best.name) return;
+  await raceAbort(bot.equip(best, "hand"), signal, { timeoutMs: 2_000, label: "equip" }).catch(() => undefined);
+}
+
+const TOOL_TIERS: Record<string, number> = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 };
 
 /**
  * Tool family that digs `block` fastest, from its registry material
@@ -633,7 +657,7 @@ export async function climbToward(
   bot: Bot,
   destination: { x: number; y: number; z: number },
   isDiggable: (block: import("prismarine-block").Block | null) => boolean,
-  equip: (block: import("prismarine-block").Block) => void,
+  equip: (block: import("prismarine-block").Block) => Promise<void> | void,
   options: { deadline: number; signal?: AbortSignal },
 ): Promise<number> {
   const startY = bot.entity?.position.y ?? 0;
@@ -673,7 +697,7 @@ async function pillarStep(
   bot: Bot,
   feet: Vec3,
   isDiggable: (block: import("prismarine-block").Block | null) => boolean,
-  equip: (block: import("prismarine-block").Block) => void,
+  equip: (block: import("prismarine-block").Block) => Promise<void> | void,
   signal?: AbortSignal,
 ): Promise<boolean> {
   if (signal?.aborted) return false;
@@ -688,7 +712,7 @@ async function pillarStep(
     if (block.boundingBox !== "block") continue;
     if (!isDiggable(block)) return false;
     try {
-      equip(block);
+      await equip(block);
       await digCell(bot, block, signal);
     } catch { return false; }
   }
@@ -748,26 +772,10 @@ export async function walkToward(
   let lastDigAt = 0;
   let lastStrafeAt = 0;
   let strafeSide = false;
-  let equippedKind: string | null = null;
 
   const destinationVec = new Vec3(destination.x, destination.y, destination.z);
 
-  // Pick the best tool the bot carries for a block type.
-  const equipBestForDig = (block: import("prismarine-block").Block): void => {
-    const want = digToolKind(block);
-    if (equippedKind === want) return;
-    const items = bot.inventory?.items() ?? [];
-    let best: import("prismarine-item").Item | null = null;
-    let bestTier = 0;
-    for (const item of items) {
-      const itemName = item.name.replace(/^minecraft:/, "");
-      const tier = itemName.includes("diamond_") ? 4 : itemName.includes("iron_") ? 3 : itemName.includes("stone_") ? 2 : itemName.includes("wooden_") ? 1 : 0;
-      if (itemName.includes(want) && tier > bestTier) { best = item; bestTier = tier; }
-    }
-    if (best !== null) {
-      try { void bot.equip(best, "hand").catch(() => undefined); equippedKind = want; } catch { /* ok */ }
-    }
-  };
+  const equipBestForDig = (block: import("prismarine-block").Block): Promise<void> => equipDigTool(bot, block, options.signal);
 
   // Blocks the bot is allowed to punch through during emergency movement.
   const isDiggable = (block: import("prismarine-block").Block | null): boolean => {
@@ -853,7 +861,7 @@ export async function walkToward(
                 const now = Date.now();
                 if (now - lastDigAt < 300) continue;
                 lastDigAt = now;
-                equipBestForDig(block);
+                await equipBestForDig(block);
                 logger.warn({ at: pos, name: block.name, distance: Number(distance.toFixed(1)), stuckTicks }, "walkToward clearing obstacle");
                 await digCell(bot, block, options.signal);
                 dug = true;

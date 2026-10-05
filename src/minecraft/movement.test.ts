@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -391,4 +391,31 @@ test("a bot treading water in a cave pool swims to the bank", async () => {
 test("a bot on dry ground is not sent swimming", async () => {
   const bot = { entity: { position: new Vec3(4.5, 60, 0.5), onGround: true }, blockAt: poolWorld } as unknown as Parameters<typeof swimToShore>[0];
   assert.equal(await swimToShore(bot, { x: 50, z: 0 }), false);
+});
+
+test("equipDigTool waits for the pickaxe before a stone dig, and never takes a pickaxe for an axe", async () => {
+  const events: string[] = [];
+  const items = [
+    { name: "stone_sword" },
+    { name: "wooden_pickaxe" },
+    { name: "stone_pickaxe" },
+    { name: "stone_axe" },
+  ];
+  const bot = {
+    heldItem: items[0],
+    inventory: { items: () => items },
+    equip: async (item: { name: string }) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      bot.heldItem = item;
+      events.push(`equipped ${item.name}`);
+    },
+  } as any;
+  const stone = { name: "stone", material: "mineable/pickaxe" } as any;
+  await equipDigTool(bot, stone);
+  // Live 18:20: the un-awaited swap left the sword in hand, 7.5 s per stone.
+  assert.equal(bot.heldItem.name, "stone_pickaxe", "swap finished before the dig would start");
+  await equipDigTool(bot, stone);
+  assert.deepEqual(events, ["equipped stone_pickaxe"], "already held: no second swap");
+  await equipDigTool(bot, { name: "oak_log", material: "mineable/axe" } as any);
+  assert.equal(bot.heldItem.name, "stone_axe");
 });
