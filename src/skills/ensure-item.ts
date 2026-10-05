@@ -811,7 +811,10 @@ export class EnsureItemRunner {
     if (!within.ok) {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: within.reason, retryable: false };
     }
-    if (this.availableFuel() < fuelFor(step.quantity)) {
+    // Carried fuel, not carried + chest: with 66 fuel in the chest and none
+    // in hand this skipped the withdraw and failed "no fuel to burn" on every
+    // iron_pickaxe try (2026-10-05 09:54).
+    if (countItem(this.opts.bot, "coal") + countItem(this.opts.bot, "charcoal") < fuelFor(step.quantity)) {
       const fuel = await this.materializeFuel(fuelFor(step.quantity));
       if (!fuel.ok) {
         return { errorCode: "INSUFFICIENT_MATERIALS", reason: fuel.reason, retryable: false };
@@ -820,13 +823,12 @@ export class EnsureItemRunner {
     if (furnace === null) {
       return { errorCode: "NOT_READY", reason: "no furnace at home to smelt", retryable: true };
     }
-    const fuelItem = findItem(this.opts.bot, "coal") ?? findItem(this.opts.bot, "charcoal");
-    if (fuelItem === null) {
+    if (findItem(this.opts.bot, "coal") === null && findItem(this.opts.bot, "charcoal") === null) {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: "no fuel to burn", retryable: false };
     }
     const smelted = await smeltItems(this.opts.bot, furnace, {
       inputName: input,
-      fuelName: fuelItem.name,
+      fuelName: ["coal", "charcoal"],
       outputName: bare,
       times: step.quantity,
       signal: this.signals?.signal,

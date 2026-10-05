@@ -223,3 +223,25 @@ test("a run that starts while the last one unwinds waits for it instead of block
   assert.equal(second.status, "completed");
   assert.deepEqual(started, ["stone_sword", "stone_axe"]);
 });
+
+test("a smelt step fetches fuel from the chest when none is carried", async () => {
+  // 2026-10-05 09:54: 66 fuel in the chest, none in hand: the step counted
+  // the chest as fuel on hand, skipped the withdraw, and failed "no fuel to burn".
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const carried: { name: string; count: number }[] = [{ name: "raw_iron", count: 3 }];
+  const bot = { inventory: { items: () => carried } };
+  const runner = new EnsureItemRunner({ bot, config: {} } as unknown as ConstructorParameters<typeof EnsureItemRunner>[0]);
+  const internals = runner as unknown as {
+    stored: Record<string, number>;
+    materialize: (name: string, count: number) => Promise<{ ok: boolean }>;
+    materializeFuel: (count: number) => Promise<{ ok: boolean }>;
+    stepSmelt: (step: { item: string; quantity: number }, furnace: null, data: object) => Promise<{ reason: string } | null>;
+  };
+  internals.stored = { coal: 66 };
+  internals.materialize = async () => ({ ok: true });
+  const fetched: number[] = [];
+  internals.materializeFuel = async (count) => { fetched.push(count); carried.push({ name: "coal", count }); return { ok: true }; };
+  const failure = await internals.stepSmelt({ item: "iron_ingot", quantity: 3 }, null, {});
+  assert.deepEqual(fetched, [1]);
+  assert.match(failure?.reason ?? "", /no furnace/, "got as far as the furnace");
+});
