@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recipe } from "prismarine-recipe";
-import { charcoalLogsFor, fuelFor, ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
+import { charcoalLogsFor, fuelFor, planksPlan, ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
 
 /** Tiny fake recipe catalog (ids are arbitrary but consistent). */
 function recipe(id: number, outputCount: number, deltas: [number, number][], requiresTable = false): Recipe {
@@ -187,4 +187,21 @@ test("a smelt's fuel step asks for one coal per 8 items, not one per item", () =
   const plan = resolvePlan("iron_ingot", 16, catalog);
   assert.equal(plan.ok, true);
   assert.deepEqual(plan.plan.steps.find((step) => step.kind === "fuel"), { kind: "fuel", quantity: 2 });
+});
+
+test("planks for a table come from logs when no planks are stocked", () => {
+  // Live 19:43 and 20:15: re-arming after a respawn found no table and could
+  // not make one: only stored planks were tried, with 48 logs at home.
+  assert.deepEqual(planksPlan(4, {}, { oak_log: 36, coal: 42 }), [
+    { kind: "withdraw", item: "oak_log", count: 1 },
+    { kind: "craft", item: "oak_planks", times: 1 },
+  ]);
+  assert.deepEqual(planksPlan(4, { birch_log: 2 }, { oak_log: 36 }), [{ kind: "craft", item: "birch_planks", times: 1 }], "carried logs before a chest trip");
+  assert.deepEqual(planksPlan(4, { oak_planks: 1 }, { spruce_planks: 2, oak_log: 5 }), [
+    { kind: "withdraw", item: "spruce_planks", count: 2 },
+    { kind: "withdraw", item: "oak_log", count: 1 },
+    { kind: "craft", item: "oak_planks", times: 1 },
+  ]);
+  assert.deepEqual(planksPlan(4, { oak_planks: 4 }, {}), []);
+  assert.deepEqual(planksPlan(4, { stripped_oak_log: 3 }, {}), [], "stripped logs are not raw logs");
 });

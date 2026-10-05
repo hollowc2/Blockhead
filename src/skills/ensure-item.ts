@@ -9,7 +9,7 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
-import { bareName, countItem, countPlanks, findItem, hasItem, itemsSummary } from "../minecraft/inventory.js";
+import { bareName, countItem, countPlanks, findItem, hasItem, isPlanksItemName, isRawLogItemName, itemsSummary, planksForLog } from "../minecraft/inventory.js";
 import { craftItem, itemId } from "../minecraft/crafting.js";
 import { smeltItems } from "../minecraft/smelting.js";
 import { countStoredItems, deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
@@ -899,9 +899,14 @@ export class EnsureItemRunner {
   private async ensureTable(): Promise<Block | null> {
     const bot = this.opts.bot;
     const home = this.opts.state.home;
-    const existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+    let existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
     if (existing !== null) return existing;
     if (home === null) return null;
+    // Just respawned at home, the chunks may still be arriving: a scan of
+    // unloaded terrain finds no table, as it found no chest (ed1fe0c).
+    await waitForChunks(bot);
+    existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+    if (existing !== null) return existing;
 
     if (!hasItem(bot, "crafting_table")) {
       const planks = await this.materializePlanks(TABLE_PLANK_COST);
@@ -943,17 +948,28 @@ export class EnsureItemRunner {
     return placed !== null && placed.name === "furnace" ? placed : null;
   }
 
-  /** Carry at least `count` planks of any wood type (deposited variants). */
+  /**
+   * Carry at least `count` planks of any wood type: stored planks first,
+   * then planks crafted from carried or stored logs. Planks alone left a
+   * respawned bot unable to make a table with 48 logs at home (19:43, 20:15).
+   */
   private async materializePlanks(count: number): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (countPlanks(this.opts.bot) >= count) return { ok: true };
-    for (const [name, sitting] of Object.entries(this.stored)) {
-      if (!name.endsWith("_planks") || sitting <= 0) continue;
-      const need = count - countPlanks(this.opts.bot);
-      if (need <= 0) return { ok: true };
-      const withdrawn = await withdrawFromHomeChest(this.opts.bot, this.opts.state, this.opts.storage, name, Math.min(need, sitting), this.opts.logger, this.signals?.signal);
-      this.withdrawAccount(name, withdrawn.withdrawn);
+    const bot = this.opts.bot;
+    if (countPlanks(bot) >= count) return { ok: true };
+    const carried: Record<string, number> = {};
+    for (const item of bot.inventory.items()) carried[item.name] = (carried[item.name] ?? 0) + item.count;
+    for (const action of planksPlan(count, carried, this.stored)) {
+      if (this.stopRequested) break;
+      if (action.kind === "withdraw") {
+        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, action.item, action.count, this.opts.logger, this.signals?.signal);
+        this.withdrawAccount(action.item, withdrawn.withdrawn);
+      } else {
+        const made = await craftItem(bot, action.item, { times: action.times, signal: this.signals?.signal });
+        if (!made.ok) this.opts.logger.warn({ item: action.item, reason: made.reason }, "ensure_item: could not craft planks");
+      }
+      if (countPlanks(bot) >= count) return { ok: true };
     }
-    return countPlanks(this.opts.bot) >= count ? { ok: true } : { ok: false, reason: "not enough planks in stock" };
+    return countPlanks(bot) >= count ? { ok: true } : { ok: false, reason: "not enough planks or logs in stock" };
   }
 
   // --- finishing ---
@@ -1109,4 +1125,42 @@ export async function runEquipmentUpgrade(
   return upgraded.length > 0
     ? { ok: true, status: "completed", data: { upgraded } }
     : { ok: false, status: "failed", errorCode: "NOT_READY", message: "no affordable tool upgrade right now", retryable: false, data: { upgraded: [] } };
+}
+
+/** One step toward carrying enough planks. */
+export type PlanksAction = { kind: "withdraw"; item: string; count: number } | { kind: "craft"; item: string; times: number };
+
+/**
+ * How to come by `need` planks: carried planks count first, then stored
+ * planks are withdrawn, then carried logs are crafted (4 planks a log), then
+ * stored logs are withdrawn and crafted.
+ */
+export function planksPlan(need: number, carried: Readonly<Record<string, number>>, stored: Readonly<Record<string, number>>): PlanksAction[] {
+  const actions: PlanksAction[] = [];
+  let short = need - Object.entries(carried).reduce((sum, [name, n]) => sum + (isPlanksItemName(name) ? n : 0), 0);
+  for (const [name, n] of Object.entries(stored)) {
+    if (short <= 0) return actions;
+    if (!isPlanksItemName(name) || n <= 0) continue;
+    const take = Math.min(short, n);
+    actions.push({ kind: "withdraw", item: name, count: take });
+    short -= take;
+  }
+  for (const source of [carried, stored]) {
+    for (const [name, n] of Object.entries(source)) {
+      if (short <= 0) return actions;
+      if (!isRawLogItemName(name) || n <= 0) continue;
+      const times = Math.min(n, Math.ceil(short / 4));
+      if (source === stored) actions.push({ kind: "withdraw", item: name, count: times });
+      actions.push({ kind: "craft", item: planksForLog(name), times });
+      short -= times * 4;
+    }
+  }
+  return actions;
+}
+
+/** Wait (bounded) for the chunks around the bot to finish loading. */
+async function waitForChunks(bot: Bot): Promise<void> {
+  const wait = (bot as { waitForChunksToLoad?: () => Promise<void> }).waitForChunksToLoad;
+  if (typeof wait !== "function") return;
+  await Promise.race([wait.call(bot).catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
 }
