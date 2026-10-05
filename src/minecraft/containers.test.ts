@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { adoptHomeChests, countStoredItems, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
+import { adoptHomeChests, chestOpenableAt, countStoredItems, findHomeChest, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -124,4 +124,19 @@ test("a chest standing at home but missing from the registry is adopted", () => 
   assert.equal(adoptHomeChests(bot, homeState, repo), 1);
   assert.deepEqual(registered.at(-1), { x: 67, y: 96, z: 49 });
   assert.equal(adoptHomeChests(bot, homeState, repo), 0, "idempotent");
+});
+
+test("a chest under a furnace cannot open and is not the home chest", () => {
+  // 20:14: the repair set the chest at 65,96,51 under the home furnace.
+  const furnace = { name: "furnace", boundingBox: "block", transparent: false };
+  const chest = { name: "chest", boundingBox: "block", position: new Vec3(65, 96, 51) };
+  const blocked = { blockAt: (pos: Vec3) => (pos.y === 97 ? furnace : chest), entity: null } as unknown as Bot;
+  assert.equal(chestOpenableAt(blocked, { x: 65, y: 96, z: 51 }), false);
+  const clear = { blockAt: (pos: Vec3) => (pos.y === 97 ? { name: "air", boundingBox: "empty" } : chest) } as unknown as Bot;
+  assert.equal(chestOpenableAt(clear, { x: 65, y: 96, z: 51 }), true);
+  const slab = { blockAt: () => ({ name: "oak_slab", boundingBox: "block", transparent: false }) } as unknown as Bot;
+  assert.equal(chestOpenableAt(slab, { x: 0, y: 0, z: 0 }), true);
+  const homeState = { worldId: 1, home: null } as unknown as AgentState;
+  const repo = { listByCategory: () => [{ x: 65, y: 96, z: 51 }], list: () => [{ x: 65, y: 96, z: 51 }] } as unknown as StorageRepository;
+  assert.equal(findHomeChest(blocked, homeState, repo), null);
 });

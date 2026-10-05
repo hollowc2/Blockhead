@@ -48,12 +48,14 @@ import {
   withPathfinderDigging,
   type HomeLocation,
 } from "../minecraft/movement.js";
+import { chestOpenableAt } from "../minecraft/containers.js";
 import {
   collectBlocks,
   findBlockNear,
   findBlocksNear,
   findBlocksNearRefined,
   findPlacementSpot,
+  type PlacementSpot,
   isAir,
   isSolid,
   isRawLog,
@@ -1417,14 +1419,14 @@ export class BootstrapRunner {
 
     const item = findItem(bot, "chest");
     if (item === null) return { ok: false, reason: "chest vanished before placement" };
-    let spot = freeChestSlotSpot(bot, home) ?? findPlacementSpot(bot, home);
+    let spot = freeChestSlotSpot(bot, home) ?? openableChestSpot(bot, home);
     if (spot === null) {
       // The home column may be blocked (a crater from repeated deaths at
       // spawn, e.g.) while the bot itself stands on open ground. Mirror the
       // table rebuild's fallback: try a free cell two steps from the bot's
       // own feet — its current position is walkable by definition.
       const fallbackCenter = bot.entity?.position;
-      spot = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
+      spot = fallbackCenter !== undefined ? openableChestSpot(bot, fallbackCenter, 2) : null;
       if (spot !== null) {
         this.opts.logger.warn({ home, pos: fallbackCenter }, "no floor space near home for a chest; placing near the bot");
       }
@@ -1696,7 +1698,7 @@ export class BootstrapRunner {
     let spot = stationSlotSpot(bot, home, "furnace") ?? findPlacementSpot(bot, home);
     if (spot === null) {
       const fallbackCenter = bot.entity?.position;
-      spot = fallbackCenter !== undefined ? findPlacementSpot(bot, fallbackCenter, 2) : null;
+      spot = fallbackCenter !== undefined ? openableChestSpot(bot, fallbackCenter, 2) : null;
       if (spot !== null) this.opts.logger.warn({ home, pos: fallbackCenter }, "no floor space near home for a furnace; placing near the bot");
     }
     if (spot === null) { this.opts.logger.warn({ home }, "furnace: no placement spot"); return null; }
@@ -2834,6 +2836,17 @@ function countFuelItems(bot: Bot): number {
 }
 
 /** Nearest placed chest within `radius` of the bot, or null. */
+/** A placement spot near `center` whose chest lid can open (nothing solid above). */
+function openableChestSpot(bot: Bot, center: { x: number; y: number; z: number }, radius?: number): PlacementSpot | null {
+  const tried: Vec3[] = [];
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const spot = findPlacementSpot(bot, center, radius, tried);
+    if (spot === null || chestOpenableAt(bot, spot.position)) return spot;
+    tried.push(spot.position);
+  }
+  return null;
+}
+
 /** Wait (bounded) for the chunks around the bot to finish loading. */
 async function waitForChunks(bot: Bot): Promise<void> {
   const wait = (bot as { waitForChunksToLoad?: () => Promise<void> }).waitForChunksToLoad;
@@ -2842,7 +2855,7 @@ async function waitForChunks(bot: Bot): Promise<void> {
 }
 
 function chestBlockNear(bot: Bot, radius: number): Block | null {
-  const positions = findBlocksNear(bot, isChestBlock, radius, 1);
+  const positions = findBlocksNear(bot, (block) => isChestBlock(block) && chestOpenableAt(bot, block.position), radius, 1);
   const first = positions[0];
   return first !== undefined ? bot.blockAt(first) : null;
 }

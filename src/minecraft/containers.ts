@@ -36,6 +36,22 @@ export function isChestBlock(block: Block): boolean {
 }
 
 /**
+ * False when an opaque full block sits on the chest's cell: the lid cannot
+ * open and every open times out. The 20:14 repair set a chest under the home
+ * furnace and every deposit failed ("windowOpen did not fire").
+ */
+export function chestOpenableAt(bot: Bot, at: { x: number; y: number; z: number }): boolean {
+  const above = bot.blockAt(new Vec3(at.x, at.y + 1, at.z));
+  if (above === null) return true;
+  return above.boundingBox !== "block" || above.transparent === true || /chest|_slab|_stairs|glass|leaves/.test(above.name);
+}
+
+/** A chest the bot can actually use. */
+function usableChest(bot: Bot, block: Block | null): block is Block {
+  return block !== null && isChestBlock(block) && chestOpenableAt(bot, block.position);
+}
+
+/**
  * Locate a home chest: the registered general (delivery) chest first (spec
  * 23 — "locate designated delivery/general chest"), then any registered
  * storage, then a block scan around the bot. A chest the scan finds near
@@ -83,7 +99,7 @@ export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepos
     const byCategory = (category: string): Block | null => {
       for (const location of storage.listByCategory(worldId, category)) {
         const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
-        if (block !== null && isChestBlock(block)) return block;
+        if (usableChest(bot, block)) return block;
       }
       return null;
     };
@@ -91,10 +107,10 @@ export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepos
     if (general !== null) return general;
     for (const location of storage.list(worldId)) {
       const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
-      if (block !== null && isChestBlock(block)) return block;
+      if (usableChest(bot, block)) return block;
     }
   }
-  const positions = findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 1);
+  const positions = findBlocksNear(bot, (block) => usableChest(bot, block), CHEST_SCAN_RADIUS, 1);
   const first = positions[0];
   if (first === undefined) return null;
   const block = bot.blockAt(first);

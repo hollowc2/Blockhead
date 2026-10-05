@@ -75,6 +75,9 @@ const airWorld = (): Record<string, "air" | "solid" | "planks" | "chest" | "oak_
     const below = `${cell.x},${cell.y - 1},${cell.z}`;
     if (!cellSet.has(below)) world[below] = "solid";
   }
+  // Headroom over each chest slot, as in the real shed (a lid under a block
+  // cannot open).
+  for (const slot of l.chestSlots) world[`${slot.x},${slot.y + 1},${slot.z}`] = "air";
   return world;
 };
 

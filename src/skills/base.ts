@@ -1,3 +1,4 @@
+import { chestOpenableAt } from "../minecraft/containers.js";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
@@ -440,6 +441,7 @@ export function freeChestSlotSpot(bot: Bot, home: HomeLocation): PlacementSpot |
     if (cell !== null && !isPlaceableAir(cell)) continue; // occupied (a chest or anything else)
     const below = bot.blockAt(slot.offset(0, -1, 0));
     if (below === null || !isSolid(below)) continue;
+    if (!chestOpenableAt(bot, slot)) continue; // a lid under a block never opens
     return { position: slot, reference: below, face: new Vec3(0, 1, 0) };
   }
   return null;
