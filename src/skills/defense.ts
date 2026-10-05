@@ -111,7 +111,7 @@ interface KillResult {
   retreat?: boolean;
 }
 
-type FightBreak = "retarget" | "retreat" | "unreachable";
+type FightBreak = "retarget" | "retreat" | "outnumbered" | "unreachable";
 
 /**
  * Deterministic defense runner: clears nearby hostile mobs, never human
@@ -359,8 +359,14 @@ export class DefenseRunner {
     if (self === undefined || self === null) return null;
     const targetDistance = distanceBetween(target.position, self);
     const targetInMelee = targetDistance <= MELEE_RADIUS;
+    // A one-zombie fight that a crowd joins is not fought out: death 74
+    // (23:55, 100 blocks north) went 16 -> 0 health against a skeleton and
+    // three zombies, with the crowd check only run when the pass began.
+    if (allowRetreat && this.hostilesWithin(CROWD_RADIUS) >= CROWD_SIZE) return "outnumbered";
     if (!targetInMelee && this.nearestHostile(null, MELEE_RADIUS, target.id) !== null) return "retarget";
-    if (allowRetreat && belowHealthRetreat(bot.health) && this.nearestHostile(null, MELEE_RADIUS) === null) return "retreat";
+    // Low on health, the bot runs unless one mob alone is on it: turning
+    // away from two at once only trades the fight for death in place.
+    if (allowRetreat && belowHealthRetreat(bot.health) && this.hostilesWithin(MELEE_RADIUS) !== 1) return "retreat";
     if (farSince === null) return null;
     if (targetDistance > UNREACHABLE_DISTANCE) {
       const now = Date.now();
@@ -438,6 +444,7 @@ export class DefenseRunner {
       this.opts.logger.info({ target: name, why, health: bot.health }, "defense: breaking off the fight");
       if (why === "retarget") return { ok: false, retarget: true, reason: `another hostile closed in while fighting the ${name}` };
       if (why === "retreat") return { ok: false, retreat: true, reason: `health ${bot.health} fell to the retreat floor fighting the ${name}` };
+      if (why === "outnumbered") return { ok: false, retreat: true, reason: `outnumbered by ${this.hostilesWithin(CROWD_RADIUS)} hostiles while fighting the ${name}` };
       return { ok: false, reason: `could not reach the ${name}` };
     };
 

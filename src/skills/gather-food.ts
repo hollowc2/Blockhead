@@ -732,6 +732,10 @@ export class GatherFoodRunner {
       }
       if (this.stopped()) return this.interrupted(data);
     }
+    // Armor on before the hunt leaves home: death 74 (23:55) was a zombie
+    // fight 100 blocks out with 9 leather in the pack.
+    await this.armorUp();
+    if (this.stopped()) return this.interrupted(data);
 
     const config = this.opts.config.bootstrap;
     const baseRadius = config?.search_radius ?? 48;

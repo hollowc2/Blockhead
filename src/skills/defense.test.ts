@@ -267,3 +267,22 @@ test("outnumbered by three hostiles, the reflex runs instead of fighting", async
   assert.match(result.message ?? "", /outnumbered by 3/);
   assert.ok(h.travels.at(-1)!.to.x < h.self.position.x, "ran away from the pack");
 });
+
+test("a crowd that gathers mid-fight makes the reflex run", async () => {
+  // Death 74 (23:55): one zombie became a skeleton and three zombies while
+  // the bot fought, 16 -> 0 health, with no retreat until health 0.
+  const h = harness();
+  h.add(mob(7, "zombie", { x: 22, y: 64, z: 0 }));
+  h.hooks.attack = () => {
+    h.add(mob(8, "zombie", { x: 26, y: 64, z: 3 }));
+    h.add(mob(9, "zombie", { x: 15, y: 64, z: -4 }));
+    h.add(mob(10, "skeleton", { x: 24, y: 64, z: 6 }));
+    return new Promise<void>(() => undefined);
+  };
+
+  const result = await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(h.attacked, ["zombie"]);
+  assert.match(result.message ?? "", /outnumbered by 4 hostiles while fighting the zombie/);
+  assert.ok(h.travels.length >= 1, "ran for it");
+});
