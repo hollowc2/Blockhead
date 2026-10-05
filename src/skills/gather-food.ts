@@ -522,6 +522,8 @@ export class GatherFoodRunner {
 
   /** Set per run: true when a below-floor crisis may search past the night cap. */
   private expandAtNight = false;
+  /** Set per run: true once the farm pass ran (it owns the wheat; forage skips it). */
+  private farmTended = false;
   /** Set per run: hunt target filter (specific mob, "hostile", or null for passives). */
   private targetMob: string | null = null;
 
@@ -731,7 +733,9 @@ export class GatherFoodRunner {
     // the animals near home do not come back once eaten.
     let farmFed = false;
     let growing = 0;
+    this.farmTended = false;
     if (this.targetMob === null) {
+      this.farmTended = true;
       try {
         const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal: this.signals?.signal, shouldAbort: this.travelAbort });
         this.opts.logger.info(farm, "gather_food tended farm");
@@ -1110,7 +1114,11 @@ export class GatherFoodRunner {
     const positions = findBlocksNear(bot, isForageFoodBlock, forageScanRadius(radius), FORAGE_CANDIDATES);
     const targets = positions
       .map((v) => bot.blockAt(v))
-      .filter((b): b is Block => b !== null);
+      .filter((b): b is Block => b !== null)
+      // Wheat by home is the farm's, harvested by the farm pass: foraging it
+      // with the collectblock planner stalled 4 minutes on five ripe cells
+      // and timed out (00:26:46).
+      .filter((b) => !(this.farmTended && bareName(b.name) === "wheat"));
     let blocks = 0;
     if (targets.length > 0) {
       this.opts.logger.info({ blocks: targets.map((b) => b.name), radius }, "gather_food foraging");

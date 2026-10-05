@@ -244,3 +244,27 @@ test("with the farm growing and the bot fed, hunts stay near home", () => {
   assert.equal(isFarmFed(69, 9), false, "hungry: hunt as far as it takes");
   assert.equal(isFarmFed(5, 20), false, "a farm that is barely started does not feed the bot");
 });
+
+test("forage leaves the farm's wheat to the farm pass", async () => {
+  // 00:26:46: forage went for five ripe farm cells with the collectblock
+  // planner and stalled 4 minutes until its 240 s timeout.
+  const { GatherFoodRunner } = await import("./gather-food.js");
+  const { Vec3 } = await import("vec3");
+  const wheat = { name: "wheat", position: new Vec3(3, 64, 0), getProperties: () => ({ age: 7 }) };
+  let collected = 0;
+  const bot = Object.assign(new EventEmitter(), {
+    entity: { position: new Vec3(0, 64, 0) },
+    entities: {},
+    inventory: { items: () => [] },
+    findBlocks: () => [wheat.position],
+    blockAt: () => wheat,
+    collectBlock: { collect: async () => { collected += 1; } },
+  }) as unknown as Bot;
+  const runner = new GatherFoodRunner({ bot, state: { home: null, worldId: null }, config: {}, bus: { emit() {} }, storage: {}, skills: {}, logger: { info() {}, warn() {}, debug() {} } } as unknown as ConstructorParameters<typeof GatherFoodRunner>[0]);
+  (runner as unknown as { farmTended: boolean }).farmTended = true;
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const foraged = await withWorldActionLease({ owner: "forage-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () =>
+    (runner as unknown as { forageNear: (radius: number) => Promise<{ blocks: number }> }).forageNear(48));
+  assert.equal(foraged.blocks, 0);
+  assert.equal(collected, 0, "no collect of farm wheat");
+});
