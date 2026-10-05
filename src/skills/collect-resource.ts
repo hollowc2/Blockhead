@@ -123,6 +123,18 @@ const SOURCE_BLOCK_BY_ITEM: Record<string, string> = {
 };
 
 /** The block to mine for `resource`: its natural source when that differs. */
+/**
+ * Total logs to carry before crafting a wooden tool: 3 planks for the head
+ * plus 2 for sticks when they are missing, at 4 planks per log. A total, not
+ * a shortfall — gatherLogsForTool stops once this many are held, so passing
+ * the shortfall returned at once with 1 log carried and the plank craft then
+ * failed ("not enough logs to craft 5 planks (4 held)").
+ */
+export function woodenToolLogTarget(logs: number, planks: number, sticksNeeded: boolean): number {
+  const planksNeeded = 3 + (sticksNeeded ? 2 : 0);
+  return Math.max(logs, Math.ceil(Math.max(0, planksNeeded - planks) / 4));
+}
+
 export function sourceBlockName(resource: string): string {
   const bare = bareName(resource);
   return SOURCE_BLOCK_BY_ITEM[bare] ?? bare;
@@ -857,7 +869,7 @@ export class CollectResourceRunner {
     // a separate home/storage failure if that remains unresolved.
     if (family === "axe") {
       this.opts.logger.warn({ reason: crafted.reason }, "wooden axe unavailable; gathering logs by hand");
-      this.announce("I cannot reach the crafting table, so I’m gathering logs by hand.");
+      this.announce(`I could not make a wooden axe (${crafted.reason}), so I’m gathering logs by hand.`);
       return { ok: true };
     }
     return crafted;
@@ -910,9 +922,9 @@ export class CollectResourceRunner {
     await syncInventory(bot, this.signals?.signal);
     const sticksNeeded = countSticks(bot) < 2;
     const planksNeeded = 3 + (sticksNeeded ? 2 : 0);
-    const logsNeeded = Math.max(0, Math.ceil((planksNeeded - countPlanks(bot)) / 4) - countLogs(bot));
-    if (logsNeeded > 0) {
-      const gathered = await this.gatherLogsForTool(logsNeeded);
+    const logsTarget = woodenToolLogTarget(countLogs(bot), countPlanks(bot), sticksNeeded);
+    if (countLogs(bot) < logsTarget) {
+      const gathered = await this.gatherLogsForTool(logsTarget);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
       await syncInventory(bot, this.signals?.signal);
     }
