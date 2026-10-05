@@ -439,10 +439,11 @@ async function climbStep(
 
 /**
  * Hold the best carried tool for digging `block`, and wait for the swap: dig
- * time is fixed from the held item when the dig starts. The un-awaited equip
- * dug every stair cell at hand speed, 7.5 s per stone block, ~22 s per block
- * climbed (2026-10-04 18:20). Checks the real held item rather than a cached
- * kind, which went stale when anything else swapped the hand.
+ * time is fixed from the held item when the dig starts, so an un-awaited
+ * equip dug the first cell with whatever was in hand. Checks the real held
+ * item rather than a cached kind, which went stale when anything else
+ * swapped the hand. (The 7.5 s-per-cell climb of 2026-10-04 18:20 was a
+ * broken pickaxe; see craftPickaxeInField.)
  */
 export async function equipDigTool(bot: Bot, block: import("prismarine-block").Block, signal?: AbortSignal): Promise<void> {
   const want = digToolKind(block);
