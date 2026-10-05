@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { adoptHomeChests, chestOpenableAt, countStoredItems, findHomeChest, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
+import { adoptHomeChests, chestOpenableAt, countStoredItems, findHomeChest, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents, withdrawFirstOfEach } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -161,4 +161,37 @@ test("after a restart, an unreachable chest counts its persisted reading", async
   const away = { blockAt: () => null } as unknown as Bot;
   // Fresh process: nothing read this session (world 992 never seen).
   assert.deepEqual(await leased(() => countStoredItems(away, { worldId: 992 } as unknown as AgentState, storage)), { coal: 52, charcoal: 14 });
+});
+
+test("spare tools come from one chest visit, asking only for what it holds", async () => {
+  // Live 22:00:25: six "Can't find X" withdraws per recovery, one per spare.
+  const carried: { name: string; count: number }[] = [];
+  const chestItems = [{ name: "stone_pickaxe", count: 1 }, { name: "coal", count: 42 }];
+  const ids: Record<string, number> = { iron_axe: 1, stone_axe: 2, wooden_axe: 3, iron_pickaxe: 4, stone_pickaxe: 5, wooden_pickaxe: 6, coal: 7 };
+  const asked: string[] = [];
+  let opens = 0;
+  const bot = {
+    entity: { position: new Vec3(66.5, 96, 50.5) },
+    registry: { itemsByName: Object.fromEntries(Object.entries(ids).map(([name, id]) => [name, { id }])) },
+    inventory: { items: () => carried },
+    findBlocks: () => [],
+    blockAt: (pos: Vec3) => pos.x === CHEST.x && pos.y === CHEST.y && pos.z === CHEST.z ? { name: "chest", position: new Vec3(CHEST.x, CHEST.y, CHEST.z) } : null,
+    openContainer: async () => {
+      opens += 1;
+      return {
+        containerItems: () => chestItems,
+        withdraw: async (id: number) => {
+          const name = Object.keys(ids).find((key) => ids[key] === id)!;
+          asked.push(name);
+          carried.push({ name, count: 1 });
+        },
+        close: async () => {},
+      };
+    },
+  } as unknown as Bot;
+  const groups = [["iron_axe", "stone_axe", "wooden_axe"], ["iron_pickaxe", "stone_pickaxe", "wooden_pickaxe"]];
+  const taken = await leased(() => withdrawFirstOfEach(bot, state, storage, groups, silent));
+  assert.deepEqual(taken, ["stone_pickaxe"]);
+  assert.deepEqual(asked, ["stone_pickaxe"], "no withdraw for spares the chest does not hold");
+  assert.equal(opens, 1);
 });

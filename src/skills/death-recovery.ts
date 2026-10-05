@@ -9,7 +9,7 @@ import type { DeathEventsRepository } from "../memory/deaths.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { StorageRepository } from "../memory/storage.js";
 import { craftItem } from "../minecraft/crafting.js";
-import { findHomeChest, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { withdrawFirstOfEach } from "../minecraft/containers.js";
 import { bareName, countItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
@@ -481,25 +481,18 @@ export class DeathRecoveryRunner {
    */
   private async ensureEssentialEquipment(signals: TaskSignals): Promise<boolean> {
     const bot = this.opts.bot;
-    if (hasUsableFamilyTool(bot, "axe") && hasUsableFamilyTool(bot, "pickaxe")) return true;
-    if (!hasUsableFamilyTool(bot, "axe")) await this.obtainTool("axe", signals);
-    if (!hasUsableFamilyTool(bot, "pickaxe")) await this.obtainTool("pickaxe", signals);
+    const missing = (["axe", "pickaxe"] as const).filter((family) => !hasUsableFamilyTool(bot, family));
+    if (missing.length === 0) return true;
+    // One chest visit for both families, taking only spares it holds.
+    await withdrawFirstOfEach(bot, this.opts.state, this.opts.storage, missing.map((family) => SPARE_TOOLS[family]), this.opts.logger, signals.signal);
+    for (const family of missing) {
+      if (!hasUsableFamilyTool(bot, family)) await this.craftTool(family, signals);
+    }
     return hasUsableFamilyTool(bot, "axe") && hasUsableFamilyTool(bot, "pickaxe");
   }
 
-  private async obtainTool(family: "axe" | "pickaxe", signals: TaskSignals): Promise<void> {
+  private async craftTool(family: "axe" | "pickaxe", signals: TaskSignals): Promise<void> {
     const bot = this.opts.bot;
-    const spares = family === "axe" ? ["iron_axe", "stone_axe", "wooden_axe"] : ["iron_pickaxe", "stone_pickaxe", "wooden_pickaxe"];
-    // Probe the home chest once per family, not once per spare item: a home
-    // without a chest supplies none of them, and six "no chest at home"
-    // warnings per recovery drown the actual story (the item is gone).
-    const chest = findHomeChest(bot, this.opts.state, this.opts.storage);
-    if (chest !== null) {
-      for (const name of spares) {
-        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, 1, this.opts.logger, signals.signal);
-        if (withdrawn.withdrawn > 0) return;
-      }
-    }
     // Craft fallback: only when the ingredients and a table already exist.
     if (countItem(bot, "cobblestone") < 3 || countItem(bot, "stick") < 2) return;
     const table = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
@@ -529,6 +522,12 @@ export class DeathRecoveryRunner {
     }
   }
 }
+
+/** Spare tools taken from the home chest after a death, best first. */
+const SPARE_TOOLS = {
+  axe: ["iron_axe", "stone_axe", "wooden_axe"],
+  pickaxe: ["iron_pickaxe", "stone_pickaxe", "wooden_pickaxe"],
+} as const;
 
 /**
  * Why walking to the death site is too dangerous right now, or null: the bot

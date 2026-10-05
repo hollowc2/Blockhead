@@ -409,6 +409,57 @@ export async function withdrawFromHomeChest(
   return { withdrawn: Math.max(0, Math.min(count, countItem(bot, itemName) - before)) };
 }
 
+/**
+ * Open the home chest once and take one of the first item in each group the
+ * chest actually holds (e.g. the best spare axe and the best spare pickaxe).
+ * Asking for each candidate in turn cost a failed "Can't find X" withdraw
+ * apiece, six per death recovery (2026-10-04 20:17, 22:00:25). Returns the
+ * names withdrawn.
+ */
+export async function withdrawFirstOfEach(
+  bot: Bot,
+  state: AgentState,
+  storage: StorageRepository,
+  groups: readonly (readonly string[])[],
+  logger: Logger,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  requireWorldActionLease(signal);
+  throwIfAborted(signal);
+  const chest = findHomeChest(bot, state, storage);
+  if (chest === null || groups.length === 0) return [];
+  const taken: string[] = [];
+  try {
+    const container = await approachAndOpen(bot, state, chest, signal);
+    throwIfAborted(signal);
+    try {
+      const held = new Set(container.containerItems().map((item) => bareName(item.name)));
+      for (const group of groups) {
+        const name = group.find((candidate) => held.has(bareName(candidate)));
+        if (name === undefined) continue;
+        const itemId = bot.registry.itemsByName[bareName(name)]?.id;
+        if (itemId === undefined) continue;
+        const before = countItem(bot, name);
+        try {
+          assertContainerAllowed(state, chest);
+          await withdraw(container, itemId, null, 1, signal);
+        } catch (err) {
+          throwIfAborted(signal);
+          logger.warn({ err: String(err), item: name }, "chest withdraw failed");
+          continue;
+        }
+        if (countItem(bot, name) > before) taken.push(name);
+      }
+    } finally {
+      await closeWindow(container);
+    }
+  } catch (err) {
+    throwIfAborted(signal);
+    logger.warn({ err: String(err) }, "chest withdraw failed");
+  }
+  return taken;
+}
+
 // --- Phase 11: storage measurement and organization primitives ---
 
 /** One registered container's live measurement (spec 21.4 capacity tracking). */
