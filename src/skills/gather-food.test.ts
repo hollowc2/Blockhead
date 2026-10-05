@@ -155,3 +155,16 @@ test("a sighting near a recent death is not walked to again", () => {
   const oldDeath = [{ x: 26.4, y: 71, z: 136.6, at: now - 31 * 60_000 }];
   assert.deepEqual(pickSighting([pit], home, 1024, oldDeath, now), pit, "an old death no longer blocks the spot");
 });
+
+test("after an animal kill, waitForDrops holds out for the meat past an early feather", async () => {
+  let scans = 0;
+  const found = await waitForDrops(
+    () => (++scans >= 4 ? ["feather", "chicken"] : ["feather"]),
+    1_000,
+    5,
+    undefined,
+    (drops) => drops.includes("chicken"),
+  );
+  assert.deepEqual(found, ["feather", "chicken"]);
+  assert.ok(scans >= 4, "did not stop at the feather alone");
+});

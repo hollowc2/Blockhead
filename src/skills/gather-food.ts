@@ -418,14 +418,20 @@ export async function waitForDrops<T>(
   settleMs: number,
   intervalMs: number,
   signal?: AbortSignal,
+  ready: (found: T[]) => boolean = (found) => found.length > 0,
 ): Promise<T[]> {
   const deadline = Date.now() + settleMs;
   let found = scan();
-  while (found.length === 0 && Date.now() < deadline && signal?.aborted !== true) {
+  while (!ready(found) && Date.now() < deadline && signal?.aborted !== true) {
     await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
     found = scan();
   }
   return found;
+}
+
+function isFoodDrop(drop: Entity): boolean {
+  const item = drop.getDroppedItem();
+  return item !== null && FOOD_ITEM_NAMES[bareName(item.name)] === true;
 }
 
 function lootDropsNear(bot: Bot, radius: number): Entity[] {
@@ -955,24 +961,38 @@ export class GatherFoodRunner {
       return { ok: false, reason: `attack settled without an observed defeat of the ${mob.name ?? "animal"}` };
     }
 
-    const loot = await this.collectLoot();
+    const loot = await this.collectLoot(ANIMAL_MOB_NAMES.has(canonicalMobName(mob)));
     if (!loot.ok) return { ok: false, reason: loot.reason };
     return { ok: true, name: mob.name ?? "animal" };
   }
 
-  /** Pick up every loot drop within `LOOT_RADIUS` of the bot. */
-  private async collectLoot(): Promise<{ ok: true; items: number } | { ok: false; reason: string }> {
+  /**
+   * Pick up every loot drop within `LOOT_RADIUS` of the bot. After an animal
+   * kill the wait holds out for a food drop: a feather (or the last kill's
+   * leftovers) used to end it before the meat spawned, and a chicken kill
+   * gained no food (2026-10-04 16:58:35). One rescan after the pickup takes
+   * whatever landed meanwhile.
+   */
+  private async collectLoot(animal: boolean): Promise<{ ok: true; items: number } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
-    const drops = await waitForDrops(() => lootDropsNear(bot, LOOT_RADIUS), LOOT_SETTLE_MS, LOOT_POLL_MS, this.signals?.signal);
-    if (drops.length === 0) return { ok: true, items: 0 };
-    try {
-      await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signals?.signal), async () => {
-        await cancelCollection(bot);
-      }, this.signals?.signal);
-    } catch (err) {
-      return { ok: false, reason: `could not collect drops: ${String(err)}` };
+    const ready = animal ? (found: Entity[]) => found.some(isFoodDrop) : undefined;
+    let items = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      const drops = pass === 0
+        ? await waitForDrops(() => lootDropsNear(bot, LOOT_RADIUS), LOOT_SETTLE_MS, LOOT_POLL_MS, this.signals?.signal, ready)
+        : lootDropsNear(bot, LOOT_RADIUS);
+      if (drops.length === 0) break;
+      try {
+        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, drops, { ignoreNoPath: true }, this.signals?.signal), async () => {
+          await cancelCollection(bot);
+        }, this.signals?.signal);
+      } catch (err) {
+        if (items > 0) break;
+        return { ok: false, reason: `could not collect drops: ${String(err)}` };
+      }
+      items += drops.length;
     }
-    return { ok: true, items: drops.length };
+    return { ok: true, items };
   }
 
   /**
