@@ -58,8 +58,8 @@ const DANGER_PROXIMITY = 4;
  * killed it.
  */
 const RANGED_GUARD_RADIUS = 16;
-/** Hostile mobs that shoot from range. */
-const RANGED_MOB_NAMES: ReadonlySet<string> = new Set(["skeleton", "stray", "bogged", "pillager", "witch", "blaze", "ghast"]);
+/** Hostile mobs that shoot from range (drowned throw tridents). */
+const RANGED_MOB_NAMES: ReadonlySet<string> = new Set(["skeleton", "stray", "bogged", "pillager", "witch", "blaze", "ghast", "drowned"]);
 /**
  * This many hostiles of any kind around the site make it a nest: one zombie
  * is the site scan's job, but a pack of six plus creepers killed the bot

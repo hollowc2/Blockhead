@@ -199,6 +199,9 @@ function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   // getting wedged in terrain; a companion can afford the longer route.
   movements.allowParkour = false;
   movements.maxDropDown = 3;
+  // Swim only when the way round is much longer. Routes straight across the
+  // drowned lake west of home cost five deaths on 2026-10-04.
+  (movements as unknown as { liquidCost: number }).liquidCost = 4;
 }
 
 /** Bots whose pathfinder must not place scaffolding (nesting depth). */
@@ -581,14 +584,14 @@ function standable(bot: Bot, cell: Vec3): boolean {
 }
 
 /** Nearest standable bank cell within SHORE_SCAN of a swimming bot, preferring the side toward `toward`. */
-export function nearestShore(bot: Bot, toward: { x: number; z: number }): Vec3 | null {
+export function nearestShore(bot: Bot, toward: { x: number; z: number }, scan = SHORE_SCAN): Vec3 | null {
   const self = bot.entity;
   if (self === null || self === undefined) return null;
   const feet = self.position.floored();
   let best: Vec3 | null = null;
   let bestScore = Infinity;
-  for (let dx = -SHORE_SCAN; dx <= SHORE_SCAN; dx++) {
-    for (let dz = -SHORE_SCAN; dz <= SHORE_SCAN; dz++) {
+  for (let dx = -scan; dx <= scan; dx++) {
+    for (let dz = -scan; dz <= scan; dz++) {
       for (let dy = -1; dy <= 2; dy++) {
         const cell = feet.offset(dx, dy, dz);
         if (!standable(bot, cell)) continue;
@@ -609,18 +612,22 @@ export function nearestShore(bot: Bot, toward: { x: number; z: number }): Vec3 |
  * stranded). Swims to the nearest bank, holding jump to stay up. Returns true
  * once the bot stands out of the water.
  */
-export async function swimToShore(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal): Promise<boolean> {
+export async function swimToShore(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal, scan = SHORE_SCAN): Promise<boolean> {
   const self = bot.entity;
   if (self === null || self === undefined || typeof bot.blockAt !== "function") return false;
   if (!/water/.test(bot.blockAt(self.position.floored())?.name ?? "")) return false;
-  const shore = nearestShore(bot, toward);
-  if (shore === null) return false;
+  const shore = nearestShore(bot, toward, scan);
+  if (shore === null) {
+    logger.warn({ from: self.position.floored(), scan }, "swimming with no bank in sight");
+    return false;
+  }
   logger.warn({ from: self.position.floored(), shore }, "stuck swimming; heading for the bank");
   bot.clearControlStates();
   bot.setControlState("jump", true);
   bot.setControlState("forward", true);
   try {
-    const deadline = Date.now() + SHORE_SWIM_MS;
+    // About 2 blocks/s swimming: a far bank needs longer than a near one.
+    const deadline = Date.now() + Math.max(SHORE_SWIM_MS, self.position.distanceTo(shore) * 700);
     while (Date.now() < deadline) {
       if (signal?.aborted) break;
       const now = bot.entity;

@@ -51,6 +51,8 @@ const RETREAT_DISTANCE = 16;
 const RETREAT_TIMEOUT_MS = 10_000;
 /** Hostiles within this radius steer the retreat direction. */
 const RETREAT_THREAT_RADIUS = 24;
+/** How far a swimming bot looks for a bank before the retreat trip: a lake is wider than the movement default. */
+const SHORE_SEARCH_RADIUS = 16;
 /** A cap on mid-fight target switches within one pass. */
 const MAX_RETARGETS = 6;
 /** Wall-clock budget for the whole defense pass. */
@@ -282,8 +284,13 @@ export class DefenseRunner {
     return { ok: true, status: "completed", data, message: `cleared ${data.kills} hostiles` };
   }
 
+  /** In water now: the physics flag, confirmed by the block at the feet (the flag outlives a respawn). */
   private swimming(): boolean {
-    return (this.opts.bot.entity as { isInWater?: boolean } | null)?.isInWater === true;
+    const bot = this.opts.bot;
+    const entity = bot.entity as { isInWater?: boolean; position?: { floored(): unknown } } | null;
+    if (entity?.isInWater !== true) return false;
+    if (typeof bot.blockAt !== "function" || entity.position === undefined) return true;
+    return /water/.test(bot.blockAt(entity.position.floored() as never)?.name ?? "");
   }
 
   /** Nearest live hostile mob to `anchor` (the bot when defending itself). */
@@ -371,7 +378,7 @@ export class DefenseRunner {
     const target = retreatTarget(self, threats.map((entity) => entity.position), this.opts.config.home ?? null);
     // The pathfinder plans poorly from open water; swim to the bank first.
     if (this.swimming() && this.actions.shore !== undefined) {
-      await this.actions.shore(bot, target, this.signals?.signal);
+      await this.actions.shore(bot, target, this.signals?.signal, SHORE_SEARCH_RADIUS);
     }
     this.opts.logger.warn({
       reason,

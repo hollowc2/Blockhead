@@ -219,6 +219,7 @@ test("deathSiteDanger flags a pack of melee mobs or a creeper at the site", () =
   assert.match(deathSiteDanger(20, site, [zombie(2), zombie(5), { type: "hostile", name: "zombie_villager", position: { x: 8, y: 64, z: 0 } }]) ?? "", /3 hostiles/);
   assert.equal(deathSiteDanger(20, site, [zombie(2), zombie(5), zombie(30)]), null, "a far zombie is not part of the nest");
   assert.match(deathSiteDanger(20, site, [{ type: "hostile", name: "creeper", position: { x: 6, y: 64, z: 0 } }]) ?? "", /creeper/);
+  assert.match(deathSiteDanger(20, site, [{ type: "hostile", name: "drowned", position: { x: 9, y: 62, z: 0 } }]) ?? "", /drowned/, "tridents reach the site");
 });
 
 test("attacked while swimming, the reflex makes for the bank instead of fighting a drowned", async () => {
@@ -238,4 +239,17 @@ test("attacked while swimming, the reflex makes for the bank instead of fighting
   assert.equal(result.data?.retreated, true);
   assert.match(result.message ?? "", /attacked in the water/);
   assert.equal(shored.length, 1, "swam for the bank before the retreat trip");
+});
+
+test("a stale in-water flag on dry ground (just respawned) does not count as swimming", async () => {
+  const h = harness();
+  (h.self as { isInWater?: boolean }).isInWater = true;
+  (h.self.position as unknown as { floored: () => unknown }).floored = () => h.self.position;
+  (h.bot as unknown as { blockAt: () => { name: string } }).blockAt = () => ({ name: "grass_block" });
+  h.add(mob(8, "zombie", { x: 22, y: 64, z: 0 }));
+
+  const result = await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(h.attacked, ["zombie"], "fought on land as usual");
+  assert.doesNotMatch(result.message ?? "", /attacked in the water/);
 });
