@@ -172,7 +172,12 @@ export class DevelopLandRunner {
     if (signals?.checkpoint() === false) return interrupted();
     data.planted = farm.planted;
     this.opts.logger.info({ plot: survey.offset, cleared: data.cleared, planted: farm.planted, tilled: farm.tilled }, "develop: field done");
-    // Progress either way: a plot short of seeds is finished on the next run.
+    // No progress at all would re-run on the same plot every few seconds
+    // (14:41): fail so the restore cooldown spaces the retries.
+    if (data.cleared === 0 && farm.planted === 0 && farm.tilled === 0) {
+      return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not clear or plant the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
+    }
+    // A plot short of seeds is finished on the next run.
     return { ok: true, status: "completed", message: `Developed a field at ${survey.offset.dx},${survey.offset.dz}: cleared ${data.cleared}, planted ${farm.planted}.`, data };
   }
 }

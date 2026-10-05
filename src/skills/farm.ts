@@ -202,7 +202,10 @@ export function chooseFarmCells(home: { x: number; y: number; z: number }, looku
   const chosen: FarmCell[] = [];
   for (const plot of plots) {
     const covered = seeds >= chosen.length + plot.cells.length;
-    if (chosen.length === 0 || plot.established || covered) chosen.push(...plot.cells);
+    // A plot development just cleared is sown whatever the seed count (the
+    // pass gathers seeds from grass when short); gating it on seeds left
+    // the cleared plot untilled and development looping on it (14:41).
+    if (chosen.length === 0 || plot.established || plot.preferred || covered) chosen.push(...plot.cells);
   }
   return chosen;
 }

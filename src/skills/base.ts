@@ -1534,6 +1534,11 @@ export class BaseBuilderRunner {
       if (doorItem !== null) {
         const lower = layout.doorCells[0]!;
         if (isAir(bot.blockAt(lower))) {
+          // From just outside the gap: home's surface is the base roof, and a
+          // door placed from up there (5 blocks off, through the wall) was
+          // never answered (2026-10-05 14:41).
+          await travelAndWait(bot, { x: lower.x + 0.5, y: lower.y, z: lower.z + 1.5 }, { range: 1, timeoutMs: 30_000, signal: this.signals?.signal });
+          if (this.stopRequested) return this.interrupted(data);
           const block = await placeAtCell(bot, doorItem, lower, placedCells, this.signals?.signal);
           if (block !== null && isDoorBlock(block)) {
             data.doorPlaced = true;
