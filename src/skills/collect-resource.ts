@@ -659,6 +659,7 @@ export class CollectResourceRunner {
         anchor,
         (block) => blockMatchesResource(block, bare),
         (position) => isUsefulSite(position, bare, attempted, this.opts.state.home)
+          && withinRadiusOfHome(position, this.opts.state.home, this.maxRadius)
           && (/_log$/.test(bare) ? isTrunkBase(bot, position) : hasAirNeighbor(bot, position)),
         radius,
         SITE_CANDIDATES_PER_RADIUS,

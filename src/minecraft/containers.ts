@@ -174,9 +174,13 @@ export async function countStoredItems(
       continue;
     }
     const contents = loaded === null ? null : await readChest(bot, state, at, signal);
-    if (contents !== null) lastChestContents.set(key, contents);
-    // Unloaded, out of reach or busy: count what it held when last read.
-    for (const [name, count] of Object.entries(contents ?? lastChestContents.get(key) ?? {})) {
+    if (contents !== null) {
+      lastChestContents.set(key, contents);
+      storage.rememberContents?.(worldId, location.id, contents);
+    }
+    // Unloaded, out of reach or busy: count what it held when last read,
+    // this session or (after a restart) as persisted in the registry.
+    for (const [name, count] of Object.entries(contents ?? lastChestContents.get(key) ?? location.lastContents ?? {})) {
       totals[name] = (totals[name] ?? 0) + count;
     }
   }

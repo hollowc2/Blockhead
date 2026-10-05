@@ -17,6 +17,8 @@ export interface StorageLocation {
   z: number;
   protected: number;
   lastSeenAt: string | null;
+  /** Contents when the chest was last opened (survives restarts). */
+  lastContents?: Record<string, number>;
 }
 
 export interface RegisterStorageInput {
@@ -39,6 +41,7 @@ interface StorageRow {
   z: number;
   protected: number;
   last_seen_at: string | null;
+  metadata_json?: string | null;
 }
 
 /** Home chests start as protected infrastructure (spec 21.4 `protected`). */
@@ -145,6 +148,18 @@ export class StorageRepository {
       .run(id, worldId);
   }
 
+  /**
+   * Record what a chest held when it was last opened. Kept in the row so a
+   * restart away from home does not read the stock as empty: after a deploy
+   * at 21:10 the bot, 100 blocks out, saw fuel 4 with 66 in the chest and
+   * set off on a 60-coal run.
+   */
+  rememberContents(worldId: number, id: number, contents: Record<string, number>): void {
+    this.db.sql
+      .prepare("UPDATE storage_locations SET metadata_json = ?, last_seen_at = ? WHERE id = ? AND world_id = ?")
+      .run(JSON.stringify({ contents }), new Date().toISOString(), id, worldId);
+  }
+
   private toLocation(row: StorageRow): StorageLocation {
     return {
       id: row.id,
@@ -157,6 +172,17 @@ export class StorageRepository {
       z: row.z,
       protected: row.protected,
       lastSeenAt: row.last_seen_at,
+      ...parseContents(row.metadata_json),
     };
+  }
+}
+
+function parseContents(json: string | null | undefined): { lastContents?: Record<string, number> } {
+  if (json === null || json === undefined || json === "") return {};
+  try {
+    const parsed = JSON.parse(json) as { contents?: Record<string, number> };
+    return parsed.contents !== undefined && typeof parsed.contents === "object" ? { lastContents: parsed.contents } : {};
+  } catch {
+    return {};
   }
 }

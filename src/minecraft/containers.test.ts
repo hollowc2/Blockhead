@@ -154,3 +154,11 @@ test("the home chest scan survives a matcher handed position-less blocks", () =>
   } as unknown as Bot;
   assert.equal(findHomeChest(bot, homeState, repo)?.name, "chest");
 });
+
+test("after a restart, an unreachable chest counts its persisted reading", async () => {
+  const chest = { id: 7, x: 64, y: 96, z: 52, lastContents: { coal: 52, charcoal: 14 } };
+  const storage = { list: () => [chest] } as unknown as StorageRepository;
+  const away = { blockAt: () => null } as unknown as Bot;
+  // Fresh process: nothing read this session (world 992 never seen).
+  assert.deepEqual(await leased(() => countStoredItems(away, { worldId: 992 } as unknown as AgentState, storage)), { coal: 52, charcoal: 14 });
+});
