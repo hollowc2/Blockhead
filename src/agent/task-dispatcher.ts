@@ -24,6 +24,7 @@ import type { EnsureItemRunner } from "../skills/ensure-item.js";
 import { runEquipmentUpgrade } from "../skills/ensure-item.js";
 import type { EnsureTorchesRunner } from "../skills/ensure-torches.js";
 import type { LightHomeRunner } from "../skills/light-home.js";
+import type { DevelopLandRunner } from "../skills/develop-land.js";
 import { expeditionThreshold } from "../skills/expedition.js";
 import type { GatherFoodRunner, GatherFoodResumeState } from "../skills/gather-food.js";
 import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
@@ -85,6 +86,7 @@ export interface TaskDispatcherOptions {
   food: GatherFoodRunner;
   torches: EnsureTorchesRunner;
   lightHome?: LightHomeRunner;
+  developLand?: DevelopLandRunner;
   deathRecovery: DeathRecoveryRunner;
   /** Phase 11: storage organization / creation (spec 14.4, 22). */
   organizeStorage: OrganizeStorageRunner;
@@ -595,6 +597,11 @@ export class TaskDispatcher {
           return { ok: false, status: "failed", errorCode: "NOT_READY", message: "home lighting is not wired", retryable: false };
         }
         return this.opts.lightHome.run({ signals });
+      case "develop_land":
+        if (this.opts.developLand === undefined) {
+          return { ok: false, status: "failed", errorCode: "NOT_READY", message: "land development is not wired", retryable: false };
+        }
+        return this.opts.developLand.run({ signals });
       case "organize_storage":
         return this.opts.organizeStorage.run({
           signals,

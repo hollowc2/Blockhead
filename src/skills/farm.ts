@@ -30,6 +30,35 @@ const PLOT_OFFSETS: ReadonlyArray<{ dx: number; dz: number }> = [
   { dx: 8, dz: 0 },
   { dx: 0, dz: -8 },
 ];
+/** How far out land development lays plots (rings every 8 blocks). */
+const DEVELOP_RINGS = 3;
+
+export interface PlotOffset { dx: number; dz: number }
+
+/**
+ * Plot centers for land development, nearest ring first: the three home
+ * plots, then every 8-block grid point on the square rings at 16 and 24
+ * blocks. The ring-1 front (+Z, the base door) stays open.
+ */
+export function developmentPlots(rings = DEVELOP_RINGS): PlotOffset[] {
+  const plots: PlotOffset[] = [...PLOT_OFFSETS];
+  for (let ring = 2; ring <= rings; ring++) {
+    const r = ring * 8;
+    const ringPlots: PlotOffset[] = [];
+    for (let dx = -r; dx <= r; dx += 8) {
+      for (let dz = -r; dz <= r; dz += 8) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) === r) ringPlots.push({ dx, dz });
+      }
+    }
+    ringPlots.sort((a, b) => Math.hypot(a.dx, a.dz) - Math.hypot(b.dx, b.dz));
+    plots.push(...ringPlots);
+  }
+  return plots;
+}
+
+function sameOffset(a: PlotOffset, b: PlotOffset): boolean {
+  return a.dx === b.dx && a.dz === b.dz;
+}
 /**
  * Each column is scanned top-down this far above/below home's Y for its
  * surface soil. Wide on purpose: the persisted home Y can drift (a pit under
@@ -152,18 +181,24 @@ function plotCells(home: { x: number; y: number; z: number }, offset: { dx: numb
  * tilled never fired: harvested farmland dries back to dirt.) Pure over
  * `lookup`.
  */
-export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup, seeds = 0): FarmCell[] {
-  const plots = PLOT_OFFSETS.map((offset) => {
+export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup, seeds = 0, prefer: PlotOffset | null = null): FarmCell[] {
+  // Outer development plots join the farm once they hold farmland, or when
+  // land development has just cleared one (`prefer`); the farm does not
+  // sprawl onto them by itself.
+  const plots = developmentPlots().map((offset) => {
     const cells = plotCells(home, offset, lookup);
     let score = 0;
     for (const cell of cells) {
       score += cell.soil === "farmland" ? 100 : 1;
       if (cell.hydrated) score += 1;
     }
-    return { cells, score, established: cells.some((cell) => cell.soil === "farmland") };
-  }).filter((plot) => plot.score > 0);
-  // Stable sort: equal scores keep the PLOT_OFFSETS order.
-  plots.sort((a, b) => b.score - a.score);
+    const home3 = PLOT_OFFSETS.some((candidate) => sameOffset(candidate, offset));
+    const preferred = prefer !== null && sameOffset(prefer, offset);
+    return { cells, score, established: cells.some((cell) => cell.soil === "farmland"), eligible: home3 || preferred, preferred };
+  }).filter((plot) => plot.score > 0 && (plot.established || plot.eligible));
+  // Stable sort: equal scores keep the development order. A plot just
+  // cleared for the farm comes first among the new ones.
+  plots.sort((a, b) => Number(b.established) - Number(a.established) || Number(b.preferred) - Number(a.preferred) || b.score - a.score);
   const chosen: FarmCell[] = [];
   for (const plot of plots) {
     const covered = seeds >= chosen.length + plot.cells.length;
@@ -189,6 +224,8 @@ export interface TendFarmOptions {
   logger: Logger;
   signal?: AbortSignal;
   shouldAbort?: () => boolean;
+  /** A plot land development just cleared: sow it first. */
+  preferPlot?: PlotOffset;
 }
 
 export interface TendFarmResult {
@@ -198,7 +235,7 @@ export interface TendFarmResult {
   planted: number;
 }
 
-function botLookup(bot: Bot): FarmLookup {
+export function botLookup(bot: Bot): FarmLookup {
   return (x, y, z) => {
     const block = bot.blockAt(new Vec3(x, y, z));
     if (block === null) return null;
@@ -311,7 +348,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   };
 
   // 1. Harvest. Collecting the crop breaks it and picks up wheat + seeds.
-  let cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"));
+  let cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null);
   const ripe = cells.filter(isMatureWheat).map((c) => new Vec3(c.x, c.y + 1, c.z));
   if (ripe.length > 0) {
     const before = countItem(bot, "wheat");
@@ -335,7 +372,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   if (bot.food < STARVING_HUNGER) return result;
 
   // 3. Seeds for every open cell, from grass around home.
-  cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"));
+  cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null);
   const toSow = sowingOrder(cells);
   if (toSow.length === 0) return result;
   if (countItem(bot, "wheat_seeds") < toSow.length) {

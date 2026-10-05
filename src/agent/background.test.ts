@@ -806,3 +806,33 @@ test("a shortage on cooldown hands the ladder to the next kind", async () => {
   assert.deepEqual(h.issued, [{ kind: "wood", preempt: false }]);
   h.manager.stop();
 });
+
+test("free time with every stockpile at target develops the land; a shortage does not", async () => {
+  // Owner request 2026-10-05: keep developing the land when there is
+  // nothing else to do. The director only ever chose "wait".
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  let developWork = true;
+  (h.options as { developLand?: { hasWork(): boolean } }).developLand = { hasWork: () => developWork };
+  (h.options.state as { timePhase?: string }).timePhase = "day";
+  const maintenance = h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> };
+  const full: StockpileSnapshot = { levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] };
+  maintenance.check = async () => full;
+  await h.manager.tick();
+  assert.deepEqual(h.enqueued.map((t) => t.type), ["develop_land"]);
+
+  h.enqueued.length = 0;
+  h.queued.length = 0;
+  h.buildNeedsWork = true;
+  await h.manager.tick();
+  assert.deepEqual(h.enqueued.map((t) => t.type), ["build_base"], "the base comes before new fields");
+
+  h.enqueued.length = 0;
+  h.queued.length = 0;
+  h.buildNeedsWork = false;
+  maintenance.check = async () => ({ ...full, levels: { ...full.levels, wood: 10 }, deficits: [{ kind: "wood", target: 64, current: 10, deficit: 54 }] });
+  developWork = true;
+  await h.manager.tick();
+  assert.ok(!h.enqueued.some((t) => t.type === "develop_land"), "restocking comes first");
+  h.manager.stop();
+});

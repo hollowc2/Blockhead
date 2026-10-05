@@ -34,6 +34,7 @@ import { DeathRecoveryRunner } from "./skills/death-recovery.js";
 import { GatherFoodRunner } from "./skills/gather-food.js";
 import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
 import { LightHomeRunner } from "./skills/light-home.js";
+import { DevelopLandRunner } from "./skills/develop-land.js";
 import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
 import { SelfDefenseReflex } from "./agent/self-defense.js";
@@ -518,6 +519,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   const food = new GatherFoodRunner({ bot, state, config, bus, storage, skills, logger, deaths });
   const torches = new EnsureTorchesRunner({ bot, state, config, bus, storage, skills, logger });
   const lightHome = new LightHomeRunner({ bot, state, storage, torches, logger, reservedCells: () => buildProjectManager.reservedCells() });
+  const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => buildProjectManager.reservedCells() });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });
 
   // Phase 11: storage organization (spec 14.4, 22). The runner measures every
@@ -555,9 +557,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
   const terrainProjects = new TerrainProjectRunner(bot, { logger });
-  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, lightHome, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
+  const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, lightHome, developLand, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33

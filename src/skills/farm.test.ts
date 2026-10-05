@@ -102,3 +102,11 @@ test("a table is not placed from out of reach", async () => {
   assert.equal(table, null);
   assert.deepEqual(placed, [], "no placement packet from 8.5 blocks away");
 });
+
+test("an outer plot joins the farm only once development cleared it", () => {
+  const all = chooseFarmCells(HOME, world(), 500);
+  assert.equal(all.length, 75, "the three home plots only, however many seeds");
+  const withOuter = chooseFarmCells(HOME, world(), 500, { dx: 16, dz: 0 });
+  assert.equal(withOuter.length, 100);
+  assert.equal(withOuter.filter((c) => c.x >= 14).length, 25);
+});

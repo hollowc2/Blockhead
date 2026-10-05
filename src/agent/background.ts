@@ -79,6 +79,8 @@ export interface BackgroundManagerOptions {
   buildProjects?: WorldProjectManager;
   /** Home lighting: dark spots around home are torched before ordinary restores. */
   lightHome?: { darkSpots(): unknown[] };
+  /** Idle-time land development: clear fields and plant them. */
+  developLand?: { hasWork(): boolean };
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -458,6 +460,11 @@ export class BackgroundManager {
       if (await this.runGoalStep(snapshot, decisionEligible)) return;
     }
 
+    // Free time develops the land (owner request, 2026-10-05): with every
+    // stockpile at target, by day and out of storms, finish the base, then
+    // clear and plant the next field. The director only ever chose "wait".
+    if (await this.developWhenIdle(snapshot)) return;
+
     if (!(this.opts.config.background?.llm_decisions ?? true)) {
       await this.deterministicFallback(snapshot);
       return;
@@ -488,6 +495,31 @@ export class BackgroundManager {
       this.lastDecisionAt = now;
       await this.deterministicFallback(snapshot);
     }
+  }
+
+  /** Enqueue base repair or one land-development step when the bot is free. True when it enqueued. */
+  private async developWhenIdle(snapshot: StockpileSnapshot): Promise<boolean> {
+    const develop = this.opts.developLand;
+    if (develop === undefined || snapshot.deficits.length > 0) return false;
+    if (this.opts.state.timePhase === "night" || ((this.opts.bot as { thunderState?: number }).thunderState ?? 0) > 0) return false;
+    const scheduler = this.opts.scheduler;
+    if (scheduler.active !== null || scheduler.queued.some((task) => task.status === TaskStatus.QUEUED)) return false;
+    if (!this.kindBlocked("build")) {
+      const buildCheck = await this.worldProbe(() => this.opts.buildBase.needsAttention());
+      if (buildCheck.needsWork) {
+        this.opts.logger.info({ reason: buildCheck.reason }, "base structure incomplete; starting build");
+        scheduler.enqueue({ type: "build_base", priority: TaskPriority.BACKGROUND, source: "background", objective: "Build the base structure at home.", parameters: {} });
+        scheduler.claim();
+        return true;
+      }
+    }
+    if (this.kindBlocked("develop")) return false;
+    const work = await this.worldProbe(async () => develop.hasWork());
+    if (!work) return false;
+    this.opts.logger.info({}, "free time; developing the land");
+    scheduler.enqueue({ type: "develop_land", priority: TaskPriority.BACKGROUND, source: "background", objective: "Clear and plant the next field around home.", parameters: {}, workKey: "develop-land" });
+    scheduler.claim();
+    return true;
   }
 
   private shouldSleepAtHome(): boolean {
@@ -1049,5 +1081,6 @@ function failureKey(task: Task): string | null {
   if (task.type === "upgrade_equipment") return "upgrade";
   if (task.type === "build_base") return "build";
   if (task.type === "light_home") return "light";
+  if (task.type === "develop_land") return "develop";
   return null;
 }
