@@ -253,3 +253,17 @@ test("a stale in-water flag on dry ground (just respawned) does not count as swi
   assert.deepEqual(h.attacked, ["zombie"], "fought on land as usual");
   assert.doesNotMatch(result.message ?? "", /attacked in the water/);
 });
+
+test("outnumbered by three hostiles, the reflex runs instead of fighting", async () => {
+  const h = harness();
+  h.add(mob(7, "zombie", { x: 22, y: 64, z: 0 }));
+  h.add(mob(8, "zombie", { x: 24, y: 64, z: 2 }));
+  h.add(mob(9, "spider", { x: 25, y: 64, z: -2 }));
+
+  const result = await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(h.attacked, []);
+  assert.equal(result.data?.retreated, true);
+  assert.match(result.message ?? "", /outnumbered by 3/);
+  assert.ok(h.travels.at(-1)!.to.x < h.self.position.x, "ran away from the pack");
+});

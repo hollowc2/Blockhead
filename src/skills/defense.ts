@@ -51,6 +51,9 @@ const RETREAT_DISTANCE = 16;
 const RETREAT_TIMEOUT_MS = 10_000;
 /** Hostiles within this radius steer the retreat direction. */
 const RETREAT_THREAT_RADIUS = 24;
+/** This many hostiles within CROWD_RADIUS make a self-defense pass run instead of fight. */
+const CROWD_SIZE = 3;
+const CROWD_RADIUS = 10;
 /** How far a swimming bot looks for a bank before the retreat trip: a lake is wider than the movement default. */
 const SHORE_SEARCH_RADIUS = 16;
 /** A cap on mid-fight target switches within one pass. */
@@ -200,6 +203,14 @@ export class DefenseRunner {
     if (kind === "self" && this.swimming()) {
       return this.retreatResult(data, "attacked in the water");
     }
+    // Outnumbered, the bot runs: a crowd in forest shade or a cave mouth
+    // (four zombies, a spider and a creeper at 20:13; six zombies, creepers
+    // and a skeleton in the 19:16 pit) wore it from 20 to 3 health before
+    // the per-target retreat floor kicked in.
+    const crowd = kind === "self" ? this.hostilesWithin(CROWD_RADIUS) : 0;
+    if (crowd >= CROWD_SIZE) {
+      return this.retreatResult(data, `outnumbered by ${crowd} hostiles`);
+    }
 
     // Defending a player requires seeing them.
     let anchor: { x: number; y: number; z: number } | null = null;
@@ -291,6 +302,16 @@ export class DefenseRunner {
     if (entity?.isInWater !== true) return false;
     if (typeof bot.blockAt !== "function" || entity.position === undefined) return true;
     return /water/.test(bot.blockAt(entity.position.floored() as never)?.name ?? "");
+  }
+
+  /** Live hostiles (provoked-only mobs excluded) within `radius` of the bot. */
+  private hostilesWithin(radius: number): number {
+    const self = this.opts.bot.entity?.position;
+    if (self === undefined || self === null) return 0;
+    return Object.values(this.opts.bot.entities).filter((entity) =>
+      entity.type !== "player" && isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "")
+      && !PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "") && isLiveEntity(entity)
+      && distanceBetween(entity.position, self) <= radius).length;
   }
 
   /** Nearest live hostile mob to `anchor` (the bot when defending itself). */
