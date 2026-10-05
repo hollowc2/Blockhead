@@ -590,15 +590,25 @@ export class BackgroundManager {
    * the model call failed — the bot keeps working while the LLM is down.
    */
   private async deterministicFallback(snapshot: StockpileSnapshot): Promise<void> {
-    const deficit = this.opts.maintenance.prioritize(snapshot);
-    if (deficit !== null) {
-      // Ordinary restores stay at BACKGROUND priority: they only run when no
-      // foreground work owns the floor. Same cooldown gate as the crisis path.
-      if (this.kindBlocked(deficit.kind)) return;
+    // Ordinary restores stay at BACKGROUND priority: they only run when no
+    // foreground work owns the floor. Same cooldown gate as the crisis path.
+    // A kind on cooldown passes to the next one: a fuel restore failing on a
+    // wedged furnace (22:21-23:12) left wood and torches unrestored behind it.
+    const tried = new Set<string>();
+    let candidates = snapshot.deficits;
+    let deficit = this.opts.maintenance.prioritize(snapshot);
+    while (deficit !== null && !tried.has(deficit.kind) && this.kindBlocked(deficit.kind)) {
+      const blocked: string = deficit.kind;
+      tried.add(blocked);
+      candidates = candidates.filter((candidate) => candidate.kind !== blocked);
+      deficit = candidates.length === 0 ? null : this.opts.maintenance.prioritize({ ...snapshot, deficits: candidates });
+    }
+    if (deficit !== null && !tried.has(deficit.kind)) {
       this.opts.logger.info({ kind: deficit.kind, deficit: deficit.deficit }, "stockpile shortage; starting maintenance");
       this.opts.maintenance.runMaintenance(deficit);
       return; // the task-settled hook re-checks when the run ends.
     }
+    // Every shortage on cooldown: the rest of the ladder still runs.
 
     // The centralized stockpile shed comes before storage expansion: chests,
     // the table, and the furnace land on blueprint slots inside it, so the

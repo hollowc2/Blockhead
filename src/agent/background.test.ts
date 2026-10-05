@@ -18,7 +18,7 @@ import { AppDatabase } from "../memory/database.js";
 import { MIGRATIONS } from "../memory/migrations.js";
 import { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import type { AgentState } from "./state.js";
-import type { StockpileDeficit, StockpileManager, StockpileSnapshot } from "./maintenance.js";
+import { prioritizeDeficit, type StockpileDeficit, type StockpileManager, type StockpileSnapshot } from "./maintenance.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus, type NewTask, type Task } from "./task.js";
 import { BootstrapStage } from "./bootstrap.js";
@@ -788,4 +788,21 @@ test("repeated settle events coalesce into one decision and never duplicate conc
 
   h.manager.stop();
   t.mock.timers.reset();
+});
+
+test("a shortage on cooldown hands the ladder to the next kind", async () => {
+  // 22:21-23:12: fuel restores failed on a wedged furnace and, on cooldown,
+  // stopped the ladder; wood (50/64) and torches (4/64) were never restored.
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  h.directorFails = true;
+  const fuel: StockpileDeficit = { kind: "fuel", target: 64, current: 55, deficit: 9 };
+  const wood: StockpileDeficit = { kind: "wood", target: 64, current: 50, deficit: 14 };
+  const maintenance = h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot>; prioritize: (snap: StockpileSnapshot) => StockpileDeficit | null };
+  maintenance.check = async () => ({ levels: { wood: 50, food: 64, fuel: 55, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [fuel, wood] });
+  maintenance.prioritize = (snap) => prioritizeDeficit(snap.deficits);
+  h.bus.emit("task.failed", { task: { ...failedFoodTask(), id: "fail-fuel-1", parameters: { ...fuel }, objective: "Restore fuel stockpile to 64", priority: TaskPriority.BACKGROUND } });
+  await h.manager.tick();
+  assert.deepEqual(h.issued, [{ kind: "wood", preempt: false }]);
+  h.manager.stop();
 });
