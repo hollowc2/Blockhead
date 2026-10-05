@@ -43,6 +43,18 @@ export function isChestBlock(block: Block): boolean {
  * registration self-heals instead of leaving storage read as carried-only.
  * Returns null when none is reachable.
  */
+/**
+ * True when some registered chest location is not loaded, so a missing
+ * chest cannot be told apart from an unloaded one. Right after a respawn the
+ * home chunks were unloaded and the repair started restoring a chest that
+ * was standing there (2026-10-04 20:13).
+ */
+export function homeStorageUnloaded(bot: Bot, state: AgentState, storage: StorageRepository): boolean {
+  const worldId = state.worldId;
+  if (worldId === null) return false;
+  return storage.list(worldId).some((location) => bot.blockAt(new Vec3(location.x, location.y, location.z)) === null);
+}
+
 export function findHomeChest(bot: Bot, state: AgentState, storage: StorageRepository): Block | null {
   const worldId = state.worldId;
   if (worldId !== null) {

@@ -6,7 +6,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import type { StorageRepository } from "../memory/storage.js";
-import { countStoredItems, deliverCarried, describeDeliveryFailure, rememberChestContents } from "./containers.js";
+import { countStoredItems, deliverCarried, describeDeliveryFailure, homeStorageUnloaded, rememberChestContents } from "./containers.js";
 import { junkToShed, MIN_FREE_SLOTS_FOR_GATHER } from "./inventory.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
@@ -100,4 +100,11 @@ test("a chest out of range counts what it held when last read, not zero", async 
   const broken = { blockAt: () => ({ name: "air" }) } as unknown as Bot;
   assert.deepEqual(await leased(() => countStoredItems(broken, state, storage)), {}, "a loaded non-chest drops the memory");
   assert.deepEqual(await leased(() => countStoredItems(away, state, storage)), {});
+});
+
+test("a home chest in an unloaded chunk is not reported missing", () => {
+  const unloaded = { blockAt: () => null } as unknown as Bot;
+  assert.equal(homeStorageUnloaded(unloaded, state, storage), true);
+  const loaded = { blockAt: () => ({ name: "air" }) } as unknown as Bot;
+  assert.equal(homeStorageUnloaded(loaded, state, storage), false, "loaded and gone: really missing");
 });

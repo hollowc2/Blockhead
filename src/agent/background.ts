@@ -22,7 +22,7 @@ import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriteri
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
-import { findHomeChest } from "../minecraft/containers.js";
+import { findHomeChest, homeStorageUnloaded } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
 
@@ -324,7 +324,7 @@ export class BackgroundManager {
       (this.lastHomeChestRepairAt === null || tickNow - this.lastHomeChestRepairAt >= repairCooldownMs)
     ) {
       const homeChest = await this.worldProbe(async () => findHomeChest(bot, this.opts.state, this.opts.storage));
-      if (homeChest === null) {
+      if (homeChest === null && !homeStorageUnloaded(bot, this.opts.state, this.opts.storage)) {
         this.lastHomeChestRepairAt = tickNow;
         logger.warn("home chest missing; restoring home storage");
         const restored = await this.worldProbe(() => this.opts.bootstrap.restoreHomeChest());
