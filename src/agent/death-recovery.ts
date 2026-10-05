@@ -7,7 +7,7 @@ import { normalizeDimension } from "../minecraft/protection.js";
 import { ItemPolicy } from "../policy/item-policy.js";
 import type { AgentState } from "./state.js";
 import type { Scheduler } from "./scheduler.js";
-import { TaskPriority, type Task } from "./task.js";
+import { TaskPriority, TaskStatus, type Task } from "./task.js";
 
 export interface DeathRecoveryManagerOptions {
   bus: EventBus;
@@ -384,7 +384,15 @@ export class DeathRecoveryManager {
     for (const item of REARM_ITEMS) {
       // One re-arm per item: repeated deaths piled up duplicates.
       const workKey = `rearm:${item}`;
-      if (scheduler.active?.workKey === workKey || scheduler.queued.some((task) => task.workKey === workKey)) continue;
+      if (scheduler.active?.workKey === workKey) continue;
+      const existing = scheduler.queued.find((task) => task.workKey === workKey);
+      if (existing !== undefined) {
+        if (existing.status !== TaskStatus.BLOCKED) continue;
+        // A blocked re-arm never runs again, and its work key silenced every
+        // later one: three from 20:13 sat blocked ("already producing")
+        // through deaths 62-75, and the bot respawned bare-handed each time.
+        this.opts.scheduler.cancel(existing.id);
+      }
       this.opts.scheduler.enqueue({
         type: "ensure_item",
         priority: TaskPriority.MAINTENANCE,

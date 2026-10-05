@@ -205,3 +205,21 @@ test("planks for a table come from logs when no planks are stocked", () => {
   assert.deepEqual(planksPlan(4, { oak_planks: 4 }, {}), []);
   assert.deepEqual(planksPlan(4, { stripped_oak_log: 3 }, {}), [], "stripped logs are not raw logs");
 });
+
+test("a run that starts while the last one unwinds waits for it instead of blocking", async () => {
+  // 20:13: three re-arm runs started while a paused one was still unwinding,
+  // each returned "already producing ..." as blocked, and never ran again.
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const runner = new EnsureItemRunner({ config: {} } as unknown as ConstructorParameters<typeof EnsureItemRunner>[0]);
+  const started: string[] = [];
+  (runner as unknown as { execute: (item: string) => Promise<unknown> }).execute = async (item: string) => {
+    started.push(item);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return { ok: true, status: "completed" };
+  };
+  const first = runner.run("stone_sword", 1);
+  const second = await runner.run("stone_axe", 1);
+  await first;
+  assert.equal(second.status, "completed");
+  assert.deepEqual(started, ["stone_sword", "stone_axe"]);
+});

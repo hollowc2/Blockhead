@@ -328,3 +328,20 @@ test("skipped deaths still feed the death-loop brake", () => {
   assert.equal(h.manager.inDeathLoop, true, "repeated empty deaths prove the kill zone too");
   assert.equal(h.enqueued.length, 0, "none of the empty corpses ever tripped");
 });
+test("a re-arm left blocked by an earlier respawn is replaced, not deduped against", () => {
+  // Three re-arm tasks from 20:13 sat blocked ("already producing stone
+  // swords") and every later respawn skipped its re-arm: deaths 62-75 all
+  // respawned bare-handed.
+  const h = newHarness();
+  const scheduler = (h.manager as unknown as { opts: { scheduler: { queued: unknown[]; cancel: (id: string) => unknown } } }).opts.scheduler;
+  const cancelled: string[] = [];
+  scheduler.queued.push(
+    { id: "old-sword", workKey: "rearm:stone_sword", status: TaskStatus.BLOCKED },
+    { id: "old-pick", workKey: "rearm:stone_pickaxe", status: TaskStatus.QUEUED },
+  );
+  scheduler.cancel = (id: string) => { cancelled.push(id); return null; };
+  die(h, SITE);
+  respawn(h);
+  assert.deepEqual(cancelled, ["old-sword"], "the blocked one is cancelled; a live queued one is kept");
+  assert.deepEqual(h.rearmed, ["stone_sword", "stone_axe"]);
+});

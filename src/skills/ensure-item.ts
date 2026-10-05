@@ -61,6 +61,8 @@ const FURNACE_SCAN_RADIUS = 12;
 const MAX_PLAN_DEPTH = 6;
 /** Crafting a table consumes 4 planks of any wood. */
 const TABLE_PLANK_COST = 4;
+/** How long a new run waits for a previous one to finish unwinding. */
+const IN_FLIGHT_WAIT_MS = 30_000;
 /** Crafting a furnace consumes 8 stone blocks. */
 const FURNACE_STONE_COST = 8;
 
@@ -441,8 +443,17 @@ export class EnsureItemRunner {
     return this.running;
   }
 
+  /** The run in progress, awaited by a run that starts while it unwinds. */
+  private inFlight: Promise<unknown> | null = null;
+
   /** Produce `quantity` of `item` in the given mode, resolving when the run ends. */
   async run(item: string, quantity: number, options: EnsureRunOptions = {}): Promise<SkillResult<EnsureItemData>> {
+    // A paused run unwinds for a moment after its task settles; the next
+    // ensure_item task starting in that window was refused as "blocked",
+    // which is terminal (three re-arms sat blocked from 20:13 on). Wait it out.
+    if (this.running && this.inFlight !== null) {
+      await Promise.race([this.inFlight.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, IN_FLIGHT_WAIT_MS))]);
+    }
     if (this.running) {
       return {
         ok: false,
@@ -461,10 +472,13 @@ export class EnsureItemRunner {
     this.currentItemName = bareName(item);
     this.currentQuantity = quantity;
     this.keepCarried = options.keepCarried === true;
+    const run = this.execute(item, quantity, mode);
+    this.inFlight = run;
     try {
-      return await this.execute(item, quantity, mode);
+      return await run;
     } finally {
       this.running = false;
+      this.inFlight = null;
       this.signals = null;
       this.stored = {};
     }
