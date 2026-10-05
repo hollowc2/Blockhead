@@ -194,3 +194,34 @@ test("STOCKPILE_RATIOS are sane: full threshold sits above the general threshold
   assert.ok(CHEST_FULL_RATIO > STORAGE_FULL_RATIO);
   assert.ok(CHEST_FULL_RATIO <= 1);
 });
+test("logs for a new chest come out of the home chest before any chopping", async () => {
+  // 2026-10-05 10:44: 36 logs in the home chest, yet the chest craft went
+  // chopping and the collectblock planner timed out after 240 s.
+  const { OrganizeStorageRunner } = await import("./organize-storage.js");
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const { Vec3 } = await import("vec3");
+  const chestAt = { x: 64, y: 96, z: 52 };
+  const carried: { name: string; count: number; type: number }[] = [];
+  let scans = 0;
+  const bot = {
+    entity: { position: new Vec3(64.5, 97, 51.5) },
+    registry: { itemsByName: { oak_log: { id: 1 } } },
+    inventory: { items: () => carried, emptySlotCount: () => 30 },
+    blockAt: (p: { x: number; y: number; z: number }) =>
+      p.x === chestAt.x && p.y === chestAt.y && p.z === chestAt.z ? { name: "chest", position: new Vec3(p.x, p.y, p.z), boundingBox: "block" } : { name: "air", boundingBox: "empty", position: new Vec3(p.x, p.y, p.z) },
+    findBlocks: () => { scans += 1; return []; },
+    openContainer: async () => ({
+      containerItems: () => [{ name: "oak_log", count: 36, type: 1 }],
+      slots: [],
+      inventoryStart: 27,
+      withdraw: async (_id: number, _meta: null, count: number) => { carried.push({ name: "oak_log", count, type: 1 }); },
+      close: async () => {},
+    }),
+  };
+  const storage = { list: () => [{ id: 1, ...chestAt, category: "general" }], listByCategory: () => [{ id: 1, ...chestAt, category: "general" }] };
+  const runner = new OrganizeStorageRunner({ bot, state: { worldId: 1, home: { x: 65, y: 96, z: 51, dimension: "overworld" } }, storage, config: {}, logger: { info() {}, warn() {}, debug() {} }, bus: { emit() {} } } as unknown as ConstructorParameters<typeof OrganizeStorageRunner>[0]);
+  const result = await withWorldActionLease({ owner: "storage-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () =>
+    (runner as unknown as { gatherLogs: (n: number) => Promise<{ ok: boolean }> }).gatherLogs(2));
+  assert.equal(result.ok, true);
+  assert.equal(scans, 0, "no tree search");
+});

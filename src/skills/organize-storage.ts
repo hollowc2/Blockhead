@@ -18,18 +18,22 @@ import {
   countLogs,
   countPlanks,
   findItem,
+  isRawLogItemName,
   itemsSummary,
 } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import {
+  countStoredItems,
   isChestBlock,
   measureStorage,
+  withdrawFromHomeChest,
   transferItem,
   type ChestMeasurement,
   type StorageMeasurement,
 } from "../minecraft/containers.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import {
+  collectBlocks,
   findBlockNear,
   findBlocksNear,
   findPlacementSpot,
@@ -37,8 +41,7 @@ import {
   placeItemAt,
   type PlacementSpot,
 } from "../minecraft/world.js";
-import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillErrorCode, type SkillResult } from "./skill-library.js";
-import { cancelCollection, collectBlockOperation } from "../minecraft/primitives.js";
+import { ChatThrottle, gameChatBudgetAllows, type SkillErrorCode, type SkillResult } from "./skill-library.js";
 import { freeChestSlotSpot } from "./base.js";
 
 /**
@@ -627,6 +630,17 @@ export class OrganizeStorageRunner {
     const baseRadius = config?.search_radius ?? LOG_SEARCH_RADIUS;
 
     let have = countLogs(bot);
+    // Logs in the home chest first: with 36 stored, a chest craft went
+    // chopping and stalled four minutes in the forest (2026-10-05 10:44).
+    if (have < targetTotal) {
+      const stored = await countStoredItems(bot, this.opts.state, this.opts.storage, this.signals?.signal).catch((): Record<string, number> => ({}));
+      for (const [name, count] of Object.entries(stored)) {
+        if (have >= targetTotal) break;
+        if (!isRawLogItemName(name) || count <= 0) continue;
+        await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, name, Math.min(count, targetTotal - have), this.opts.logger, this.signals?.signal);
+        have = countLogs(bot);
+      }
+    }
     for (
       let radius = baseRadius;
       radius <= MAX_SEARCH_RADIUS && have < targetTotal;
@@ -640,10 +654,11 @@ export class OrganizeStorageRunner {
 
       const before = have;
       try {
-        await withTimeout(COLLECT_TIMEOUT_MS, collectBlockOperation(bot, targets, { ignoreNoPath: true }, this.signals?.signal), async () => {
-          await cancelCollection(bot);
-        }, this.signals?.signal);
+        // Walk up and dig: collectblock's sight-line planner timed out on
+        // forest logs (240 s, 10:48:16), as it did for collect_resource.
+        await collectBlocks(bot, targets, () => countLogs(bot), targetTotal, () => {}, COLLECT_TIMEOUT_MS, undefined, this.signals?.signal);
       } catch (err) {
+        if (this.signals?.signal.aborted === true) throw err;
         return { ok: false, reason: `could not collect logs: ${String(err)}` };
       }
       have = countLogs(bot);
