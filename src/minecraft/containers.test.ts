@@ -213,3 +213,36 @@ test("a registered chest under the furnace is unregistered; the real one stays",
   assert.equal(pruneBlockedChests(bot, state, repo), 1);
   assert.deepEqual(removed, [3], "the open chest and the unloaded far one are kept");
 });
+
+test("a withdraw opens the category chest that holds the item, not just the general one", async () => {
+  // 2026-10-05 15:24: logs had moved to a wood chest; every withdraw opened
+  // the general chest and failed "Can't find oak_log" with oak in stock.
+  const { withdrawFromHomeChest, rememberChestContents } = await import("./containers.js");
+  const general = { id: 4, x: 64, y: 96, z: 52, category: "general" };
+  const wood = { id: 5, x: 66, y: 96, z: 52, category: "wood" };
+  const repo = { list: () => [general, wood], listByCategory: (_w: number, c: string) => (c === "general" ? [general] : [wood]) } as unknown as StorageRepository;
+  rememberChestContents(1, wood, { oak_log: 20 });
+  rememberChestContents(1, general, { coal: 40 });
+  const carried: { name: string; count: number }[] = [];
+  const opened: number[] = [];
+  const at = (p: Vec3) => [general, wood].find((c) => c.x === p.x && c.y === p.y && c.z === p.z);
+  const bot = {
+    entity: { position: new Vec3(65.5, 96, 51.5) },
+    registry: { itemsByName: { oak_log: { id: 9 } } },
+    inventory: { items: () => carried },
+    findBlocks: () => [],
+    blockAt: (p: Vec3) => (at(p) !== undefined ? { name: "chest", position: new Vec3(p.x, p.y, p.z) } : { name: "air", boundingBox: "empty", position: p }),
+    openContainer: async (block: { position: Vec3 }) => {
+      const chest = at(block.position)!;
+      opened.push(chest.id);
+      return {
+        containerItems: () => (chest === wood ? [{ name: "oak_log", count: 20 }] : [{ name: "coal", count: 40 }]),
+        withdraw: async (_id: number, _m: null, count: number) => { carried.push({ name: "oak_log", count }); },
+        close: async () => {},
+      };
+    },
+  } as unknown as Bot;
+  const result = await leased(() => withdrawFromHomeChest(bot, { ...state, worldId: 1 } as AgentState, repo, "oak_log", 13, silent));
+  assert.equal(result.withdrawn, 13);
+  assert.deepEqual(opened, [5], "straight to the wood chest");
+});

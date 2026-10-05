@@ -390,7 +390,32 @@ export async function deliverCarriedItems(
   return failure === undefined ? { delivered } : { delivered, failure };
 }
 
-/** Withdraw up to `count` of `itemName` from the home chest into the inventory. */
+/**
+ * The home chests to take `itemName` from: those whose last reading holds it
+ * (most first), then the general chest. Since storage was split into
+ * category chests (2026-10-05 13:50), logs sat in a wood chest while every
+ * withdraw opened the general one: "Can't find oak_log" with oak in stock.
+ */
+function chestsHolding(bot: Bot, state: AgentState, storage: StorageRepository, itemName: string): Block[] {
+  const worldId = state.worldId;
+  const bare = bareName(itemName);
+  const chests: { block: Block; count: number }[] = [];
+  if (worldId !== null) {
+    for (const location of storage.list(worldId)) {
+      const reading = lastChestContents.get(`${worldId}:${location.x},${location.y},${location.z}`) ?? location.lastContents ?? {};
+      const count = reading[bare] ?? 0;
+      if (count <= 0) continue;
+      const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
+      if (usableChest(bot, block)) chests.push({ block, count });
+    }
+  }
+  const ordered = chests.sort((a, b) => b.count - a.count).map((chest) => chest.block);
+  const general = findHomeChest(bot, state, storage);
+  if (general !== null && !ordered.some((block) => block.position.equals(general.position))) ordered.push(general);
+  return ordered;
+}
+
+/** Withdraw up to `count` of `itemName` from the home chests into the inventory. */
 export async function withdrawFromHomeChest(
   bot: Bot,
   state: AgentState,
@@ -402,8 +427,8 @@ export async function withdrawFromHomeChest(
 ): Promise<{ withdrawn: number }> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
-  const chest = findHomeChest(bot, state, storage);
-  if (chest === null) {
+  const chests = chestsHolding(bot, state, storage, itemName);
+  if (chests.length === 0) {
     logger.warn("no chest at home to withdraw from");
     return { withdrawn: 0 };
   }
@@ -413,24 +438,28 @@ export async function withdrawFromHomeChest(
     return { withdrawn: 0 };
   }
   const before = countItem(bot, itemName);
-  try {
-    const container = await approachAndOpen(bot, state, chest, signal);
-    throwIfAborted(signal);
+  const got = (): number => Math.max(0, countItem(bot, itemName) - before);
+  for (const chest of chests) {
+    if (got() >= count) break;
     try {
-      assertContainerAllowed(state, chest);
-      await withdraw(container, itemId, null, count, signal);
-    } finally {
-      await closeWindow(container);
+      const container = await approachAndOpen(bot, state, chest, signal);
+      throwIfAborted(signal);
+      try {
+        assertContainerAllowed(state, chest);
+        const held = container.containerItems().filter((item) => bareName(item.name) === bareName(itemName)).reduce((sum, item) => sum + item.count, 0);
+        if (held > 0) await withdraw(container, itemId, null, Math.min(count - got(), held), signal);
+      } finally {
+        await closeWindow(container);
+      }
+    } catch (err) {
+      throwIfAborted(signal);
+      logger.warn({ err: String(err), item: itemName }, "chest withdraw failed");
     }
-  } catch (err) {
-    throwIfAborted(signal);
-    logger.warn({ err: String(err), item: itemName }, "chest withdraw failed");
-    return { withdrawn: 0 };
   }
   // Mineflayer inventory totals include items already carried. Report only
   // the transfer delta, otherwise an already-held stack is mistaken for a
   // successful chest withdrawal.
-  return { withdrawn: Math.max(0, Math.min(count, countItem(bot, itemName) - before)) };
+  return { withdrawn: Math.min(count, got()) };
 }
 
 /**
