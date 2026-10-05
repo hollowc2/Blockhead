@@ -49,3 +49,50 @@ test("with no coal reachable, a fuel restore asks for one charcoal batch on top 
   // "ensure 54 charcoal", which also ignored the 10 already held.
   assert.deepEqual(asked, [10 + CHARCOAL_BATCH]);
 });
+
+function fuelManager(coal: () => SkillResult): { manager: StockpileManager; asked: number[]; coalRuns: () => number } {
+  const bot = { inventory: { items: () => [], slots: [] }, entity: null } as unknown as Bot;
+  let coalRuns = 0;
+  const collect = {
+    run: async (): Promise<SkillResult> => {
+      coalRuns += 1;
+      return coal();
+    },
+  } as unknown as CollectResourceRunner;
+  const manager = new StockpileManager({
+    bot,
+    state: { worldId: null, home: null },
+    config: {} as MinecraftConfig,
+    bus: new EventBus(),
+    storage: {},
+    scheduler: {},
+    collect,
+    food: {},
+    torches: {},
+    logger: quietLogger,
+  } as unknown as StockpileManagerOptions);
+  const asked: number[] = [];
+  manager.setCharcoalProducer(async (quantity) => {
+    asked.push(quantity);
+    return { ok: true, status: "completed" } as SkillResult;
+  });
+  return { manager, asked, coalRuns: () => coalRuns };
+}
+
+test("an interrupted coal run is not 'no coal': the restore reports the interruption", async () => {
+  // Live 2026-10-04: 8 of 9 "no coal reachable" lines were preemptions, and
+  // the charcoal run then started under the paused signal and never ran.
+  const { manager, asked } = fuelManager(() => ({ ok: false, status: "interrupted", message: "interrupted" }) as SkillResult);
+  const result = await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 1 });
+  assert.equal(result.status, "interrupted");
+  assert.deepEqual(asked, []);
+});
+
+test("a resumed fuel restore smelts a charcoal batch at home instead of restarting the coal trip", async () => {
+  const { manager, asked, coalRuns } = fuelManager(() => ({ ok: true, status: "completed" }) as SkillResult);
+  await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 2 });
+  assert.equal(coalRuns(), 0);
+  assert.deepEqual(asked, [CHARCOAL_BATCH]);
+  await manager.restore({ kind: "fuel", target: 64, current: 10, deficit: 54, attempts: 1 });
+  assert.equal(coalRuns(), 1);
+});

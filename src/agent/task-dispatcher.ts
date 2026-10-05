@@ -556,6 +556,7 @@ export class TaskDispatcher {
           current: Number(task.parameters.current ?? 0),
           deficit: Number(task.parameters.deficit ?? 0),
           crisis: task.parameters.crisis === true,
+          attempts: task.attempts ?? 1,
         };
         return this.opts.maintenance.restore(deficit, signals);
       }

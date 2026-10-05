@@ -88,6 +88,8 @@ export interface StockpileDeficit {
    * (short food-hunt quantity, wider night search).
    */
   crisis?: boolean;
+  /** Times the restore task has been activated, this run included (resumes count). */
+  attempts?: number;
 }
 
 export interface StockpileSnapshot {
@@ -350,15 +352,26 @@ export class StockpileManager {
         // Charcoal comes in batches: each restore that lands one counts as
         // progress, where an all-or-nothing 64 needing 75 logs failed
         // outright and tripped the anti-loop watchdog.
+        // A resumed restore skips the coal trip: the far ore run is what kept
+        // being preempted (food floor, defense), and starting it over each
+        // time never finished. A charcoal batch at the home furnace does.
+        if (this.charcoal !== null && (deficit.attempts ?? 1) > 1) return this.charcoalBatch(deficit, "resumed after an interrupted coal run", signals);
         return this.opts.collect.run("coal_ore", deficit.deficit, options).then((result) => {
           if (result.ok || this.charcoal === null) return result;
+          // Interrupted is not "no coal": falling through started charcoal
+          // under the already-paused signal, so it never ran (2026-10-04).
+          if (result.status === "interrupted") return result;
           if (result.status === "partial" && (result.data?.gathered ?? 0) > 0) return result;
-          const batch = Math.min(deficit.deficit, CHARCOAL_BATCH);
-          this.opts.logger.info({ reason: result.message, batch }, "fuel: no coal reachable; smelting charcoal instead");
-          return this.charcoal(charcoalTarget(this.charcoalOnHand, batch), signals);
+          return this.charcoalBatch(deficit, result.message, signals);
         });
       case "torches":
         return this.opts.torches.run(deficit.deficit, options);
     }
+  }
+
+  private charcoalBatch(deficit: StockpileDeficit, reason: string | undefined, signals?: TaskSignals): Promise<SkillResult> {
+    const batch = Math.min(deficit.deficit, CHARCOAL_BATCH);
+    this.opts.logger.info({ reason, batch }, "fuel: no coal reachable; smelting charcoal instead");
+    return this.charcoal!(charcoalTarget(this.charcoalOnHand, batch), signals);
   }
 }
