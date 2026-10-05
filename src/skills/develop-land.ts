@@ -32,6 +32,9 @@ const FIELD_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|dirt_pat
 /** Natural cover cleared off a field: trees, saplings, brush and flowers. */
 const CLEARABLE = /(_log|_wood|_leaves|_sapling|vine|bush|^short_grass$|^tall_grass$|^grass$|^fern$|^large_fern$|^dandelion$|^poppy$|_tulip$|^azure_bluet$|^oxeye_daisy$|^cornflower$|^allium$|^blue_orchid$|^lily_of_the_valley$|^brown_mushroom$|^red_mushroom$|^sweet_berry_bush$|^pumpkin$|^melon$)/;
 
+/** Crops on farmland. */
+const CROP = /^(wheat|carrots|potatoes|beetroots)$/;
+
 function isAirName(name: string): boolean {
   return name === "air" || name === "cave_air";
 }
@@ -60,6 +63,8 @@ export function surveyPlot(home: { x: number; y: number; z: number }, offset: Pl
       for (let y = baseY + GROUND_SEARCH_DY; y >= baseY - GROUND_SEARCH_DY; y--) {
         const block = lookup(x, y, z);
         if (block === null) break;
+        // A crop stands on farmland: the column is already a field.
+        if (CROP.test(block.name)) { survey.groundColumns += 1; survey.farmland += 1; break; }
         if (isAirName(block.name) || CLEARABLE.test(block.name)) continue;
         if (!FIELD_GROUND.test(block.name)) break;
         survey.groundColumns += 1;

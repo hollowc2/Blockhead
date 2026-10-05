@@ -71,3 +71,25 @@ test("reserved build cells and spots that failed before are left out", () => {
   assert.ok(plan.length > 0);
   assert.ok(!plan.some((t) => (t.x === 0 && t.z === 0) || (t.x === 1 && t.z === 0)), JSON.stringify(plan));
 });
+
+test("no torch is planned in the base's door gap or walls", async () => {
+  // 2026-10-05 14:2x: with the doorway cleared, a torch went into it before
+  // the door could be hung. Here the doorway is the only cell a mob could
+  // spawn in (glass floor everywhere else).
+  const { LightHomeRunner } = await import("./light-home.js");
+  const { baseLayoutFor } = await import("./base.js");
+  const { Vec3 } = await import("vec3");
+  const home = { x: 0, y: 96, z: 0, dimension: "overworld" };
+  const layout = baseLayoutFor(home as never);
+  const door = layout.doorCells[0]!;
+  const GLASS: BlockInfo = { name: "glass", boundingBox: "block" };
+  const view: BlockView = (x, y, z) => (y === 95 ? (x === door.x && z === door.z ? GRASS : GLASS) : y > 95 ? AIR : STONE);
+  const bot = {
+    entity: { position: new Vec3(0.5, 96, 0.5) },
+    blockAt: (p: { x: number; y: number; z: number }) => ({ ...view(p.x, p.y, p.z)!, position: new Vec3(p.x, p.y, p.z) }),
+    findBlocks: () => [],
+  };
+  const runner = new LightHomeRunner({ bot, state: { home }, logger: { info() {}, warn() {} } } as unknown as ConstructorParameters<typeof LightHomeRunner>[0]);
+  const spots = runner.darkSpots({ fresh: true });
+  assert.deepEqual(spots.map((s) => [s.position.x, s.position.y, s.position.z]), [], "the doorway is the builder's");
+});

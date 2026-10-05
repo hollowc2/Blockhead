@@ -47,3 +47,16 @@ test("the next plot skips farmland, water and an owner's reserved build", () => 
   assert.ok(next !== null);
   assert.deepEqual(next.offset, developmentPlots()[5]);
 });
+
+test("a plot of growing wheat is a field already", () => {
+  // 14:36 (2026-10-05): the west home plot, all wheat, was taken for an
+  // undeveloped plot because a crop on top hid the farmland.
+  const overrides: Record<string, FarmBlock> = {};
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    overrides[`${-8 + dx},63,${dz}`] = { name: "farmland" };
+    overrides[`${-8 + dx},64,${dz}`] = { name: "wheat", age: 3 };
+  }
+  const survey = surveyPlot(HOME, { dx: -8, dz: 0 }, world(overrides));
+  assert.equal(survey.farmland, 25);
+  assert.notDeepEqual(nextPlotToDevelop(HOME, world(overrides))?.offset, { dx: -8, dz: 0 });
+});

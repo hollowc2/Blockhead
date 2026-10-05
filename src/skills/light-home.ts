@@ -10,6 +10,7 @@ import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { findBlocksNearPoint, placeItemAt, type PlacementSpot } from "../minecraft/world.js";
 import type { EnsureTorchesRunner } from "./ensure-torches.js";
 import type { SkillResult } from "./skill-library.js";
+import { baseLayoutFor } from "./base.js";
 
 /**
  * Home lighting. CobbleBob's home sits in dark forest: with no torches,
@@ -272,7 +273,11 @@ export class LightHomeRunner {
     const self = bot.entity?.position;
     if (home === null || self === undefined || self === null) return [];
     if (Math.hypot(self.x - home.x, self.z - home.z) > LIGHT_RADIUS) return [];
-    const reserved = this.opts.reservedCells?.() ?? new Set<string>();
+    // The base's door gap and wall cells are the builder's: a torch lit the
+    // empty doorway at 14:2x on 2026-10-05 before the door could be hung.
+    const reserved = new Set<string>(this.opts.reservedCells?.() ?? []);
+    const layout = baseLayoutFor(home);
+    for (const cell of [...layout.doorCells, ...layout.wallCells, ...layout.roofCells]) reserved.add(key(cell.x, cell.y, cell.z));
     // Sources from the palette scan: far cheaper than reading every cell.
     const sources = findBlocksNearPoint(bot, new Vec3(home.x, home.y, home.z), (block) => LIGHT_SOURCE.test(block.name), LIGHT_RADIUS + TORCH_LIGHT + LIGHT_ABOVE, 2048);
     const plan = planTorches(botBlockView(bot), home, { reserved, skip: this.skipped, sources });
