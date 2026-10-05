@@ -634,6 +634,8 @@ export class TaskDispatcher {
         const operationStart = Number(task.parameters.operationStart ?? 0);
         const operationEnd = Number(task.parameters.operationEnd ?? project.blueprint.operations.length);
         return this.opts.buildBase.runDesignSlice(project.blueprint, {
+          // The bot's own buildings go up in forest it chose: fell trunks in the way.
+          clearTrees: project.source === "goal" && project.structureType?.startsWith("village:") === true,
           projectId,
           phaseId: task.projectPhaseId,
           operationStart,

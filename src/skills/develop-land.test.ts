@@ -76,7 +76,7 @@ test("every third outer plot is a building site, and gets its building on open g
   assert.deepEqual(next.origin, { x: outer[1]!.dx - 3, y: 64, z: outer[1]!.dz - 3 });
 });
 
-test("a busy builder keeps making fields; a trunk in the way makes the site a field", async () => {
+test("a busy builder keeps making fields; a forest site keeps its building", async () => {
   const { nextDevelopment } = await import("./develop-land.js");
   const outer = developmentPlots().slice(3);
   const fields: Record<string, FarmBlock> = {};
@@ -86,9 +86,10 @@ test("a busy builder keeps making fields; a trunk in the way makes the site a fi
   assert.deepEqual(busy?.survey.offset, outer[2]);
   const tree = { ...fields };
   for (let y = 64; y <= 70; y++) tree[`${outer[1]!.dx + 3},${y},${outer[1]!.dz}`] = { name: "oak_log" };
-  const blocked = nextDevelopment(HOME, world(tree));
-  assert.equal(blocked?.kind, "field", "a tall trunk inside the volume");
-  assert.deepEqual(blocked?.survey.offset, outer[1]);
+  // Forest sites keep their building: the builder fells trunks as it climbs.
+  const forest = nextDevelopment(HOME, world(tree));
+  assert.equal(forest?.kind, "building", "a tall trunk inside the volume");
+  assert.deepEqual(forest?.survey.offset, outer[1]);
 });
 
 test("a built site is left alone", async () => {

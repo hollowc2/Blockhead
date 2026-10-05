@@ -203,6 +203,9 @@ export function doorForPlanks(items: readonly { name: string; count: number }[])
   return best.replace(/_planks$/, "_door");
 }
 
+/** Tree trunks a development building may fell inside its own volume. */
+const TREE_TRUNK = /_log$|_wood$/;
+
 function findDoorItem(bot: Bot): Item | null {
   for (const item of bot.inventory.items()) {
     const name = item.name.replace(/^minecraft:/, "");
@@ -662,6 +665,12 @@ export interface DesignSliceData {
 }
 
 export interface DesignSliceOptions extends BaseRunOptions {
+  /**
+   * Fell tree trunks standing in the build volume, like other natural cover:
+   * only for the bot's own development buildings, whose sites are forest it
+   * surveyed itself. An owner's build never clears logs (they may be built).
+   */
+  clearTrees?: boolean;
   phaseId: string;
   operationStart: number;
   operationEnd: number;
@@ -993,10 +1002,11 @@ export class BaseBuilderRunner {
           if (!checkpoint(operation)) return { ok: false, status: "interrupted", retryable: true, message: "design slice paused", data };
           continue;
         }
-        if (existing !== null && !isAir(existing) && !isCreativeMode(this.opts.bot) && isNaturalBlock(existing.name)) {
+        const clearable = (name: string): boolean => isNaturalBlock(name) || (options.clearTrees === true && TREE_TRUNK.test(bareName(name)));
+        if (existing !== null && !isAir(existing) && !isCreativeMode(this.opts.bot) && clearable(existing.name)) {
           // Grass, dirt, or a stone bump where a wall goes is just uneven
           // ground: dig it out rather than abandoning the build.
-          await this.clearNaturalCell(cell);
+          await this.clearNaturalCell(cell, clearable);
         }
         if (operation.replaceExisting === true && !isCreativeMode(this.opts.bot)) {
           // A door/window cut into a wall this blueprint built: break our
@@ -1134,13 +1144,13 @@ export class BaseBuilderRunner {
   }
 
   /** Dig natural terrain out of a blueprint cell (re-digging sand/gravel refills). */
-  private async clearNaturalCell(cell: Vec3): Promise<boolean> {
+  private async clearNaturalCell(cell: Vec3, clearable: (name: string) => boolean = isNaturalBlock): Promise<boolean> {
     const bot = this.opts.bot;
     if (!await this.reachCell(cell)) return false;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const block = bot.blockAt(cell);
       if (block === null || isAir(block)) return true;
-      if (!isNaturalBlock(block.name)) return false;
+      if (!clearable(block.name)) return false;
       try {
         await equipToolForBlock(bot, block, this.signals?.signal).catch(() => undefined);
         await digBlock(bot, block, this.signals?.signal);

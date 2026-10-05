@@ -144,7 +144,9 @@ export function nextDevelopment(
     if (site !== null) {
       if (touchesReserved(cx, cz, SITE_HALF, reserved)) continue;
       const survey = surveyPlot(home, offset, lookup, SITE_HALF, SITE_LOG_CHECK);
-      const buildable = survey.farmland === 0 && survey.groundColumns >= SITE_MIN_GROUND && survey.maxGround - survey.minGround <= SITE_MAX_STEP && survey.highLogs === 0;
+      // Trunks higher up are felled by the builder as it reaches them (a
+      // forest site rejected for every tree left almost nowhere to build).
+      const buildable = survey.farmland === 0 && survey.groundColumns >= SITE_MIN_GROUND && survey.maxGround - survey.minGround <= SITE_MAX_STEP;
       if (buildable) {
         if (buildBusy) continue;
         const building = VILLAGE_ORDER[site % VILLAGE_ORDER.length]!;
