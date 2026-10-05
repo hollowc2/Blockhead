@@ -9,6 +9,7 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { Vec3 } from "vec3";
+import { armorUp } from "./armor.js";
 import type { DeathEventsRepository } from "../memory/deaths.js";
 import { deliverCarriedItems, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { bareName, countItem, findItem, itemsSummary } from "../minecraft/inventory.js";
@@ -653,6 +654,16 @@ export class GatherFoodRunner {
     }
   }
 
+  /** Turn hunt leather into armor at the home table (best effort). */
+  private async armorUp(): Promise<void> {
+    try {
+      await armorUp(this.opts.bot, this.opts.logger, this.signals?.signal);
+    } catch (err) {
+      if (this.signals?.signal.aborted === true) throw err;
+      this.opts.logger.warn({ err: String(err) }, "gather_food: armor failed");
+    }
+  }
+
   /** Drop junk when nearly full, so drops and harvests have room. */
   private async makeRoom(): Promise<void> {
     try {
@@ -868,6 +879,7 @@ export class GatherFoodRunner {
         await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
         if (this.stopped()) return this.interrupted(data);
         await this.cookCarried();
+        await this.armorUp();
         if (this.stopped()) return this.interrupted(data);
         const partial = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
         data.delivered = partial.delivered;
@@ -882,6 +894,7 @@ export class GatherFoodRunner {
       await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
       if (this.stopped()) return this.interrupted(data);
       await this.cookCarried();
+      await this.armorUp();
       if (this.stopped()) return this.interrupted(data);
       const delivered = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
       data.delivered = delivered.delivered;

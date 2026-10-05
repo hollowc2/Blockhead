@@ -10,6 +10,7 @@ import type { SkillsRepository } from "../memory/skills.js";
 import type { StorageRepository } from "../memory/storage.js";
 import { craftItem } from "../minecraft/crafting.js";
 import { withdrawFirstOfEach } from "../minecraft/containers.js";
+import { armorUp } from "./armor.js";
 import { bareName, countItem, itemsSummary } from "../minecraft/inventory.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { normalizeDimension } from "../minecraft/protection.js";
@@ -481,6 +482,10 @@ export class DeathRecoveryRunner {
    */
   private async ensureEssentialEquipment(signals: TaskSignals): Promise<boolean> {
     const bot = this.opts.bot;
+    // Whatever leather survived the death goes on first.
+    await armorUp(bot, this.opts.logger, signals.signal).catch((err) => {
+      if (signals.signal.aborted) throw err;
+    });
     const missing = (["axe", "pickaxe"] as const).filter((family) => !hasUsableFamilyTool(bot, family));
     if (missing.length === 0) return true;
     // One chest visit for both families, taking only spares it holds.
