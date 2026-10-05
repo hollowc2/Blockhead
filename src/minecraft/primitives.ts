@@ -284,6 +284,13 @@ export async function takeOutput(window: Furnace, signal?: AbortSignal): Promise
   throwIfAborted(signal);
 }
 
+export async function takeInput(window: Furnace, signal?: AbortSignal): Promise<void> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  beforeMutation(lease, "smelt", windowPoint(window), windowBlockName(window));
+  await window.takeInput();
+  throwIfAborted(signal);
+}
+
 /** Close a furnace as lease-owned cleanup, including after the lease signal aborts. */
 export async function closeFurnace(window: Furnace): Promise<void> {
   requireWorldActionCleanupLease();

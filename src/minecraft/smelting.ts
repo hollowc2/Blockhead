@@ -4,7 +4,7 @@ import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
 import { countItem, findItem } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
-import { closeFurnace, openFurnace, putFuel, putInput, takeOutput } from "./primitives.js";
+import { closeFurnace, openFurnace, putFuel, putInput, takeInput, takeOutput } from "./primitives.js";
 import { walkIntoReach } from "./movement.js";
 import { observedDelta } from "../status/deltas.js";
 
@@ -66,7 +66,9 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   const beforeOutput = countItem(bot, options.outputName);
   // Output burned as fuel was produced all the same.
   let outputBurned = 0;
-  const produced = (): number => countItem(bot, options.outputName) + outputBurned - beforeOutput;
+  // Output an earlier run left in the slot is taken, but not made by this run.
+  let leftoverOutput = 0;
+  const produced = (): number => countItem(bot, options.outputName) + outputBurned - leftoverOutput - beforeOutput;
   const settle = (failure: string): SmeltResult => {
     const delta = observedDelta(0, produced(), options.times);
     if (delta.status === "COMPLETE") return { ok: true, smelted: delta.delta };
@@ -76,7 +78,7 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   try {
     window = await openFurnace(bot, furnaceBlock, signal);
     throwIfAborted(signal);
-    failure = await runPasses(window);
+    failure = await clearFurnace(window) ?? await runPasses(window);
     await reclaimFuel(window);
   } finally {
     if (window !== null) await closeFurnace(window).catch(() => undefined);
@@ -110,6 +112,28 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
       }
     }
     return null;
+  }
+
+  /**
+   * Empty what an earlier run left behind: its output, and an input that is
+   * not this run's. Live 2026-10-04: 2 charcoal sat in the output slot, so a
+   * beef could not cook and stayed in the input slot, and every charcoal
+   * batch after it threw "destination full" putting its log in.
+   */
+  async function clearFurnace(window: Furnace): Promise<string | null> {
+    try {
+      const output = window.outputItem();
+      if (output !== null && output !== undefined) {
+        await takeOutput(window, signal);
+        if (output.name === options.outputName) leftoverOutput += output.count;
+      }
+      const input = window.inputItem();
+      if (input !== null && input !== undefined && input.name !== options.inputName) await takeInput(window, signal);
+      return null;
+    } catch (err) {
+      throwIfAborted(signal);
+      return `could not empty the furnace: ${String(err)}`;
+    }
   }
 
   /** Take back unburnt fuel; a charcoal run otherwise strands a piece per run. */
