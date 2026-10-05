@@ -447,20 +447,43 @@ async function climbStep(
  */
 export async function equipDigTool(bot: Bot, block: import("prismarine-block").Block, signal?: AbortSignal): Promise<void> {
   const want = digToolKind(block);
-  let best: import("prismarine-item").Item | null = null;
-  let bestTier = 0;
-  for (const item of bot.inventory?.items() ?? []) {
-    const name = item.name.replace(/^minecraft:/, "");
-    // Exact family: "axe" must not match "pickaxe".
-    if (!name.endsWith(`_${want}`)) continue;
-    const tier = TOOL_TIERS[name.slice(0, -want.length - 1)] ?? 0;
-    if (tier > bestTier) { best = item; bestTier = tier; }
+  const bestTool = (): import("prismarine-item").Item | null => {
+    let best: import("prismarine-item").Item | null = null;
+    let bestTier = 0;
+    for (const item of bot.inventory?.items() ?? []) {
+      const name = item.name.replace(/^minecraft:/, "");
+      // Exact family: "axe" must not match "pickaxe".
+      if (!name.endsWith(`_${want}`)) continue;
+      const tier = TOOL_TIERS[name.slice(0, -want.length - 1)] ?? 0;
+      if (tier > bestTier) { best = item; bestTier = tier; }
+    }
+    return best;
+  };
+  let best = bestTool();
+  // A pickaxe that broke mid-climb left every later stone cell dug by hand
+  // at 7.5 s (23:28:32, 55 cobblestone and a table carried): make one here.
+  if (best === null && want === "pickaxe" && pickaxeFallback !== null && Date.now() - (lastPickaxeFallback.get(bot) ?? 0) >= PICKAXE_FALLBACK_COOLDOWN_MS) {
+    lastPickaxeFallback.set(bot, Date.now());
+    await pickaxeFallback(bot, signal).catch(() => undefined);
+    best = bestTool();
   }
   if (best === null || bot.heldItem?.name === best.name) return;
   await raceAbort(bot.equip(best, "hand"), signal, { timeoutMs: 2_000, label: "equip" }).catch(() => undefined);
 }
 
 const TOOL_TIERS: Record<string, number> = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 };
+
+/** Makes a pickaxe where the bot stands (the skills layer's field craft). */
+export type PickaxeFallback = (bot: Bot, signal?: AbortSignal) => Promise<unknown>;
+let pickaxeFallback: PickaxeFallback | null = null;
+const lastPickaxeFallback = new WeakMap<Bot, number>();
+/** One field-craft try per minute: with no wood it cannot succeed, and each try scans the inventory. */
+const PICKAXE_FALLBACK_COOLDOWN_MS = 60_000;
+
+/** Register how a dig with no pickaxe gets one (wired at startup; null clears it). */
+export function setPickaxeFallback(fallback: PickaxeFallback | null): void {
+  pickaxeFallback = fallback;
+}
 
 /**
  * Tool family that digs `block` fastest, from its registry material

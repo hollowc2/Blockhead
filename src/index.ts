@@ -81,7 +81,8 @@ import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
 import { mineshaftExitRoute, TerrainProjectRunner } from "./skills/terrain-project.js";
-import { setEscapeRouteProvider } from "./minecraft/movement.js";
+import { setEscapeRouteProvider, setPickaxeFallback } from "./minecraft/movement.js";
+import { craftPickaxeInField } from "./skills/field-craft.js";
 import { normalizeDimension } from "./minecraft/protection.js";
 import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
 import { ShutdownCoordinator, withTimeout } from "./agent/shutdown.js";
@@ -130,6 +131,8 @@ const scheduler = new Scheduler({
 scheduler.loadFromPersistence();
 const destructiveAuthorizations = new DestructiveAuthorizationRegistry();
 const buildProjectManager = new WorldProjectManager(buildProjects, scheduler, bus, destructiveAuthorizations, () => state.worldId);
+// A dig that needs a pickaxe and has none (one broke mid-climb) makes one on the spot.
+setPickaxeFallback((bot, signal) => craftPickaxeInField(bot, logger, signal));
 // Any trip that starts deep in a shaft the bot dug climbs out by its steps.
 setEscapeRouteProvider((position, dimension) => {
   for (const project of buildProjects.loadMineshafts(config.server.world_key, normalizeDimension(dimension))) {

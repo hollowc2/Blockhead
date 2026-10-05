@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -418,6 +418,32 @@ test("equipDigTool waits for the pickaxe before a stone dig, and never takes a p
   assert.deepEqual(events, ["equipped stone_pickaxe"], "already held: no second swap");
   await equipDigTool(bot, { name: "oak_log", material: "mineable/axe" } as any);
   assert.equal(bot.heldItem.name, "stone_axe");
+});
+
+test("a pickaxe that broke mid-climb is replaced on the spot before the next stone cell", async () => {
+  // Live 23:28:32: the wooden pickaxe broke on a stone staircase and every
+  // later cell was dug by hand at 7.5 s, with 55 cobblestone and a table on hand.
+  const items: { name: string }[] = [{ name: "cobblestone" }];
+  let crafts = 0;
+  const bot = {
+    heldItem: items[0],
+    inventory: { items: () => items },
+    equip: async (item: { name: string }) => { bot.heldItem = item; },
+  } as any;
+  setPickaxeFallback(async () => { crafts += 1; items.push({ name: "stone_pickaxe" }); });
+  try {
+    const stone = { name: "stone", material: "mineable/pickaxe" } as any;
+    await equipDigTool(bot, stone);
+    assert.equal(crafts, 1);
+    assert.equal(bot.heldItem.name, "stone_pickaxe");
+    items.pop();
+    await equipDigTool(bot, stone);
+    assert.equal(crafts, 1, "at most one field craft a minute");
+    await equipDigTool(bot, { name: "dirt", material: "mineable/shovel" } as any);
+    assert.equal(crafts, 1, "no pickaxe craft for a shovel block");
+  } finally {
+    setPickaxeFallback(null);
+  }
 });
 
 test("an unloaded home column does not send the trip to the stale stored home Y", async () => {
