@@ -77,6 +77,8 @@ export interface BackgroundManagerOptions {
   goals?: GoalManager;
   /** Active durable construction projects suppress director replanning. */
   buildProjects?: WorldProjectManager;
+  /** Home lighting: dark spots around home are torched before ordinary restores. */
+  lightHome?: { darkSpots(): unknown[] };
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -420,6 +422,26 @@ export class BackgroundManager {
           source: "background",
           objective: "Sleep until morning.",
           parameters: {},
+        });
+        scheduler.claim();
+        return;
+      }
+    }
+
+    // Light up home before ordinary work: unlit forest around home spawned
+    // the mobs that killed the bot eight times in eight minutes and blew up
+    // the home chest (2026-10-04 20:13-20:21).
+    if (this.opts.lightHome !== undefined && !this.kindBlocked("light")) {
+      const dark = await this.worldProbe(async () => this.opts.lightHome!.darkSpots().length);
+      if (dark > 0) {
+        logger.info({ dark }, "home has dark spots; lighting it");
+        scheduler.enqueue({
+          type: "light_home",
+          priority: TaskPriority.BACKGROUND,
+          source: "background",
+          objective: `Light up home: ${dark} dark spots.`,
+          parameters: {},
+          workKey: "light-home",
         });
         scheduler.claim();
         return;
@@ -1014,5 +1036,6 @@ function failureKey(task: Task): string | null {
   }
   if (task.type === "upgrade_equipment") return "upgrade";
   if (task.type === "build_base") return "build";
+  if (task.type === "light_home") return "light";
   return null;
 }

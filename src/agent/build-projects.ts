@@ -250,6 +250,21 @@ export class BuildProjectManager {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
   }
 
+  /**
+   * Every cell an unfinished build will occupy, as "x,y,z" keys. Background
+   * work that sets blocks down near home (torches) keeps out of them.
+   */
+  reservedCells(): Set<string> {
+    const cells = new Set<string>();
+    for (const project of this.projects.loadUnfinished()) {
+      for (const operation of project.blueprint.operations) {
+        const at = operation.absolute ?? { x: project.origin.x + operation.x, y: project.origin.y + operation.y, z: project.origin.z + operation.z };
+        cells.add(`${at.x},${at.y},${at.z}`);
+      }
+    }
+    return cells;
+  }
+
   getProject(projectId: string): BuildProject | null {
     return this.projects.get(projectId);
   }
