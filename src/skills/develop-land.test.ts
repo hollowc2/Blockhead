@@ -61,43 +61,61 @@ test("a plot of growing wheat is a field already", () => {
   assert.notDeepEqual(nextPlotToDevelop(HOME, world(overrides))?.offset, { dx: -8, dz: 0 });
 });
 
-test("every third outer plot is a building site, and gets its building on open ground", async () => {
-  const { nextDevelopment, siteIndex } = await import("./develop-land.js");
-  const outer = developmentPlots().slice(3);
-  assert.equal(siteIndex(outer[0]!), null);
-  assert.equal(siteIndex(outer[1]!), 0);
-  assert.equal(siteIndex(outer[4]!), 1);
-  // Home plots and the first outer plot are already fields.
+/** The three home plots as fields, plus `outer` outer plots as fields. */
+function developed(outer: number): Record<string, FarmBlock> {
   const fields: Record<string, FarmBlock> = {};
-  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) fields[`${p.dx},63,${p.dz}`] = { name: "farmland" };
-  const next = nextDevelopment(HOME, world(fields));
-  assert.ok(next?.kind === "building");
-  assert.equal(next.building, "cottage");
-  assert.deepEqual(next.origin, { x: outer[1]!.dx - 3, y: 64, z: outer[1]!.dz - 3 });
+  for (const p of developmentPlots().slice(0, 3 + outer)) fields[`${p.dx},63,${p.dz}`] = { name: "farmland" };
+  return fields;
+}
+
+test("fields and buildings stay in balance: two outer fields per building", async () => {
+  const { nextDevelopment, FIELDS_PER_BUILDING } = await import("./develop-land.js");
+  assert.equal(FIELDS_PER_BUILDING, 2);
+  // Building, field, field, building, ...: one building and one field
+  // makes a field next.
+  assert.equal(nextDevelopment(HOME, world(developed(1)), new Set(), { buildBusy: false, buildings: 1 })?.kind, "field");
+  // One building and two fields: the second building is due, and it is a shed.
+  const next = nextDevelopment(HOME, world(developed(2)), new Set(), { buildBusy: false, buildings: 1 });
+  assert.equal(next?.kind, "building");
+  assert.ok(next?.kind === "building" && next.building === "storage_shed");
+  // While a building is going up, fields keep coming.
+  assert.equal(nextDevelopment(HOME, world(developed(4)), new Set(), { buildBusy: true, buildings: 1 })?.kind, "field");
 });
 
-test("a busy builder keeps making fields; a forest site keeps its building", async () => {
+test("a building goes on the flattest nearby plot; steep ground is levelled, not skipped", async () => {
   const { nextDevelopment } = await import("./develop-land.js");
   const outer = developmentPlots().slice(3);
-  const fields: Record<string, FarmBlock> = {};
-  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) fields[`${p.dx},63,${p.dz}`] = { name: "farmland" };
-  const busy = nextDevelopment(HOME, world(fields), new Set(), true);
-  assert.equal(busy?.kind, "field");
-  assert.deepEqual(busy?.survey.offset, outer[2]);
-  const tree = { ...fields };
-  for (let y = 64; y <= 70; y++) tree[`${outer[1]!.dx + 3},${y},${outer[1]!.dz}`] = { name: "oak_log" };
-  // Forest sites keep their building: the builder fells trunks as it climbs.
-  const forest = nextDevelopment(HOME, world(tree));
-  assert.equal(forest?.kind, "building", "a tall trunk inside the volume");
-  assert.deepEqual(forest?.survey.offset, outer[1]);
+  const land = developed(0);
+  // The nearest open plot is a 3-block slope; the second is flat.
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+    const x = outer[0]!.dx + dx; const z = outer[0]!.dz + dz;
+    for (let y = 64; y <= 63 + Math.max(0, dx + 1); y++) land[`${x},${y},${z}`] = { name: "dirt" };
+    land[`${x},${63 + Math.max(0, dx + 1)},${z}`] = { name: "grass_block" };
+  }
+  const flat = nextDevelopment(HOME, world(land), new Set(), { buildBusy: false, buildings: 0 });
+  assert.ok(flat?.kind === "building");
+  assert.deepEqual(flat.survey.offset, outer[1], "the flat plot wins");
+  // With only the slope left nearby, it is still built on (levelled).
+  const steepOnly = { ...land };
+  for (const p of outer.slice(1)) for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) steepOnly[`${p.dx + dx},63,${p.dz + dz}`] = { name: "water" };
+  const slope = nextDevelopment(HOME, world(steepOnly), new Set(), { buildBusy: false, buildings: 0 });
+  assert.ok(slope?.kind === "building");
+  assert.deepEqual(slope.survey.offset, outer[0]);
+});
+
+test("levelling cuts ground above the pad and fills dips up to it", async () => {
+  const { levelPlan } = await import("./develop-land.js");
+  const land: Record<string, FarmBlock> = { "1,64,1": { name: "dirt" }, "1,65,1": { name: "grass_block" }, "2,63,2": { name: "air" } };
+  const plan = levelPlan({ x: 0, z: 0 }, 63, 7, world(land));
+  assert.deepEqual(plan.cut, [{ x: 1, y: 65, z: 1 }, { x: 1, y: 64, z: 1 }], "top down");
+  assert.deepEqual(plan.fill, [{ x: 2, y: 63, z: 2 }]);
 });
 
 test("a built site is left alone", async () => {
   const { nextDevelopment } = await import("./develop-land.js");
   const outer = developmentPlots().slice(3);
-  const built: Record<string, FarmBlock> = {};
-  for (const p of [...developmentPlots().slice(0, 3), outer[0]!]) built[`${p.dx},63,${p.dz}`] = { name: "farmland" };
-  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) built[`${outer[1]!.dx + dx},68,${outer[1]!.dz + dz}`] = { name: "oak_planks" };
-  const next = nextDevelopment(HOME, world(built));
-  assert.notDeepEqual(next?.survey.offset, outer[1]);
+  const built = developed(0);
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) built[`${outer[0]!.dx + dx},68,${outer[0]!.dz + dz}`] = { name: "oak_planks" };
+  const next = nextDevelopment(HOME, world(built), new Set(), { buildBusy: false, buildings: 0 });
+  assert.notDeepEqual(next?.survey.offset, outer[0]);
 });

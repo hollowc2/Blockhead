@@ -187,6 +187,12 @@ export class BuildProjectsRepository {
     return row ? toProject(row) : null;
   }
 
+  /** Projects whose structure type starts with `prefix`, cancelled ones excepted. */
+  countByStructurePrefix(prefix: string): number {
+    const row = this.db.sql.prepare(`SELECT COUNT(*) AS n FROM build_projects WHERE structure_type LIKE ? AND status != 'cancelled'`).get(`${prefix}%`) as { n: number };
+    return row.n;
+  }
+
   /** Active, paused, blocked, and verifying projects survive a restart. */
   loadUnfinished(): BuildProject[] {
     const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects WHERE status IN ('active', 'paused', 'blocked', 'verifying') ORDER BY created_at, rowid`).all() as BuildProjectRow[];

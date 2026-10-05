@@ -3,8 +3,9 @@ import type { Logger } from "pino";
 import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
-import { travelHomeAndWait } from "../minecraft/movement.js";
-import { collectBlocks } from "../minecraft/world.js";
+import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
+import { collectBlocks, placeItemAt } from "../minecraft/world.js";
+import { findItem } from "../minecraft/inventory.js";
 import { botLookup, developmentPlots, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
 import type { SkillResult } from "./skill-library.js";
 import type { BuildingDesign } from "../building/schema.js";
@@ -104,74 +105,115 @@ function touchesReserved(cx: number, cz: number, half: number, reserved: Readonl
   return false;
 }
 
-/** Every third outer plot is a building site; the rest are fields. */
-export function siteIndex(offset: PlotOffset): number | null {
-  const outer = developmentPlots().slice(3);
-  const index = outer.findIndex((candidate) => candidate.dx === offset.dx && candidate.dz === offset.dz);
-  if (index < 0 || index % 3 !== 1) return null;
-  return (index - 1) / 3;
-}
-
 const SITE_HALF = Math.floor(VILLAGE_SITE / 2);
-/** Highest village building plus its roof: logs below this block a site. */
+/** Highest village building plus its roof: trunks below this are felled while building. */
 const SITE_LOG_CHECK = 12;
 /** A building site needs this much of its 7x7 to be field ground. */
 const SITE_MIN_GROUND = 40;
-/** Ground heights across a building site may differ by at most this. */
-const SITE_MAX_STEP = 2;
+/** Uneven ground up to this step is levelled into a pad before building. */
+const SITE_MAX_STEP = 5;
+/** Outer fields developed per building: two fields, then a building, and so on. */
+export const FIELDS_PER_BUILDING = 2;
+/** A building goes on the flattest of this many nearest open plots. */
+const SITE_CHOICES = 6;
 
 export type Development =
   | { kind: "field"; survey: PlotSurvey }
   | { kind: "building"; survey: PlotSurvey; building: VillageBuilding; origin: { x: number; y: number; z: number } };
 
+export interface DevelopmentState {
+  /** A development building is unfinished: only fields until it is done. */
+  buildBusy: boolean;
+  /** Development buildings started so far (sets the next kind and the balance). */
+  buildings: number;
+}
+
 /**
- * The next development step: nearest plot first. A building site gets its
- * building when it is flat, open ground with no trunks in the way and no
- * other development build is unfinished; a site that cannot take a building
- * is farmed instead. Fields need mostly field ground and no farmland yet.
- * Anything touching a reserved cell (an unfinished build) is left alone.
+ * The next development step, keeping fields and buildings in balance (the
+ * owner asked for it to "feel balanced"): the home plots first, then two
+ * outer fields for every building. When a building is due it goes on the
+ * flattest of the nearest open plots, with uneven ground levelled into a pad
+ * first, so steep land does not leave a village of farms only. Anything
+ * touching a reserved cell (an unfinished build) is left alone.
  */
 export function nextDevelopment(
   home: { x: number; y: number; z: number },
   lookup: FarmLookup,
   reserved: ReadonlySet<string> = new Set(),
-  buildBusy = false,
+  state: DevelopmentState = { buildBusy: true, buildings: 0 },
 ): Development | null {
-  for (const offset of developmentPlots()) {
+  const plots = developmentPlots();
+  let outerFields = 0;
+  const openFields: PlotSurvey[] = [];
+  const openSites: PlotSurvey[] = [];
+  plots.forEach((offset, index) => {
     const cx = Math.floor(home.x) + offset.dx;
     const cz = Math.floor(home.z) + offset.dz;
-    const site = siteIndex(offset);
-    if (site !== null) {
-      if (touchesReserved(cx, cz, SITE_HALF, reserved)) continue;
-      const survey = surveyPlot(home, offset, lookup, SITE_HALF, SITE_LOG_CHECK);
-      // Trunks higher up are felled by the builder as it reaches them (a
-      // forest site rejected for every tree left almost nowhere to build).
-      const buildable = survey.farmland === 0 && survey.groundColumns >= SITE_MIN_GROUND && survey.maxGround - survey.minGround <= SITE_MAX_STEP;
-      if (buildable) {
-        if (buildBusy) continue;
-        const building = VILLAGE_ORDER[site % VILLAGE_ORDER.length]!;
-        // Build on the most common ground height; the builder digs bumps
-        // and props up dips.
-        const counts = new Map<number, number>();
-        for (const y of survey.groundYs) counts.set(y, (counts.get(y) ?? 0) + 1);
-        const ground = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]![0];
-        return { kind: "building", survey, building, origin: { x: cx - SITE_HALF, y: ground + 1, z: cz - SITE_HALF } };
-      }
-      // A built site reads as mostly not ground; leave it be.
-      if (survey.groundColumns < SITE_MIN_GROUND) continue;
+    const field = surveyPlot(home, offset, lookup);
+    if (field.farmland > 0) {
+      if (index >= 3) outerFields += 1;
+      return;
     }
-    if (touchesReserved(cx, cz, PLOT_HALF, reserved)) continue;
-    const survey = surveyPlot(home, offset, lookup);
-    if (survey.farmland > 0) continue;
-    if (survey.groundColumns < MIN_GROUND_COLUMNS) continue;
-    return { kind: "field", survey };
+    if (touchesReserved(cx, cz, PLOT_HALF, reserved)) return;
+    if (field.groundColumns >= MIN_GROUND_COLUMNS) openFields.push(field);
+    if (index < 3 || touchesReserved(cx, cz, SITE_HALF, reserved)) return;
+    const site = surveyPlot(home, offset, lookup, SITE_HALF, SITE_LOG_CHECK);
+    // A built site reads as mostly not ground and drops out here.
+    if (site.farmland === 0 && site.groundColumns >= SITE_MIN_GROUND && site.maxGround - site.minGround <= SITE_MAX_STEP) openSites.push(site);
+  });
+  const homeField = openFields.find((field) => plots.findIndex((p) => p.dx === field.offset.dx && p.dz === field.offset.dz) < 3);
+  if (homeField !== undefined) return { kind: "field", survey: homeField };
+
+  const buildingDue = !state.buildBusy && outerFields >= FIELDS_PER_BUILDING * (state.buildings + 1) - FIELDS_PER_BUILDING;
+  if (buildingDue && openSites.length > 0) {
+    const nearest = openSites.slice(0, SITE_CHOICES);
+    const site = nearest.reduce((best, candidate) => (candidate.maxGround - candidate.minGround < best.maxGround - best.minGround ? candidate : best));
+    const building = VILLAGE_ORDER[state.buildings % VILLAGE_ORDER.length]!;
+    // The pad sits on the most common ground height; higher ground is cut
+    // down to it and dips are filled up to it.
+    const counts = new Map<number, number>();
+    for (const y of site.groundYs) counts.set(y, (counts.get(y) ?? 0) + 1);
+    const ground = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+    const cx = Math.floor(home.x) + site.offset.dx;
+    const cz = Math.floor(home.z) + site.offset.dz;
+    return { kind: "building", survey: site, building, origin: { x: cx - SITE_HALF, y: ground + 1, z: cz - SITE_HALF } };
   }
-  return null;
+  const field = openFields[0];
+  return field === undefined ? null : { kind: "field", survey: field };
 }
+
+/** Cells to cut and fill so a site's footprint is one flat pad at `padY`. Pure over `lookup`. */
+export function levelPlan(origin: { x: number; z: number }, padY: number, size: number, lookup: FarmLookup): { cut: { x: number; y: number; z: number }[]; fill: { x: number; y: number; z: number }[] } {
+  const cut: { x: number; y: number; z: number }[] = [];
+  const fill: { x: number; y: number; z: number }[] = [];
+  for (let dx = 0; dx < size; dx++) {
+    for (let dz = 0; dz < size; dz++) {
+      const x = origin.x + dx;
+      const z = origin.z + dz;
+      for (let y = padY + SITE_MAX_STEP + 1; y > padY; y--) {
+        const block = lookup(x, y, z);
+        if (block !== null && LEVEL_GROUND.test(block.name)) cut.push({ x, y, z });
+      }
+      for (let y = padY; y >= padY - SITE_MAX_STEP; y--) {
+        const block = lookup(x, y, z);
+        if (block === null) break;
+        if (!isAirName(block.name) && !CLEARABLE.test(block.name) && !/water/.test(block.name)) break;
+        fill.push({ x, y, z });
+      }
+    }
+  }
+  // Cut from the top down; fill from the bottom up so each block rests on the last.
+  cut.sort((a, b) => b.y - a.y);
+  fill.sort((a, b) => a.y - b.y);
+  return { cut, fill };
+}
+
+/** Natural ground the levelling may cut away. */
+const LEVEL_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|stone|andesite|diorite|granite|gravel|sand|clay|tuff)$/;
 
 /** The next field to clear and plant (fields only). */
 export function nextPlotToDevelop(home: { x: number; y: number; z: number }, lookup: FarmLookup, reserved: ReadonlySet<string> = new Set()): PlotSurvey | null {
-  const next = nextDevelopment(home, lookup, reserved, true);
+  const next = nextDevelopment(home, lookup, reserved, { buildBusy: true, buildings: 0 });
   return next?.kind === "field" ? next.survey : null;
 }
 
@@ -179,6 +221,8 @@ export function nextPlotToDevelop(home: { x: number; y: number; z: number }, loo
 export interface DevelopmentBuilds {
   /** True while a building development started is unfinished. */
   busy(): boolean;
+  /** Development buildings started so far. */
+  count(): number;
   /** Start a building at `origin`; throws when the design cannot be scheduled. */
   start(building: VillageBuilding, design: BuildingDesign, origin: { x: number; y: number; z: number; dimension: string }): void;
 }
@@ -203,6 +247,40 @@ export interface DevelopLandData {
 export class DevelopLandRunner {
   constructor(private readonly opts: DevelopLandOptions) {}
 
+  /**
+   * Cut the site's high ground down to the pad and fill its dips with the
+   * dirt dug out (cobblestone when the dirt runs short). Best effort: the
+   * builder also digs bumps in its wall cells and props up gaps.
+   */
+  private async levelSite(origin: { x: number; y: number; z: number }, signal?: AbortSignal): Promise<{ cut: number; filled: number }> {
+    const bot = this.opts.bot;
+    const plan = levelPlan(origin, origin.y - 1, VILLAGE_SITE, botLookup(bot));
+    const cutTargets = plan.cut.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
+    if (cutTargets.length > 0) {
+      try {
+        await collectBlocks(bot, cutTargets, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, undefined, signal);
+      } catch (err) {
+        if (signal?.aborted === true) throw err;
+        this.opts.logger.warn({ err: String(err) }, "develop: levelling cut stopped");
+      }
+    }
+    const cut = plan.cut.filter((cell) => isAirName(bot.blockAt(new Vec3(cell.x, cell.y, cell.z))?.name ?? "")).length;
+    let filled = 0;
+    for (const cell of plan.fill) {
+      if (signal?.aborted === true) break;
+      const item = findItem(bot, "dirt") ?? findItem(bot, "cobblestone");
+      if (item === null) break;
+      const at = new Vec3(cell.x, cell.y, cell.z);
+      const below = bot.blockAt(at.offset(0, -1, 0));
+      if (below === null || below.boundingBox !== "block") continue;
+      const walked = await travelAndWait(bot, at, { range: 3, timeoutMs: 15_000, signal });
+      if (walked.status !== "arrived" && walked.status !== "already_there") continue;
+      const placed = await placeItemAt(bot, item, { position: at, reference: below, face: new Vec3(0, 1, 0) }, signal).catch(() => null);
+      if (placed !== null) filled += 1;
+    }
+    return { cut, filled };
+  }
+
   /** True when a plot within the development rings is left to develop. */
   hasWork(): boolean {
     const home = this.opts.state.home;
@@ -215,7 +293,7 @@ export class DevelopLandRunner {
 
   private next(home: { x: number; y: number; z: number }): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, botLookup(this.opts.bot), this.opts.reservedCells?.() ?? new Set(), builds === undefined || builds.busy());
+    return nextDevelopment(home, botLookup(this.opts.bot), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0 });
   }
 
   async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
@@ -254,6 +332,9 @@ export class DevelopLandRunner {
 
     if (next.kind === "building") {
       data.building = next.building;
+      const level = await this.levelSite(next.origin, signal);
+      if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
+      this.opts.logger.info({ building: next.building, cut: level.cut, filled: level.filled }, "develop: site levelled");
       try {
         this.opts.builds!.start(next.building, villageDesign(next.building), { ...next.origin, dimension: home.dimension });
       } catch (err) {

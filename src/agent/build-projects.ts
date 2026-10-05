@@ -265,6 +265,11 @@ export class BuildProjectManager {
     return cells;
   }
 
+  /** Projects ever started (not cancelled) whose structure type starts with `prefix`. */
+  countProjects(prefix: string): number {
+    return this.projects.countByStructurePrefix(prefix);
+  }
+
   /** True when an unfinished project matches (e.g. the bot's own development builds). */
   hasUnfinished(matches: (project: BuildProject) => boolean): boolean {
     return this.projects.loadUnfinished().some(matches);
