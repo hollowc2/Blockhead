@@ -211,3 +211,71 @@ test("short of trees, an outer plot is set aside for a tree farm, then planted a
   assert.notEqual(plenty?.kind, "tree_farm");
   assert.equal(TREE_FARM_PLOTS, 2);
 });
+
+test("field levelling uses crop-covered heights and cuts farmland and fills crops", async () => {
+  const { levelPlan, modalGround } = await import("./develop-land.js");
+  const land = developed(0);
+  land["-9,63,0"] = { name: "wheat", age: 4 };
+  land["-9,62,0"] = { name: "farmland" };
+  land["-7,64,0"] = { name: "farmland" };
+  land["-7,65,0"] = { name: "wheat", age: 7 };
+  const survey = surveyPlot(HOME, { dx: -8, dz: 0 }, world(land));
+  assert.equal(survey.minGround, 62);
+  assert.equal(survey.maxGround, 64);
+  assert.equal(modalGround(survey), 63);
+  assert.equal(modalGround({ ...survey, groundYs: [64, 62] }), 62);
+  const plan = levelPlan({ x: -10, z: -2 }, 63, 5, world(land));
+  assert.deepEqual(plan.cut, [{ x: -7, y: 65, z: 0 }, { x: -7, y: 64, z: 0 }]);
+  assert.deepEqual(plan.fill, [{ x: -9, y: 63, z: 0 }]);
+});
+
+test("steep field is skipped but remains available as a building site", async () => {
+  const { nextDevelopment, FIELD_MAX_STEP } = await import("./develop-land.js");
+  const land = developed(0);
+  const p = developmentPlots()[3]!;
+  for (let y = 64; y <= 63 + 4; y++) land[`${p.dx},${y},${p.dz}`] = { name: "dirt" };
+  assert.equal(FIELD_MAX_STEP, 3);
+  assert.notDeepEqual(nextDevelopment(HOME, world(land))?.survey.offset, p);
+  // Exclude all other sites so the 4-block slope is the only choice.
+  for (const other of developmentPlots().slice(4)) for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) land[`${other.dx + dx},63,${other.dz + dz}`] = { name: "water" };
+  assert.equal(nextDevelopment(HOME, world(land), new Set(), { buildBusy: false, buildings: 0 })?.kind, "building");
+});
+
+test("uneven developed fields are repaired after tidy and before tree planting or expansion", async () => {
+  const { nextDevelopment } = await import("./develop-land.js");
+  const land = developed(0);
+  land["-9,64,0"] = { name: "farmland" };
+  const state = { buildBusy: true, buildings: 0, treeFarm: { plots: [developmentPlots()[3]!], wanted: false, canPlant: true } };
+  const next = nextDevelopment(HOME, world(land), new Set(), state);
+  assert.equal(next?.kind, "level_field");
+  assert.ok(next?.kind === "level_field" && next.padY === 63);
+  assert.equal(nextDevelopment(HOME, world(developed(0)), new Set(), state)?.kind, "plant_trees");
+  assert.equal(nextDevelopment(HOME, world(land), new Set(), { ...state, levelSkip: new Set(["-8,0"]) })?.kind, "plant_trees");
+  assert.equal(nextDevelopment(HOME, world(land), new Set(["-10,95,0"]), state)?.kind, "plant_trees");
+  assert.notEqual(nextDevelopment(HOME, world(land), new Set(), { ...state, treeFarm: { plots: [{ dx: -8, dz: 0 }], wanted: false, canPlant: false } })?.kind, "level_field");
+  land["-12,67,0"] = { name: "birch_log" };
+  assert.equal(nextDevelopment(HOME, world(land), new Set(), state)?.kind, "tidy");
+});
+
+test("gap tidy takes floating logs but leaves standing trunks, frames and protected columns", async () => {
+  const { nextDevelopment } = await import("./develop-land.js");
+  const land = developed(0);
+  land["-12,67,0"] = { name: "birch_log" };
+  for (let y = 64; y <= 69; y++) land[`-12,${y},1`] = { name: "birch_log" };
+  land["-11,67,-2"] = { name: "birch_log" };
+  land["-11,67,-3"] = { name: "oak_planks" };
+  land["-12,68,-4"] = { name: "birch_log" };
+  land["-5,68,0"] = { name: "birch_log" };
+  const state = { buildBusy: true, buildings: 0, treeFarm: { plots: [{ dx: -16, dz: 0 }], wanted: false, canPlant: false } };
+  const next = nextDevelopment(HOME, world(land), new Set(["-12,90,-4"]), state);
+  assert.equal(next?.kind, "tidy");
+  assert.deepEqual(next?.survey.leftoverLogs, [{ x: -12, y: 67, z: 0, name: "birch_log" }, { x: -5, y: 68, z: 0, name: "birch_log" }]);
+  const protectedFarm = nextDevelopment(HOME, world(land), new Set(["-12,90,-4"]), { ...state, treeFarm: { ...state.treeFarm, plots: [{ dx: -14, dz: 0 }] } });
+  assert.deepEqual(protectedFarm?.survey.leftoverLogs, [{ x: -5, y: 68, z: 0, name: "birch_log" }]);
+});
+
+test("levelling never cuts through a crafted obstruction or cuts paths", async () => {
+  const { levelPlan } = await import("./develop-land.js");
+  const plan = levelPlan({ x: 0, z: 0 }, 63, 2, world({ "0,65,0": { name: "oak_planks" }, "0,64,0": { name: "dirt" }, "1,64,1": { name: "dirt_path" } }));
+  assert.deepEqual(plan, { cut: [], fill: [] });
+});

@@ -4,7 +4,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
-import { collectBlocks, nearbyLogCensus, placeItemAt } from "../minecraft/world.js";
+import { collectBlocks, nearbyLogCensus, placeItemAt, touchesCraftedBlock } from "../minecraft/world.js";
 import { countLogs, countPlanks, countSticks, findItem } from "../minecraft/inventory.js";
 import { digBlock, shedJunk } from "../minecraft/primitives.js";
 import { isDroppedItemEntity } from "../policy/combat.js";
@@ -23,6 +23,7 @@ import { VILLAGE_ORDER, VILLAGE_SITE, villageDesign, type VillageBuilding } from
  */
 
 const PLOT_HALF = 2;
+export const FIELD_MAX_STEP = 3;
 /** Columns are searched this far above/below home for their ground. */
 const GROUND_SEARCH_DY = 12;
 /** Clearing reaches this high above the ground: crop space plus headroom to walk. */
@@ -94,13 +95,17 @@ export function surveyPlot(home: { x: number; y: number; z: number }, offset: Pl
       // tree is the ground (or not field ground, and the column is skipped).
       const logsAbove: { x: number; y: number; z: number; name: string }[] = [];
       const keepLeftovers = (groundY: number): void => {
-        for (const log of logsAbove) if (log.y > groundY + CLEAR_HEIGHT) survey.leftoverLogs.push(log);
+        for (const log of logsAbove) {
+          const floating = Array.from({ length: log.y - groundY - 1 }, (_, i) => lookup(x, groundY + 1 + i, z)?.name ?? "unknown")
+            .some((name) => isAirName(name) || /_leaves$/.test(name));
+          if (floating) survey.leftoverLogs.push(log);
+        }
       };
       for (let y = baseY + GROUND_SEARCH_DY; y >= baseY - GROUND_SEARCH_DY; y--) {
         const block = lookup(x, y, z);
         if (block === null) break;
         // A crop stands on farmland: the column is already a field.
-        if (CROP.test(block.name)) { survey.groundColumns += 1; survey.farmland += 1; keepLeftovers(y - 1); break; }
+        if (CROP.test(block.name)) continue;
         if (TREE_LOG.test(block.name)) logsAbove.push({ x, y, z, name: block.name });
         if (isAirName(block.name) || CLEARABLE.test(block.name)) continue;
         if (!FIELD_GROUND.test(block.name)) break;
@@ -149,6 +154,7 @@ const SITE_CHOICES = 6;
 
 export type Development =
   | { kind: "tidy"; survey: PlotSurvey }
+  | { kind: "level_field"; survey: PlotSurvey; padY: number }
   | { kind: "tree_farm"; survey: PlotSurvey }
   | { kind: "plant_trees"; survey: PlotSurvey; farm: TreeFarmSurvey }
   | { kind: "field"; survey: PlotSurvey }
@@ -159,6 +165,8 @@ export interface DevelopmentState {
   buildBusy: boolean;
   /** Plots ("dx,dz") whose leftover logs could not be reached: not tidied again. */
   tidySkip?: ReadonlySet<string>;
+  /** Fields whose levelling was incomplete; left alone for this session. */
+  levelSkip?: ReadonlySet<string>;
   /** Development buildings started so far (sets the next kind and the balance). */
   buildings: number;
   /** Plots set aside for trees, and whether home is short of trees. */
@@ -248,6 +256,7 @@ export function nextDevelopment(
   }
   let outerFields = 0;
   const tidy: PlotSurvey[] = [];
+  const uneven: PlotSurvey[] = [];
   const openFields: PlotSurvey[] = [];
   const openSites: PlotSurvey[] = [];
   plots.forEach((offset, index) => {
@@ -259,17 +268,21 @@ export function nextDevelopment(
       if (index >= 3) outerFields += 1;
       // Tidy before expanding: the owner asked for the half-cleared trees
       // over the fields to be taken down too (2026-10-05).
-      if (field.leftoverLogs.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push(field);
+      const leftovers = surveyPlot(home, offset, lookup, 4).leftoverLogs.filter((log) =>
+        !touchesReserved(log.x, log.z, 0, blocked) && !touchesCraftedBlock({ blockAt: (at: Vec3) => lookup(at.x, at.y, at.z) }, new Vec3(log.x, log.y, log.z)));
+      if (leftovers.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push({ ...field, leftoverLogs: leftovers });
+      if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.groundColumns === 25 && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
       return;
     }
     if (touchesReserved(cx, cz, PLOT_HALF, blocked)) return;
-    if (field.groundColumns >= MIN_GROUND_COLUMNS) openFields.push(field);
+    if (!state.levelSkip?.has(`${offset.dx},${offset.dz}`) && field.groundColumns >= MIN_GROUND_COLUMNS && field.maxGround - field.minGround <= FIELD_MAX_STEP) openFields.push(field);
     if (index < 3 || touchesReserved(cx, cz, SITE_HALF, blocked)) return;
     const site = surveyPlot(home, offset, lookup, SITE_HALF, SITE_LOG_CHECK);
     // A built site reads as mostly not ground and drops out here.
     if (site.farmland === 0 && site.groundColumns >= SITE_MIN_GROUND && site.maxGround - site.minGround <= SITE_MAX_STEP) openSites.push(site);
   });
   if (tidy[0] !== undefined) return { kind: "tidy", survey: tidy[0] };
+  if (uneven[0] !== undefined) return { kind: "level_field", survey: uneven[0], padY: modalGround(uneven[0]) };
   if (state.treeFarm?.canPlant === true) {
     for (const offset of farmPlots) {
       const farm = surveyTreeFarm(home, offset, lookup);
@@ -292,15 +305,20 @@ export function nextDevelopment(
     const building = VILLAGE_ORDER[state.buildings % VILLAGE_ORDER.length]!;
     // The pad sits on the most common ground height; higher ground is cut
     // down to it and dips are filled up to it.
-    const counts = new Map<number, number>();
-    for (const y of site.groundYs) counts.set(y, (counts.get(y) ?? 0) + 1);
-    const ground = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+    const ground = modalGround(site);
     const cx = Math.floor(home.x) + site.offset.dx;
     const cz = Math.floor(home.z) + site.offset.dz;
     return { kind: "building", survey: site, building, origin: { x: cx - SITE_HALF, y: ground + 1, z: cz - SITE_HALF } };
   }
   const field = openFields[0];
   return field === undefined ? null : { kind: "field", survey: field };
+}
+
+/** Modal surface height, choosing the lower height on a tie. */
+export function modalGround(survey: PlotSurvey): number {
+  const counts = new Map<number, number>();
+  for (const y of survey.groundYs) counts.set(y, (counts.get(y) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
 }
 
 /** Cells to cut and fill so a site's footprint is one flat pad at `padY`. Pure over `lookup`. */
@@ -313,12 +331,17 @@ export function levelPlan(origin: { x: number; z: number }, padY: number, size: 
       const z = origin.z + dz;
       for (let y = padY + SITE_MAX_STEP + 1; y > padY; y--) {
         const block = lookup(x, y, z);
-        if (block !== null && LEVEL_GROUND.test(block.name)) cut.push({ x, y, z });
+        if (block === null) break;
+        if (isAirName(block.name) || CLEARABLE.test(block.name) || CROP.test(block.name)) continue;
+        if (!LEVEL_GROUND.test(block.name)) break;
+        cut.push({ x, y, z });
+        const above = lookup(x, y + 1, z);
+        if (above !== null && CROP.test(above.name)) cut.push({ x, y: y + 1, z });
       }
       for (let y = padY; y >= padY - SITE_MAX_STEP; y--) {
         const block = lookup(x, y, z);
         if (block === null) break;
-        if (!isAirName(block.name) && !CLEARABLE.test(block.name) && !/water/.test(block.name)) break;
+        if (!isAirName(block.name) && !CLEARABLE.test(block.name) && !CROP.test(block.name) && !/water/.test(block.name)) break;
         fill.push({ x, y, z });
       }
     }
@@ -330,7 +353,7 @@ export function levelPlan(origin: { x: number; z: number }, padY: number, size: 
 }
 
 /** Natural ground the levelling may cut away. */
-const LEVEL_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|stone|andesite|diorite|granite|gravel|sand|clay|tuff)$/;
+const LEVEL_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|farmland|stone|andesite|diorite|granite|gravel|sand|clay|tuff)$/;
 
 /** The next field to clear and plant (fields only). */
 export function nextPlotToDevelop(home: { x: number; y: number; z: number }, lookup: FarmLookup, reserved: ReadonlySet<string> = new Set()): PlotSurvey | null {
@@ -356,6 +379,8 @@ export interface DevelopLandOptions {
   reservedCells?: () => ReadonlySet<string>;
   /** Building projects; without it development only makes fields. */
   builds?: DevelopmentBuilds;
+  /** Fetch missing fill dirt from home without excavating protected land. */
+  fetchDirt?: (count: number, signal?: AbortSignal) => Promise<void>;
   /** Take a little wood from the home chests (a hoe needs it). */
   fetchWood?: (signal?: AbortSignal) => Promise<void>;
   /** The tree farm's plots, kept across restarts, and saplings from the chest. */
@@ -397,9 +422,15 @@ export class DevelopLandRunner {
    * dirt dug out (cobblestone when the dirt runs short). Best effort: the
    * builder also digs bumps in its wall cells and props up gaps.
    */
-  private async levelSite(origin: { x: number; y: number; z: number }, signal?: AbortSignal): Promise<{ cut: number; filled: number }> {
+  private async levelSite(origin: { x: number; y: number; z: number }, size: number, signal?: AbortSignal): Promise<{ cut: number; filled: number }> {
     const bot = this.opts.bot;
-    const plan = levelPlan(origin, origin.y - 1, VILLAGE_SITE, botLookup(bot));
+    const blocked = new Set(this.opts.reservedCells?.() ?? []);
+    const home = this.opts.state.home;
+    if (home !== null) for (const farm of this.opts.treeFarm?.load() ?? []) {
+      for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) blocked.add(`${Math.floor(home.x) + farm.dx + dx},0,${Math.floor(home.z) + farm.dz + dz}`);
+    }
+    if (touchesReserved(origin.x + (size - 1) / 2, origin.z + (size - 1) / 2, (size - 1) / 2, blocked)) return { cut: 0, filled: 0 };
+    const plan = levelPlan(origin, origin.y - 1, size, botLookup(bot));
     const cutTargets = plan.cut.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
     if (cutTargets.length > 0) {
       try {
@@ -411,15 +442,26 @@ export class DevelopLandRunner {
     }
     const cut = plan.cut.filter((cell) => isAirName(bot.blockAt(new Vec3(cell.x, cell.y, cell.z))?.name ?? "")).length;
     let filled = 0;
+    const dirt = bot.inventory.items().filter((item) => item.name === "dirt").reduce((sum, item) => sum + item.count, 0);
+    if (dirt < plan.fill.length) await this.opts.fetchDirt?.(plan.fill.length - dirt, signal).catch((err) => {
+      if (signal?.aborted) throw err;
+      this.opts.logger.warn({ err: String(err) }, "develop: could not fetch fill dirt");
+    });
     for (const cell of plan.fill) {
       if (signal?.aborted === true) break;
-      const item = findItem(bot, "dirt") ?? findItem(bot, "cobblestone");
+      const item = findItem(bot, "dirt") ?? (size === VILLAGE_SITE || cell.y < origin.y - 1 ? findItem(bot, "cobblestone") : null);
       if (item === null) break;
       const at = new Vec3(cell.x, cell.y, cell.z);
       const below = bot.blockAt(at.offset(0, -1, 0));
-      if (below === null || below.boundingBox !== "block") continue;
+      if (below === null || (below.boundingBox !== "block" && below.name !== "farmland")) continue;
       const walked = await travelAndWait(bot, at, { range: 3, timeoutMs: 15_000, signal });
       if (walked.status !== "arrived" && walked.status !== "already_there") continue;
+      const cover = bot.blockAt(at);
+      if (cover === null) continue;
+      if (!isAirName(cover.name)) {
+        if (!CLEARABLE.test(cover.name) && !CROP.test(cover.name) && !/water/.test(cover.name)) continue;
+        if (!/water/.test(cover.name)) await digBlock(bot, cover, signal);
+      }
       const placed = await placeItemAt(bot, item, { position: at, reference: below, face: new Vec3(0, 1, 0) }, signal).catch(() => null);
       if (placed !== null) filled += 1;
     }
@@ -428,6 +470,7 @@ export class DevelopLandRunner {
 
   /** Plots whose leftover logs could not be reached; not tidied again this session. */
   private readonly tidySkip = new Set<string>();
+  private readonly levelSkip = new Set<string>();
   /** The last idle-check answer, reused for a minute (surveying every ring is slow). */
   private workMemo: { at: number; work: boolean } | null = null;
 
@@ -452,7 +495,7 @@ export class DevelopLandRunner {
 
   private next(home: { x: number; y: number; z: number }): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, treeFarm: this.treeFarmState() });
+    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, levelSkip: this.levelSkip, treeFarm: this.treeFarmState() });
   }
 
   /** When a sapling hunt may run again (it found none last time). */
@@ -572,6 +615,7 @@ export class DevelopLandRunner {
       const left = logs.filter((log) => TREE_LOG.test(bot.blockAt(log.position)?.name ?? "")).length;
       data.cleared = logs.length - left;
       // Logs it cannot reach stay; the plot is not tidied again.
+      this.opts.logger.info({ plot: survey.offset, cleared: data.cleared, unreachable: left }, "develop: tidy done");
       if (left > 0) this.tidySkip.add(`${survey.offset.dx},${survey.offset.dz}`);
       return { ok: true, status: "completed", message: `Took down ${data.cleared} leftover logs over the field at ${survey.offset.dx},${survey.offset.dz}.`, data };
     }
@@ -603,7 +647,7 @@ export class DevelopLandRunner {
 
     if (next.kind === "building") {
       data.building = next.building;
-      const level = await this.levelSite(next.origin, signal);
+      const level = await this.levelSite(next.origin, VILLAGE_SITE, signal);
       if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
       this.opts.logger.info({ building: next.building, cut: level.cut, filled: level.filled }, "develop: site levelled");
       try {
@@ -626,10 +670,21 @@ export class DevelopLandRunner {
       return { ok: true, status: "completed", message: `Set the plot at ${survey.offset.dx},${survey.offset.dz} aside for trees and planted ${data.trees} saplings.`, data };
     }
 
+    const padY = next.kind === "level_field" ? next.padY : modalGround(survey);
+    const origin = { x: Math.floor(home.x) + survey.offset.dx - PLOT_HALF, y: padY + 1, z: Math.floor(home.z) + survey.offset.dz - PLOT_HALF };
+    this.opts.logger.info({ plot: survey.offset, padY }, "develop: levelling a field");
+    const level = await this.levelSite(origin, 5, signal);
+    if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
+    const after = surveyPlot(home, survey.offset, botLookup(bot));
+    const complete = after.groundColumns === 25 && after.minGround === padY && after.maxGround === padY;
+    if (!complete) this.levelSkip.add(`${survey.offset.dx},${survey.offset.dz}`);
+    this.opts.logger.info({ plot: survey.offset, padY, ...level, complete }, "develop: field levelled");
+    if (!complete && next.kind === "field") return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
+
     // A hoe is made from carried wood; fetch some first when there is none.
     if (this.opts.fetchWood !== undefined && hoeWoodShort({ hoe: holdsHoe(bot), planks: countPlanks(bot), logs: countLogs(bot), sticks: countSticks(bot) })) {
       await this.opts.fetchWood(signal).catch((err) => this.opts.logger.warn({ err: String(err) }, "develop: could not fetch wood for a hoe"));
-      if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
+      if (signal?.aborted || signals?.checkpoint() === false) return interrupted();
     }
     // Till and sow it: the farm takes the cleared plot first.
     const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal, shouldAbort: () => signals?.checkpoint() === false, preferPlot: survey.offset });
@@ -638,7 +693,7 @@ export class DevelopLandRunner {
     this.opts.logger.info({ plot: survey.offset, cleared: data.cleared, planted: farm.planted, tilled: farm.tilled }, "develop: field done");
     // No progress at all would re-run on the same plot every few seconds
     // (14:41): fail so the restore cooldown spaces the retries.
-    if (data.cleared === 0 && farm.planted === 0 && farm.tilled === 0) {
+    if (!complete || (data.cleared === 0 && level.cut === 0 && level.filled === 0 && farm.planted === 0 && farm.tilled === 0)) {
       return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not clear or plant the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
     }
     // A plot short of seeds is finished on the next run.

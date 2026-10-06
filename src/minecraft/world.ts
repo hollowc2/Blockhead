@@ -494,7 +494,7 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
 /** The log type that is most common around the bot (what "wood" means here). */
 const CRAFTED_BLOCK = /_planks$|^cobblestone$|_fence$|_door$|_slab$|_stairs$|glass/;
 
-function touchesCraftedBlock(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
+export function touchesCraftedBlock(bot: { blockAt(position: Vec3): { name: string } | null }, position: Vec3): boolean {
   return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
     .some(([dx, dy, dz]) => CRAFTED_BLOCK.test(bot.blockAt(position.offset(dx!, dy!, dz!))?.name ?? ""));
 }

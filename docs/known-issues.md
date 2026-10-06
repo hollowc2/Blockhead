@@ -189,3 +189,23 @@ in the shared checkout and in the runtime, which put both back to the
 registry's 4.39.0. The crafting fix was verified on stock mineflayer. Any
 dependency patch that must survive a deploy has to live in the repo, like
 `scripts/patch-prismarine-viewer.mjs`.
+
+### 2026-10-06: level fields and floating trunks between plots
+
+Fields now use the modal ground height (lower on ties), cutting natural
+ground and farmland and filling crop-covered dips before tilling. Developed
+fields with a 1–3 block spread are repaired one at a time before expansion.
+Steeper plots remain available for building sites. Fill dirt comes from cuts,
+inventory, then the home chest; cobblestone may support a field below its
+surface, but the surface needs dirt so it can be tilled. Incomplete levelling
+is skipped for the session and returns a retryable failure.
+
+Tidy surveys reach four blocks from field centres, covering the gaps. Only
+trunks with air or leaves below them qualify; standing trees, logs touching
+crafted blocks, reserved build cells, village sites and tree-farm plots plus
+a margin are excluded. Unreachable logs remain skipped, with cleared and
+unreachable counts logged. Towering is intentionally unchanged: the existing
+collector notes two fall deaths from towering to see logs.
+
+Regression tests cover crop heights, cut/fill plans, slope limits, repair
+priority and skips, reserved cells, tree farms, gap trunks and building frames.
