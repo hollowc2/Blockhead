@@ -562,7 +562,9 @@ export async function stepOffPerch(bot: Bot, toward: { x: number; z: number }, s
       if (block === null) break;
       if (/lava/.test(block.name)) break;
       if (block.boundingBox === "block" || /water/.test(block.name)) {
-        if (depth - 1 > MAX_SAFE_DROP && depth - 1 <= RESCUE_MAX_DROP) landings.push({ dx, dz, depth: depth - 1 });
+        // The pathfinder measures a drop from the feet to the floor block
+        // (`depth`), not the air between, and refuses more than MAX_SAFE_DROP.
+        if (depth > MAX_SAFE_DROP && depth - 1 <= RESCUE_MAX_DROP) landings.push({ dx, dz, depth: depth - 1 });
         break;
       }
     }

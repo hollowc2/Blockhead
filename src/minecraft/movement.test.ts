@@ -350,6 +350,16 @@ test("a bot stranded on a perch steps off onto a landing within 5 blocks", async
   assert.equal(position.y, 0);
 });
 
+test("a perch whose floor is just past the pathfinder's drop limit is stepped off", async () => {
+  // 2026-10-06 00:31-00:58: on its own scaffold pillar inside a cottage, three
+  // blocks of air over the floor. The pathfinder measures that drop as 4
+  // (feet to floor block) and refused it; the rescue counted 3 as safe for
+  // the pathfinder and did nothing. The bot stood there half an hour.
+  const { bot, position } = perchBot(20, perchWorld(3, -1));
+  assert.equal(await stepOffPerch(bot, { x: 50, z: 0 }), true);
+  assert.equal(position.y, 0);
+});
+
 test("a perch rescue refuses lava landings, deep drops, and low health", async () => {
   const lava: Record<string, string> = {};
   for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) lava[new Vec3(x, -2, z).toString()] = "lava";
