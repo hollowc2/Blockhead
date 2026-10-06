@@ -503,6 +503,8 @@ function trunkHasLeaves(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
 
 export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "entity">): string {
   const counts = new Map<string, number>();
+  // Every log seen, for when no trunk still carries leaves.
+  const allCounts = new Map<string, number>();
   try {
     const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
     for (const position of positions) {
@@ -511,12 +513,14 @@ export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "ent
       // buildings outnumbered the birch woods, so the wood restore chose oak,
       // found none it could cut nearby and went 100 blocks across a lake for
       // some (2026-10-06 02:43, 05:05).
-      if (name !== undefined && trunkHasLeaves(bot, position)) counts.set(name, (counts.get(name) ?? 0) + 1);
+      if (name === undefined) continue;
+      allCounts.set(name, (allCounts.get(name) ?? 0) + 1);
+      if (trunkHasLeaves(bot, position)) counts.set(name, (counts.get(name) ?? 0) + 1);
     }
   } catch { /* no world view yet */ }
   let best = "oak_log";
   let bestCount = 0;
-  for (const [name, count] of counts) if (count > bestCount) { best = name; bestCount = count; }
+  for (const [name, count] of counts.size > 0 ? counts : allCounts) if (count > bestCount) { best = name; bestCount = count; }
   return best;
 }
 
