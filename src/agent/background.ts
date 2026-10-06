@@ -879,6 +879,12 @@ export class BackgroundManager {
       return true;
     }
 
+    // Nor is the next step taken right after a death: the respawned bot was
+    // sent straight back to the trip that killed it and drowned three
+    // minutes later (2026-10-06 02:50, 02:54).
+    const lastDeath = (this.opts.recentDeathTimes?.() ?? [])[0];
+    if (lastDeath !== undefined && this.now() - lastDeath < GOAL_AFTER_DEATH_PAUSE_MS) return false;
+
     const facts = this.goalFacts(goal.successCriteria, snapshot);
     const check = evaluateSuccessCriteria(goal, facts);
     if (check.satisfied && goal.successCriteria.length > 0) {

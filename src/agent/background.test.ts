@@ -886,6 +886,22 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
   assert.equal(cancelled.length, 1);
   assert.match(cancelled[0]!, /2 deaths/);
 
+  // One death while a goal is active: the goal waits out the pause instead
+  // of sending the respawned bot straight back (2026-10-06 02:50 shot on the
+  // way to underwater iron; 02:53 sent again; 02:54 drowned).
+  let goalSteps = 0;
+  (h.options.decider as unknown as { decideGoalAction: () => Promise<unknown> }).decideGoalAction = async () => { goalSteps++; return { action: { type: "wait" }, rationale: "test" }; };
+  active = { id: "g2", createdAt: new Date(Date.now() - 30 * 60_000).toISOString(), successCriteria: [{ kind: "inventory", item: "iron_pickaxe", min: 1 }] };
+  cancelled.length = 0;
+  h.advance(5 * 60_000);
+  deaths = [h.options.now!() - 3 * 60_000];
+  const directorBefore = h.decisionCount;
+  await h.manager.tick();
+  assert.equal(goalSteps, 0, "no goal step three minutes after a death");
+  assert.deepEqual(cancelled, [], "one death does not give the goal up");
+  assert.equal(h.decisionCount, directorBefore + 1, "the paused goal leaves the tick to the rest of the ladder");
+  active = null;
+
   // Past the 1-hour pause, two deaths in the last few hours still keep the
   // expedition off (the pause ran out at 20:27 and it died again at 20:30).
   started.length = 0;
