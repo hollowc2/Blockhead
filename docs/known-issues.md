@@ -214,3 +214,9 @@ priority and skips, reserved cells, tree farms, gap trunks and building frames.
 Live verification also found that most inner fields have one torch column.
 Repair accepts those surveyed footprints, preserving the fixture and levelling
 the natural ground columns rather than requiring 25 unobstructed columns.
+
+Tidy also checks `isReachableFromGround` before collecting: high logs without
+a real-ground work pose are counted as unreachable immediately. Freezing
+scaffolding alone still let the pathfinder climb into leaves and fail its
+return home during live verification. This avoids canopy approaches and
+spending the collection timeout on clearly unreachable high logs.

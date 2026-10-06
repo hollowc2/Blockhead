@@ -4,7 +4,7 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { travelAndWait, travelHomeAndWait, withoutPathfinderScaffolding } from "../minecraft/movement.js";
-import { collectBlocks, nearbyLogCensus, placeItemAt, touchesCraftedBlock } from "../minecraft/world.js";
+import { collectBlocks, isReachableFromGround, nearbyLogCensus, placeItemAt, touchesCraftedBlock } from "../minecraft/world.js";
 import { countLogs, countPlanks, countSticks, findItem } from "../minecraft/inventory.js";
 import { digBlock, shedJunk } from "../minecraft/primitives.js";
 import { isDroppedItemEntity } from "../policy/combat.js";
@@ -613,7 +613,7 @@ export class DevelopLandRunner {
       this.opts.logger.info({ plot: survey.offset, logs: survey.leftoverLogs.length }, "develop: taking down leftover tree trunks");
       const logs = survey.leftoverLogs.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
       try {
-        await collectBlocks(bot, logs, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, undefined, signal);
+        await collectBlocks(bot, logs.filter((log) => isReachableFromGround(bot, log.position)), () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, undefined, signal);
       } catch (err) {
         if (signal?.aborted === true) return interrupted();
         this.opts.logger.warn({ err: String(err) }, "develop: tidying stopped");
