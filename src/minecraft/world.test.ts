@@ -123,3 +123,18 @@ test("the dominant nearby log counts trees, not the bot's own log-framed buildin
   } as unknown as Parameters<typeof dominantNearbyLog>[0];
   assert.equal(dominantNearbyLog(bot), "birch_log");
 });
+
+test("with no leafy trees left, building logs still do not count as the local wood", () => {
+  // 2026-10-06 08:04: the birch woods near home were cleared; the fallback
+  // counted the village's oak frames and chose oak again.
+  const blocks = new Map<string, string>();
+  for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3 + 1},${y},0`, "oak_planks"); }
+  // Two leafless birch stumps.
+  for (const x of [20, 25]) for (let y = 64; y < 66; y++) blocks.set(`${x},${y},10`, "birch_log");
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    findBlocks: () => [...blocks].filter(([, name]) => name.endsWith("_log")).map(([key]) => new Vec3(...(key.split(",").map(Number) as [number, number, number]))),
+    blockAt: (pos: Vec3) => ({ name: blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air" }),
+  } as unknown as Parameters<typeof dominantNearbyLog>[0];
+  assert.equal(dominantNearbyLog(bot), "birch_log");
+});

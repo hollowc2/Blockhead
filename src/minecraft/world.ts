@@ -492,6 +492,13 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
 }
 
 /** The log type that is most common around the bot (what "wood" means here). */
+const CRAFTED_BLOCK = /_planks$|^cobblestone$|_fence$|_door$|_slab$|_stairs$|glass/;
+
+function touchesCraftedBlock(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
+  return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    .some(([dx, dy, dz]) => CRAFTED_BLOCK.test(bot.blockAt(position.offset(dx!, dy!, dz!))?.name ?? ""));
+}
+
 /** Whether the log column through `position` ends in leaves, as a tree's trunk does. */
 function trunkHasLeaves(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
   let top = position;
@@ -507,14 +514,19 @@ export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "ent
   const allCounts = new Map<string, number>();
   try {
     const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
-    for (const position of positions) {
+    for (const found of positions) {
+      const position = new Vec3(found.x, found.y, found.z);
       const name = bot.blockAt(position)?.name;
       // Only trees: the oak frames and windmill mast of the bot's own
       // buildings outnumbered the birch woods, so the wood restore chose oak,
       // found none it could cut nearby and went 100 blocks across a lake for
       // some (2026-10-06 02:43, 05:05).
       if (name === undefined) continue;
-      allCounts.set(name, (allCounts.get(name) ?? 0) + 1);
+      // A log beside planks, cobblestone, a fence or a door is part of a
+      // building: with the woods near home cleared, the fallback counted the
+      // village's oak frames and sent the bot across the lake again
+      // (2026-10-06 08:04).
+      if (!touchesCraftedBlock(bot, position)) allCounts.set(name, (allCounts.get(name) ?? 0) + 1);
       if (trunkHasLeaves(bot, position)) counts.set(name, (counts.get(name) ?? 0) + 1);
     }
   } catch { /* no world view yet */ }
