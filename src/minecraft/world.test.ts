@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { collectBlocks, findBlocksNearRefined, hasAirNeighbor, isReachableFromGround, isTrunkBase } from "./world.js";
+import { collectBlocks, dominantNearbyLog, findBlocksNearRefined, hasAirNeighbor, isReachableFromGround, isTrunkBase } from "./world.js";
 
 test("refined block search applies exposure before the candidate cap", () => {
   let options: Record<string, unknown> | undefined;
@@ -106,4 +106,20 @@ test("the state-id exposure check treats cave air as open and unloaded chunks as
   } as unknown as Parameters<typeof hasAirNeighbor>[0];
   assert.equal(hasAirNeighbor(bot, new Vec3(0, 10, 0)), true);
   assert.equal(hasAirNeighbor(bot, new Vec3(15, 10, 0)), false, "the neighbor across the edge is unloaded, not air");
+});
+
+test("the dominant nearby log counts trees, not the bot's own log-framed buildings", () => {
+  // 2026-10-06 02:43, 05:05: building frames made oak "dominant"; the wood
+  // restore found no oak it could cut and went 100 blocks across a lake.
+  const blocks = new Map<string, string>();
+  // Six oak frame columns under a plank roof.
+  for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3},68,0`, "oak_planks"); }
+  // Two birch trees.
+  for (const x of [20, 25]) { for (let y = 64; y < 69; y++) blocks.set(`${x},${y},10`, "birch_log"); blocks.set(`${x},69,10`, "birch_leaves"); }
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    findBlocks: () => [...blocks].filter(([, name]) => name.endsWith("_log")).map(([key]) => new Vec3(...(key.split(",").map(Number) as [number, number, number]))),
+    blockAt: (pos: Vec3) => ({ name: blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air" }),
+  } as unknown as Parameters<typeof dominantNearbyLog>[0];
+  assert.equal(dominantNearbyLog(bot), "birch_log");
 });

@@ -492,13 +492,26 @@ export async function placeItemAt(bot: Bot, item: Item, spot: PlacementSpot, sig
 }
 
 /** The log type that is most common around the bot (what "wood" means here). */
+/** Whether the log column through `position` ends in leaves, as a tree's trunk does. */
+function trunkHasLeaves(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
+  let top = position;
+  for (let i = 0; i < 32 && /_log$/.test(bot.blockAt(top.offset(0, 1, 0))?.name ?? ""); i++) top = top.offset(0, 1, 0);
+  const above = top.offset(0, 1, 0);
+  return [above, top.offset(1, 0, 0), top.offset(-1, 0, 0), top.offset(0, 0, 1), top.offset(0, 0, -1)]
+    .some((cell) => /_leaves$/.test(bot.blockAt(cell)?.name ?? ""));
+}
+
 export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "entity">): string {
   const counts = new Map<string, number>();
   try {
     const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
     for (const position of positions) {
       const name = bot.blockAt(position)?.name;
-      if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1);
+      // Only trees: the oak frames and windmill mast of the bot's own
+      // buildings outnumbered the birch woods, so the wood restore chose oak,
+      // found none it could cut nearby and went 100 blocks across a lake for
+      // some (2026-10-06 02:43, 05:05).
+      if (name !== undefined && trunkHasLeaves(bot, position)) counts.set(name, (counts.get(name) ?? 0) + 1);
     }
   } catch { /* no world view yet */ }
   let best = "oak_log";
