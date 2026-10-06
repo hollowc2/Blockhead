@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedItemName, sourceBlockName, withinRadiusOfHome, woodenToolLogTarget } from "./collect-resource.js";
+import { carriedItemName, nearRecentDeath, sourceBlockName, withinRadiusOfHome, woodenToolLogTarget } from "./collect-resource.js";
 
 test("cobblestone is mined from stone and still accounted as cobblestone", () => {
   // Searching for cobblestone blocks found only the home's own (PROTECTED_REGION).
@@ -80,4 +80,15 @@ test("remembered tree sites go nearest first, and far ones are left to the nearb
   const bot = { x: 73, y: 96, z: 79 };
   assert.deepEqual(knownSitesInOrder(sites, bot, "oak_log").map((s) => s.id), [2, 3]);
   assert.deepEqual(knownSitesInOrder(sites, bot, "coal_ore").map((s) => s.id), [2, 3, 1], "ore sites are kept, nearest first");
+});
+
+test("a resource site near a recent death is not gathered from", () => {
+  // 2026-10-06: iron under a lake at 64,60,125 killed the bot at 02:50
+  // (80,46,113) and 02:54 (70,55,123), and again at 08:58 once the goal's
+  // 6-hour pause ran out.
+  const now = Date.parse("2026-10-06T15:54:00Z");
+  const deaths = [{ x: 70, y: 55, z: 123, at: Date.parse("2026-10-06T09:54:43Z") }];
+  assert.equal(nearRecentDeath({ x: 64, y: 60, z: 125 }, deaths, now), true, "six hours later, still avoided");
+  assert.equal(nearRecentDeath({ x: 20, y: 64, z: 60 }, deaths, now), false, "elsewhere is fine");
+  assert.equal(nearRecentDeath({ x: 64, y: 60, z: 125 }, deaths, now + 24 * 60 * 60_000), false, "a day later it is open again");
 });

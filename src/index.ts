@@ -511,6 +511,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
     sites,
     skills,
     logger,
+    deaths,
   });
 
   // Phase 7: background stockpile maintenance + idle proposal (spec 4.3, 29).

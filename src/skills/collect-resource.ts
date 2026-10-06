@@ -9,6 +9,7 @@ import type { EventBus } from "../events/bus.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
+import type { DeathEventsRepository } from "../memory/deaths.js";
 import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
 import { deliverCarried, describeDeliveryFailure, type DeliveryFailure } from "../minecraft/containers.js";
@@ -64,6 +65,21 @@ import {
  */
 
 /** A site candidate not yet tried and outside the home keep-clear radius. */
+/** A site this close to a recent death is not gathered from. */
+const DEATH_AVOID_RADIUS = 24;
+/** How long a death keeps its surroundings off the gathering map. */
+const DEATH_AVOID_TTL_MS = 24 * 60 * 60_000;
+
+/**
+ * Whether `position` is within DEATH_AVOID_RADIUS of a death in the last
+ * DEATH_AVOID_TTL_MS. Iron under a lake (64,60,125) killed the bot twice
+ * (2026-10-06 02:50, 02:54) and, once the goal's 6-hour pause ran out, a
+ * third time (08:58): nothing told the gatherer the place was deadly.
+ */
+export function nearRecentDeath(position: { x: number; y: number; z: number }, deaths: readonly { x: number; y: number; z: number; at: number }[], now = Date.now()): boolean {
+  return deaths.some((death) => death.at >= now - DEATH_AVOID_TTL_MS && Math.hypot(position.x - death.x, position.y - death.y, position.z - death.z) <= DEATH_AVOID_RADIUS);
+}
+
 export function isUsefulSite(position: { x: number; y: number; z: number }, resource: string, attempted: ReadonlySet<string>, home: { x: number; z: number } | null): boolean {
   return !attempted.has(`${position.x},${position.y},${position.z}`) && !digsNearHome(position, home, resource);
 }
@@ -193,6 +209,8 @@ export interface CollectResourceOptions {
   /** Skill success records (spec 20.2). */
   skills: SkillsRepository;
   logger: Logger;
+  /** Recorded deaths: sites near recent ones are not gathered from. */
+  deaths?: Pick<DeathEventsRepository, "list">;
 }
 
 export interface CollectResourceData {
@@ -580,7 +598,8 @@ export class CollectResourceRunner {
     if (worldId === null) return null;
 
     let carried = countItem(this.opts.bot, carriedName);
-    for (const site of knownSitesInOrder(this.opts.sites.listByResource(worldId, dimension, bare), this.opts.bot.entity?.position ?? null, bare)) {
+    const deaths = this.recentDeaths();
+    for (const site of knownSitesInOrder(this.opts.sites.listByResource(worldId, dimension, bare), this.opts.bot.entity?.position ?? null, bare).filter((candidate) => !nearRecentDeath(candidate, deaths))) {
       this.checkInterrupt();
       if (this.stopRequested) return null;
       if (carried >= quantity) return null;
@@ -620,6 +639,13 @@ export class CollectResourceRunner {
    * nothing (or gains nothing) announces the contract's expansion message
    * exactly once.
    */
+  /** Deaths recorded for this world, newest first. */
+  private recentDeaths(): { x: number; y: number; z: number; at: number }[] {
+    const worldId = this.opts.state.worldId;
+    if (worldId === null || this.opts.deaths === undefined) return [];
+    return this.opts.deaths.list(worldId, 16).map((death) => ({ x: death.x, y: death.y, z: death.z, at: Date.parse(death.createdAt) }));
+  }
+
   private async gatherFromSearch(
     anchor: Vec3,
     carriedName: string,
@@ -631,6 +657,7 @@ export class CollectResourceRunner {
     const bot = this.opts.bot;
     const region = this.opts.state.protectedRegion;
     const stem = resourceStem(bare);
+    const deaths = this.recentDeaths();
 
     let carried = countItem(bot, carriedName);
     const threshold = expeditionThreshold(this.opts.config);
@@ -670,6 +697,7 @@ export class CollectResourceRunner {
         anchor,
         (block) => blockMatchesResource(block, bare),
         (position) => isUsefulSite(position, bare, attempted, this.opts.state.home)
+          && !nearRecentDeath(position, deaths)
           && withinRadiusOfHome(position, this.opts.state.home, this.maxRadius)
           && (/_log$/.test(bare) ? isTrunkBase(bot, position) : hasAirNeighbor(bot, position)),
         radius,
