@@ -51,6 +51,8 @@ const RETREAT_DISTANCE = 16;
 const RETREAT_TIMEOUT_MS = 10_000;
 /** Hostiles within this radius steer the retreat direction. */
 const RETREAT_THREAT_RADIUS = 24;
+/** A creeper this close is evaded before anything else is fought. */
+const CREEPER_DANGER_RADIUS = 6;
 /** This many hostiles within CROWD_RADIUS make a self-defense pass run instead of fight. */
 const CROWD_SIZE = 3;
 const CROWD_RADIUS = 10;
@@ -344,7 +346,24 @@ export class DefenseRunner {
    * (it is the one landing hits) before the nearest one around the anchor.
    */
   private selectTarget(anchor: { x: number; y: number; z: number } | null, radius: number): Entity | null {
-    return this.nearestHostile(null, MELEE_RADIUS) ?? this.nearestHostile(anchor, radius);
+    // A creeper close by comes first, whatever else is in reach: death 80
+    // (18:54, 2026-10-05) was a fight with a zombie while a creeper beside
+    // it went off, 20 health to dead in one blast.
+    return this.creeperWithin(CREEPER_DANGER_RADIUS) ?? this.nearestHostile(null, MELEE_RADIUS) ?? this.nearestHostile(anchor, radius);
+  }
+
+  /** The nearest live creeper within `radius` of the bot, or null. */
+  private creeperWithin(radius: number): Entity | null {
+    const self = this.opts.bot.entity?.position;
+    if (self === undefined || self === null) return null;
+    let best: Entity | null = null;
+    let bestDistance = Infinity;
+    for (const entity of Object.values(this.opts.bot.entities)) {
+      if (!isMobEntity(entity) || entity.name !== "creeper" || !isLiveEntity(entity)) continue;
+      const distance = distanceBetween(entity.position, self);
+      if (distance <= radius && distance < bestDistance) { best = entity; bestDistance = distance; }
+    }
+    return best;
   }
 
   /**
@@ -363,6 +382,9 @@ export class DefenseRunner {
     // (23:55, 100 blocks north) went 16 -> 0 health against a skeleton and
     // three zombies, with the crowd check only run when the pass began.
     if (allowRetreat && this.hostilesWithin(CROWD_RADIUS) >= CROWD_SIZE) return "outnumbered";
+    // A creeper closing in mid-fight: drop the fight and get clear of it.
+    const creeper = this.creeperWithin(CREEPER_DANGER_RADIUS);
+    if (creeper !== null && creeper.id !== target.id) return "retarget";
     if (!targetInMelee && this.nearestHostile(null, MELEE_RADIUS, target.id) !== null) return "retarget";
     // Low on health, the bot runs unless one mob alone is on it: turning
     // away from two at once only trades the fight for death in place.

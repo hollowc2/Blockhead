@@ -286,3 +286,15 @@ test("a crowd that gathers mid-fight makes the reflex run", async () => {
   assert.match(result.message ?? "", /outnumbered by 4 hostiles while fighting the zombie/);
   assert.ok(h.travels.length >= 1, "ran for it");
 });
+
+test("a creeper close by is evaded before the zombie in reach is fought", async () => {
+  // Death 80 (18:54, 2026-10-05): fighting a zombie while a creeper beside
+  // it went off, from full health.
+  const h = harness();
+  h.add(mob(7, "zombie", { x: 22, y: 64, z: 0 }));
+  h.add(mob(8, "creeper", { x: 24, y: 64, z: 2 }));
+  await h.runner.defendSelf({ reflex: true, radius: 24 });
+  assert.ok(!h.attacked.includes("zombie") || h.travels.length > 0, "backed away from the creeper");
+  assert.ok(h.travels.length >= 1, "an evasion trip");
+  assert.notEqual(h.attacked[0], "zombie", "did not open on the zombie");
+});
