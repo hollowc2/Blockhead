@@ -165,7 +165,10 @@ test("a field run with no hoe and no wood on hand fetches wood first", async () 
   const { hoeWoodShort } = await import("./farm.js");
   assert.equal(hoeWoodShort({ hoe: false, planks: 0, logs: 0, sticks: 0 }), true);
   assert.equal(hoeWoodShort({ hoe: false, planks: 3, logs: 0, sticks: 0 }), true, "three planks cannot make both the sticks and the head");
-  assert.equal(hoeWoodShort({ hoe: false, planks: 0, logs: 1, sticks: 0 }), false, "a log is four planks");
-  assert.equal(hoeWoodShort({ hoe: false, planks: 2, logs: 0, sticks: 2 }), false);
+  // 04:16 (2026-10-06): the table at home was out of reach and four planks
+  // could not also make a new one.
+  assert.equal(hoeWoodShort({ hoe: false, planks: 4, logs: 0, sticks: 0 }), true, "a new table needs four more");
+  assert.equal(hoeWoodShort({ hoe: false, planks: 0, logs: 2, sticks: 0 }), false, "two logs make the table, sticks and head");
+  assert.equal(hoeWoodShort({ hoe: false, planks: 6, logs: 0, sticks: 2 }), false);
   assert.equal(hoeWoodShort({ hoe: true, planks: 0, logs: 0, sticks: 0 }), false);
 });

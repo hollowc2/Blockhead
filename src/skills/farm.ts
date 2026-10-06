@@ -274,7 +274,10 @@ async function waitForBlock(bot: Bot, pos: Vec3, name: string): Promise<boolean>
 export function hoeWoodShort(held: { hoe: boolean; planks: number; logs: number; sticks: number }): boolean {
   if (held.hoe) return false;
   const planks = held.planks + 4 * held.logs;
-  return planks < (held.sticks >= 2 ? 2 : 4);
+  // Four more for a table: an outer plot can be out of reach of the one at
+  // home, and a field 2026-10-06 04:16 planted 2 cells with "no crafting
+  // table for a hoe" (missing ingredients for 'crafting_table').
+  return planks < TABLE_PLANK_COST + (held.sticks >= 2 ? 2 : 4);
 }
 
 export function holdsHoe(bot: Bot): boolean { return findHoe(bot) !== null; }
