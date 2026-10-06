@@ -347,7 +347,15 @@ export class StockpileManager {
     switch (deficit.kind) {
       case "wood":
         // "Wood" is whatever trees grow here, not specifically oak.
-        this.opts.logger.info(nearbyLogCensus(this.opts.bot), "wood restore: trees around");
+        const census = nearbyLogCensus(this.opts.bot);
+        this.opts.logger.info(census, "wood restore: trees around");
+        // No log in view at all is a world still loading (just after a
+        // login), not a treeless land: the empty census defaulted to oak and
+        // sent the bot across the lake (2026-10-06 08:31, a minute after a
+        // restart). Retry once the chunks are in.
+        if (Object.keys(census.loose).length === 0) {
+          return Promise.resolve({ ok: false, status: "failed", errorCode: "NOT_READY", retryable: true, message: "no logs in view yet; the world around is still loading" } as SkillResult);
+        }
         return this.opts.collect.run(dominantNearbyLog(this.opts.bot), deficit.deficit, options);
       case "food":
         // Crisis runs may search past the night cap: the food floor is

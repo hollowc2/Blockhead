@@ -145,3 +145,27 @@ test("an empty food store is a crisis only when the bot is hungry", () => {
   bot.food = 9;
   assert.equal(manager.crisisDeficit(snapshot)?.kind, "food", "hungry: a crisis");
 });
+
+test("a wood restore with no log in view waits for the world instead of defaulting to oak", async () => {
+  // 2026-10-06 08:31: a minute after a restart the census was empty, the
+  // pick defaulted to oak and the bot crossed the lake for some.
+  const gathered: string[] = [];
+  const bot = { inventory: { items: () => [], slots: [] }, entity: null, findBlocks: () => [], blockAt: () => null } as unknown as Bot;
+  const collect = { run: async (resource: string): Promise<SkillResult> => { gathered.push(resource); return { ok: true, status: "completed" } as SkillResult; } } as unknown as CollectResourceRunner;
+  const manager = new StockpileManager({
+    bot,
+    state: { worldId: null, home: null },
+    config: {} as MinecraftConfig,
+    bus: new EventBus(),
+    storage: {},
+    scheduler: {},
+    collect,
+    food: {},
+    torches: {},
+    logger: quietLogger,
+  } as unknown as StockpileManagerOptions);
+  const result = await manager.restore({ kind: "wood", target: 64, current: 10, deficit: 54, attempts: 1 });
+  assert.deepEqual(gathered, []);
+  assert.equal(result.ok, false);
+  assert.equal(result.retryable, true);
+});
