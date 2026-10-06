@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
-import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
+import { travelAndWait, travelHomeAndWait, withoutPathfinderScaffolding } from "../minecraft/movement.js";
 import { collectBlocks, nearbyLogCensus, placeItemAt, touchesCraftedBlock } from "../minecraft/world.js";
 import { countLogs, countPlanks, countSticks, findItem } from "../minecraft/inventory.js";
 import { digBlock, shedJunk } from "../minecraft/primitives.js";
@@ -581,6 +581,12 @@ export class DevelopLandRunner {
   }
 
   async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
+    // Approaching floating logs must not leave pillars; field walks must not
+    // place dirt back into freshly cut columns either.
+    return withoutPathfinderScaffolding(this.opts.bot, () => this.runWork(options));
+  }
+
+  private async runWork(options: { signals?: TaskSignals }): Promise<SkillResult<DevelopLandData>> {
     const bot = this.opts.bot;
     const signals = options.signals;
     const signal = signals?.signal;

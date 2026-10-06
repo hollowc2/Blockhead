@@ -204,8 +204,9 @@ Tidy surveys reach four blocks from field centres, covering the gaps. Only
 trunks with air or leaves below them qualify; standing trees, logs touching
 crafted blocks, reserved build cells, village sites and tree-farm plots plus
 a margin are excluded. Unreachable logs remain skipped, with cleared and
-unreachable counts logged. Towering is intentionally unchanged: the existing
-collector notes two fall deaths from towering to see logs.
+unreachable counts logged. Pathfinder scaffolding is frozen for development, preventing leftover
+pillars and refill of newly cut cells. The existing collector notes two fall
+deaths from towering to see logs.
 
 Regression tests cover crop heights, cut/fill plans, slope limits, repair
 priority and skips, reserved cells, tree farms, gap trunks and building frames.
