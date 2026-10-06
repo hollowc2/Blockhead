@@ -291,3 +291,14 @@ test("existing fields with a lighting fixture still qualify for levelling", asyn
   assert.equal(next?.survey.groundColumns, 24);
   assert.ok(!levelPlan({ x: -10, z: -2 }, 63, 5, world(land)).cut.some(c => c.x === -8 && c.z === 0));
 });
+
+test("established fields qualify even with fewer natural columns than a new field needs", async () => {
+  const { nextDevelopment } = await import("./develop-land.js");
+  const land = developed(0);
+  for (let z = -2; z <= 2; z++) land[`-10,64,${z}`] = { name: "torch" };
+  for (let z = -2; z <= 0; z++) land[`-9,64,${z}`] = { name: "torch" };
+  land["-7,64,0"] = { name: "farmland" };
+  const next = nextDevelopment(HOME, world(land));
+  assert.equal(next?.kind, "level_field");
+  assert.equal(next?.survey.groundColumns, 17);
+});

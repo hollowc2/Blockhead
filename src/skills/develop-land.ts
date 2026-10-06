@@ -271,7 +271,7 @@ export function nextDevelopment(
       const leftovers = surveyPlot(home, offset, lookup, 4).leftoverLogs.filter((log) =>
         !touchesReserved(log.x, log.z, 0, blocked) && !touchesCraftedBlock({ blockAt: (at: Vec3) => lookup(at.x, at.y, at.z) }, new Vec3(log.x, log.y, log.z)));
       if (leftovers.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push({ ...field, leftoverLogs: leftovers });
-      if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.groundColumns >= MIN_GROUND_COLUMNS && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
+      if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
       return;
     }
     if (touchesReserved(cx, cz, PLOT_HALF, blocked)) return;
