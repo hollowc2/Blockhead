@@ -573,7 +573,7 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
   const terrainProjects = new TerrainProjectRunner(bot, { logger });
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, lightHome, developLand, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop, recentDeathTimes: () => (state.worldId === null ? [] : deaths.list(state.worldId, 8).map((death) => Date.parse(death.createdAt))) });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33

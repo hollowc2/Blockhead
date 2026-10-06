@@ -848,3 +848,34 @@ test("a queued build-project slice is never pruned as stale goal work", async ()
   assert.ok(!h.cancelled.includes("slice-1"), "the build's slice survives");
   h.manager.stop();
 });
+
+test("the goal layer backs off after deaths: no new expedition, and a deadly goal is given up", async () => {
+  // 18:54-19:27 (2026-10-05): four deaths on iron trips for the mining-
+  // expedition goal; every respawn was sent straight back underground.
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  const full: StockpileSnapshot = { levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] };
+  (h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> }).check = async () => full;
+  (h.options.bot as unknown as { inventory: object }).inventory = { items: () => [] };
+  let active: { id: string; createdAt: string; successCriteria: unknown[] } | null = null;
+  const started: string[] = [];
+  const cancelled: string[] = [];
+  (h.options as { goals?: unknown }).goals = {
+    active: () => active,
+    start: (input: { description: string }) => { started.push(input.description); return null; },
+    cancel: (reason: string) => { cancelled.push(reason); active = null; return null; },
+    complete: () => null,
+  };
+  const now = 1_000_000;
+  let deaths: number[] = [now - 10 * 60_000];
+  (h.options as { recentDeathTimes?: () => number[] }).recentDeathTimes = () => deaths;
+  await h.manager.tick();
+  assert.deepEqual(started, [], "no expedition 10 minutes after a death");
+
+  active = { id: "g1", createdAt: new Date(Date.now() - 30 * 60_000).toISOString(), successCriteria: [{ kind: "inventory", item: "iron_pickaxe", min: 1 }] };
+  deaths = [Date.now() - 60_000, Date.now() - 5 * 60_000];
+  await h.manager.tick();
+  assert.equal(cancelled.length, 1);
+  assert.match(cancelled[0]!, /2 deaths/);
+  h.manager.stop();
+});

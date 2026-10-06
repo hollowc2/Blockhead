@@ -43,6 +43,10 @@ import { isCreativeMode } from "../minecraft/mode.js";
  * the anti-thrash pace between a task ending and the next LLM decision, so
  * repeated settles never spin decisions faster than once per second.
  */
+/** Deaths while one goal is active before it is given up. */
+const GOAL_MAX_DEATHS = 2;
+/** No background goal is started within this long of a death. */
+const GOAL_AFTER_DEATH_PAUSE_MS = 60 * 60_000;
 const RE_CHECK_DELAY_MS = 1_000;
 
 /** Horizontal standoff from home at which the bot counts as "home". */
@@ -91,6 +95,8 @@ export interface BackgroundManagerOptions {
    * loop. Set by the session owner from DeathRecoveryManager.inDeathLoop.
    */
   inDeathLoop?: () => boolean;
+  /** Times (ms) of the bot's recent deaths, newest first; the goal layer backs off around them. */
+  recentDeathTimes?: () => readonly number[];
 }
 
 /**
@@ -858,6 +864,16 @@ export class BackgroundManager {
     const goal = goals.active();
     if (goal === null) return this.maybeEstablishGoal(snapshot);
 
+    // A goal that keeps killing the bot is given up: four deaths in 35
+    // minutes on iron trips for the mining-expedition goal (18:54-19:27,
+    // 2026-10-05), each respawn sent straight back into the caves.
+    const deathsDuringGoal = (this.opts.recentDeathTimes?.() ?? []).filter((at) => at >= Date.parse(goal.createdAt)).length;
+    if (deathsDuringGoal >= GOAL_MAX_DEATHS) {
+      goals.cancel(`given up after ${deathsDuringGoal} deaths working toward it`);
+      this.opts.logger.warn({ goalId: goal.id, deaths: deathsDuringGoal }, "goal abandoned after repeated deaths");
+      return true;
+    }
+
     const facts = this.goalFacts(goal.successCriteria, snapshot);
     const check = evaluateSuccessCriteria(goal, facts);
     if (check.satisfied && goal.successCriteria.length > 0) {
@@ -931,6 +947,10 @@ export class BackgroundManager {
 
     const cooldownMs = (this.opts.config.background?.goal_cooldown_seconds ?? 900) * 1000;
     const now = this.now();
+    // No expedition right after a death: the respawned bot has stone tools
+    // and no armor, and the last trip is what killed it.
+    const lastDeath = this.opts.recentDeathTimes?.()[0];
+    if (lastDeath !== undefined && now - lastDeath < GOAL_AFTER_DEATH_PAUSE_MS) return false;
     if (this.lastBackgroundGoalAt !== null && now - this.lastBackgroundGoalAt < cooldownMs) return false;
 
     this.lastBackgroundGoalAt = now;
