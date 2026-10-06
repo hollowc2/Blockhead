@@ -3,6 +3,80 @@
 Dated notes from debugging CobbleBob on the live server. Newest first. Each
 entry says what was seen, what caused it, and whether it is fixed.
 
+## 2026-10-05/06 — overnight monitoring of land development (maia)
+
+The bot now develops the land in its free time: it clears and plants 8-block
+plots in rings round home, two outer fields per building, and builds village
+buildings (cottage, storage shed, windmill, barn, watchtower) on levelled
+7x7 sites. It also takes down the half-cut trunks left over its fields.
+Fixes from monitoring it overnight, each with a regression test:
+
+### Fixed: LLM director decisions all failed validation (22:16-22:56)
+
+Qwen3.5-9B answered `{"task": "...", "parameters": {...}}`. `normalizeDecision`
+now lifts `parameters`/`params`/`args`/`arguments` into the action
+(`src/llm/decider.ts`).
+
+### Fixed: development stalls
+
+- A field with no hoe and no wood carried tilled nothing. Development now
+  fetches a spare hoe or logs from the chest first, enough for a new table
+  too. The farm tops up one plank species before crafting a table or hoe:
+  3 oak + 3 birch planks match no per-species recipe.
+- A wood shortage on its restore cooldown kept development off, and the bot
+  stood idle in daylight. Shortages that are cooling down no longer count.
+- A build slice the scheduler blocked ("no progress after 4 attempts") left
+  its project `active`, so the blocked-project retry never saw it. Such
+  projects are retried too, and a development build still blocked after 6
+  retries is given up instead of holding the one-building slot.
+- Finished buildings now reserve their whole 7x7 site
+  (`BuildProjectManager.siteCells`). A slim watchtower's site read as open
+  ground, so a second watchtower was started on top of the first.
+- A base repair placed a wall cell from the roof, 7 blocks away. Shell cells
+  are now walked into reach first.
+
+### Fixed: stranded on its own scaffold pillar (00:31-01:09)
+
+The pathfinder measures a drop from the feet to the floor block, and refused
+three blocks of air under a pillar. The perch rescue counted the air gap,
+judged the drop safe for the pathfinder and did nothing. Both now measure the
+same way (`stepOffPerch`, `src/minecraft/movement.ts`).
+
+### Fixed: creepers
+
+Backing away was the only answer to a creeper. One beside a field was evaded
+66 times in 15 minutes. After three evasions of the same creeper, the bot
+fights it hit-and-back: one hit, step out of fuse range, repeat.
+
+### Fixed: deaths on long trips through water (02:50, 02:54, 08:58, 09:06, 09:21)
+
+- An active goal now waits an hour after a death. The 1-hour pause only
+  stopped a *new* goal, so the respawned bot was sent straight back.
+- Resource trips skip known sites and search hits within 24 blocks of a death
+  in the last day (`nearRecentDeath`). Iron under a lake at 64,60,125 killed
+  the bot three times.
+- The wood species pick (`dominantNearbyLog`) counts only standing trunks
+  with leaves, outside buildings. It used to count the village's oak frames
+  and the floating halves of trees cut over the fields, then crossed the lake
+  for oak it could not find nearby. With no log in view (just after a login)
+  the restore now retries instead of defaulting to oak. Every wood restore
+  logs its census as `wood restore: trees around`.
+- Swimming costs 20 per block (`SWIM_COST`, was 4), so lakes are walked
+  round. Drowned with tridents caused the last two deaths.
+
+### Open
+
+- **Development deforests home.** No standing tree is left within 64 blocks,
+  so wood trips go further each time. Replanting (saplings in a tree farm)
+  is not implemented. Saplings are currently junk (`JUNK_KEEP` 0).
+- **"Kicked for floating too long"** (00:14, 03:43): mid-air with a steady
+  fall velocity during wood trips. The bot reconnects within a second. Our
+  code never toggles physics, so the cause is not understood.
+- **Watch after the swim-cost change** for path planning timeouts on long
+  detours round water.
+- **"auto-eat wedged; resetting"** shows up a few times an hour. It
+  recovers on its own.
+
 ## 2026-09-27 — fresh world `cobblebob-fresh-20260927` (server 1.21.4)
 
 ### Fixed: bootstrap CRAFTING failed 3x on a fresh world (TERMINAL_BLOCK)
