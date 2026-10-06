@@ -36,7 +36,7 @@ import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
 import { LightHomeRunner } from "./skills/light-home.js";
 import { DevelopLandRunner } from "./skills/develop-land.js";
 import { VILLAGE_SITE } from "./building/village.js";
-import { withdrawFirstOfEach } from "./minecraft/containers.js";
+import { withdrawFirstOfEach, withdrawFromHomeChest } from "./minecraft/containers.js";
 import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
 import { SelfDefenseReflex } from "./agent/self-defense.js";
@@ -536,9 +536,36 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
       buildProjectManager.createOrResume({ userGoal: `Develop the land: build a ${building.replace("_", " ")}`, structureType: `village:${building}`, source: "goal", design, origin });
     },
   };
-  // A hoe needs carried wood; a spare hoe, or a log or two, from the chest.
+  // The tree farm's plots live as named locations ("tree_farm_1", ...) at
+// their centres, so they survive restarts; saplings come from the chest.
+const TREE_FARM_SAPLINGS = ["birch_sapling", "oak_sapling", "spruce_sapling", "acacia_sapling", "cherry_sapling"];
+const treeFarmStore = {
+  load: () => {
+    const home = state.home;
+    if (state.worldId === null || home === null) return [];
+    const plots: { dx: number; dz: number }[] = [];
+    for (let i = 1; i <= 8; i++) {
+      const saved = locations.getNamedLocation(state.worldId, `tree_farm_${i}`);
+      if (saved === null) break;
+      plots.push({ dx: saved.x - Math.floor(home.x), dz: saved.z - Math.floor(home.z) });
+    }
+    return plots;
+  },
+  save: (plots: readonly { dx: number; dz: number }[]) => {
+    const home = state.home;
+    if (state.worldId === null || home === null) return;
+    plots.forEach((plot, index) => locations.saveNamedLocation(state.worldId!, { dimension: home.dimension, name: `tree_farm_${index + 1}`, x: Math.floor(home.x) + plot.dx, y: Math.floor(home.y), z: Math.floor(home.z) + plot.dz }));
+  },
+  fetchSaplings: async (signal?: AbortSignal) => {
+    for (const name of TREE_FARM_SAPLINGS) {
+      const { withdrawn } = await withdrawFromHomeChest(bot, state, storage, name, 10, logger, signal);
+      if (withdrawn > 0) return;
+    }
+  },
+};
+// A hoe needs carried wood; a spare hoe, or a log or two, from the chest.
 const HOE_WOOD = [["iron_hoe", "stone_hoe", "wooden_hoe"], ["oak_log", "birch_log", "spruce_log", "dark_oak_log", "acacia_log", "jungle_log", "cherry_log", "mangrove_log", "oak_planks", "birch_planks", "spruce_planks"], ["oak_log", "birch_log", "spruce_log", "oak_planks", "birch_planks", "spruce_planks"]] as const;
-const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => new Set([...buildProjectManager.reservedCells(), ...buildProjectManager.siteCells("village:", VILLAGE_SITE)]), builds: developmentBuilds, fetchWood: async (signal) => { await withdrawFirstOfEach(bot, state, storage, HOE_WOOD, logger, signal); } });
+const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => new Set([...buildProjectManager.reservedCells(), ...buildProjectManager.siteCells("village:", VILLAGE_SITE)]), builds: developmentBuilds, fetchWood: async (signal) => { await withdrawFirstOfEach(bot, state, storage, HOE_WOOD, logger, signal); }, treeFarm: treeFarmStore });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });
 
   // Phase 11: storage organization (spec 14.4, 22). The runner measures every

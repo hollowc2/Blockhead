@@ -247,11 +247,12 @@ test("a withdraw opens the category chest that holds the item, not just the gene
   assert.deepEqual(opened, [5], "straight to the wood chest");
 });
 
-test("seeds past two stacks and saplings are shed when the inventory fills", () => {
+test("seeds past two stacks and saplings past the tree farm's need are shed when the inventory fills", () => {
   // 17:05-17:15 (2026-10-05): 20 stacks of seeds left no room for crafts.
-  const items = [...Array.from({ length: 20 }, () => ({ name: "wheat_seeds", count: 64 })), { name: "oak_sapling", count: 15 }, { name: "bread", count: 64 }];
+  // Saplings are kept, 16 of each, for the tree farm (2026-10-06).
+  const items = [...Array.from({ length: 20 }, () => ({ name: "wheat_seeds", count: 64 })), { name: "oak_sapling", count: 40 }, { name: "bread", count: 64 }];
   const plan = junkToShed(items, 0);
   assert.equal(plan["wheat_seeds"], 20 * 64 - 128);
-  assert.equal(plan["oak_sapling"], 15);
+  assert.equal(plan["oak_sapling"], 40 - 16);
   assert.equal(plan["bread"], undefined);
 });

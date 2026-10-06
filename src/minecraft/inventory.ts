@@ -109,13 +109,14 @@ const JUNK_KEEP: Readonly<Record<string, number>> = {
   // filled the inventory and every craft came out with no room for its
   // output (2026-10-05 17:05-17:15). Two stacks sow every field.
   wheat_seeds: 128,
-  oak_sapling: 0,
-  birch_sapling: 0,
-  spruce_sapling: 0,
+  // Kept for the tree farm (2026-10-06); a stack of each is plenty.
+  oak_sapling: 16,
+  birch_sapling: 16,
+  spruce_sapling: 16,
   jungle_sapling: 0,
-  acacia_sapling: 0,
+  acacia_sapling: 16,
   dark_oak_sapling: 0,
-  cherry_sapling: 0,
+  cherry_sapling: 16,
   cobbled_deepslate: 0,
   dirt: 0,
   gravel: 0,

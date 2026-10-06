@@ -4,9 +4,10 @@ import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
-import { collectBlocks, placeItemAt } from "../minecraft/world.js";
+import { collectBlocks, nearbyLogCensus, placeItemAt } from "../minecraft/world.js";
 import { countLogs, countPlanks, countSticks, findItem } from "../minecraft/inventory.js";
-import { shedJunk } from "../minecraft/primitives.js";
+import { digBlock, shedJunk } from "../minecraft/primitives.js";
+import { isDroppedItemEntity } from "../policy/combat.js";
 import { botLookup, developmentPlots, hoeWoodShort, holdsHoe, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
 import type { SkillResult } from "./skill-library.js";
 import type { BuildingDesign } from "../building/schema.js";
@@ -148,6 +149,8 @@ const SITE_CHOICES = 6;
 
 export type Development =
   | { kind: "tidy"; survey: PlotSurvey }
+  | { kind: "tree_farm"; survey: PlotSurvey }
+  | { kind: "plant_trees"; survey: PlotSurvey; farm: TreeFarmSurvey }
   | { kind: "field"; survey: PlotSurvey }
   | { kind: "building"; survey: PlotSurvey; building: VillageBuilding; origin: { x: number; y: number; z: number } };
 
@@ -158,6 +161,68 @@ export interface DevelopmentState {
   tidySkip?: ReadonlySet<string>;
   /** Development buildings started so far (sets the next kind and the balance). */
   buildings: number;
+  /** Plots set aside for trees, and whether home is short of trees. */
+  treeFarm?: TreeFarmState;
+}
+
+export interface TreeFarmState {
+  /** Plots already set aside as the tree farm. */
+  plots: readonly PlotOffset[];
+  /** Home is short of standing trees: set more plots aside, up to TREE_FARM_PLOTS. */
+  wanted: boolean;
+  /** Saplings to hand, or a hunt for some is due: empty farm cells are worth a run. */
+  canPlant: boolean;
+}
+
+/**
+ * The tree farm (owner request, 2026-10-06: "start a tree farm if needed").
+ * Land development cleared every standing tree within 64 blocks of home, and
+ * wood trips crossed the lakes to the woods beyond; three of them died in the
+ * water. When home runs short of trees, up to TREE_FARM_PLOTS outer plots are
+ * set aside and planted with saplings at the corners and centre, two blocks
+ * apart. The wood restore fells them like any tree, and empty cells are
+ * replanted.
+ */
+export const TREE_FARM_PLOTS = 2;
+/** Fewer standing trees than this within 64 blocks of home and a tree farm is started. */
+export const TREE_FARM_WANTED_BELOW = 12;
+/** Sapling cells of a tree-farm plot, as offsets from its centre. */
+export const TREE_FARM_CELLS: readonly (readonly [number, number])[] = [[-2, -2], [-2, 2], [2, -2], [2, 2], [0, 0]];
+
+export interface TreeFarmSurvey {
+  offset: PlotOffset;
+  /** Cells to plant: the air (or brush) above field ground. */
+  empty: { x: number; y: number; z: number; cover: string | null }[];
+  saplings: number;
+  trees: number;
+}
+
+/** What stands on each sapling cell of a tree-farm plot. Pure over `lookup`. */
+export function surveyTreeFarm(home: { x: number; y: number; z: number }, offset: PlotOffset, lookup: FarmLookup): TreeFarmSurvey {
+  const cx = Math.floor(home.x) + offset.dx;
+  const cz = Math.floor(home.z) + offset.dz;
+  const baseY = Math.floor(home.y);
+  const survey: TreeFarmSurvey = { offset, empty: [], saplings: 0, trees: 0 };
+  for (const [dx, dz] of TREE_FARM_CELLS) {
+    const x = cx + dx;
+    const z = cz + dz;
+    for (let y = baseY + GROUND_SEARCH_DY; y >= baseY - GROUND_SEARCH_DY; y--) {
+      const block = lookup(x, y, z);
+      if (block === null) break;
+      if (isAirName(block.name) || CLEARABLE.test(block.name)) continue;
+      if (!FIELD_GROUND.test(block.name) || block.name === "farmland") break;
+      const above = lookup(x, y + 1, z)?.name ?? "air";
+      if (/_sapling$/.test(above)) survey.saplings += 1;
+      else if (TREE_LOG.test(above)) survey.trees += 1;
+      else survey.empty.push({ x, y: y + 1, z, cover: isAirName(above) ? null : above });
+      break;
+    }
+  }
+  return survey;
+}
+
+function sameOffset(a: PlotOffset, b: PlotOffset): boolean {
+  return a.dx === b.dx && a.dz === b.dz;
 }
 
 /**
@@ -175,6 +240,12 @@ export function nextDevelopment(
   state: DevelopmentState = { buildBusy: true, buildings: 0 },
 ): Development | null {
   const plots = developmentPlots();
+  const farmPlots = state.treeFarm?.plots ?? [];
+  // The tree farm is kept off like an unfinished build: no field, no site.
+  const blocked = new Set(reserved);
+  for (const farm of farmPlots) {
+    for (let dx = -PLOT_HALF; dx <= PLOT_HALF; dx++) for (let dz = -PLOT_HALF; dz <= PLOT_HALF; dz++) blocked.add(`${Math.floor(home.x) + farm.dx + dx},0,${Math.floor(home.z) + farm.dz + dz}`);
+  }
   let outerFields = 0;
   const tidy: PlotSurvey[] = [];
   const openFields: PlotSurvey[] = [];
@@ -182,6 +253,7 @@ export function nextDevelopment(
   plots.forEach((offset, index) => {
     const cx = Math.floor(home.x) + offset.dx;
     const cz = Math.floor(home.z) + offset.dz;
+    if (farmPlots.some((farm) => sameOffset(farm, offset))) return;
     const field = surveyPlot(home, offset, lookup);
     if (field.farmland > 0) {
       if (index >= 3) outerFields += 1;
@@ -190,16 +262,28 @@ export function nextDevelopment(
       if (field.leftoverLogs.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push(field);
       return;
     }
-    if (touchesReserved(cx, cz, PLOT_HALF, reserved)) return;
+    if (touchesReserved(cx, cz, PLOT_HALF, blocked)) return;
     if (field.groundColumns >= MIN_GROUND_COLUMNS) openFields.push(field);
-    if (index < 3 || touchesReserved(cx, cz, SITE_HALF, reserved)) return;
+    if (index < 3 || touchesReserved(cx, cz, SITE_HALF, blocked)) return;
     const site = surveyPlot(home, offset, lookup, SITE_HALF, SITE_LOG_CHECK);
     // A built site reads as mostly not ground and drops out here.
     if (site.farmland === 0 && site.groundColumns >= SITE_MIN_GROUND && site.maxGround - site.minGround <= SITE_MAX_STEP) openSites.push(site);
   });
   if (tidy[0] !== undefined) return { kind: "tidy", survey: tidy[0] };
-  const homeField = openFields.find((field) => plots.findIndex((p) => p.dx === field.offset.dx && p.dz === field.offset.dz) < 3);
+  if (state.treeFarm?.canPlant === true) {
+    for (const offset of farmPlots) {
+      const farm = surveyTreeFarm(home, offset, lookup);
+      if (farm.empty.length > 0) return { kind: "plant_trees", survey: surveyPlot(home, offset, lookup), farm };
+    }
+  }
+  const isHomePlot = (offset: PlotOffset): boolean => plots.findIndex((p) => sameOffset(p, offset)) < 3;
+  const homeField = openFields.find((field) => isHomePlot(field.offset));
   if (homeField !== undefined) return { kind: "field", survey: homeField };
+  // Short of trees: set the nearest open outer plot aside for them.
+  if (state.treeFarm?.wanted === true && farmPlots.length < TREE_FARM_PLOTS) {
+    const site = openFields.find((field) => !isHomePlot(field.offset));
+    if (site !== undefined) return { kind: "tree_farm", survey: site };
+  }
 
   const buildingDue = !state.buildBusy && outerFields >= FIELDS_PER_BUILDING * (state.buildings + 1) - FIELDS_PER_BUILDING;
   if (buildingDue && openSites.length > 0) {
@@ -274,6 +358,26 @@ export interface DevelopLandOptions {
   builds?: DevelopmentBuilds;
   /** Take a little wood from the home chests (a hoe needs it). */
   fetchWood?: (signal?: AbortSignal) => Promise<void>;
+  /** The tree farm's plots, kept across restarts, and saplings from the chest. */
+  treeFarm?: TreeFarmStore;
+}
+
+export interface TreeFarmStore {
+  load(): PlotOffset[];
+  save(plots: readonly PlotOffset[]): void;
+  /** Take saplings from the home chests. */
+  fetchSaplings(signal?: AbortSignal): Promise<void>;
+}
+
+/** Leaves broken for saplings in one run when none are to be had otherwise. */
+const SAPLING_LEAVES_PER_RUN = 40;
+/** Dropped saplings and leaves are sought this far from the bot. */
+const SAPLING_SEARCH_RADIUS = 24;
+/** After a hunt that found no sapling, wait this long before another. */
+const SAPLING_HUNT_COOLDOWN_MS = 20 * 60_000;
+
+function countSaplings(bot: Bot): number {
+  return bot.inventory.items().filter((item) => /_sapling$/.test(item.name)).reduce((sum, item) => sum + item.count, 0);
 }
 
 export interface DevelopLandData {
@@ -281,6 +385,8 @@ export interface DevelopLandData {
   building?: VillageBuilding;
   cleared: number;
   planted: number;
+  /** Saplings planted in the tree farm. */
+  trees?: number;
 }
 
 export class DevelopLandRunner {
@@ -346,7 +452,89 @@ export class DevelopLandRunner {
 
   private next(home: { x: number; y: number; z: number }): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip });
+    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, treeFarm: this.treeFarmState() });
+  }
+
+  /** When a sapling hunt may run again (it found none last time). */
+  private saplingHuntAfter = 0;
+
+  private treeFarmState(): TreeFarmState | undefined {
+    const store = this.opts.treeFarm;
+    if (store === undefined) return undefined;
+    const trees = Object.values(nearbyLogCensus(this.opts.bot).trees).reduce((sum, count) => sum + count, 0);
+    return { plots: store.load(), wanted: trees < TREE_FARM_WANTED_BELOW, canPlant: countSaplings(this.opts.bot) > 0 || Date.now() >= this.saplingHuntAfter };
+  }
+
+  /**
+   * Saplings for the farm: from the chest, off the ground (decaying leaves
+   * drop them), and failing both, from leaves broken within reach of the
+   * ground. Best effort; a hunt that finds none waits before the next.
+   */
+  private async gatherSaplings(signal?: AbortSignal): Promise<void> {
+    const bot = this.opts.bot;
+    await this.opts.treeFarm?.fetchSaplings(signal).catch((err) => this.opts.logger.warn({ err: String(err) }, "develop: could not take saplings from the chest"));
+    if (countSaplings(bot) === 0) await this.pickUpSaplings(signal);
+    if (countSaplings(bot) === 0 && signal?.aborted !== true) {
+      const self = bot.entity?.position;
+      if (self !== undefined && self !== null) {
+        const leaves = bot.findBlocks({ matching: (block) => block !== null && /_leaves$/.test(block.name), maxDistance: SAPLING_SEARCH_RADIUS, count: 200 })
+          .map((position) => bot.blockAt(position))
+          .filter((block): block is NonNullable<typeof block> => block !== null && block.position.y <= self.y + 3 && block.position.y >= self.y - 2)
+          .sort((a, b) => a.position.distanceTo(self) - b.position.distanceTo(self))
+          .slice(0, SAPLING_LEAVES_PER_RUN);
+        if (leaves.length > 0) {
+          this.opts.logger.info({ leaves: leaves.length }, "develop: breaking leaves for saplings");
+          await collectBlocks(bot, leaves, () => countSaplings(bot), 8, () => {}, CLEAR_TIMEOUT_MS, undefined, signal).catch((err) => {
+            if (signal?.aborted === true) throw err;
+            this.opts.logger.warn({ err: String(err) }, "develop: breaking leaves stopped");
+          });
+          await this.pickUpSaplings(signal);
+        }
+      }
+    }
+    if (countSaplings(bot) === 0) this.saplingHuntAfter = Date.now() + SAPLING_HUNT_COOLDOWN_MS;
+  }
+
+  /** Walk over sapling drops lying near the bot. */
+  private async pickUpSaplings(signal?: AbortSignal): Promise<void> {
+    const bot = this.opts.bot;
+    const self = bot.entity?.position;
+    if (self === undefined || self === null) return;
+    const drops = Object.values(bot.entities)
+      .filter((entity) => isDroppedItemEntity(entity) && /_sapling$/.test((entity as unknown as { getDroppedItem(): { name: string } | null }).getDroppedItem()?.name ?? "") && entity.position.distanceTo(self) <= SAPLING_SEARCH_RADIUS)
+      .sort((a, b) => a.position.distanceTo(self) - b.position.distanceTo(self))
+      .slice(0, 8);
+    for (const drop of drops) {
+      if (signal?.aborted === true) return;
+      if (bot.entities[drop.id] === undefined) continue;
+      await travelAndWait(bot, drop.position, { range: 1, timeoutMs: 8_000, signal });
+    }
+  }
+
+  /** Plant saplings in the farm's empty cells; returns how many went in. */
+  private async plantTrees(farm: TreeFarmSurvey, signals?: TaskSignals): Promise<number> {
+    const bot = this.opts.bot;
+    const signal = signals?.signal;
+    if (countSaplings(bot) === 0) await this.gatherSaplings(signal);
+    let planted = 0;
+    for (const cell of farm.empty) {
+      if (signal?.aborted === true || signals?.checkpoint() === false) break;
+      const sapling = bot.inventory.items().find((item) => /_sapling$/.test(item.name));
+      if (sapling === undefined) break;
+      const at = new Vec3(cell.x, cell.y, cell.z);
+      const walked = await travelAndWait(bot, at, { range: 3, timeoutMs: 20_000, signal });
+      if (walked.status !== "arrived" && walked.status !== "already_there") continue;
+      const cover = bot.blockAt(at);
+      if (cover !== null && !isAirName(cover.name)) {
+        if (!CLEARABLE.test(cover.name) || TREE_LOG.test(cover.name) || /_sapling$/.test(cover.name)) continue;
+        await digBlock(bot, cover, signal).catch(() => undefined);
+      }
+      const ground = bot.blockAt(at.offset(0, -1, 0));
+      if (ground === null || !FIELD_GROUND.test(ground.name) || ground.name === "farmland") continue;
+      const placed = await placeItemAt(bot, sapling, { position: at, reference: ground, face: new Vec3(0, 1, 0) }, signal).catch(() => null);
+      if (placed !== null && /_sapling$/.test(placed.name)) planted += 1;
+    }
+    return planted;
   }
 
   async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
@@ -387,7 +575,18 @@ export class DevelopLandRunner {
       if (left > 0) this.tidySkip.add(`${survey.offset.dx},${survey.offset.dz}`);
       return { ok: true, status: "completed", message: `Took down ${data.cleared} leftover logs over the field at ${survey.offset.dx},${survey.offset.dz}.`, data };
     }
-    this.opts.logger.info({ plot: survey.offset, kind: next.kind, building: next.kind === "building" ? next.building : undefined, ground: survey.groundColumns, toClear: survey.clear.length }, next.kind === "building" ? "develop: clearing a building site" : "develop: clearing a field");
+    if (next.kind === "plant_trees") {
+      this.opts.logger.info({ plot: survey.offset, empty: next.farm.empty.length, saplings: countSaplings(bot) }, "develop: planting the tree farm");
+      data.trees = await this.plantTrees(next.farm, signals);
+      if (signals?.checkpoint() === false) return interrupted();
+      this.opts.logger.info({ plot: survey.offset, planted: data.trees }, "develop: tree farm planted");
+      if (data.trees === 0) {
+        return { ok: false, status: "failed", errorCode: "NOT_READY", message: `no saplings to plant the tree farm at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
+      }
+      return { ok: true, status: "completed", message: `Planted ${data.trees} saplings in the tree farm at ${survey.offset.dx},${survey.offset.dz}.`, data };
+    }
+    const label = next.kind === "building" ? "develop: clearing a building site" : next.kind === "tree_farm" ? "develop: setting a plot aside for a tree farm" : "develop: clearing a field";
+    this.opts.logger.info({ plot: survey.offset, kind: next.kind, building: next.kind === "building" ? next.building : undefined, ground: survey.groundColumns, toClear: survey.clear.length }, label);
 
     // Trees and brush off the plot; logs go to the wood stock.
     const targets = survey.clear.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
@@ -415,6 +614,16 @@ export class DevelopLandRunner {
       }
       this.opts.logger.info({ building: next.building, origin: next.origin }, "develop: building started");
       return { ok: true, status: "completed", message: `Started a ${next.building.replace("_", " ")} at ${next.origin.x},${next.origin.y},${next.origin.z}.`, data };
+    }
+
+    if (next.kind === "tree_farm") {
+      const store = this.opts.treeFarm!;
+      store.save([...store.load(), survey.offset]);
+      const farm = surveyTreeFarm(home, survey.offset, botLookup(bot));
+      data.trees = await this.plantTrees(farm, signals);
+      if (signals?.checkpoint() === false) return interrupted();
+      this.opts.logger.info({ plot: survey.offset, planted: data.trees }, "develop: tree farm planted");
+      return { ok: true, status: "completed", message: `Set the plot at ${survey.offset.dx},${survey.offset.dz} aside for trees and planted ${data.trees} saplings.`, data };
     }
 
     // A hoe is made from carried wood; fetch some first when there is none.

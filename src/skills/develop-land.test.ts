@@ -172,3 +172,42 @@ test("a field run with no hoe and no wood on hand fetches wood first", async () 
   assert.equal(hoeWoodShort({ hoe: false, planks: 6, logs: 0, sticks: 2 }), false);
   assert.equal(hoeWoodShort({ hoe: true, planks: 0, logs: 0, sticks: 0 }), false);
 });
+
+test("a tree farm plot reads its sapling cells: planted, grown, or empty", async () => {
+  // Owner, 2026-10-06: "start a tree farm if needed".
+  const { surveyTreeFarm } = await import("./develop-land.js");
+  const plot = developmentPlots()[3]!;
+  const at = (dx: number, dz: number, y: number) => `${plot.dx + dx},${y},${plot.dz + dz}`;
+  const farm = surveyTreeFarm(HOME, plot, world({
+    [at(-2, -2, 64)]: { name: "birch_sapling" },
+    [at(2, 2, 64)]: { name: "birch_log" },
+    [at(2, -2, 64)]: { name: "short_grass" },
+  }));
+  assert.equal(farm.saplings, 1);
+  assert.equal(farm.trees, 1);
+  assert.equal(farm.empty.length, 3);
+  assert.deepEqual(farm.empty.find((cell) => cell.x === plot.dx + 2 && cell.z === plot.dz - 2), { x: plot.dx + 2, y: 64, z: plot.dz - 2, cover: "short_grass" });
+});
+
+test("short of trees, an outer plot is set aside for a tree farm, then planted and kept off", async () => {
+  const { nextDevelopment, TREE_FARM_PLOTS } = await import("./develop-land.js");
+  const land = world(developed(0));
+  // Home plots done, no trees around: the nearest outer plot becomes the farm.
+  const first = nextDevelopment(HOME, land, new Set(), { buildBusy: true, buildings: 0, treeFarm: { plots: [], wanted: true, canPlant: true } });
+  assert.equal(first?.kind, "tree_farm");
+  const farmPlot = first!.survey.offset;
+  assert.deepEqual(farmPlot, developmentPlots()[3]);
+  // Set aside and empty: it is planted next.
+  const plant = nextDevelopment(HOME, land, new Set(), { buildBusy: true, buildings: 0, treeFarm: { plots: [farmPlot], wanted: true, canPlant: true } });
+  assert.equal(plant?.kind, "plant_trees");
+  assert.ok(plant?.kind === "plant_trees" && plant.farm.empty.length === 5);
+  // With no saplings and a hunt on cooldown, development goes on elsewhere
+  // and never turns the farm into a field.
+  const later = nextDevelopment(HOME, land, new Set(), { buildBusy: true, buildings: 0, treeFarm: { plots: [farmPlot], wanted: false, canPlant: false } });
+  assert.equal(later?.kind, "field");
+  assert.notDeepEqual(later?.survey.offset, farmPlot);
+  // Enough trees again: no more plots set aside.
+  const plenty = nextDevelopment(HOME, land, new Set(), { buildBusy: true, buildings: 0, treeFarm: { plots: [farmPlot], wanted: false, canPlant: false } });
+  assert.notEqual(plenty?.kind, "tree_farm");
+  assert.equal(TREE_FARM_PLOTS, 2);
+});
