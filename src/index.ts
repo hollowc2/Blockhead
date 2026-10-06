@@ -35,6 +35,7 @@ import { GatherFoodRunner } from "./skills/gather-food.js";
 import { EnsureTorchesRunner } from "./skills/ensure-torches.js";
 import { LightHomeRunner } from "./skills/light-home.js";
 import { DevelopLandRunner } from "./skills/develop-land.js";
+import { withdrawFirstOfEach } from "./minecraft/containers.js";
 import { EnsureItemRunner } from "./skills/ensure-item.js";
 import { DefenseRunner } from "./skills/defense.js";
 import { SelfDefenseReflex } from "./agent/self-defense.js";
@@ -533,7 +534,9 @@ async function runSession(): Promise<"spawned" | "never-connected"> {
       buildProjectManager.createOrResume({ userGoal: `Develop the land: build a ${building.replace("_", " ")}`, structureType: `village:${building}`, source: "goal", design, origin });
     },
   };
-  const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => buildProjectManager.reservedCells(), builds: developmentBuilds });
+  // A hoe needs carried wood; a spare hoe, or a log or two, from the chest.
+const HOE_WOOD = [["iron_hoe", "stone_hoe", "wooden_hoe"], ["oak_log", "birch_log", "spruce_log", "dark_oak_log", "acacia_log", "jungle_log", "cherry_log", "mangrove_log", "oak_planks", "birch_planks", "spruce_planks"], ["oak_log", "birch_log", "spruce_log", "oak_planks", "birch_planks", "spruce_planks"]] as const;
+const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => buildProjectManager.reservedCells(), builds: developmentBuilds, fetchWood: async (signal) => { await withdrawFirstOfEach(bot, state, storage, HOE_WOOD, logger, signal); } });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });
 
   // Phase 11: storage organization (spec 14.4, 22). The runner measures every

@@ -158,3 +158,14 @@ test("leftover trunk over a field is taken down before the land expands", async 
   const skipped = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0, tidySkip: new Set([`${field.dx},${field.dz}`]) });
   assert.equal(skipped?.kind, "field", "an unreachable trunk does not hold development up");
 });
+
+test("a field run with no hoe and no wood on hand fetches wood first", async () => {
+  // 2026-10-05 23:41, 23:46: "missing ingredients for 'wooden_hoe'" with 367
+  // seeds held; the field at -24,0 failed twice without tilling a cell.
+  const { hoeWoodShort } = await import("./farm.js");
+  assert.equal(hoeWoodShort({ hoe: false, planks: 0, logs: 0, sticks: 0 }), true);
+  assert.equal(hoeWoodShort({ hoe: false, planks: 3, logs: 0, sticks: 0 }), true, "three planks cannot make both the sticks and the head");
+  assert.equal(hoeWoodShort({ hoe: false, planks: 0, logs: 1, sticks: 0 }), false, "a log is four planks");
+  assert.equal(hoeWoodShort({ hoe: false, planks: 2, logs: 0, sticks: 2 }), false);
+  assert.equal(hoeWoodShort({ hoe: true, planks: 0, logs: 0, sticks: 0 }), false);
+});

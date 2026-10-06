@@ -5,9 +5,9 @@ import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { collectBlocks, placeItemAt } from "../minecraft/world.js";
-import { findItem } from "../minecraft/inventory.js";
+import { countLogs, countPlanks, countSticks, findItem } from "../minecraft/inventory.js";
 import { shedJunk } from "../minecraft/primitives.js";
-import { botLookup, developmentPlots, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
+import { botLookup, developmentPlots, hoeWoodShort, holdsHoe, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
 import type { SkillResult } from "./skill-library.js";
 import type { BuildingDesign } from "../building/schema.js";
 import { VILLAGE_ORDER, VILLAGE_SITE, villageDesign, type VillageBuilding } from "../building/village.js";
@@ -272,6 +272,8 @@ export interface DevelopLandOptions {
   reservedCells?: () => ReadonlySet<string>;
   /** Building projects; without it development only makes fields. */
   builds?: DevelopmentBuilds;
+  /** Take a little wood from the home chests (a hoe needs it). */
+  fetchWood?: (signal?: AbortSignal) => Promise<void>;
 }
 
 export interface DevelopLandData {
@@ -415,6 +417,11 @@ export class DevelopLandRunner {
       return { ok: true, status: "completed", message: `Started a ${next.building.replace("_", " ")} at ${next.origin.x},${next.origin.y},${next.origin.z}.`, data };
     }
 
+    // A hoe is made from carried wood; fetch some first when there is none.
+    if (this.opts.fetchWood !== undefined && hoeWoodShort({ hoe: holdsHoe(bot), planks: countPlanks(bot), logs: countLogs(bot), sticks: countSticks(bot) })) {
+      await this.opts.fetchWood(signal).catch((err) => this.opts.logger.warn({ err: String(err) }, "develop: could not fetch wood for a hoe"));
+      if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
+    }
     // Till and sow it: the farm takes the cleared plot first.
     const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal, shouldAbort: () => signals?.checkpoint() === false, preferPlot: survey.offset });
     if (signals?.checkpoint() === false) return interrupted();

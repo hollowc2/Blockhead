@@ -264,6 +264,21 @@ async function waitForBlock(bot: Bot, pos: Vec3, name: string): Promise<boolean>
   return bot.blockAt(pos)?.name === name;
 }
 
+/**
+ * Whether the bot lacks a hoe and the wood to make one (two planks for the
+ * head, two more for the sticks unless it carries them; a log is four
+ * planks). The farm crafts from what it carries, so a run with no wood on
+ * hand tilled nothing: "missing ingredients for 'wooden_hoe'" and the field
+ * at -24,0 failed twice (2026-10-05 23:41, 23:46) with 367 seeds held.
+ */
+export function hoeWoodShort(held: { hoe: boolean; planks: number; logs: number; sticks: number }): boolean {
+  if (held.hoe) return false;
+  const planks = held.planks + 4 * held.logs;
+  return planks < (held.sticks >= 2 ? 2 : 4);
+}
+
+export function holdsHoe(bot: Bot): boolean { return findHoe(bot) !== null; }
+
 function findHoe(bot: Bot) {
   for (const name of ["netherite_hoe", "diamond_hoe", "iron_hoe", "stone_hoe", "wooden_hoe"]) {
     const item = findItem(bot, name);
@@ -399,6 +414,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
       logger.warn("farm: no crafting table for a hoe");
     } else {
       if (countItem(bot, "stick") < 2) await craftSticks(bot, 2, signal);
+      if (countPlanks(bot) < 2 && countItem(bot, "cobblestone") < 2) await craftPlanks(bot, 2, signal);
       const hoe = countItem(bot, "cobblestone") >= 2
         ? await craftItem(bot, "stone_hoe", { craftingTable: hoeTable, signal })
         : await craftItem(bot, "wooden_hoe", { craftingTable: hoeTable, signal });
