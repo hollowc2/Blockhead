@@ -526,3 +526,21 @@ test("a development building takes up a torch on its site; an owner's build does
     else assert.match(result.message ?? "", /torch/);
   }
 });
+
+test("a design slice starts from the site even when the exact anchor cannot be reached", async () => {
+  // 17:41 (2026-10-05): on the windmill site, 3.8 blocks from an anchor it
+  // could not step to, the slice blocked "could not reach design anchor".
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [{ id: "op-0", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true }],
+    estimates: { blocks: 1, materials: { stone: 1 } },
+    footprint: { width: 1, depth: 1, height: 1 },
+  };
+  const world: Record<string, string> = { "0,63,0": "stone", "0,64,0": "air" };
+  const runner = designTestRunner(world);
+  const internals = runner as unknown as { travelToSimpleAnchor: () => Promise<{ status: string }>; placeSimpleTarget: (cell: Vec3) => Promise<boolean> };
+  internals.travelToSimpleAnchor = async () => ({ status: "failed" });
+  internals.placeSimpleTarget = async (cell) => { world[`${cell.x},${cell.y},${cell.z}`] = "stone"; return true; };
+  const result = await runner.runDesignSlice(blueprint, { phaseId: "phase-anchor", operationStart: 0, operationEnd: 1 });
+  assert.doesNotMatch(result.message ?? "", /design anchor/);
+});

@@ -203,6 +203,9 @@ export function doorForPlanks(items: readonly { name: string; count: number }[])
   return best.replace(/_planks$/, "_door");
 }
 
+/** A design slice starts when the bot stands this close to the build's origin, anchor reached or not. */
+const DESIGN_SITE_NEAR = 8;
+
 /** Tree trunks a development building may fell inside its own volume. */
 const TREE_TRUNK = /_log$|_wood$/;
 
@@ -978,7 +981,12 @@ export class BaseBuilderRunner {
     try {
       if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
       const travel = await this.travelToSimpleAnchor(new Vec3(blueprint.origin.x - 2, blueprint.origin.y, blueprint.origin.z - 2), blueprint.origin.dimension);
-      if (travel.status !== "arrived" && travel.status !== "already_there") return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
+      // Each placement walks into reach itself; the anchor only brings the
+      // bot to the site. Standing on the windmill site 3.8 blocks from an
+      // anchor it could not step to blocked the build (17:41, 2026-10-05).
+      const self = this.opts.bot.entity?.position;
+      const nearSite = self !== undefined && self !== null && Math.hypot(self.x - blueprint.origin.x, self.z - blueprint.origin.z) <= DESIGN_SITE_NEAR;
+      if (travel.status !== "arrived" && travel.status !== "already_there" && !nearSite) return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
       // Keep a local record for the survival-mode delayed-cache fallback.
       // Creative mode still requires an authoritative server block, so this
       // never turns an unobserved placement into a success.
