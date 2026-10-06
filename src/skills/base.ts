@@ -1013,7 +1013,10 @@ export class BaseBuilderRunner {
         // The bot's own buildings also take up its own lighting: a torch
         // home lighting had set on the open site blocked the second cottage
         // (86,96,51, 2026-10-05); lighting re-plans once the building stands.
-        const clearable = (name: string): boolean => isNaturalBlock(name) || (options.clearTrees === true && (TREE_TRUNK.test(bareName(name)) || /^(wall_)?torch$/.test(bareName(name))));
+        // ...and its own scaffolding: the pathfinder towers up on cobblestone
+        // to reach high cells and leaves it standing, and a block of it in
+        // the roof blocked the third cottage (48,99,74, 19:49).
+        const clearable = (name: string): boolean => isNaturalBlock(name) || (options.clearTrees === true && (TREE_TRUNK.test(bareName(name)) || /^(wall_)?torch$/.test(bareName(name)) || /^(cobblestone|cobbled_deepslate)$/.test(bareName(name))));
         if (existing !== null && !isAir(existing) && !isCreativeMode(this.opts.bot) && clearable(existing.name)) {
           // Grass, dirt, or a stone bump where a wall goes is just uneven
           // ground: dig it out rather than abandoning the build.
