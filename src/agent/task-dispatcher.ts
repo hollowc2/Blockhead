@@ -397,7 +397,9 @@ export class TaskDispatcher {
     // acquire, resumed): the windmill slice was abandoned at its fourth
     // material hop and parked by the watchdog for good (16:55, 2026-10-05).
     // Projects carry their own retry and blocking state.
-    if (task.source !== "user" && task.projectId === undefined && task.priority < TaskPriority.MAINTENANCE && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
+    // Land development re-plans from scratch on every run; buildings and
+    // storms preempt it all the time (abandoned at 17:54, 2026-10-05).
+    if (task.source !== "user" && task.projectId === undefined && task.type !== "develop_land" && task.priority < TaskPriority.MAINTENANCE && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
       return {
         ok: false,
         status: "failed",

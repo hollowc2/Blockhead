@@ -220,7 +220,10 @@ function canonicalScalars(parameters: Record<string, unknown>): string {
  * and a 10 minute block on the night shelter left the bot in the open for
  * the rest of the night (two deaths at the world spawn).
  */
-const WATCHDOG_EXEMPT_TYPES: ReadonlySet<string> = new Set(["night_shelter", "defend_self"]);
+// Build-project work blocks and retries through its project: a slice that
+// waits on a material reports "blocked" at every hop, and the watchdog
+// counted each as a failure and parked the windmill twice (2026-10-05).
+const WATCHDOG_EXEMPT_TYPES: ReadonlySet<string> = new Set(["night_shelter", "defend_self", "build_project_slice", "build_project_acquire", "build_project_verify"]);
 
 export function isWatchdogExempt(action: string): boolean {
   return WATCHDOG_EXEMPT_TYPES.has(action.split(":")[0] ?? "");

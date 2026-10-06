@@ -22,3 +22,9 @@ test("a build slice that resumed once per material is not abandoned as an interr
   const other = await run(task({ type: "collect_resource", parameters: { resource: "oak_log", quantity: 1 } }));
   assert.match(other.message ?? "", /abandoned after 5 interrupted attempts/, "ordinary autonomous work still backs off");
 });
+
+test("land development is never abandoned for being preempted", async () => {
+  const d = new TaskDispatcher({ bus: new EventBus(), scheduler: { signalsFor: () => ({ checkpoint: () => true, signal: new AbortController().signal, cancelled: false }) } } as unknown as TaskDispatcherOptions);
+  const result = await (d as unknown as { runSkill(t: Task): Promise<{ message?: string }> }).runSkill(task({ type: "develop_land", source: "background", priority: TaskPriority.BACKGROUND }));
+  assert.doesNotMatch(result.message ?? "", /abandoned/);
+});

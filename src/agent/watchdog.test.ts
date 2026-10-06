@@ -257,3 +257,11 @@ test("a parked block on a now-exempt survival action is released at once", () =>
   (h.watchdog as unknown as { blocks: Map<string, unknown> }).blocks.set("night_shelter", { action: "night_shelter", failures: 3, blockedAt: 0, retryAt: 600_000, lastReason: "x" });
   assert.equal(h.watchdog.takeExpiredBlock("night_shelter"), true);
 });
+
+test("build-project tasks are left to their project's own retries", async () => {
+  // 2026-10-05: each material hop of the windmill slice reported "blocked",
+  // was counted as a failure, and the watchdog parked the build twice.
+  const { isWatchdogExempt } = await import("./watchdog.js");
+  for (const type of ["build_project_slice", "build_project_acquire", "build_project_verify"]) assert.equal(isWatchdogExempt(`${type}:{}`), true, type);
+  assert.equal(isWatchdogExempt("collect_resource:{}"), false);
+});
