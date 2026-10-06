@@ -187,6 +187,21 @@ export function normalizeDecision(parsed: unknown): unknown {
     }
     out[key] = inner;
   }
+  // Arguments nested under "parameters" (or params/args/arguments) belong
+  // on the action itself: Qwen3.5-9B answered {"task": "collect_resource",
+  // "parameters": {...}} for every director call 2026-10-05 22:16-22:56.
+  for (const key of ["action", "task"]) {
+    const value = out[key];
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    const inner: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+    for (const wrapper of ["parameters", "params", "args", "arguments"]) {
+      const nested = inner[wrapper];
+      if (typeof nested !== "object" || nested === null || Array.isArray(nested)) continue;
+      delete inner[wrapper];
+      for (const [name, arg] of Object.entries(nested as Record<string, unknown>)) if (inner[name] === undefined) inner[name] = arg;
+    }
+    out[key] = inner;
+  }
   if (out.rationale === undefined && typeof out.reason === "string") out.rationale = out.reason;
   delete out.reason;
   if (typeof out.rationale === "string" && out.rationale.length > 300) out.rationale = out.rationale.slice(0, 300);

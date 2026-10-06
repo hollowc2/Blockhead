@@ -95,6 +95,18 @@ test("a bare action name from the model is read as that action", async () => {
   equal(NextTaskSchema.parse(normalizeDecision({ task: "wait" })).task.type, "wait");
 });
 
+test("arguments the model nests under parameters are lifted into the task", async () => {
+  // 2026-10-05 22:16-22:56: every director decision answered
+  // {"task": "collect_resource", "parameters": {"resource": "oak_log", "quantity": 1024}}
+  // and failed validation twice ("task.resource: Required").
+  const { normalizeDecision } = await import("./decider.js");
+  const { NextTaskSchema } = await import("./schemas.js");
+  const task = NextTaskSchema.parse(normalizeDecision({ task: "collect_resource", parameters: { resource: "oak_log", quantity: 32 } })).task;
+  deepStrictEqual(task, { type: "collect_resource", resource: "oak_log", quantity: 32 });
+  const nested = NextTaskSchema.parse(normalizeDecision({ task: { type: "collect_resource", args: { resource: "stone", quantity: 8 } } })).task;
+  deepStrictEqual(nested, { type: "collect_resource", resource: "stone", quantity: 8 });
+});
+
 test("an idle director may keep answering wait; a repeated real task still trips the brake", async () => {
   // 2026-10-05 10:44-10:58: three "wait" answers in a row threw "repeated
   // identical model decisions" 13 times and dropped to the fallback ladder.
