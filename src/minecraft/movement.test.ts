@@ -4,7 +4,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback, SWIM_COST } from "./movement.js";
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];
@@ -490,4 +490,12 @@ test("an unloaded home column does not send the trip to the stale stored home Y"
   assert.ok(goals.length > 0);
   assert.ok(goals.every((y) => y >= 95), `no leg aimed underground: ${goals.join(",")}`);
   assert.notEqual(result.status, "timed_out");
+});
+
+test("swimming costs enough that a lake is walked around", () => {
+  // 2026-10-06 09:06, 09:21: drowned killed the bot crossing open water on
+  // ordinary trips; at 4 per block a 40-block lake beat a 200-block detour.
+  const lake = 40;
+  const detour = 200;
+  assert.ok(lake * (1 + SWIM_COST) > detour * 2, "a 40-block swim costs more than a 200-block walk round with climbs");
 });

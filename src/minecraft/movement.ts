@@ -188,6 +188,15 @@ export function stuckCellCost(position: { x: number; y: number; z: number }, now
   return 0;
 }
 
+/**
+ * Extra path cost per block swum. At 4 a 40-block lake was cheaper than a
+ * short walk round it: drowned with tridents killed the bot in open water on
+ * a wood trip and a food trip (2026-10-06 09:06, 09:21; three trips attacked
+ * in the water that morning). At 20 a swim is taken only when the way round
+ * is some twenty times longer.
+ */
+export const SWIM_COST = 20;
+
 function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   const registry = bot.registry;
   (movements as unknown as { exclusionAreasStep: Array<(block: { position: Vec3 }) => number> }).exclusionAreasStep.push((block) => stuckCellCost(block.position));
@@ -201,7 +210,7 @@ function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   movements.maxDropDown = 3;
   // Swim only when the way round is much longer. Routes straight across the
   // drowned lake west of home cost five deaths on 2026-10-04.
-  (movements as unknown as { liquidCost: number }).liquidCost = 4;
+  (movements as unknown as { liquidCost: number }).liquidCost = SWIM_COST;
 }
 
 /** Bots whose pathfinder must not place scaffolding (nesting depth). */
