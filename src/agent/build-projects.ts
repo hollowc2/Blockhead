@@ -6,7 +6,7 @@ import { BUILDING_SCHEMA_VERSION, BuildingDesignSchema, type BuildingDesign } fr
 import type { HomeLocation } from "../minecraft/movement.js";
 import type { BuildPhase, BuildProject, BuildProjectsRepository } from "../memory/build-projects.js";
 import type { Scheduler } from "./scheduler.js";
-import { TaskPriority, type Task } from "./task.js";
+import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { SkillResult } from "../skills/skill-library.js";
 
 export interface ProjectVerificationData {
@@ -213,6 +213,18 @@ export class BuildProjectManager {
     return task;
   }
 
+  /**
+   * An active project whose every task the scheduler has blocked (a slice
+   * that "made no progress repeatedly") is as stuck as a blocked project: the
+   * cottage whose roof cell held the bot's head stayed "active" with its
+   * slice blocked from 2026-10-06 01:01 and held the building slot.
+   */
+  private onlyBlockedWork(project: BuildProject): boolean {
+    if (project.status !== "active" || this.scheduler.active?.projectId === project.id) return false;
+    const tasks = this.scheduler.queued.filter((task) => task.projectId === project.id);
+    return tasks.length > 0 && tasks.every((task) => task.status === TaskStatus.BLOCKED);
+  }
+
   /** Clear a blocked/paused project's blockers so its work can be scheduled again. */
   private reopen(project: BuildProject): void {
     if (project.status !== "blocked" && project.status !== "paused") return;
@@ -239,7 +251,7 @@ export class BuildProjectManager {
   retryBlocked(matches: (project: BuildProject) => boolean, minBlockedMs: number, now = Date.now()): number {
     let reopened = 0;
     for (const project of this.projects.loadUnfinished()) {
-      if (project.status !== "blocked" || !matches(project)) continue;
+      if ((project.status !== "blocked" && !this.onlyBlockedWork(project)) || !matches(project)) continue;
       if (now - Date.parse(project.updatedAt) < minBlockedMs) continue;
       this.reopen(project);
       if (this.scheduleNextWork(project.id) !== null) reopened += 1;

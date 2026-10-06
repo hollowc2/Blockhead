@@ -369,6 +369,30 @@ test("retryable acquisition failure persists a bounded durable backoff", () => {
   }
 });
 
+test("an active development build whose slice the scheduler blocked is retried too", async () => {
+  // 2026-10-06 01:01: the cottage slice "made no progress repeatedly" (the
+  // roof cell held the bot's head) and was blocked, but the project stayed
+  // active, so the blocked-project retry never saw it.
+  const { villageDesign } = await import("../building/village.js");
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const village = manager.createOrResume({ userGoal: "Develop the land", structureType: "village:cottage", source: "goal", design: villageDesign("cottage"), origin });
+    h.scheduler.claim();
+    h.scheduler.blockActive("no progress after 4 attempts: design slice could not verify operation op-00127");
+    const project = h.projects.get(village.project.id)!;
+    assert.equal(project.status, "active");
+    project.updatedAt = "2026-10-06T08:01:50.000Z";
+    h.projects.update(project);
+    const isVillage = (p: { structureType?: string }) => p.structureType?.startsWith("village:") === true;
+    assert.equal(manager.retryBlocked(isVillage, 5 * 60_000, Date.parse("2026-10-06T08:03:00.000Z")), 0, "not yet");
+    assert.equal(manager.retryBlocked(isVillage, 5 * 60_000, Date.parse("2026-10-06T08:27:00.000Z")), 1);
+    assert.ok(h.scheduler.queued.some((task) => task.projectId === village.project.id && task.status === TaskStatus.QUEUED), "its slice is queued again");
+  } finally {
+    h.db.close();
+  }
+});
+
 test("a blocked development build is retried after a while; an owner's blocked build is not", async () => {
   // 2026-10-05: the second cottage blocked on a torch and, blocked, held the
   // one-building slot so no further building could start.
