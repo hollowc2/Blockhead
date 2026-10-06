@@ -187,6 +187,25 @@ test("a creeper is still evaded, never meleed", async () => {
   assert.ok(h.travels.at(-1)!.to.x < 20, "backed away from the creeper");
 });
 
+test("a creeper that keeps following is fought hit-and-back after a few evasions", async () => {
+  // 2026-10-06 06:00-06:15: a creeper by a field was backed away from 66
+  // times and never fought; the field run restarted every 15 seconds.
+  const h = harness();
+  const creeper = h.add(mob(7, "creeper", { x: 23, y: 64, z: 0 }));
+  const hits: string[] = [];
+  let swings = 0;
+  (h.runner as unknown as { actions: DefenseActions }).actions.hit = (_bot, target) => {
+    hits.push(target.name ?? "?");
+    if (++swings >= 2) (target as unknown as Mob).health = 0;
+  };
+  h.hooks.travel = (to) => { if (distance(to, creeper.position) < 3) h.self.position = { x: 21, y: 64, z: 0 }; return { status: "arrived" }; };
+  for (let i = 0; i < 3; i++) await h.runner.defendSelf({ reflex: true, radius: 24 });
+  assert.deepEqual(hits, [], "the first evasions only back away");
+  await h.runner.defendSelf({ reflex: true, radius: 24 });
+  assert.deepEqual(hits, ["creeper", "creeper"], "then it is hit until it dies");
+  assert.deepEqual(h.attacked, [], "never a sustained melee");
+});
+
 test("retreatTarget runs away from the threats and bends toward home", () => {
   const self = { x: 20, y: 64, z: 0 };
   const straight = retreatTarget(self, [{ x: 20, y: 64, z: 10 }], null);

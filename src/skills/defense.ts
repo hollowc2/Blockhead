@@ -53,6 +53,16 @@ const RETREAT_TIMEOUT_MS = 10_000;
 const RETREAT_THREAT_RADIUS = 24;
 /** A creeper this close is evaded before anything else is fought. */
 const CREEPER_DANGER_RADIUS = 6;
+/** Times one creeper is backed away from before the bot fights it. */
+const CREEPER_EVADE_LIMIT = 3;
+/** Window the evasions are counted in. */
+const CREEPER_EVADE_WINDOW_MS = 3 * 60_000;
+/** Hit-and-back rounds against a creeper that will not leave. */
+const CREEPER_HIT_ROUNDS = 8;
+/** Reach for one hit. */
+const CREEPER_HIT_REACH = 3;
+/** How far to step back after each hit: out of its 3-block fuse range. */
+const CREEPER_HIT_BACKOFF = 5;
 /** This many hostiles within CROWD_RADIUS make a self-defense pass run instead of fight. */
 const CROWD_SIZE = 3;
 const CROWD_RADIUS = 10;
@@ -74,9 +84,11 @@ export interface DefenseActions {
   stop: typeof pvpStop;
   equip: typeof equipItem;
   shore?: typeof swimToShore;
+  /** One swing at `target` (a creeper is hit once, then backed away from). */
+  hit?: (bot: Bot, target: Entity) => void;
 }
 
-const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore };
+const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore, hit: (bot, target) => bot.attack(target) };
 
 export interface DefenseOptions {
   bot: Bot;
@@ -125,6 +137,8 @@ export class DefenseRunner {
   private stopRequested = false;
   private interruptions = 0;
   private readonly actions: DefenseActions;
+  /** Recent evasions per creeper entity id. */
+  private readonly creeperEvasions = new Map<number, { count: number; first: number }>();
 
   constructor(private readonly opts: DefenseOptions) {
     this.actions = { ...DEFAULT_ACTIONS, ...opts.actions };
@@ -246,8 +260,11 @@ export class DefenseRunner {
       if (hostile.name === "creeper") {
         // Meleeing a creeper lights its fuse at arm's length. Back off
         // instead: the bot outruns it, and the reflex fires again if it
-        // closes in.
-        await this.evade(hostile);
+        // closes in. One that keeps following is fought hit-and-back: a
+        // creeper by a field interrupted the work every 15 seconds for 15
+        // minutes, 66 evasions and no kill (2026-10-06 06:00-06:15).
+        if (this.noteCreeperEvasion(hostile.id) > CREEPER_EVADE_LIMIT) await this.hitAndBack(hostile);
+        else await this.evade(hostile);
         if (this.stopRequested) return this.interrupted(data);
         break;
       }
@@ -400,15 +417,43 @@ export class DefenseRunner {
     return null;
   }
 
+  private noteCreeperEvasion(id: number, now = Date.now()): number {
+    for (const [key, entry] of this.creeperEvasions) if (now - entry.first > CREEPER_EVADE_WINDOW_MS) this.creeperEvasions.delete(key);
+    const entry = this.creeperEvasions.get(id) ?? { count: 0, first: now };
+    entry.count += 1;
+    this.creeperEvasions.set(id, entry);
+    return entry.count;
+  }
+
+  /** Hit a creeper once, step out of its fuse range, repeat until it is dead. */
+  private async hitAndBack(creeper: Entity): Promise<void> {
+    const bot = this.opts.bot;
+    this.opts.logger.info({ id: creeper.id }, "defense: creeper keeps following; fighting it hit-and-back");
+    const weapon = findItem(bot, "iron_sword") ?? findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
+    if (weapon !== null) await this.actions.equip(bot, weapon, this.signals?.signal).catch(() => undefined);
+    for (let round = 0; round < CREEPER_HIT_ROUNDS && isLiveEntity(creeper) && !this.stopRequested; round++) {
+      const self = bot.entity?.position;
+      if (self === undefined || self === null) return;
+      if (distanceBetween(creeper.position, self) > CREEPER_HIT_REACH) {
+        await this.actions.travel(bot, creeper.position, { range: 2, timeoutMs: 4_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+      }
+      const here = bot.entity?.position;
+      if (here !== undefined && here !== null && distanceBetween(creeper.position, here) <= CREEPER_HIT_REACH) this.actions.hit?.(bot, creeper);
+      if (!isLiveEntity(creeper)) break;
+      await this.evade(creeper, CREEPER_HIT_BACKOFF);
+    }
+    if (!isLiveEntity(creeper)) this.creeperEvasions.delete(creeper.id);
+  }
+
   /** Walk straight away from `threat` far enough to be out of blast range. */
-  private async evade(threat: Entity): Promise<void> {
+  private async evade(threat: Entity, distance = EVADE_DISTANCE): Promise<void> {
     const bot = this.opts.bot;
     const self = bot.entity?.position;
     if (self === undefined) return;
     const dx = self.x - threat.position.x;
     const dz = self.z - threat.position.z;
     const length = Math.hypot(dx, dz) || 1;
-    const target = { x: self.x + (dx / length) * EVADE_DISTANCE, y: self.y, z: self.z + (dz / length) * EVADE_DISTANCE };
+    const target = { x: self.x + (dx / length) * distance, y: self.y, z: self.z + (dz / length) * distance };
     this.opts.logger.info({ threat: threat.name, from: { x: Math.round(self.x), z: Math.round(self.z) } }, "defense: backing away from a creeper");
     await this.actions.travel(bot, target, { range: 3, timeoutMs: 8_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
   }
