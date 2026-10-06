@@ -139,3 +139,22 @@ test("development keeps going outward once the inner rings are done", () => {
   const next = nextPlotToDevelop(HOME, world(all));
   assert.ok(next !== null && Math.max(Math.abs(next.offset.dx), Math.abs(next.offset.dz)) === 32, JSON.stringify(next?.offset));
 });
+
+test("leftover trunk over a field is taken down before the land expands", async () => {
+  // Owner, 2026-10-05: the cleared areas still had partial trees hanging
+  // over them. Clearing cut a trunk at crop height and left the rest.
+  const { nextDevelopment } = await import("./develop-land.js");
+  const land = developed(1);
+  const field = developmentPlots()[3]!;
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    land[`${field.dx + dx},63,${field.dz + dz}`] = { name: "farmland" };
+    land[`${field.dx + dx},64,${field.dz + dz}`] = { name: "wheat", age: 4 };
+  }
+  for (let y = 67; y <= 70; y++) land[`${field.dx + 1},${y},${field.dz}`] = { name: "oak_log" };
+  land[`${field.dx + 1},71,${field.dz}`] = { name: "oak_leaves" };
+  const next = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0 });
+  assert.equal(next?.kind, "tidy");
+  assert.deepEqual(next?.survey.leftoverLogs.map((c) => c.y).sort(), [67, 68, 69, 70]);
+  const skipped = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0, tidySkip: new Set([`${field.dx},${field.dz}`]) });
+  assert.equal(skipped?.kind, "field", "an unreachable trunk does not hold development up");
+});
