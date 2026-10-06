@@ -40,3 +40,14 @@ test("village buildings use only materials the bot can make", () => {
     for (const material of Object.keys(estimates.materials)) assert.match(material, makeable, `${kind} needs ${material}`);
   }
 });
+
+test("no village block is out of reach from the ground", async () => {
+  // 18:17 (2026-10-05): the first windmill's sail at +7, out in front of
+  // its tower, could not be reached and the build looped for ten minutes.
+  const { VILLAGE_MAX_HEIGHT } = await import("./village.js");
+  for (const kind of KINDS) {
+    for (const op of compileBuildingDesign(villageDesign(kind), ORIGIN).operations) {
+      assert.ok(op.y <= VILLAGE_MAX_HEIGHT, `${kind}: ${op.material} at height ${op.y}`);
+    }
+  }
+});

@@ -187,9 +187,13 @@ export class BuildProjectsRepository {
     return row ? toProject(row) : null;
   }
 
-  /** Projects whose structure type starts with `prefix`, cancelled ones excepted. */
+  /**
+   * Projects whose structure type starts with `prefix`. Cancelled ones with
+   * work verified count too (a retired, partly standing building), so the
+   * rotation moves on instead of repeating it.
+   */
   countByStructurePrefix(prefix: string): number {
-    const row = this.db.sql.prepare(`SELECT COUNT(*) AS n FROM build_projects WHERE structure_type LIKE ? AND status != 'cancelled'`).get(`${prefix}%`) as { n: number };
+    const row = this.db.sql.prepare(`SELECT COUNT(*) AS n FROM build_projects WHERE structure_type LIKE ? AND (status != 'cancelled' OR json_extract(verification_state_json, '$.verifiedOperations') > 0)`).get(`${prefix}%`) as { n: number };
     return row.n;
   }
 

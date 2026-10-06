@@ -7,8 +7,14 @@ import { BuildingDesignSchema, type BuildingDesign } from "./schema.js";
  * site's corner) and uses only what the bot can make itself: planks,
  * cobblestone, logs, fences and doors. Roofs are stepped, not peaked: a
  * peaked roof's upper rings have nothing under them and cannot be placed
- * in survival, while each stepped layer rests on the one below.
+ * in survival, while each stepped layer rests on the one below. Nothing
+ * goes above 6 blocks over the ground or hangs out in the air: the first
+ * windmill's sail at +7, out in front of the tower, could not be reached
+ * and the build looped for ten minutes (2026-10-05 18:17).
  */
+
+/** Highest block row any village design uses (rows 0..6 over the ground). */
+export const VILLAGE_MAX_HEIGHT = 6;
 
 export type VillageBuilding = "cottage" | "storage_shed" | "barn" | "windmill" | "watchtower";
 
@@ -55,28 +61,28 @@ export function villageDesign(kind: VillageBuilding): BuildingDesign {
       ]);
     case "barn":
       // Tall birch walls, a wide double door and a big stepped roof.
-      return design("Barn", "Tall birch barn with a double door and a stepped plank roof", palette("birch_planks", "oak_planks"), [
-        { id: "barn-walls", type: "cuboid", width: 7, depth: 7, height: 5, mode: "hollow" },
-        { id: "barn-roof", type: "roof", width: 7, depth: 7, height: 4, style: "stepped", transform: { offset: { x: 0, y: 5, z: 0 } } },
+      return design("Barn", "Birch barn with a double door and a stepped plank roof", palette("birch_planks", "oak_planks"), [
+        { id: "barn-walls", type: "cuboid", width: 7, depth: 7, height: 4, mode: "hollow" },
+        { id: "barn-roof", type: "roof", width: 7, depth: 7, height: 3, style: "stepped", transform: { offset: { x: 0, y: 4, z: 0 } } },
         { id: "barn-door", type: "door", width: 2, height: 2, transform: { offset: { x: 2, y: 0, z: 0 } } },
       ]);
     case "windmill":
-      // A cobblestone tower, a plank cap, and sails on the front: a mast
-      // from the ground and an arm out to one side (each sail block rests on
-      // the one before it).
-      return design("Windmill", "Cobblestone windmill tower with plank sails", palette("cobblestone", "oak_planks"), [
-        { id: "mill-tower", type: "tower", footprint: { shape: "rectangular", width: 5, depth: 5 }, height: 8, transform: { offset: { x: 1, y: 0, z: 1 } } },
-        { id: "mill-cap", type: "roof", width: 5, depth: 5, height: 3, style: "stepped", transform: { offset: { x: 1, y: 8, z: 1 } } },
-        { id: "mill-mast", type: "column", height: 11, material: "oak_log", transform: { offset: { x: 3, y: 0, z: 0 } } },
-        { id: "mill-sail", type: "wall", start: { x: 4, y: 0, z: 0 }, end: { x: 6, y: 0, z: 0 }, height: 1, thickness: 1, material: "oak_planks", transform: { offset: { x: 0, y: 7, z: 0 } } },
+      // A cobblestone tower with a plank cap, and a log mast on the front
+      // carrying a sail arm low enough to place from the ground (each sail
+      // block rests on the one before it).
+      return design("Windmill", "Cobblestone windmill tower with a log mast and plank sail", palette("cobblestone", "oak_planks"), [
+        { id: "mill-tower", type: "tower", footprint: { shape: "rectangular", width: 5, depth: 5 }, height: 5, transform: { offset: { x: 1, y: 0, z: 1 } } },
+        { id: "mill-cap", type: "roof", width: 5, depth: 5, height: 2, style: "stepped", transform: { offset: { x: 1, y: 5, z: 1 } } },
+        { id: "mill-mast", type: "column", height: 6, material: "oak_log", transform: { offset: { x: 3, y: 0, z: 0 } } },
+        { id: "mill-sail", type: "wall", start: { x: 4, y: 0, z: 0 }, end: { x: 6, y: 0, z: 0 }, height: 1, thickness: 1, material: "oak_planks", transform: { offset: { x: 0, y: 3, z: 0 } } },
         { id: "mill-door", type: "door", width: 1, height: 2, transform: { offset: { x: 3, y: 0, z: 5 } } },
       ]);
     case "watchtower":
-      // A slim plank lookout with a cobblestone cap (a cap wider than the
-      // tower would overhang with nothing under it).
+      // A slim plank lookout post with a cobblestone cap (a cap wider than
+      // the tower would overhang with nothing under it).
       return design("Watchtower", "Slim plank watchtower with a cobblestone cap", palette("oak_planks", "cobblestone"), [
-        { id: "tower-shell", type: "tower", footprint: { shape: "rectangular", width: 3, depth: 3 }, height: 9, transform: { offset: { x: 2, y: 0, z: 2 } } },
-        { id: "tower-cap", type: "roof", width: 3, depth: 3, height: 2, style: "stepped", transform: { offset: { x: 2, y: 9, z: 2 } } },
+        { id: "tower-shell", type: "tower", footprint: { shape: "rectangular", width: 3, depth: 3 }, height: 5, transform: { offset: { x: 2, y: 0, z: 2 } } },
+        { id: "tower-cap", type: "roof", width: 3, depth: 3, height: 2, style: "stepped", transform: { offset: { x: 2, y: 5, z: 2 } } },
         { id: "tower-door", type: "door", width: 1, height: 2, transform: { offset: { x: 3, y: 0, z: 2 } } },
       ]);
   }
