@@ -544,3 +544,23 @@ test("a design slice starts from the site even when the exact anchor cannot be r
   const result = await runner.runDesignSlice(blueprint, { phaseId: "phase-anchor", operationStart: 0, operationEnd: 1 });
   assert.doesNotMatch(result.message ?? "", /design anchor/);
 });
+
+test("clearing leftover scaffolding uses the own-build dig the protected region allows", async () => {
+  // 20:06 (2026-10-05): a plain dig of the cobblestone scaffold in the third
+  // cottage's roof was refused inside the protected home region.
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const world: Record<string, string> = { "0,64,0": "cobblestone", "1,64,0": "dirt" };
+  const runner = designTestRunner(world);
+  const bot = (runner as unknown as { opts: { bot: Record<string, unknown> } }).opts.bot;
+  bot.dig = async (block: { position: Vec3 }) => { world[`${block.position.x},${block.position.y},${block.position.z}`] = "air"; };
+  bot.stopDigging = () => undefined;
+  bot.heldItem = null;
+  const internals = runner as unknown as { reachCell: () => Promise<boolean>; clearNaturalCell: (cell: Vec3, clearable: (name: string) => boolean) => Promise<boolean> };
+  internals.reachCell = async () => true;
+  const mutations: Array<{ blockName?: string; ownBuildReplacement?: boolean }> = [];
+  await withWorldActionLease({ owner: "slice", signal: new AbortController().signal, acknowledged: Promise.resolve(), beforeMutation: (m) => { if (m.action === "dig") mutations.push({ blockName: m.blockName, ownBuildReplacement: m.ownBuildReplacement }); } }, async () => {
+    await internals.clearNaturalCell(new Vec3(0, 64, 0), () => true);
+    await internals.clearNaturalCell(new Vec3(1, 64, 0), () => true);
+  });
+  assert.deepEqual(mutations.map((m) => [m.blockName, m.ownBuildReplacement === true]), [["cobblestone", true], ["dirt", false]]);
+});

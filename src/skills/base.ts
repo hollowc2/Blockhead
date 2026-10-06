@@ -1167,7 +1167,12 @@ export class BaseBuilderRunner {
       if (!clearable(block.name)) return false;
       try {
         await equipToolForBlock(bot, block, this.signals?.signal).catch(() => undefined);
-        await digBlock(bot, block, this.signals?.signal);
+        // A non-natural block cleared here (its own scaffolding, torches,
+        // felled trunks) is the bot's own: the plain dig was refused inside
+        // the protected home region ("protected digging requires an active
+        // bounded terrain authorization", 20:06).
+        if (isNaturalBlock(block.name)) await digBlock(bot, block, this.signals?.signal);
+        else await digOwnBuildBlock(bot, block, this.signals?.signal);
       } catch (err) {
         this.opts.logger.warn({ at: cell, block: block.name, err: String(err) }, "build: could not clear obstruction");
         return false;
