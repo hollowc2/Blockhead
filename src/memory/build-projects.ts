@@ -26,6 +26,8 @@ export interface BuildProjectResumeState {
   completedRanges: Array<{ start: number; end: number }>;
   interruptedCount: number;
   retryAfter?: string;
+  /** Times a blocked development build was reopened (BuildProjectManager.retryBlocked). */
+  blockedRetries?: number;
 }
 
 export interface BuildVerificationState {
@@ -195,6 +197,12 @@ export class BuildProjectsRepository {
   countByStructurePrefix(prefix: string): number {
     const row = this.db.sql.prepare(`SELECT COUNT(*) AS n FROM build_projects WHERE structure_type LIKE ? AND (status != 'cancelled' OR json_extract(verification_state_json, '$.verifiedOperations') > 0)`).get(`${prefix}%`) as { n: number };
     return row.n;
+  }
+
+  /** Origins of projects whose structure type starts with `prefix`, counted as countByStructurePrefix counts them. */
+  originsByStructurePrefix(prefix: string): Array<{ x: number; y: number; z: number }> {
+    const rows = this.db.sql.prepare(`SELECT origin_json FROM build_projects WHERE structure_type LIKE ? AND (status != 'cancelled' OR json_extract(verification_state_json, '$.verifiedOperations') > 0)`).all(`${prefix}%`) as Array<{ origin_json: string }>;
+    return rows.map((row) => { const origin = JSON.parse(row.origin_json) as { x: number; y: number; z: number }; return { x: origin.x, y: origin.y, z: origin.z }; });
   }
 
   /** Active, paused, blocked, and verifying projects survive a restart. */

@@ -424,3 +424,52 @@ test("a blocked development build is retried after a while; an owner's blocked b
     h.db.close();
   }
 });
+
+test("a finished development building keeps its whole site reserved", async () => {
+  // 2026-10-06 06:45: a slim watchtower's site read as open ground and a
+  // second watchtower was started on top of the first.
+  const { villageDesign } = await import("../building/village.js");
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const tower = manager.createOrResume({ userGoal: "Develop the land", structureType: "village:watchtower", source: "goal", design: villageDesign("watchtower"), origin });
+    const project = h.projects.get(tower.project.id)!;
+    project.status = "completed";
+    h.projects.update(project);
+    const cells = manager.siteCells("village:", 7);
+    assert.equal(cells.size, 49);
+    assert.ok(cells.has(`${origin.x},${origin.y},${origin.z}`));
+    assert.ok(cells.has(`${origin.x + 6},${origin.y},${origin.z + 6}`), "the corner the tower leaves open is still the site");
+    assert.equal(manager.reservedCells().size, 0, "a finished build no longer reserves its blocks");
+  } finally {
+    h.db.close();
+  }
+});
+
+test("a development build that blocks on every retry is given up", async () => {
+  // 2026-10-06 06:45: a second watchtower over the first blocked on the
+  // first one's door every retry and held the one-building slot.
+  const { villageDesign } = await import("../building/village.js");
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const village = manager.createOrResume({ userGoal: "Develop the land", structureType: "village:watchtower", source: "goal", design: villageDesign("watchtower"), origin });
+    const isVillage = (p: { structureType?: string }) => p.structureType?.startsWith("village:") === true;
+    let t = Date.parse("2026-10-06T14:00:00.000Z");
+    for (let i = 0; i < 7; i++) {
+      const project = h.projects.get(village.project.id)!;
+      if (project.status === "cancelled") break;
+      project.status = "blocked";
+      project.lastError = "design blocked at 81,96,82 by oak_door";
+      project.updatedAt = new Date(t).toISOString();
+      h.projects.update(project);
+      t += 6 * 60_000;
+      manager.retryBlocked(isVillage, 5 * 60_000, t);
+    }
+    const final = h.projects.get(village.project.id)!;
+    assert.equal(final.status, "cancelled");
+    assert.match(final.lastError ?? "", /still blocked after 6 retries/);
+  } finally {
+    h.db.close();
+  }
+});

@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
-import { craftItem, craftPlanks, craftSticks } from "../minecraft/crafting.js";
+import { craftCraftingTable, craftItem, craftPlanks, craftSpeciesPlanks, craftSticks } from "../minecraft/crafting.js";
 import { bareName, countItem, countPlanks, findItem } from "../minecraft/inventory.js";
 import type { HomeLocation } from "../minecraft/movement.js";
 import { travelAndWait, walkIntoReach } from "../minecraft/movement.js";
@@ -306,8 +306,7 @@ export async function placeNewTable(bot: Bot, home: HomeLocation, logger: Logger
   const self = bot.entity;
   if (self === null) return null;
   if (findItem(bot, "crafting_table") === null) {
-    if (countPlanks(bot) < TABLE_PLANK_COST) await craftPlanks(bot, TABLE_PLANK_COST, signal);
-    const crafted = await craftItem(bot, "crafting_table", { signal });
+    const crafted = await craftCraftingTable(bot, signal);
     if (!crafted.ok) {
       logger.warn({ reason: crafted.reason }, "farm: could not craft a crafting table");
       return null;
@@ -417,7 +416,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
       logger.warn("farm: no crafting table for a hoe");
     } else {
       if (countItem(bot, "stick") < 2) await craftSticks(bot, 2, signal);
-      if (countPlanks(bot) < 2 && countItem(bot, "cobblestone") < 2) await craftPlanks(bot, 2, signal);
+      if (countItem(bot, "cobblestone") < 2) await craftSpeciesPlanks(bot, 2, signal);
       const hoe = countItem(bot, "cobblestone") >= 2
         ? await craftItem(bot, "stone_hoe", { craftingTable: hoeTable, signal })
         : await craftItem(bot, "wooden_hoe", { craftingTable: hoeTable, signal });

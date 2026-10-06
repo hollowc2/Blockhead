@@ -7,7 +7,7 @@ import type { Block } from "prismarine-block";
 import type { Item as PItem } from "prismarine-item";
 import type { Recipe as PRecipe } from "prismarine-recipe";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { craftItem, craftMorePlanks, craftPlanks, craftSpeciesPlanks, craftSticks } from "./crafting.js";
+import { craftCraftingTable, craftItem, craftMorePlanks, craftPlanks, craftSpeciesPlanks, craftSticks } from "./crafting.js";
 import { countItem, itemsSummary } from "./inventory.js";
 
 const require = createRequire(import.meta.url);
@@ -320,4 +320,14 @@ test("craftSpeciesPlanks reports when no single species can reach the count", as
   const server = new FakeServer({ oak_planks: 4, birch_planks: 4 });
   const result = await leased(() => craftSpeciesPlanks(server.bot, 8));
   assert.equal(result.ok, false);
+});
+
+test("a crafting table is made from mixed planks by topping up one species", async () => {
+  // 2026-10-06 06:47: 3 oak + 3 birch planks and a birch log; the farm's
+  // table craft failed "missing ingredients for 'crafting_table'".
+  const server = new FakeServer({ oak_planks: 3, birch_planks: 3, birch_log: 1 });
+  const result = await leased(() => craftCraftingTable(server.bot));
+  assert.equal(result.ok, true);
+  server.assertConsistent();
+  assert.equal(server.serverCounts().crafting_table, 1);
 });

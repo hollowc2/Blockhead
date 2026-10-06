@@ -7,6 +7,9 @@ import type { HomeLocation } from "../minecraft/movement.js";
 import type { BuildPhase, BuildProject, BuildProjectsRepository } from "../memory/build-projects.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus, type Task } from "./task.js";
+
+/** Reopens of a blocked development build before it is given up (5 minutes apart). */
+const MAX_BLOCKED_RETRIES = 6;
 import type { SkillResult } from "../skills/skill-library.js";
 
 export interface ProjectVerificationData {
@@ -213,6 +216,18 @@ export class BuildProjectManager {
     return task;
   }
 
+  /** Cancel a project the bot started itself, with its queued tasks. */
+  private giveUp(project: BuildProject, reason: string): void {
+    const now = new Date().toISOString();
+    project.status = "cancelled";
+    project.lastError = reason;
+    project.updatedAt = now;
+    this.projects.update(project);
+    this.projects.appendEvent({ projectId: project.id, kind: "cancelled", details: { reason }, createdAt: now });
+    for (const task of [...this.scheduler.queued].filter((candidate) => candidate.projectId === project.id)) this.scheduler.cancel(task.id);
+    logger.warn({ projectId: project.id, structureType: project.structureType, reason }, "development build given up");
+  }
+
   /**
    * An active project whose every task the scheduler has blocked (a slice
    * that "made no progress repeatedly") is as stuck as a blocked project: the
@@ -253,6 +268,16 @@ export class BuildProjectManager {
     for (const project of this.projects.loadUnfinished()) {
       if ((project.status !== "blocked" && !this.onlyBlockedWork(project)) || !matches(project)) continue;
       if (now - Date.parse(project.updatedAt) < minBlockedMs) continue;
+      // A build that blocks on every retry is given up: a second watchtower
+      // started over the first blocked on the first's door and held the
+      // one-building slot (2026-10-06 06:45).
+      const retries = project.resumeState.blockedRetries ?? 0;
+      if (retries >= MAX_BLOCKED_RETRIES) {
+        this.giveUp(project, `still blocked after ${retries} retries: ${project.lastError ?? "unknown"}`);
+        continue;
+      }
+      project.resumeState = { ...project.resumeState, blockedRetries: retries + 1 };
+      this.projects.update(project);
       this.reopen(project);
       if (this.scheduleNextWork(project.id) !== null) reopened += 1;
     }
@@ -290,6 +315,21 @@ export class BuildProjectManager {
         const at = operation.absolute ?? { x: project.origin.x + operation.x, y: project.origin.y + operation.y, z: project.origin.z + operation.z };
         cells.add(`${at.x},${at.y},${at.z}`);
       }
+    }
+    return cells;
+  }
+
+  /**
+   * Ground cells of every site a `prefix` building was started on (a
+   * size x size square from its origin). Development keeps off them: a slim
+   * watchtower left its site reading as open ground, and a second
+   * watchtower was started on the first (2026-10-06 06:45, 78,96,80), as a
+   * watchtower had been on a cottage's site at 70,96,80.
+   */
+  siteCells(prefix: string, size: number): Set<string> {
+    const cells = new Set<string>();
+    for (const origin of this.projects.originsByStructurePrefix(prefix)) {
+      for (let dx = 0; dx < size; dx++) for (let dz = 0; dz < size; dz++) cells.add(`${origin.x + dx},${origin.y},${origin.z + dz}`);
     }
     return cells;
   }

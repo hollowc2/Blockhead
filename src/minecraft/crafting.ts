@@ -349,6 +349,18 @@ export async function craftSpeciesPlanks(bot: Bot, count: number, signal?: Abort
   return craftItem(bot, best.planks, { times, signal });
 }
 
+/**
+ * Craft a crafting table from carried wood. Mineflayer lists one table
+ * recipe per plank species, so 3 oak + 3 birch planks matched none: the farm
+ * had "missing ingredients for 'crafting_table'" and no hoe (2026-10-06
+ * 06:47). Top up one species to four first.
+ */
+export async function craftCraftingTable(bot: Bot, signal?: AbortSignal): Promise<CraftResult> {
+  const planks = await craftSpeciesPlanks(bot, 4, signal);
+  if (!planks.ok) return planks;
+  return craftItem(bot, "crafting_table", { signal });
+}
+
 function stickRecipeUsable(bot: Bot, stickId: number): boolean {
   return bot.recipesAll(stickId, null, false).some((candidate) => recipeUsable(bot, candidate, 1));
 }
