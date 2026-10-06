@@ -393,7 +393,11 @@ export class TaskDispatcher {
     // Survival work (a food crisis, death recovery, defense) is preempted by
     // design, by the defense reflex or a service restart, and must not be
     // abandoned for having been paused.
-    if (task.source !== "user" && task.priority < TaskPriority.MAINTENANCE && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
+    // A build project's slice resumes once per material it fetches (blocked,
+    // acquire, resumed): the windmill slice was abandoned at its fourth
+    // material hop and parked by the watchdog for good (16:55, 2026-10-05).
+    // Projects carry their own retry and blocking state.
+    if (task.source !== "user" && task.projectId === undefined && task.priority < TaskPriority.MAINTENANCE && (task.attempts ?? 0) > MAX_BACKGROUND_RESUME_ATTEMPTS) {
       return {
         ok: false,
         status: "failed",

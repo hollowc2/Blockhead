@@ -105,6 +105,17 @@ export const MIN_FREE_SLOTS_FOR_GATHER = 4;
  */
 const JUNK_KEEP: Readonly<Record<string, number>> = {
   cobblestone: 64,
+  // Every harvested wheat drops seeds, and nothing used them up: 20 stacks
+  // filled the inventory and every craft came out with no room for its
+  // output (2026-10-05 17:05-17:15). Two stacks sow every field.
+  wheat_seeds: 128,
+  oak_sapling: 0,
+  birch_sapling: 0,
+  spruce_sapling: 0,
+  jungle_sapling: 0,
+  acacia_sapling: 0,
+  dark_oak_sapling: 0,
+  cherry_sapling: 0,
   cobbled_deepslate: 0,
   dirt: 0,
   gravel: 0,

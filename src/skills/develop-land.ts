@@ -6,6 +6,7 @@ import type { TaskSignals } from "../agent/scheduler.js";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { collectBlocks, placeItemAt } from "../minecraft/world.js";
 import { findItem } from "../minecraft/inventory.js";
+import { shedJunk } from "../minecraft/primitives.js";
 import { botLookup, developmentPlots, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
 import type { SkillResult } from "./skill-library.js";
 import type { BuildingDesign } from "../building/schema.js";
@@ -313,6 +314,9 @@ export class DevelopLandRunner {
       return { ok: false, status: "failed", errorCode: "PATH_UNREACHABLE", message: `could not reach home: ${travel.status}`, retryable: true, data };
     }
 
+    // Harvests bring seeds and saplings by the stack: shed the surplus so
+    // clearing and crafting have room.
+    await shedJunk(bot, [], signal).catch(() => 0);
     const next = this.next(home);
     if (next === null) return { ok: true, status: "completed", message: "The land around home is developed.", data };
     const survey = next.survey;

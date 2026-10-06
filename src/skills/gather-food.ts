@@ -921,6 +921,13 @@ export class GatherFoodRunner {
       }
       // Farm-fed food is progress: the next restore harvests what has grown.
       if (farmFed && have > data.carriedAtStart) {
+        // Store it: carried bread piled up four stacks deep (17:15).
+        if (have > FOOD_CARRY_RESERVE) {
+          await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+          if (this.stopped()) return this.interrupted(data);
+          const stored = await deliverCarriedItems(bot, this.opts.state, this.opts.storage, Object.keys(FOOD_ITEM_NAMES), this.opts.logger, this.signals?.signal, { keep: FOOD_CARRY_RESERVE });
+          data.delivered = stored.delivered;
+        }
         this.announce(`${have} food on hand and ${growing} wheat growing; no long hunt.`);
         return { ok: true, status: "completed", data, message: `farm-fed: ${have} food carried, ${growing} wheat growing` };
       }
