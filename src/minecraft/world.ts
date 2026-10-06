@@ -499,40 +499,30 @@ function touchesCraftedBlock(bot: Pick<Bot, "blockAt">, position: Vec3): boolean
     .some(([dx, dy, dz]) => CRAFTED_BLOCK.test(bot.blockAt(position.offset(dx!, dy!, dz!))?.name ?? ""));
 }
 
-/** Whether the log column through `position` ends in leaves, as a tree's trunk does. */
-function trunkHasLeaves(bot: Pick<Bot, "blockAt">, position: Vec3): boolean {
-  let top = position;
-  for (let i = 0; i < 32 && /_log$/.test(bot.blockAt(top.offset(0, 1, 0))?.name ?? ""); i++) top = top.offset(0, 1, 0);
-  const above = top.offset(0, 1, 0);
-  return [above, top.offset(1, 0, 0), top.offset(-1, 0, 0), top.offset(0, 0, 1), top.offset(0, 0, -1)]
-    .some((cell) => /_leaves$/.test(bot.blockAt(cell)?.name ?? ""));
-}
 
 export function dominantNearbyLog(bot: Pick<Bot, "findBlocks" | "blockAt" | "entity">): string {
-  const counts = new Map<string, number>();
-  // Every log seen, for when no trunk still carries leaves.
-  const allCounts = new Map<string, number>();
+  // Trees the collector would cut: a trunk standing on the ground, not part
+  // of a building. The village's oak frames outnumbered the birch woods
+  // (2026-10-06 02:43, 05:05), and later the floating upper halves of oaks
+  // cut at crop height over the fields did (08:04, 08:20): each time the
+  // wood restore chose oak, found no oak trunk it could cut within 64 blocks
+  // and went across the lake for some.
+  const trees = new Map<string, number>();
+  // Every log not in a building, for when no standing trunk is in view.
+  const loose = new Map<string, number>();
   try {
     const positions = bot.findBlocks({ matching: (block) => block !== null && /_log$/.test(block.name) && !block.name.startsWith("stripped_"), maxDistance: 64, count: 200 });
     for (const found of positions) {
       const position = new Vec3(found.x, found.y, found.z);
       const name = bot.blockAt(position)?.name;
-      // Only trees: the oak frames and windmill mast of the bot's own
-      // buildings outnumbered the birch woods, so the wood restore chose oak,
-      // found none it could cut nearby and went 100 blocks across a lake for
-      // some (2026-10-06 02:43, 05:05).
-      if (name === undefined) continue;
-      // A log beside planks, cobblestone, a fence or a door is part of a
-      // building: with the woods near home cleared, the fallback counted the
-      // village's oak frames and sent the bot across the lake again
-      // (2026-10-06 08:04).
-      if (!touchesCraftedBlock(bot, position)) allCounts.set(name, (allCounts.get(name) ?? 0) + 1);
-      if (trunkHasLeaves(bot, position)) counts.set(name, (counts.get(name) ?? 0) + 1);
+      if (name === undefined || touchesCraftedBlock(bot, position)) continue;
+      loose.set(name, (loose.get(name) ?? 0) + 1);
+      if (isTrunkBase(bot as Bot, position)) trees.set(name, (trees.get(name) ?? 0) + 1);
     }
   } catch { /* no world view yet */ }
   let best = "oak_log";
   let bestCount = 0;
-  for (const [name, count] of counts.size > 0 ? counts : allCounts) if (count > bestCount) { best = name; bestCount = count; }
+  for (const [name, count] of trees.size > 0 ? trees : loose) if (count > bestCount) { best = name; bestCount = count; }
   return best;
 }
 

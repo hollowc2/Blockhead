@@ -108,33 +108,22 @@ test("the state-id exposure check treats cave air as open and unloaded chunks as
   assert.equal(hasAirNeighbor(bot, new Vec3(15, 10, 0)), false, "the neighbor across the edge is unloaded, not air");
 });
 
-test("the dominant nearby log counts trees, not the bot's own log-framed buildings", () => {
-  // 2026-10-06 02:43, 05:05: building frames made oak "dominant"; the wood
-  // restore found no oak it could cut and went 100 blocks across a lake.
+test("the dominant nearby log counts standing trees, not building frames or floating cut trunks", () => {
+  // 2026-10-06 02:43, 05:05: building frames made oak "dominant"; 08:04 and
+  // 08:20: the upper halves of oaks cut at crop height over the fields did.
+  // Each time the wood restore found no oak trunk to cut and crossed a lake.
   const blocks = new Map<string, string>();
-  // Six oak frame columns under a plank roof.
-  for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3},68,0`, "oak_planks"); }
-  // Two birch trees.
+  for (let x = -10; x <= 40; x++) for (let z = -10; z <= 20; z++) blocks.set(`${x},63,${z}`, "grass_block");
+  // Six oak frame columns in plank walls.
+  for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3 + 1},${y},0`, "oak_planks"); }
+  // Four floating oak halves with leaves, cut below at crop height.
+  for (const x of [2, 6, 10, 14]) { for (let y = 67; y < 71; y++) blocks.set(`${x},${y},8`, "oak_log"); blocks.set(`${x},71,8`, "oak_leaves"); }
+  // Two standing birch trees.
   for (const x of [20, 25]) { for (let y = 64; y < 69; y++) blocks.set(`${x},${y},10`, "birch_log"); blocks.set(`${x},69,10`, "birch_leaves"); }
   const bot = {
     entity: { position: new Vec3(0, 64, 0) },
     findBlocks: () => [...blocks].filter(([, name]) => name.endsWith("_log")).map(([key]) => new Vec3(...(key.split(",").map(Number) as [number, number, number]))),
-    blockAt: (pos: Vec3) => ({ name: blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air" }),
-  } as unknown as Parameters<typeof dominantNearbyLog>[0];
-  assert.equal(dominantNearbyLog(bot), "birch_log");
-});
-
-test("with no leafy trees left, building logs still do not count as the local wood", () => {
-  // 2026-10-06 08:04: the birch woods near home were cleared; the fallback
-  // counted the village's oak frames and chose oak again.
-  const blocks = new Map<string, string>();
-  for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3 + 1},${y},0`, "oak_planks"); }
-  // Two leafless birch stumps.
-  for (const x of [20, 25]) for (let y = 64; y < 66; y++) blocks.set(`${x},${y},10`, "birch_log");
-  const bot = {
-    entity: { position: new Vec3(0, 64, 0) },
-    findBlocks: () => [...blocks].filter(([, name]) => name.endsWith("_log")).map(([key]) => new Vec3(...(key.split(",").map(Number) as [number, number, number]))),
-    blockAt: (pos: Vec3) => ({ name: blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air" }),
+    blockAt: (pos: Vec3) => { const name = blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air"; return { name, position: pos, boundingBox: name === "air" || name.endsWith("_leaves") ? "empty" : "block" }; },
   } as unknown as Parameters<typeof dominantNearbyLog>[0];
   assert.equal(dominantNearbyLog(bot), "birch_log");
 });
