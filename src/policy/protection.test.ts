@@ -100,6 +100,7 @@ test("inside the home region: natural terrain may be dug, built blocks only as t
   const bot = { entity: { position: inside }, health: 20, findBlocks: () => [] } as any;
   assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "oak_leaves" }).allowed, true);
   assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "stone" }).allowed, true);
+  assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "farmland" }).allowed, true);
   assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "birch_planks" }).allowed, false);
   assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "birch_planks", ownBuildReplacement: true, projectId: "p1" }).allowed, true);
   assert.equal(revalidateAction(bot, "dig", inside, config, region, { blockName: "chest", ownBuildReplacement: true, projectId: "p1" }).allowed, false);

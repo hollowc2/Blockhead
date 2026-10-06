@@ -679,7 +679,7 @@ export class DevelopLandRunner {
     const padY = next.kind === "level_field" ? next.padY : modalGround(survey);
     const origin = { x: Math.floor(home.x) + survey.offset.dx - PLOT_HALF, y: padY + 1, z: Math.floor(home.z) + survey.offset.dz - PLOT_HALF };
     this.opts.logger.info({ plot: survey.offset, padY }, "develop: levelling a field");
-    const level = await this.levelSite(origin, 5, signal);
+    const level = survey.maxGround === survey.minGround ? { cut: 0, filled: 0 } : await this.levelSite(origin, 5, signal);
     if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
     const after = surveyPlot(home, survey.offset, botLookup(bot));
     const complete = after.groundColumns >= survey.groundColumns && after.minGround === padY && after.maxGround === padY;
