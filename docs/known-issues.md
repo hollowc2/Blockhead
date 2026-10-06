@@ -220,3 +220,10 @@ a real-ground work pose are counted as unreachable immediately. Freezing
 scaffolding alone still let the pathfinder climb into leaves and fail its
 return home during live verification. This avoids canopy approaches and
 spending the collection timeout on clearly unreachable high logs.
+
+The home destruction policy also needs to classify farmland as terrain (as
+it does dirt and crops). Otherwise levelling silently skips every farmland
+cut. A policy regression verifies farmland is allowed while paths, cobble,
+planks, chests and torches remain protected. Pathfinder natural-block
+classification is unchanged. Levelling now logs individual skipped cuts
+and the resulting ground count and height range.

@@ -434,7 +434,7 @@ export class DevelopLandRunner {
     const cutTargets = plan.cut.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
     if (cutTargets.length > 0) {
       try {
-        await collectBlocks(bot, cutTargets, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, undefined, signal);
+        await collectBlocks(bot, cutTargets, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, (block, err) => this.opts.logger.warn({ at: block.position, block: block.name, err: String(err) }, "develop: levelling cut skipped"), signal);
       } catch (err) {
         if (signal?.aborted === true) throw err;
         this.opts.logger.warn({ err: String(err) }, "develop: levelling cut stopped");
@@ -684,7 +684,7 @@ export class DevelopLandRunner {
     const after = surveyPlot(home, survey.offset, botLookup(bot));
     const complete = after.groundColumns >= survey.groundColumns && after.minGround === padY && after.maxGround === padY;
     if (!complete) this.levelSkip.add(`${survey.offset.dx},${survey.offset.dz}`);
-    this.opts.logger.info({ plot: survey.offset, padY, ...level, complete }, "develop: field levelled");
+    this.opts.logger.info({ plot: survey.offset, padY, ...level, complete, ground: after.groundColumns, minGround: after.minGround, maxGround: after.maxGround }, "develop: field levelled");
     if (!complete && next.kind === "field") return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
 
     // A hoe is made from carried wood; fetch some first when there is none.

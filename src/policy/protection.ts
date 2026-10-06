@@ -28,6 +28,8 @@ export type BlockClass = "terrain" | "structural" | "infrastructure";
 const TERRAIN_BLOCK_NAMES: ReadonlySet<string> = new Set([
   "dirt",
   "grass_block",
+  // Tilled soil is terrain too: field levelling cuts it before re-sowing.
+  "farmland",
   "stone",
   "deepslate",
   "tuff",

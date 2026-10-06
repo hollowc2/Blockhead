@@ -120,3 +120,11 @@ test("the boundary refuses digs and fights only at critical health; animals are 
   const starving = { ...at(1), food: 0 };
   assert.equal(revalidateAction(starving, "dig", outside, config, region, { blockName: "dirt" }).allowed, true, "no regen to wait for: it may dig into a shelter");
 });
+
+test("field levelling may cut farmland in the home region while fixtures stay protected", () => {
+  assert.equal(classifyBlock("farmland"), "terrain");
+  assert.equal(checkBlockDestruction("farmland", inside, region, false).allowed, true);
+  for (const block of ["dirt_path", "cobblestone", "oak_planks", "chest", "torch"]) {
+    assert.equal(checkBlockDestruction(block, inside, region, false).allowed, false, block);
+  }
+});
