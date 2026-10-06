@@ -4,7 +4,7 @@ import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import { bareName, isRawLogItemName, itemsSummary } from "../minecraft/inventory.js";
 import { countStoredItems } from "../minecraft/containers.js";
-import { dominantNearbyLog } from "../minecraft/world.js";
+import { dominantNearbyLog, nearbyLogCensus } from "../minecraft/world.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { Scheduler } from "./scheduler.js";
 import type { TaskSignals } from "./scheduler.js";
@@ -347,6 +347,7 @@ export class StockpileManager {
     switch (deficit.kind) {
       case "wood":
         // "Wood" is whatever trees grow here, not specifically oak.
+        this.opts.logger.info(nearbyLogCensus(this.opts.bot), "wood restore: trees around");
         return this.opts.collect.run(dominantNearbyLog(this.opts.bot), deficit.deficit, options);
       case "food":
         // Crisis runs may search past the night cap: the food floor is

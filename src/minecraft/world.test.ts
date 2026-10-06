@@ -118,6 +118,8 @@ test("the dominant nearby log counts standing trees, not building frames or floa
   for (let i = 0; i < 6; i++) for (let y = 64; y < 68; y++) { blocks.set(`${i * 3},${y},0`, "oak_log"); blocks.set(`${i * 3 + 1},${y},0`, "oak_planks"); }
   // Four floating oak halves with leaves, cut below at crop height.
   for (const x of [2, 6, 10, 14]) { for (let y = 67; y < 71; y++) blocks.set(`${x},${y},8`, "oak_log"); blocks.set(`${x},71,8`, "oak_leaves"); }
+  // Bare oak log pillars on the ground (an unfinished build, no planks yet).
+  for (const x of [30, 32, 34, 36]) for (let y = 64; y < 67; y++) blocks.set(`${x},${y},-6`, "oak_log");
   // Two standing birch trees.
   for (const x of [20, 25]) { for (let y = 64; y < 69; y++) blocks.set(`${x},${y},10`, "birch_log"); blocks.set(`${x},69,10`, "birch_leaves"); }
   const bot = {
