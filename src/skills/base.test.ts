@@ -564,3 +564,15 @@ test("clearing leftover scaffolding uses the own-build dig the protected region 
   });
   assert.deepEqual(mutations.map((m) => [m.blockName, m.ownBuildReplacement === true]), [["cobblestone", true], ["dirt", false]]);
 });
+
+test("a base shell cell out of reach is walked to before it is placed", async () => {
+  // 2026-10-06 05:34, 06:00: a repair placed a ground-level wall cell from the
+  // base roof, 7 blocks away; the server ignored it and the repair failed.
+  const runner = designTestRunner({ "0,63,8": "stone", "0,64,8": "air" });
+  const moves: string[] = [];
+  const internals = runner as unknown as { moveWithinSimpleBuildReach: (cell: Vec3) => Promise<{ ok: boolean }>; placeShellCell: (item: object, cell: Vec3, placed: ReadonlySet<string>) => Promise<unknown>; stopRequested: boolean };
+  internals.moveWithinSimpleBuildReach = async (cell) => { moves.push(`${cell.x},${cell.y},${cell.z}`); return { ok: true }; };
+  internals.stopRequested = true;
+  await internals.placeShellCell({ name: "oak_planks" }, new Vec3(0, 64, 8), new Set());
+  assert.deepEqual(moves, ["0,64,8"]);
+});

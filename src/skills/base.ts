@@ -1373,6 +1373,18 @@ export class BaseBuilderRunner {
   }
 
   /** Move close enough to a simple-build target for a placement packet. */
+  /**
+   * Place one base shell cell, walking into reach first. Placing from where
+   * the bot stood worked for a fresh shell built from inside; a repair after
+   * "home" put the bot on the roof was 7 blocks from a ground-level wall cell,
+   * and the server ignored it twice (2026-10-06 05:34, 06:00).
+   */
+  private async placeShellCell(item: Item, cell: Vec3, placed: ReadonlySet<string>): Promise<Block | null> {
+    await this.moveWithinSimpleBuildReach(cell);
+    if (this.stopRequested) return null;
+    return placeAtCell(this.opts.bot, item, cell, placed, this.signals?.signal);
+  }
+
   private async moveWithinSimpleBuildReach(cell: Vec3, approachIndex = 0): Promise<{ ok: boolean; status: string; destination: Vec3 | null }> {
     const bot = this.opts.bot;
     const self = bot.entity;
@@ -1534,7 +1546,7 @@ export class BaseBuilderRunner {
       if (!isAir(bot.blockAt(cell))) continue;
       const plank = findPlanksItem(bot);
       if (plank === null) break;
-      const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);
+      const block = await this.placeShellCell(plank, cell, placedCells);
       if (block !== null) {
         placedCells.add(cellKey(cell));
         data.placedWalls += 1;
@@ -1549,7 +1561,7 @@ export class BaseBuilderRunner {
           ? await ensureCreativeItem(bot, "oak_planks", 1, this.signals?.signal, this.opts.logger)
           : findPlanksItem(bot);
         if (plank === null) break;
-        const block = await placeAtCell(bot, plank, cell, placedCells, this.signals?.signal);
+        const block = await this.placeShellCell(plank, cell, placedCells);
         if (block !== null) {
           placedCells.add(cellKey(cell));
           data.placedRoof += 1;
