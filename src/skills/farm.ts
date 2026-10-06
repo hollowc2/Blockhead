@@ -30,8 +30,12 @@ const PLOT_OFFSETS: ReadonlyArray<{ dx: number; dz: number }> = [
   { dx: 8, dz: 0 },
   { dx: 0, dz: -8 },
 ];
-/** How far out land development lays plots (rings every 8 blocks). */
-const DEVELOP_RINGS = 3;
+/**
+ * How far out land development lays plots (rings every 8 blocks, out to
+ * 48). Three rings (24 blocks) were all developed by 21:46 on 2026-10-05
+ * and the bot stood idle; nearest-first order keeps growth compact.
+ */
+const DEVELOP_RINGS = 6;
 
 export interface PlotOffset { dx: number; dz: number }
 

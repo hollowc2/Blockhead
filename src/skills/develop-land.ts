@@ -29,12 +29,26 @@ const CLEAR_HEIGHT = 2;
 /** A plot with fewer ground columns than this (a lake, a cliff) is skipped. */
 const MIN_GROUND_COLUMNS = 18;
 const TRAVEL_TIMEOUT_MS = 90_000;
+/** How long an idle check's answer is reused. */
+const WORK_MEMO_MS = 60_000;
 const CLEAR_TIMEOUT_MS = 180_000;
 
 /** Ground a field can be made from (or already is). */
 const FIELD_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|dirt_path|farmland|mycelium)$/;
 /** Natural cover cleared off a field: trees, saplings, brush and flowers. */
 const CLEARABLE = /(_log|_wood|_leaves|_sapling|vine|bush|^short_grass$|^tall_grass$|^grass$|^fern$|^large_fern$|^dandelion$|^poppy$|_tulip$|^azure_bluet$|^oxeye_daisy$|^cornflower$|^allium$|^blue_orchid$|^lily_of_the_valley$|^brown_mushroom$|^red_mushroom$|^sweet_berry_bush$|^pumpkin$|^melon$)/;
+
+/** A lookup that reads each cell from the world once (field and site surveys overlap). */
+function cachedLookup(lookup: FarmLookup): FarmLookup {
+  const cache = new Map<string, ReturnType<FarmLookup>>();
+  return (x, y, z) => {
+    const key = `${x},${y},${z}`;
+    if (cache.has(key)) return cache.get(key)!;
+    const block = lookup(x, y, z);
+    cache.set(key, block);
+    return block;
+  };
+}
 
 /** Crops on farmland. */
 const CROP = /^(wheat|carrots|potatoes|beetroots)$/;
@@ -282,8 +296,18 @@ export class DevelopLandRunner {
     return { cut, filled };
   }
 
+  /** The last idle-check answer, reused for a minute (surveying every ring is slow). */
+  private workMemo: { at: number; work: boolean } | null = null;
+
   /** True when a plot within the development rings is left to develop. */
   hasWork(): boolean {
+    if (this.workMemo !== null && Date.now() - this.workMemo.at < WORK_MEMO_MS) return this.workMemo.work;
+    const work = this.computeHasWork();
+    this.workMemo = { at: Date.now(), work };
+    return work;
+  }
+
+  private computeHasWork(): boolean {
     const home = this.opts.state.home;
     const self = this.opts.bot.entity?.position;
     if (home === null || self === undefined || self === null) return false;
@@ -296,7 +320,7 @@ export class DevelopLandRunner {
 
   private next(home: { x: number; y: number; z: number }): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, botLookup(this.opts.bot), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0 });
+    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0 });
   }
 
   async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
@@ -317,6 +341,7 @@ export class DevelopLandRunner {
     // Harvests bring seeds and saplings by the stack: shed the surplus so
     // clearing and crafting have room.
     await shedJunk(bot, [], signal).catch(() => 0);
+    this.workMemo = null;
     const next = this.next(home);
     if (next === null) return { ok: true, status: "completed", message: "The land around home is developed.", data };
     const survey = next.survey;

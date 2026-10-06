@@ -128,3 +128,14 @@ test("away from home there may be work: the run walks home and judges there", as
   const runner = new DevelopLandRunner({ bot, state: { home: { x: 65, y: 96, z: 51, dimension: "overworld" } }, logger: {} } as never);
   assert.equal(runner.hasWork(), true);
 });
+
+test("development keeps going outward once the inner rings are done", () => {
+  // 21:46 (2026-10-05): every plot within 24 blocks was developed and the
+  // bot stood idle.
+  const plots = developmentPlots();
+  assert.ok(plots.some((p) => Math.max(Math.abs(p.dx), Math.abs(p.dz)) === 48), "plots out to 48 blocks");
+  const all: Record<string, FarmBlock> = {};
+  for (const p of plots) if (Math.max(Math.abs(p.dx), Math.abs(p.dz)) <= 24) all[`${p.dx},63,${p.dz}`] = { name: "farmland" };
+  const next = nextPlotToDevelop(HOME, world(all));
+  assert.ok(next !== null && Math.max(Math.abs(next.offset.dx), Math.abs(next.offset.dz)) === 32, JSON.stringify(next?.offset));
+});
