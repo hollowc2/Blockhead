@@ -66,9 +66,18 @@ fights it hit-and-back: one hit, step out of fuse range, repeat.
 
 ### Open
 
-- **Development deforests home.** No standing tree is left within 64 blocks,
-  so wood trips go further each time. Replanting (saplings in a tree farm)
-  is not implemented. Saplings are currently junk (`JUNK_KEEP` 0).
+- **Development deforests home** (addressed 10:23 by the tree farm below).
+
+### Added: tree farm (2026-10-06 10:23)
+
+When fewer than 12 standing trees are left within 64 blocks of home, development
+sets aside up to two outer plots for trees. They are saved as named locations
+`tree_farm_1`/`tree_farm_2` and planted with 5 saplings each (corners and
+centre). The wood restore fells them like any tree, and empty spots are
+replanted. Saplings come from the chest, from drops, or from broken leaves;
+16 of each kind are kept instead of shed. Verified live: the first plot (-8,-40)
+was fully planted by 10:28, the second (-8,40) was started next. Watch that
+the wood restore starts cutting there once the saplings grow.
 - **"Kicked for floating too long"** (00:14, 03:43): mid-air with a steady
   fall velocity during wood trips. The bot reconnects within a second. Our
   code never toggles physics, so the cause is not understood.
