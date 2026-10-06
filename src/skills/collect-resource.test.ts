@@ -71,3 +71,13 @@ test("a site pass stops at the run's target instead of mining the whole batch", 
   assert.equal(cobblestone, 3, `mined ${cobblestone}`);
   assert.equal(visit.gained, 3);
 });
+
+test("remembered tree sites go nearest first, and far ones are left to the nearby search", async () => {
+  // Death 87 (22:33, 2026-10-05): a wood restore crossed a lake to a log
+  // site 60 blocks out and died in the water.
+  const { knownSitesInOrder } = await import("./collect-resource.js");
+  const sites = [{ id: 1, x: 44, y: 94, z: 132 }, { id: 2, x: 80, y: 96, z: 70 }, { id: 3, x: 70, y: 96, z: 90 }];
+  const bot = { x: 73, y: 96, z: 79 };
+  assert.deepEqual(knownSitesInOrder(sites, bot, "oak_log").map((s) => s.id), [2, 3]);
+  assert.deepEqual(knownSitesInOrder(sites, bot, "coal_ore").map((s) => s.id), [2, 3, 1], "ore sites are kept, nearest first");
+});

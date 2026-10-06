@@ -580,7 +580,7 @@ export class CollectResourceRunner {
     if (worldId === null) return null;
 
     let carried = countItem(this.opts.bot, carriedName);
-    for (const site of this.opts.sites.listByResource(worldId, dimension, bare)) {
+    for (const site of knownSitesInOrder(this.opts.sites.listByResource(worldId, dimension, bare), this.opts.bot.entity?.position ?? null, bare)) {
       this.checkInterrupt();
       if (this.stopRequested) return null;
       if (carried >= quantity) return null;
@@ -1130,4 +1130,21 @@ function abortReason(abort: Abort, expedition: boolean): string {
     default:
       return abort.reason;
   }
+}
+
+/** Logs from a remembered tree site farther than this are left to the nearby search. */
+const LOG_SITE_MAX_DISTANCE = 40;
+
+/**
+ * Remembered sites to visit, nearest first. Trees grow everywhere around
+ * home, so a log site far away is skipped in favour of the nearby search:
+ * a wood restore crossed a lake for a site 60 blocks out and died in the
+ * water (death 87, 22:33, 2026-10-05).
+ */
+export function knownSitesInOrder<T extends { x: number; y: number; z: number }>(sites: readonly T[], from: { x: number; y: number; z: number } | null, resource: string): T[] {
+  if (from === null) return [...sites];
+  const distance = (site: T) => Math.hypot(site.x - from.x, site.z - from.z);
+  return [...sites]
+    .filter((site) => !/_log$/.test(resource) || distance(site) <= LOG_SITE_MAX_DISTANCE)
+    .sort((a, b) => distance(a) - distance(b));
 }
