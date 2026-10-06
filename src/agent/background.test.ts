@@ -834,6 +834,14 @@ test("free time with every stockpile at target develops the land; a shortage doe
   developWork = true;
   await h.manager.tick();
   assert.ok(!h.enqueued.some((t) => t.type === "develop_land"), "restocking comes first");
+
+  // 2026-10-06 00:32: the wood restore failed (no oak left near home) and,
+  // on cooldown, kept development off; the bot stood idle in daylight.
+  h.bus.emit("task.failed", { task: { ...failedFoodTask(), id: "fail-wood-1", parameters: { kind: "wood", target: 64, current: 10, deficit: 54 }, objective: "Restore wood stockpile to 64", priority: TaskPriority.BACKGROUND } });
+  h.enqueued.length = 0;
+  h.queued.length = 0;
+  await h.manager.tick();
+  assert.ok(h.enqueued.some((t) => t.type === "develop_land"), "a shortage on cooldown does not stop development");
   h.manager.stop();
 });
 

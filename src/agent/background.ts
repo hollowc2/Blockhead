@@ -512,7 +512,10 @@ export class BackgroundManager {
   /** Enqueue base repair or one land-development step when the bot is free. True when it enqueued. */
   private async developWhenIdle(snapshot: StockpileSnapshot): Promise<boolean> {
     const develop = this.opts.developLand;
-    if (develop === undefined || snapshot.deficits.length > 0) return false;
+    // A shortage waiting out its restore cooldown does not hold the land up:
+    // with wood short and no oak left near home (development had cleared it)
+    // the bot stood idle in daylight for 15 minutes (2026-10-06 00:32).
+    if (develop === undefined || snapshot.deficits.some((deficit) => !this.kindBlocked(deficit.kind))) return false;
     if (this.opts.state.timePhase === "night" || ((this.opts.bot as { thunderState?: number }).thunderState ?? 0) > 0) return false;
     const scheduler = this.opts.scheduler;
     if (scheduler.active !== null || scheduler.queued.some((task) => task.status === TaskStatus.QUEUED)) return false;
