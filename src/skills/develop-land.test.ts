@@ -279,3 +279,15 @@ test("levelling never cuts through a crafted obstruction or cuts paths", async (
   const plan = levelPlan({ x: 0, z: 0 }, 63, 2, world({ "0,65,0": { name: "oak_planks" }, "0,64,0": { name: "dirt" }, "1,64,1": { name: "dirt_path" } }));
   assert.deepEqual(plan, { cut: [], fill: [] });
 });
+
+
+test("existing fields with a lighting fixture still qualify for levelling", async () => {
+  const { nextDevelopment, levelPlan } = await import("./develop-land.js");
+  const land = developed(0);
+  land["-8,64,0"] = { name: "torch" };
+  land["-9,64,0"] = { name: "farmland" };
+  const next = nextDevelopment(HOME, world(land));
+  assert.equal(next?.kind, "level_field");
+  assert.equal(next?.survey.groundColumns, 24);
+  assert.ok(!levelPlan({ x: -10, z: -2 }, 63, 5, world(land)).cut.some(c => c.x === -8 && c.z === 0));
+});

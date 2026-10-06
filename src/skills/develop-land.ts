@@ -271,7 +271,7 @@ export function nextDevelopment(
       const leftovers = surveyPlot(home, offset, lookup, 4).leftoverLogs.filter((log) =>
         !touchesReserved(log.x, log.z, 0, blocked) && !touchesCraftedBlock({ blockAt: (at: Vec3) => lookup(at.x, at.y, at.z) }, new Vec3(log.x, log.y, log.z)));
       if (leftovers.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push({ ...field, leftoverLogs: leftovers });
-      if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.groundColumns === 25 && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
+      if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.groundColumns >= MIN_GROUND_COLUMNS && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
       return;
     }
     if (touchesReserved(cx, cz, PLOT_HALF, blocked)) return;
@@ -682,7 +682,7 @@ export class DevelopLandRunner {
     const level = await this.levelSite(origin, 5, signal);
     if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
     const after = surveyPlot(home, survey.offset, botLookup(bot));
-    const complete = after.groundColumns === 25 && after.minGround === padY && after.maxGround === padY;
+    const complete = after.groundColumns >= survey.groundColumns && after.minGround === padY && after.maxGround === padY;
     if (!complete) this.levelSkip.add(`${survey.offset.dx},${survey.offset.dz}`);
     this.opts.logger.info({ plot: survey.offset, padY, ...level, complete }, "develop: field levelled");
     if (!complete && next.kind === "field") return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };

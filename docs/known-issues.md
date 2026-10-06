@@ -210,3 +210,7 @@ deaths from towering to see logs.
 
 Regression tests cover crop heights, cut/fill plans, slope limits, repair
 priority and skips, reserved cells, tree farms, gap trunks and building frames.
+
+Live verification also found that most inner fields have one torch column.
+Repair accepts those surveyed footprints, preserving the fixture and levelling
+the natural ground columns rather than requiring 25 unobstructed columns.
