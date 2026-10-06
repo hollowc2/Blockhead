@@ -47,6 +47,8 @@ import { isCreativeMode } from "../minecraft/mode.js";
 const GOAL_MAX_DEATHS = 2;
 /** No background goal is started within this long of a death. */
 const GOAL_AFTER_DEATH_PAUSE_MS = 60 * 60_000;
+/** Nor while GOAL_MAX_DEATHS deaths fall within this window. */
+const GOAL_UNSAFE_WINDOW_MS = 6 * 60 * 60_000;
 const RE_CHECK_DELAY_MS = 1_000;
 
 /** Horizontal standoff from home at which the bot counts as "home". */
@@ -949,8 +951,12 @@ export class BackgroundManager {
     const now = this.now();
     // No expedition right after a death: the respawned bot has stone tools
     // and no armor, and the last trip is what killed it.
-    const lastDeath = this.opts.recentDeathTimes?.()[0];
+    const deathTimes = this.opts.recentDeathTimes?.() ?? [];
+    const lastDeath = deathTimes[0];
     if (lastDeath !== undefined && now - lastDeath < GOAL_AFTER_DEATH_PAUSE_MS) return false;
+    // Two deaths in the last few hours: stay home longer. The 1-hour pause
+    // alone ran out at 20:27 and the expedition died again at 20:30.
+    if (deathTimes.filter((at) => now - at < GOAL_UNSAFE_WINDOW_MS).length >= GOAL_MAX_DEATHS) return false;
     if (this.lastBackgroundGoalAt !== null && now - this.lastBackgroundGoalAt < cooldownMs) return false;
 
     this.lastBackgroundGoalAt = now;

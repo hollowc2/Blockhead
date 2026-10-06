@@ -195,6 +195,16 @@ export class DeathRecoveryRunner {
     //    tools. The emergency priority already outranks ordinary work.
     //    The trip breaks off when the site turns out to be guarded or the bot
     //    is hurt on the way: dying again there loses the respawn kit too.
+    // A site near another recent death is a proven death trap: a recovery
+    // trip back into the caves at 9,48,6 died there twice in four minutes
+    // (deaths 85, 86 at 20:36 and 20:40, 2026-10-05).
+    const worldId = this.opts.state.worldId;
+    const earlier = worldId === null ? null : recentDeathNearby(this.opts.deaths.list(worldId, 10), params, Date.now());
+    if (earlier !== null) {
+      logger.warn({ deathId: params.deathId, earlierDeathId: earlier.id }, "death site is near another recent death; not going back");
+      return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
+    }
+
     let guarded: string | null = null;
     const travel = await travelAndWait(bot, { x: params.x, y: params.y, z: params.z }, {
       timeoutMs: RECOVERY_TRAVEL_TIMEOUT_MS,
@@ -533,6 +543,28 @@ const SPARE_TOOLS = {
   axe: ["iron_axe", "stone_axe", "wooden_axe"],
   pickaxe: ["iron_pickaxe", "stone_pickaxe", "wooden_pickaxe"],
 } as const;
+
+/** Another death this close to a site makes the site a trap. */
+const DEATH_TRAP_RADIUS = 24;
+/** ...when it was this recent. */
+const DEATH_TRAP_WINDOW_MS = 2 * 60 * 60_000;
+
+/**
+ * An earlier death (not `site` itself) within DEATH_TRAP_RADIUS of the site
+ * in the last DEATH_TRAP_WINDOW_MS, or null.
+ */
+export function recentDeathNearby(
+  deaths: readonly { id: number; x: number; y: number; z: number; createdAt: string }[],
+  site: { deathId: number; x: number; y: number; z: number },
+  now: number,
+): { id: number } | null {
+  for (const death of deaths) {
+    if (death.id === site.deathId || death.id > site.deathId) continue;
+    if (now - Date.parse(death.createdAt) > DEATH_TRAP_WINDOW_MS) continue;
+    if (Math.hypot(death.x - site.x, death.y - site.y, death.z - site.z) <= DEATH_TRAP_RADIUS) return { id: death.id };
+  }
+  return null;
+}
 
 /**
  * Why walking to the death site is too dangerous right now, or null: the bot

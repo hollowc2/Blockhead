@@ -298,3 +298,18 @@ test("a creeper close by is evaded before the zombie in reach is fought", async 
   assert.ok(h.travels.length >= 1, "an evasion trip");
   assert.notEqual(h.attacked[0], "zombie", "did not open on the zombie");
 });
+
+test("a death site near another recent death is a trap, not a recovery trip", async () => {
+  // Deaths 85 and 86 (20:36, 20:40, 2026-10-05): recovery trips back into
+  // the caves at 9,48,6 where death 83 had happened an hour before.
+  const { recentDeathNearby } = await import("./death-recovery.js");
+  const now = Date.parse("2026-10-06T03:36:00Z");
+  const deaths = [
+    { id: 84, x: 2, y: 52, z: 8, createdAt: "2026-10-06T03:30:51Z" },
+    { id: 83, x: 9, y: 48, z: 6, createdAt: "2026-10-06T02:27:29Z" },
+    { id: 70, x: 9, y: 48, z: 6, createdAt: "2026-10-05T20:00:00Z" },
+  ];
+  assert.deepEqual(recentDeathNearby(deaths, { deathId: 84, x: 2, y: 52, z: 8 }, now), { id: 83 });
+  assert.equal(recentDeathNearby(deaths, { deathId: 84, x: 200, y: 64, z: 8 }, now), null, "far away");
+  assert.equal(recentDeathNearby(deaths.slice(0, 1).concat(deaths.slice(2)), { deathId: 84, x: 2, y: 52, z: 8 }, now), null, "too long ago");
+});

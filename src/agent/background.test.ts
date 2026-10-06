@@ -877,5 +877,14 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
   await h.manager.tick();
   assert.equal(cancelled.length, 1);
   assert.match(cancelled[0]!, /2 deaths/);
+
+  // Past the 1-hour pause, two deaths in the last few hours still keep the
+  // expedition off (the pause ran out at 20:27 and it died again at 20:30).
+  started.length = 0;
+  deaths = [now - 70 * 60_000, now - 120 * 60_000];
+  h.advance(10 * 60 * 60_000);
+  deaths = [h.options.now!() - 70 * 60_000, h.options.now!() - 120 * 60_000];
+  await h.manager.tick();
+  assert.deepEqual(started, [], "two deaths in six hours");
   h.manager.stop();
 });
