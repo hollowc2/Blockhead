@@ -245,3 +245,152 @@ test("a smelt step fetches fuel from the chest when none is carried", async () =
   assert.deepEqual(fetched, [1]);
   assert.match(failure?.reason ?? "", /no furnace/, "got as far as the furnace");
 });
+
+function stockedCatalog(stock: Record<string, number>): RecipeCatalog {
+  return {
+    ...catalog,
+    available: (item) => stock[item] ?? 0,
+    nameForId: (id) => id === 21 ? "iron_chestplate" : catalog.nameForId(id),
+    recipesProducing: (item) => item === "iron_chestplate"
+      ? [recipe(21, 1, [[15, -8], [21, 1]], true)]
+      : catalog.recipesProducing(item),
+  };
+}
+
+test("chestplate uses five existing ingots and smelts only three raw iron", () => {
+  const result = resolvePlan("iron_chestplate", 1, stockedCatalog({ iron_ingot: 5, raw_iron: 4, coal: 1 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [
+    { kind: "fuel", quantity: 1 },
+    { kind: "smelt", item: "iron_ingot", quantity: 3 },
+    { kind: "craft", item: "iron_chestplate", quantity: 1, table: true },
+  ]);
+});
+
+test("stocked ingots skip mining, fuel and smelting entirely", () => {
+  const result = resolvePlan("iron_chestplate", 1, stockedCatalog({ iron_ingot: 8 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [{ kind: "craft", item: "iron_chestplate", quantity: 1, table: true }]);
+  assert.equal(result.plan.needsFurnace, false);
+});
+
+test("partially completed top-level smelting produces only the ingot shortfall", () => {
+  const result = resolvePlan("iron_ingot", 11, stockedCatalog({ iron_ingot: 7, raw_iron: 4, coal: 1 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [
+    { kind: "fuel", quantity: 1 },
+    { kind: "smelt", item: "iron_ingot", quantity: 4 },
+  ]);
+});
+
+test("already-crafted outputs and ingredients satisfy the plan without new work", () => {
+  const result = resolvePlan("iron_chestplate", 1, stockedCatalog({ iron_chestplate: 1 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, []);
+});
+
+test("a partial ore stock plans a total target rather than its shortfall", () => {
+  const result = resolvePlan("iron_chestplate", 1, stockedCatalog({ raw_iron: 4 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps[0], { kind: "gather", item: "iron_ore", quantity: 8 });
+});
+
+test("rounded recipe surplus and shared ingredients are reserved across branches", () => {
+  const shared: RecipeCatalog = {
+    ...stockedCatalog({ oak_planks: 2 }),
+    nameForId: (id) => id === 40 ? "test_item" : catalog.nameForId(id),
+    recipesProducing: (item) => item === "test_item"
+      ? [recipe(40, 1, [[10, -2], [11, -2], [40, 1]], true)]
+      : catalog.recipesProducing(item),
+  };
+  const result = resolvePlan("test_item", 1, shared);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [
+    { kind: "gather", item: "oak_log", quantity: 1 },
+    { kind: "craft", item: "oak_planks", quantity: 1, table: false },
+    { kind: "craft", item: "stick", quantity: 1, table: false },
+    { kind: "craft", item: "test_item", quantity: 1, table: true },
+  ]);
+});
+
+test("gather runner receives carried stock plus shortfall, and only observed delivery is booked", async () => {
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const carried = [{ name: "raw_iron", count: 4 }];
+  const targets: number[] = [];
+  const runner = new EnsureItemRunner({
+    bot: { inventory: { items: () => carried } }, config: {},
+    collect: { run: async (_item: string, target: number) => {
+      targets.push(target);
+      carried.length = 0;
+      return { ok: true, status: "completed", data: { gathered: 4, delivered: 8 } };
+    } },
+  } as unknown as ConstructorParameters<typeof EnsureItemRunner>[0]);
+  const internal = runner as unknown as {
+    stored: Record<string, number>;
+    mode: string;
+    stepGather: (step: { item: string; quantity: number }, data: { gathered: number }) => Promise<unknown>;
+  };
+  internal.stored = { raw_iron: 2 };
+  internal.mode = "ensure";
+  assert.equal(await internal.stepGather({ item: "iron_ore", quantity: 10 }, { gathered: 0 }), null);
+  assert.deepEqual(targets, [8], "gather 4 new raw iron, keeping 2 already stored");
+  assert.equal(internal.stored.raw_iron, 10);
+});
+
+test("existing finished tools reduce the top-level craft count", () => {
+  const result = resolvePlan("iron_pickaxe", 3, stockedCatalog({ iron_pickaxe: 2, iron_ingot: 3, stick: 2 }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [{ kind: "craft", item: "iron_pickaxe", quantity: 1, table: true }]);
+});
+
+test("whole-craft surplus supplies a later sibling without another log", () => {
+  const shared: RecipeCatalog = {
+    ...catalog,
+    nameForId: (id) => id === 40 ? "test_item" : catalog.nameForId(id),
+    recipesProducing: (item) => item === "test_item"
+      ? [recipe(40, 1, [[10, -6], [11, -2], [40, 1]], true)]
+      : catalog.recipesProducing(item),
+  };
+  const result = resolvePlan("test_item", 1, shared);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [
+    { kind: "gather", item: "oak_log", quantity: 2 },
+    { kind: "craft", item: "oak_planks", quantity: 2, table: false },
+    { kind: "craft", item: "stick", quantity: 1, table: false },
+    { kind: "craft", item: "test_item", quantity: 1, table: true },
+  ]);
+});
+
+test("coal reserved for a recipe is replenished before smelting burns coal first", () => {
+  const shared: RecipeCatalog = {
+    ...stockedCatalog({ coal: 1, charcoal: 1, raw_iron: 1 }),
+    nameForId: (id) => id === 40 ? "test_item" : id === 41 ? "coal" : catalog.nameForId(id),
+    recipesProducing: (item) => item === "test_item"
+      ? [recipe(40, 1, [[41, -1], [15, -1], [40, 1]], true)]
+      : catalog.recipesProducing(item),
+  };
+  const result = resolvePlan("test_item", 1, shared);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.plan.steps, [
+    { kind: "fuel", quantity: 3 },
+    { kind: "smelt", item: "iron_ingot", quantity: 1 },
+    { kind: "craft", item: "test_item", quantity: 1, table: true },
+  ]);
+});
+
+test("a gather result without delivery evidence cannot invent stored ore", async () => {
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const runner = new EnsureItemRunner({
+    bot: { inventory: { items: () => [] } }, config: {},
+    collect: { run: async () => ({ ok: true, status: "completed" }) },
+  } as unknown as ConstructorParameters<typeof EnsureItemRunner>[0]);
+  const internal = runner as unknown as {
+    stored: Record<string, number>;
+    mode: string;
+    stepGather: (step: { item: string; quantity: number }, data: { gathered: number }) => Promise<unknown>;
+  };
+  internal.stored = {};
+  internal.mode = "ensure";
+  await internal.stepGather({ item: "iron_ore", quantity: 4 }, { gathered: 0 });
+  assert.equal(internal.stored.raw_iron, 0);
+});

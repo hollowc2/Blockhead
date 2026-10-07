@@ -274,74 +274,129 @@ function okPlan(steps: EnsureStep[], needsTable = false, needsFurnace = false): 
  * carry *craft counts*, and gather/hunt/smelt steps carry item counts.
  */
 export function resolvePlan(item: string, quantity: number, catalog: RecipeCatalog, depth = 0): PlanResult {
-  const bare = bareName(item);
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    return { ok: false, errorCode: "INVALID_RESOURCE", reason: `invalid quantity ${quantity} for '${bare}'` };
-  }
-  if (depth > MAX_PLAN_DEPTH) {
-    return { ok: false, errorCode: "NOT_READY", reason: `prerequisite chain for '${bare}' is unreasonably deep` };
-  }
+  // Reserve existing inputs once across the whole recipe tree. Physical stock
+  // also includes ingredients reserved for a later craft, so acquisition
+  // targets cannot accidentally reuse those items in a sibling branch.
+  const remaining = new Map<string, number>();
+  const physical = new Map<string, number>();
+  const initial = (name: string): number => Math.max(0, catalog.available?.(name) ?? 0);
+  const stock = (name: string): number => remaining.get(name) ?? initial(name);
+  const heldStock = (name: string): number => physical.get(name) ?? initial(name);
+  const produced = (name: string, count: number): void => { physical.set(name, heldStock(name) + count); };
+  const consume = (name: string, count: number): void => { physical.set(name, Math.max(0, heldStock(name) - count)); };
+  const acquired = (kind: "gather" | "hunt", item: string, drop: string, count: number): PlanResult => {
+    const target = heldStock(drop) + count;
+    produced(drop, count);
+    return okPlan([{ kind, item, quantity: target }]);
+  };
+  const reserveFuel = (count: number): EnsureStep => {
+    // Smelting burns coal before charcoal. Replenish coal reserved for a
+    // sibling ingredient rather than silently spending that reservation.
+    const reservedCoal = heldStock("coal") - stock("coal");
+    const missing = reservedCoal > 0
+      ? Math.max(0, count - stock("coal"))
+      : Math.max(0, count - stock("coal") - stock("charcoal"));
+    const target = heldStock("coal") + heldStock("charcoal") + missing;
+    produced("coal", missing);
+    remaining.set("coal", stock("coal") + missing);
+    let burned = count;
+    for (const name of ["coal", "charcoal"]) {
+      const used = Math.min(heldStock(name), burned);
+      remaining.set(name, stock(name) - used);
+      consume(name, used);
+      burned -= used;
+    }
+    return { kind: "fuel", quantity: target };
+  };
+  function expand(item: string, quantity: number, depth: number): PlanResult {
+    const bare = bareName(item);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { ok: false, errorCode: "INVALID_RESOURCE", reason: `invalid quantity ${quantity} for '${bare}'` };
+    }
+    const held = stock(bare);
+    const reserved = Math.min(held, quantity);
+    const missing = quantity - reserved;
+    remaining.set(bare, held - reserved);
+    if (missing === 0) return okPlan([]);
+    quantity = missing;
+    if (depth > MAX_PLAN_DEPTH) {
+      return { ok: false, errorCode: "NOT_READY", reason: `prerequisite chain for '${bare}' is unreasonably deep` };
+    }
 
-  if (catalog.gatherable(bare)) {
-    return okPlan([{ kind: "gather", item: bare, quantity }]);
-  }
-  if (FOOD_ITEM_NAMES[bare] === true && SMELT_INPUT_BY_OUTPUT[bare] === undefined) {
-    return okPlan([{ kind: "hunt", item: bare, quantity }]);
-  }
-  const oreSource = ORE_SOURCE_BY_DROP[bare];
-  if (oreSource !== undefined) {
-    return okPlan([{ kind: "gather", item: oreSource, quantity }]);
-  }
-  if (bare === "charcoal") {
-    // Charcoal fuels its own run: logs only, no separate fuel step.
-    const logs = resolvePlan(SMELT_INPUT_BY_OUTPUT[bare]!, charcoalLogsFor(quantity), catalog, depth + 1);
-    if (!logs.ok) return logs;
-    return okPlan([...logs.plan.steps, { kind: "smelt", item: bare, quantity }], logs.plan.needsTable, true);
-  }
-  const smeltInput = SMELT_INPUT_BY_OUTPUT[bare];
-  if (smeltInput !== undefined) {
-    const inputPlan = resolvePlan(smeltInput, quantity, catalog, depth + 1);
-    if (!inputPlan.ok) return inputPlan;
+    if (catalog.gatherable(bare)) {
+      return acquired("gather", bare, bare, quantity);
+    }
+    if (FOOD_ITEM_NAMES[bare] === true && SMELT_INPUT_BY_OUTPUT[bare] === undefined) {
+      return acquired("hunt", bare, bare, quantity);
+    }
+    const oreSource = ORE_SOURCE_BY_DROP[bare];
+    if (oreSource !== undefined) {
+      return acquired("gather", oreSource, bare, quantity);
+    }
+    if (bare === "charcoal") {
+      // Charcoal fuels its own run: logs only, no separate fuel step.
+      const logs = expand(SMELT_INPUT_BY_OUTPUT[bare]!, charcoalLogsFor(quantity), depth + 1);
+      if (!logs.ok) return logs;
+      consume(SMELT_INPUT_BY_OUTPUT[bare]!, charcoalLogsFor(quantity));
+      produced(bare, quantity);
+      return okPlan([...logs.plan.steps, { kind: "smelt", item: bare, quantity }], logs.plan.needsTable, true);
+    }
+    const smeltInput = SMELT_INPUT_BY_OUTPUT[bare];
+    if (smeltInput !== undefined) {
+      const inputPlan = expand(smeltInput, quantity, depth + 1);
+      if (!inputPlan.ok) return inputPlan;
+      const fuel = reserveFuel(fuelFor(quantity));
+      consume(smeltInput, quantity);
+      produced(bare, quantity);
+      return okPlan(
+        [...inputPlan.plan.steps, fuel, { kind: "smelt", item: bare, quantity }],
+        inputPlan.plan.needsTable,
+        true,
+      );
+    }
+
+    const recipes = rankRecipes(catalog.recipesProducing(bare), { ...catalog, available: stock });
+    // Skip a recipe that consumes its own output (data quirk / self-loop).
+    const recipe = recipes.find((candidate) => {
+      return !candidate.delta.some((d) => d.count < 0 && catalog.nameForId(d.id) === bare);
+    });
+    if (recipe === undefined) {
+      return {
+        ok: false,
+        errorCode: "INVALID_RESOURCE",
+        reason: `'${bare}' is not mineable, huntable, smeltable, or craftable`,
+      };
+    }
+
+    const perCraft = Math.max(1, recipe.result.count);
+    const crafts = Math.max(1, Math.ceil(quantity / perCraft));
+    const ingredientSteps: EnsureStep[] = [];
+    let needsTable = recipe.requiresTable;
+    let needsFurnace = false;
+    for (const delta of recipe.delta) {
+      if (delta.count >= 0) continue;
+      const name = catalog.nameForId(delta.id);
+      if (name === null || name === bare) continue;
+      const sub = expand(name, -delta.count * crafts, depth + 1);
+      if (!sub.ok) return sub;
+      ingredientSteps.push(...sub.plan.steps);
+      needsTable = needsTable || sub.plan.needsTable;
+      needsFurnace = needsFurnace || sub.plan.needsFurnace;
+    }
+    for (const delta of recipe.delta) {
+      const name = catalog.nameForId(delta.id);
+      if (delta.count < 0 && name !== null) consume(name, -delta.count * crafts);
+    }
+    const output = perCraft * crafts;
+    produced(bare, output);
+    remaining.set(bare, stock(bare) + output - quantity);
     return okPlan(
-      [...inputPlan.plan.steps, { kind: "fuel", quantity: fuelFor(quantity) }, { kind: "smelt", item: bare, quantity }],
-      inputPlan.plan.needsTable,
-      true,
+      [...ingredientSteps, { kind: "craft", item: bare, quantity: crafts, table: recipe.requiresTable }],
+      needsTable,
+      needsFurnace,
     );
   }
-
-  const recipes = rankRecipes(catalog.recipesProducing(bare), catalog);
-  // Skip a recipe that consumes its own output (data quirk / self-loop).
-  const recipe = recipes.find((candidate) => {
-    return !candidate.delta.some((d) => d.count < 0 && catalog.nameForId(d.id) === bare);
-  });
-  if (recipe === undefined) {
-    return {
-      ok: false,
-      errorCode: "INVALID_RESOURCE",
-      reason: `'${bare}' is not mineable, huntable, smeltable, or craftable`,
-    };
-  }
-
-  const perCraft = Math.max(1, recipe.result.count);
-  const crafts = Math.max(1, Math.ceil(quantity / perCraft));
-  const ingredientSteps: EnsureStep[] = [];
-  let needsTable = recipe.requiresTable;
-  let needsFurnace = false;
-  for (const delta of recipe.delta) {
-    if (delta.count >= 0) continue;
-    const name = catalog.nameForId(delta.id);
-    if (name === null || name === bare) continue;
-    const sub = resolvePlan(name, -delta.count * crafts, catalog, depth + 1);
-    if (!sub.ok) return sub;
-    ingredientSteps.push(...sub.plan.steps);
-    needsTable = needsTable || sub.plan.needsTable;
-    needsFurnace = needsFurnace || sub.plan.needsFurnace;
-  }
-  return okPlan(
-    [...ingredientSteps, { kind: "craft", item: bare, quantity: crafts, table: recipe.requiresTable }],
-    needsTable,
-    needsFurnace,
-  );
+  return expand(item, quantity, depth);
 }
 
 // --- the runner ---
@@ -626,7 +681,7 @@ export class EnsureItemRunner {
     if (this.mode !== "ensure") {
       return { errorCode: "INSUFFICIENT_MATERIALS", reason: `need ${missing} more ${resourceLabel(drop)} and ${this.mode} mode does not mine`, retryable: false };
     }
-    const result = await this.opts.collect.run(step.item, missing, { signals: this.signals ?? undefined });
+    const result = await this.opts.collect.run(step.item, countItem(this.opts.bot, drop) + missing, { signals: this.signals ?? undefined });
     if (result.status === "interrupted") {
       this.interruptions += result.data?.interruptions ?? 0;
       this.stopRequested = true;
@@ -638,7 +693,7 @@ export class EnsureItemRunner {
     }
     // The inner runner deposited; book the fresh stock so later steps can
     // withdraw it without re-opening the chest.
-    this.stored[drop] = (this.stored[drop] ?? 0) + (result.data?.delivered ?? missing);
+    this.stored[drop] = (this.stored[drop] ?? 0) + (result.data?.delivered ?? 0);
     return null;
   }
 
@@ -678,14 +733,14 @@ export class EnsureItemRunner {
     // 1. Mine coal ore when the world has it.
     const catalog = makeRecipeCatalog(this.opts.bot);
     if (catalog.gatherable("coal_ore")) {
-      const result = await this.opts.collect.run("coal_ore", missing, { signals: this.signals ?? undefined });
+      const result = await this.opts.collect.run("coal_ore", countItem(this.opts.bot, "coal") + missing, { signals: this.signals ?? undefined });
       if (result.status === "interrupted") {
         this.interruptions += result.data?.interruptions ?? 0;
         this.stopRequested = true;
         return null;
       }
       if (result.ok || result.status === "partial") {
-        this.stored["coal"] = (this.stored["coal"] ?? 0) + missing;
+        this.stored["coal"] = (this.stored["coal"] ?? 0) + (result.data?.delivered ?? 0);
         return null;
       }
     }
@@ -798,9 +853,7 @@ export class EnsureItemRunner {
   private async stepSmelt(step: { item: string; quantity: number }, furnace: Block | null, data: EnsureItemData): Promise<StepFailure | null> {
     const bare = bareName(step.item);
     if (bare === "charcoal") {
-      const missing = Math.max(0, step.quantity - this.available("charcoal"));
-      if (missing === 0) return null;
-      const failure = await this.produceCharcoal(missing, data);
+      const failure = await this.produceCharcoal(step.quantity, data);
       return failure;
     }
     const input = SMELT_INPUT_BY_OUTPUT[bare];
