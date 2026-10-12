@@ -167,6 +167,28 @@ test("home navigation recognizes the GoalNear boundary without routing forever",
   assert.equal(gotoCalls, 0);
 });
 
+test("home arrival targets a verified interior floor beneath a low roof", async () => {
+  const position = new Vec3(73, 98, 51);
+  const heights: number[] = [];
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {},
+    entity: { position },
+    blockAt: (at: Vec3) => {
+      const house = Math.abs(at.x - 65) <= 3 && Math.abs(at.z - 51) <= 3;
+      const solid = house ? at.y <= 99 || at.y === 102 : at.y <= 97;
+      return { position: at, name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty" };
+    },
+    pathfinder: {
+      setMovements: () => {}, stop: () => {}, setGoal: () => {},
+      goto: async (goal: { x: number; y: number; z: number }) => { heights.push(goal.y); position.set(goal.x, goal.y, goal.z); },
+    },
+  } as never;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("sheltered-home", signal, () => travelHomeAndWait(bot, { x: 65, y: 100, z: 51, dimension: "overworld" }, { signal, timeoutMs: 3000 }));
+  assert.equal(result.status, "arrived");
+  assert.deepEqual(heights, [100], "the roof at 103 is not the arrival floor");
+});
+
 test("a trip cut short by a pause reports aborted, not an unreachable destination", async () => {
   const registry = minecraftData("1.21.11");
   let paused = false;

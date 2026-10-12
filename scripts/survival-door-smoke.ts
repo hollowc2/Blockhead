@@ -8,7 +8,7 @@ import pino from "pino";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../src/agent/world-actions.js";
 import { placeStarterDoor } from "../src/skills/base.js";
-import { travelAndWait } from "../src/minecraft/movement.js";
+import { travelAndWait, travelHomeAndWait } from "../src/minecraft/movement.js";
 const { goals } = createRequire(import.meta.url)("mineflayer-pathfinder");
 
 const port = Number(process.env.BLOCKHEAD_SMOKE_PORT);
@@ -60,6 +60,10 @@ try {
   assert.equal(bot.blockAt(new Vec3(74, 99, 50))?.getProperties().open, true);
   assert.equal(bot.blockAt(new Vec3(74, 100, 50))?.getProperties().open, true);
   console.log("PASS: closed wooden door opened and survival bot walked out through it");
+  const returned = await executor.run("sheltered-home-arrival", controller.signal, () => travelHomeAndWait(bot, { x: 72, y: 99, z: 50, dimension: "overworld" }, { range: 1, timeoutMs: 10000, signal: controller.signal, allowDig: false }));
+  assert.equal(returned.status, "arrived");
+  assert.equal(Math.floor(bot.entity.position.y), 99, "home arrival uses the interior floor, not the roof");
+  console.log("PASS: survival return home reached the interior floor beneath the roof");
 } catch (error) {
   console.error(error); process.exitCode = 1;
 } finally { clearTimeout(timeout); bot.quit("disposable door test complete"); }

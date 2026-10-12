@@ -10,9 +10,9 @@ import type { StorageRepository } from "../memory/storage.js";
 import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { DeathEventsRepository } from "../memory/deaths.js";
-import { bareName, countItem, countLogs, countPlanks, countSticks, itemsSummary } from "../minecraft/inventory.js";
+import { bareName, countItem, countLogs, countPlanks, countSticks, isRawLogItemName, itemsSummary } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks, craftSticks, syncInventory } from "../minecraft/crafting.js";
-import { deliverCarried, describeDeliveryFailure, type DeliveryFailure } from "../minecraft/containers.js";
+import { countStoredItems, deliverCarried, describeDeliveryFailure, withdrawFromHomeChest, type DeliveryFailure } from "../minecraft/containers.js";
 import { shedJunk } from "../minecraft/primitives.js";
 import { craftPickaxeInField } from "./field-craft.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
@@ -173,9 +173,21 @@ export function carriedItemName(resource: string): string {
   return DROPPED_ITEM_BY_BLOCK[bareName(resource)] ?? bareName(resource);
 }
 
-/** True when at least one member of the family is carried. */
-function hasFamilyTool(bot: Bot, family: "axe" | "pickaxe"): boolean {
-  return TOOL_FAMILIES[family].some((name) => countItem(bot, name) > 0);
+/** A carried tool must harvest the target, not merely share its family. */
+export function hasFamilyTool(bot: Bot, family: "axe" | "pickaxe", resource?: string): boolean {
+  const harvest = resource === undefined ? undefined : bot.registry?.blocksByName[resource]?.harvestTools;
+  return TOOL_FAMILIES[family].some((name) => {
+    const id = bot.registry?.itemsByName[name]?.id;
+    return countItem(bot, name) > 0 && (harvest === undefined || (id !== undefined && harvest[id] === true));
+  });
+}
+
+function requiredToolName(bot: Bot, family: "axe" | "pickaxe", resource: string): string {
+  const harvest = bot.registry?.blocksByName[resource]?.harvestTools;
+  return TOOL_FAMILIES[family].find(name => {
+    const id = bot.registry?.itemsByName[name]?.id;
+    return harvest === undefined || (id !== undefined && harvest[id] === true);
+  }) ?? `wooden_${family}`;
 }
 
 /** True when a block yields the requested resource when broken. */
@@ -824,6 +836,10 @@ export class CollectResourceRunner {
       if (targets.length === 0) return { gained, abort: null };
 
       const before = countItem(bot, carriedName);
+      if (family === "pickaxe" && !hasFamilyTool(bot, family, bare)) {
+        const replaced = await this.replaceTool(family, bare);
+        if (!replaced.ok) return { gained, abort: { errorCode: "TOOL_REQUIRED", reason: replaced.reason } };
+      }
       try {
         // collectBlocks walks up to each target and digs it directly when in
         // reach; collectblock alone planned a sight line to a face and timed
@@ -843,8 +859,8 @@ export class CollectResourceRunner {
         );
       } catch (err) {
         this.opts.logger.warn({ err: String(err), resource: bare }, "collect pass failed");
-        if (family === "pickaxe" && !hasFamilyTool(bot, family)) {
-          const replaced = await this.replaceTool(family);
+        if (family === "pickaxe" && !hasFamilyTool(bot, family, bare)) {
+          const replaced = await this.replaceTool(family, bare);
           if (!replaced.ok) return { gained, abort: { errorCode: "TOOL_REQUIRED", reason: replaced.reason } };
           continue;
         }
@@ -857,8 +873,8 @@ export class CollectResourceRunner {
       if (delta === 0) {
         // No progress: an absent pickaxe-family tool is a breakage to fix;
         // anything else means the site around us is exhausted.
-        if (family === "pickaxe" && !hasFamilyTool(bot, family)) {
-          const replaced = await this.replaceTool(family);
+        if (family === "pickaxe" && !hasFamilyTool(bot, family, bare)) {
+          const replaced = await this.replaceTool(family, bare);
           if (!replaced.ok) return { gained, abort: { errorCode: "TOOL_REQUIRED", reason: replaced.reason } };
           continue;
         }
@@ -904,7 +920,14 @@ export class CollectResourceRunner {
    */
   private async ensureTool(bare: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const family = toolFamilyFor(bare);
-    if (family === null || hasFamilyTool(this.opts.bot, family)) return { ok: true };
+    if (family === "pickaxe") {
+      const supplies = await this.stockRepairWood();
+      if (!supplies.ok) return supplies;
+    }
+    if (family === null || hasFamilyTool(this.opts.bot, family, bare)) return { ok: true };
+    const tool = requiredToolName(this.opts.bot, family, bare);
+    if (tool === "stone_pickaxe" && await craftPickaxeInField(this.opts.bot, this.opts.logger, this.signals?.signal) !== null
+      && hasFamilyTool(this.opts.bot, family, bare)) return { ok: true };
 
     // Logs are the one tool-family resource that can be gathered by hand.
     // Bootstrap the missing ingredients locally before attempting the trip
@@ -918,8 +941,9 @@ export class CollectResourceRunner {
       }
     }
 
-    const crafted = await this.craftWoodenTool(family);
-    if (crafted.ok) return crafted;
+    const crafted = await this.craftToolAtHome(family, tool);
+    if (crafted.ok && hasFamilyTool(this.opts.bot, family, bare)) return family === "pickaxe" ? this.stockRepairWood() : crafted;
+    if (crafted.ok) return { ok: false, reason: `no carried tool can harvest ${bare}` };
 
     // Bare hands are slow but valid for logs. Keep the gather task alive when
     // home is temporarily unreachable; the delivery phase will still report
@@ -932,18 +956,39 @@ export class CollectResourceRunner {
     return crafted;
   }
 
+  /** Bring wood for a field table and replacement sticks before leaving home. */
+  private async stockRepairWood(): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const { bot, state } = this.opts;
+    const here = bot.entity?.position;
+    const home = state?.home;
+    if (here === undefined || home === null || home === undefined
+      || here.distanceTo(new Vec3(home.x, home.y, home.z)) > 8) return { ok: true };
+    const wood = () => countPlanks(bot) + 4 * countLogs(bot);
+    if (wood() >= 12) return { ok: true };
+    const stored = await countStoredItems(bot, state, this.opts.storage, this.signals?.signal);
+    for (const [name, count] of Object.entries(stored).filter(([name]) => isRawLogItemName(name)).sort((a, b) => b[1] - a[1])) {
+      if (wood() >= 12) break;
+      const take = Math.min(count, Math.ceil((12 - wood()) / 4));
+      const result = await withdrawFromHomeChest(bot, state, this.opts.storage, name, take, this.opts.logger, this.signals?.signal);
+      if (result.withdrawn > 0) this.opts.logger.info({ name, count: result.withdrawn }, "stocked wood for field tool repairs");
+    }
+    return wood() >= 12 ? { ok: true } : { ok: false, reason: "not enough carried wood for a field crafting table and replacement tools" };
+  }
+
   /** Stage 11: announce and re-craft a tool that broke mid-run. */
-  private async replaceTool(family: "axe" | "pickaxe"): Promise<{ ok: true } | { ok: false; reason: string }> {
+  private async replaceTool(family: "axe" | "pickaxe", resource: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     this.announce(`${family[0]?.toUpperCase()}${family.slice(1)} broke. Replacing it.`);
     // A pickaxe is made on the spot from the stone just mined, not by a
     // round trip home that has to dig its way out by hand.
-    if (family === "pickaxe" && await craftPickaxeInField(this.opts.bot, this.opts.logger, this.signals?.signal) !== null) return { ok: true };
-    return this.craftWoodenTool(family);
+    if (family === "pickaxe" && await craftPickaxeInField(this.opts.bot, this.opts.logger, this.signals?.signal) !== null
+      && hasFamilyTool(this.opts.bot, family, resource)) return { ok: true };
+    return this.craftToolAtHome(family, requiredToolName(this.opts.bot, family, resource));
   }
 
-  /** Craft a wooden tool of `family` at the home crafting table. */
-  private async craftWoodenTool(family: "axe" | "pickaxe"): Promise<{ ok: true } | { ok: false; reason: string }> {
+  /** Craft a harvest-capable wooden/stone tool at the home crafting table. */
+  private async craftToolAtHome(family: "axe" | "pickaxe", tool: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const bot = this.opts.bot;
+    if (tool !== `wooden_${family}` && tool !== "stone_pickaxe") return { ok: false, reason: `${tool} is required to harvest this resource` };
     const home = this.opts.state.home;
     if (home === null) return { ok: false, reason: "no home to craft a tool at" };
 
@@ -980,9 +1025,14 @@ export class CollectResourceRunner {
     // Sticks are made from planks, so plan planks for both up front: crafting
     // 3 planks and then 2 sticks from them left 1 plank short of the head.
     await syncInventory(bot, this.signals?.signal);
+    if (tool === "stone_pickaxe" && countItem(bot, "cobblestone") < 3) {
+      await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, "cobblestone", 3 - countItem(bot, "cobblestone"), this.opts.logger, this.signals?.signal);
+      if (countItem(bot, "cobblestone") < 3) return { ok: false, reason: "need 3 cobblestone to craft a harvest-capable stone pickaxe" };
+    }
     const sticksNeeded = countSticks(bot) < 2;
-    const planksNeeded = 3 + (sticksNeeded ? 2 : 0);
-    const logsTarget = woodenToolLogTarget(countLogs(bot), countPlanks(bot), sticksNeeded);
+    const planksNeeded = (tool.startsWith("wooden_") ? 3 : 0) + (sticksNeeded ? 2 : 0);
+    const logsTarget = tool.startsWith("wooden_") ? woodenToolLogTarget(countLogs(bot), countPlanks(bot), sticksNeeded)
+      : Math.max(countLogs(bot), Math.ceil(Math.max(0, planksNeeded - countPlanks(bot)) / 4));
     if (countLogs(bot) < logsTarget) {
       const gathered = await this.gatherLogsForTool(logsTarget);
       if (!gathered.ok) return { ok: false, reason: gathered.reason };
@@ -997,7 +1047,7 @@ export class CollectResourceRunner {
       if (!sticks.ok) return { ok: false, reason: sticks.reason };
     }
 
-    const made = await craftItem(bot, `wooden_${family}`, { craftingTable: table, signal: this.signals?.signal });
+    const made = await craftItem(bot, tool, { craftingTable: table, signal: this.signals?.signal });
     if (!made.ok) return { ok: false, reason: made.reason };
     return { ok: true };
   }

@@ -1276,6 +1276,24 @@ export function skySurfaceY(bot: Bot, x: number, z: number): number | null {
   return null;
 }
 
+/** A low home roof is shelter overhead, not the desired arrival floor. */
+function homeStandingY(bot: Bot, home: HomeLocation, skyY: number | null): number {
+  const y = Math.floor(home.y);
+  // Keep the sky fallback for stale buried anchors; only a small roof gap
+  // plus server-observed standing space can establish the interior floor.
+  if (skyY !== null && skyY >= y && skyY - y <= 4) {
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      const feet = new Vec3(Math.floor(home.x) + dx, y, Math.floor(home.z) + dz);
+      const floor = bot.blockAt(feet.offset(0, -1, 0));
+      const lower = bot.blockAt(feet);
+      const upper = bot.blockAt(feet.offset(0, 1, 0));
+      if (floor?.boundingBox === "block" && lower?.boundingBox === "empty" && upper?.boundingBox === "empty"
+        && !/water|lava/.test(lower.name) && !/water|lava/.test(upper.name)) return y;
+    }
+  }
+  return skyY ?? surfaceStandingY(bot, home.x, home.z, y);
+}
+
 /**
  * Where a transit leg should end in a column: the top of the ground, with
  * leaves and logs ignored (a canopy picked by "nearest the bot's altitude"
@@ -1481,7 +1499,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   // 19:43 2026-10-04 the bot dug down to y=88 under the house (surface 98)
   // and then found no crafting table. Re-resolve it on every leg.
   let skyHomeY = skySurfaceY(bot, home.x, home.z);
-  let homeSurfaceY = skyHomeY ?? surfaceStandingY(bot, home.x, home.z, Math.floor(home.y));
+  let homeSurfaceY = homeStandingY(bot, home, skyHomeY);
   const verticallyAtHome = Math.abs(p.y - homeSurfaceY) <= 3;
   if (initialDistance <= arrivalRange && verticallyAtHome) {
     logger.info({
@@ -1525,7 +1543,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     const transitY = legSurfaceY(bot, goalX, goalZ, Math.floor(current.position.y));
     if (skyHomeY === null) {
       skyHomeY = skySurfaceY(bot, home.x, home.z);
-      if (skyHomeY !== null) homeSurfaceY = skyHomeY;
+      if (skyHomeY !== null) homeSurfaceY = homeStandingY(bot, home, skyHomeY);
     }
     const goal: Location = {
       x: goalX,

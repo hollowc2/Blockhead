@@ -1,6 +1,48 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedItemName, nearRecentDeath, sourceBlockName, withinRadiusOfHome, woodenToolLogTarget } from "./collect-resource.js";
+import { carriedItemName, hasFamilyTool, nearRecentDeath, sourceBlockName, withinRadiusOfHome, woodenToolLogTarget } from "./collect-resource.js";
+import minecraftData from "minecraft-data";
+
+test("a wooden pickaxe can harvest coal but cannot qualify for an iron trip", () => {
+  const registry = minecraftData("1.21.4");
+  const items = [{ name: "wooden_pickaxe", count: 1 }];
+  const bot = { registry, inventory: { items: () => items } } as never;
+  assert.equal(hasFamilyTool(bot, "pickaxe", "coal_ore"), true);
+  assert.equal(hasFamilyTool(bot, "pickaxe", "iron_ore"), false);
+  assert.equal(hasFamilyTool(bot, "pickaxe", "deepslate_iron_ore"), false);
+  items.push({ name: "stone_pickaxe", count: 1 });
+  assert.equal(hasFamilyTool(bot, "pickaxe", "iron_ore"), true);
+  assert.equal(hasFamilyTool(bot, "pickaxe", "diamond_ore"), false);
+  items.push({ name: "iron_pickaxe", count: 1 });
+  assert.equal(hasFamilyTool(bot, "pickaxe", "diamond_ore"), true);
+});
+
+test("iron gathering replaces an inadequate wooden tool with stone", async () => {
+  const { CollectResourceRunner } = await import("./collect-resource.js");
+  const { WorldActionExecutor } = await import("../agent/world-actions.js");
+  const items = [{ name: "wooden_pickaxe", count: 1 }];
+  const bot = { registry: minecraftData("1.21.4"), entity: null, inventory: { items: () => items, slots: [] } };
+  const runner = new CollectResourceRunner({ bot, config: {}, logger: { warn() {}, info() {} } } as never);
+  const internal = runner as any;
+  const crafted: string[] = [];
+  internal.craftToolAtHome = async (_family: string, name: string) => {
+    crafted.push(name);
+    items.push({ name, count: 1 });
+    return { ok: true };
+  };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("iron-tool", signal, () => internal.ensureTool("iron_ore"));
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(crafted, ["stone_pickaxe"]);
+});
+
+test("a qualified pickaxe does not bypass missing field repair supplies", async () => {
+  const { CollectResourceRunner } = await import("./collect-resource.js");
+  const runner = new CollectResourceRunner({ config: {}, bot: { registry: minecraftData("1.21.4"), inventory: { items: () => [{ name: "stone_pickaxe", count: 1 }] } } } as never);
+  const internal = runner as any;
+  internal.stockRepairWood = async () => ({ ok: false, reason: "missing repair wood" });
+  assert.deepEqual(await internal.ensureTool("iron_ore"), { ok: false, reason: "missing repair wood" });
+});
 
 test("cobblestone is mined from stone and still accounted as cobblestone", () => {
   // Searching for cobblestone blocks found only the home's own (PROTECTED_REGION).
