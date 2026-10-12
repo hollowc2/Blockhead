@@ -89,7 +89,7 @@ test("cancelled movement waits for the underlying pathfinder promise to settle",
   assert.deepEqual(events, ["stop", "goto-settled"]);
 });
 
-test("repeated jumps with no horizontal progress make the failed step costly", async () => {
+test("repeated jumps with no horizontal progress release the trip for escape recovery", async () => {
   const events = new EventEmitter();
   const position = new Vec3(10000.5, 75, 10000.5);
   const target = { x: 10001, y: 76, z: 10000 };
@@ -108,7 +108,7 @@ test("repeated jumps with no horizontal progress make the failed step costly", a
   }
   assert.ok(stuckCellCost(target) > 0, "jump oscillation must not reset the failed-step counter");
   trip.resolve({ status: "arrived" });
-  assert.equal((await result).status, "arrived");
+  assert.equal((await result).status, "failed");
 });
 
 test("a replaced follow goal cannot be stopped by the stale goal signal", async () => {

@@ -1380,6 +1380,10 @@ export async function raceTrip(
       logger.warn({ at: { x: Math.floor(here.x), y: Math.floor(here.y), z: Math.floor(here.z) }, avoiding: { x: Math.floor(cell.x), y: Math.floor(cell.y), z: Math.floor(cell.z) } }, "pathfinder keeps failing the same move; routing around it");
       stuckResets = 0;
       stuckAt = null;
+      // Replanning nearby jumps under the same low ceiling can exhaust the
+      // whole trip. Settle this attempt so the deterministic escape/climb
+      // fallback runs while it still has a movement budget.
+      resolveNap({ status: "failed", error: "pathfinder repeatedly stalled at the same horizontal position" });
     }
   };
   const pathEvents = bot as unknown as Partial<NodeJS.EventEmitter>;
@@ -1564,7 +1568,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
       // progress, so the later no-progress rescue would never run. Take the
       // same bounded, health-gated rescue here before the cautious walker
       // refuses the edge and leaves the bot stranded.
-      if (perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, home, signal)) {
+      if (isNoPath(result) && perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, home, signal)) {
         perchRescues += 1;
         noProgressLegs = 0;
         distance = Math.hypot((bot.entity?.position.x ?? home.x) - home.x, (bot.entity?.position.z ?? home.z) - home.z);
