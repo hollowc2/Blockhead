@@ -1365,7 +1365,11 @@ export async function raceTrip(
     logger.info({ reason }, "trip: path reset");
     if (reason !== "stuck" || bot.entity === null || bot.entity === undefined) return;
     const here = bot.entity.position;
-    if (stuckAt !== null && here.distanceTo(stuckAt) < 0.3) stuckResets += 1;
+    // A failed jump oscillates vertically by ~0.42 blocks. That is not
+    // travel progress; resetting the counter on each jump prevented the
+    // avoidance cost from ever being installed for a low-ceiling step.
+    if (stuckAt !== null && Math.hypot(here.x - stuckAt.x, here.z - stuckAt.z) < 0.3
+      && Math.abs(here.y - stuckAt.y) < 1) stuckResets += 1;
     else { stuckAt = here.clone(); stuckResets = 1; }
     if (stuckResets === 2) unwedge(bot);
     if (stuckResets >= 4) {

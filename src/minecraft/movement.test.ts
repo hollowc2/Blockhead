@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { EventEmitter } from "node:events";
 import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
@@ -86,6 +87,28 @@ test("cancelled movement waits for the underlying pathfinder promise to settle",
   resolveGoto();
   assert.deepEqual(await trip, { status: "timed_out" });
   assert.deepEqual(events, ["stop", "goto-settled"]);
+});
+
+test("repeated jumps with no horizontal progress make the failed step costly", async () => {
+  const events = new EventEmitter();
+  const position = new Vec3(10000.5, 75, 10000.5);
+  const target = { x: 10001, y: 76, z: 10000 };
+  const bot = Object.assign(events, {
+    entity: { position, velocity: new Vec3(0, 0, 0), onGround: false },
+    pathfinder: { goal: null, isMoving: () => false, stop: () => {} },
+  });
+  const trip = Promise.withResolvers<{ status: "arrived" }>();
+  const signal = new AbortController().signal;
+  const result = new WorldActionExecutor().run("jump-oscillation", signal, () => raceTrip(bot as never, trip.promise, { signal, timeoutMs: 3000 }));
+  await new Promise(resolve => setImmediate(resolve));
+  events.emit("path_update", { status: "success", path: [target] });
+  for (const y of [75, 75.42, 75, 75.42]) {
+    position.y = y;
+    events.emit("path_reset", "stuck");
+  }
+  assert.ok(stuckCellCost(target) > 0, "jump oscillation must not reset the failed-step counter");
+  trip.resolve({ status: "arrived" });
+  assert.equal((await result).status, "arrived");
 });
 
 test("a replaced follow goal cannot be stopped by the stale goal signal", async () => {
