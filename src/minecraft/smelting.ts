@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import type { Furnace } from "mineflayer";
 import { itemId } from "./crafting.js";
-import { countItem, findItem } from "./inventory.js";
+import { bareName, countItem } from "./inventory.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
 import { closeFurnace, openFurnace, putFuel, putInput, takeInput, takeOutput } from "./primitives.js";
 import { walkIntoReach } from "./movement.js";
@@ -91,14 +91,18 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   async function runPasses(window: Furnace): Promise<string | null> {
     for (let pass = 0; pass < options.times; pass++) {
       throwIfAborted(signal);
-      const input = findItem(bot, options.inputName);
+      let input = window.items().find((item) => bareName(item.name) === bareName(options.inputName)) ?? null;
       if (input === null) return `no ${options.inputName} to smelt`;
       if (needsFuel(window as FuelGauge)) {
-        const fuel = fuelNames.map((name) => findItem(bot, name)).find((item) => item !== null) ?? null;
+        const fuel = fuelNames.map((name) => window.items().find((item) => bareName(item.name) === bareName(name)) ?? null).find((item) => item !== null) ?? null;
         if (fuel === null) return `no ${fuelNames.join("/")} to burn`;
         await putFuel(window, fuel.type, null, 1, signal);
         if (fuel.name === options.outputName) outputBurned += 1;
       }
+      // Refuelling may consume the last log when input and fuel are the
+      // same item. The open window owns the current inventory slots.
+      input = window.items().find((item) => bareName(item.name) === bareName(options.inputName)) ?? null;
+      if (input === null) return `no ${options.inputName} to smelt after refuelling`;
       await putInput(window, input.type, null, 1, signal);
 
       const done = await awaitOutput(window, outputId!, options.timeoutMs ?? DEFAULT_SMELT_TIMEOUT_MS, signal);

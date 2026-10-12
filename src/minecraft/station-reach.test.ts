@@ -40,6 +40,7 @@ test("smelted output is counted after the furnace closes, when the inventory syn
   ];
   let pendingOutput = 0;
   const window = {
+    items: () => inventory.filter((item) => item.count > 0),
     slots: [] as ({ type: number } | null)[],
     fuelSeconds: 0,
     fuelItem: () => null,
@@ -76,6 +77,7 @@ test("a furnace wedged by an earlier run is emptied before the next batch", asyn
     { name: "beef", type: 4, count: 1 }, null, { name: "charcoal", type: 3, count: 2 },
   ];
   const window = {
+    items: () => inventory.filter((item) => item.count > 0),
     slots,
     fuelSeconds: 0,
     fuelItem: () => slots[1],

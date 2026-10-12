@@ -584,7 +584,13 @@ export class Scheduler {
       // repair, owner action). Only a watchdog block that has actually
       // reached its cooldown expiry may be requeued. A failure count below
       // the threshold is not itself a cooldown and must remain parked.
-      if (!this.watchdog.takeExpiredBlock(fingerprint)) continue;
+      const expired = this.watchdog.takeExpiredBlock(fingerprint);
+      // Older status reads deleted expired cooldowns before the scheduler
+      // saw them. Recover only the gate's own recorded reason when no
+      // watchdog state remains; prerequisite blocks stay parked.
+      const orphaned = !this.watchdog.tracks(fingerprint)
+        && /^\d+ failed attempts: /.test(task.lastError ?? "");
+      if (!expired && !orphaned) continue;
       task.status = TaskStatus.QUEUED;
       this.tasks.update(task);
       logger.info({ taskId: task.id }, "anti-loop block expired; task requeued");

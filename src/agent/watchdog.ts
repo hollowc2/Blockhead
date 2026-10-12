@@ -236,7 +236,7 @@ export class ActionWatchdog {
   private readonly persistence: WatchdogPersistence | undefined;
   /** fingerprint -> consecutive failure count (not counting resets/partials). */
   private readonly failures = new Map<string, number>();
-  /** fingerprint -> active block (present only while `retryAt` is in the future). */
+  /** Cooldowns retained through expiry until the scheduler consumes the retry. */
   private readonly blocks = new Map<string, ActionBlock>();
 
   constructor(options: ActionWatchdogOptions = {}) {
@@ -249,7 +249,7 @@ export class ActionWatchdog {
   rehydrate(): void {
     for (const state of this.persistence?.loadAll() ?? []) {
       if (state.failures > 0) this.failures.set(state.action, state.failures);
-      if (state.retryAt !== null && state.retryAt > this.now()) {
+      if (state.retryAt !== null) {
         this.blocks.set(state.action, {
           action: state.action,
           failures: state.failures,
@@ -257,8 +257,6 @@ export class ActionWatchdog {
           retryAt: state.retryAt,
           lastReason: state.lastReason ?? "",
         });
-      } else if (state.retryAt !== null) {
-        this.persistence?.remove(state.action);
       }
     }
   }
@@ -308,7 +306,7 @@ export class ActionWatchdog {
     }
     const count = (this.failures.get(action) ?? 0) + 1;
     this.failures.set(action, count);
-    if (count >= this.maxFailures && this.blocks.has(action) === false) {
+    if (count >= this.maxFailures && (this.blocks.get(action)?.retryAt ?? -Infinity) <= this.now()) {
       const blockedAt = this.now();
       this.blocks.set(action, {
         action,
@@ -336,11 +334,9 @@ export class ActionWatchdog {
     if (isWatchdogExempt(action)) return null;
     const block = this.blocks.get(action);
     if (block === undefined) return null;
-    if (block.retryAt <= this.now()) {
-      this.blocks.delete(action);
-      this.persistence?.remove(action);
-      return null;
-    }
+    // Reads must retain expiry evidence until the scheduler consumes it.
+    // Otherwise a status/context probe strands the persisted BLOCKED task.
+    if (block.retryAt <= this.now()) return null;
     return block;
   }
   /** Consume an expired cooldown, distinguishing it from ordinary failures. */
@@ -369,11 +365,7 @@ export class ActionWatchdog {
     const now = this.now();
     const views: BlockView[] = [];
     for (const block of [...this.blocks.values()].sort((a, b) => b.blockedAt - a.blockedAt)) {
-      if (block.retryAt <= now) {
-        this.blocks.delete(block.action);
-        this.persistence?.remove(block.action);
-        continue;
-      }
+      if (block.retryAt <= now) continue;
       views.push({
         action: block.action,
         reason:

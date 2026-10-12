@@ -265,3 +265,32 @@ test("build-project tasks are left to their project's own retries", async () => 
   for (const type of ["build_project_slice", "build_project_acquire", "build_project_verify"]) assert.equal(isWatchdogExempt(`${type}:{}`), true, type);
   assert.equal(isWatchdogExempt("collect_resource:{}"), false);
 });
+
+for (const probe of ["blockFor", "isBlocked", "activeBlocks"] as const) {
+  test(`expired cooldown survives ${probe} before scheduler retry`, () => {
+    now = 0;
+    const { scheduler, watchdog } = newHarness();
+    watchdog.record(COAL_32, "failure");
+    watchdog.record(COAL_32, "failure");
+    const task = scheduler.enqueue(backgroundTask("collect_resource", { resource: "coal", quantity: 32 }));
+    assert.equal(scheduler.claim(), null);
+    advance(60_001);
+    if (probe === "activeBlocks") assert.deepEqual(watchdog.activeBlocks(), []);
+    else if (probe === "isBlocked") assert.equal(watchdog.isBlocked(COAL_32), false);
+    else assert.equal(watchdog.blockFor(COAL_32), null);
+    assert.equal(scheduler.claim()?.id, task.id);
+    assert.equal(task.attempts, 1);
+    assert.equal(watchdog.takeExpiredBlock(COAL_32), false, "retry is consumed once");
+  });
+}
+
+test("failure after an expired cooldown starts a fresh cooldown", () => {
+  now = 0;
+  const { watchdog } = newHarness();
+  watchdog.record(COAL_32, "failure");
+  watchdog.record(COAL_32, "failure");
+  advance(60_001);
+  watchdog.record(COAL_32, "failure", false, "still no coal");
+  assert.equal(watchdog.blockFor(COAL_32)?.retryAt, now + 60_000);
+  assert.equal(watchdog.takeExpiredBlock(COAL_32), false);
+});

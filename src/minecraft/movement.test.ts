@@ -364,7 +364,8 @@ test("a perch rescue refuses lava landings, deep drops, and low health", async (
   const lava: Record<string, string> = {};
   for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) lava[new Vec3(x, -2, z).toString()] = "lava";
   assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -2, lava)).bot, { x: 50, z: 0 }), false, "lava below");
-  assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -4)).bot, { x: 50, z: 0 }), false, "7-block drop");
+  assert.equal(await stepOffPerch(perchBot(13, perchWorld(3, -5)).bot, { x: 50, z: 0 }), false, "7-block drop would leave less than 10 health");
+  assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -12)).bot, { x: 50, z: 0 }), false, "drop exceeds the 13-block cap");
   assert.equal(await stepOffPerch(perchBot(6, perchWorld(3, -2)).bot, { x: 50, z: 0 }), false, "low health");
 });
 
@@ -498,4 +499,8 @@ test("swimming costs enough that a lake is walked around", () => {
   const lake = 40;
   const detour = 200;
   assert.ok(lake * (1 + SWIM_COST) > detour * 2, "a 40-block swim costs more than a 200-block walk round with climbs");
+});
+
+test("a healthy bot can escape a 7-block perch while retaining at least 10 health", async () => {
+  assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -5)).bot, { x: 50, z: 0 }), true);
 });

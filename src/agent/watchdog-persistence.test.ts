@@ -62,13 +62,41 @@ test("owner intent removes persisted watchdog state", () => {
   assert.equal(restored.blockFor(action), null);
 });
 
-test("expired persisted blocks are removed during rehydration", () => {
+test("expired persisted blocks release parked tasks after restart and status reads", () => {
   now = 0;
-  const { persistence, watchdog } = setup();
+  const { db, persistence, watchdog } = setup();
   watchdog.record(action, "failure");
   watchdog.record(action, "failure");
+  const tasks = new TasksRepository(db);
+  const scheduler = new Scheduler({ bus: new EventBus(), tasks, watchdog });
+  const parked = scheduler.enqueue(task());
+  assert.equal(scheduler.claim(), null);
   now = 60_001;
   const restored = new ActionWatchdog({ now: clock, persistence });
   restored.rehydrate();
+  assert.equal(restored.blockFor(action), null);
+  assert.deepEqual(restored.activeBlocks(), []);
+  const restarted = new Scheduler({ bus: new EventBus(), tasks, watchdog: restored });
+  restarted.loadFromPersistence();
+  assert.equal(restarted.claim()?.id, parked.id);
   assert.equal(persistence.loadAll().length, 0);
+});
+
+
+test("a legacy watchdog task whose expiry record was deleted is recovered", () => {
+  now = 0;
+  const { db, persistence, watchdog } = setup();
+  watchdog.record(action, "failure");
+  watchdog.record(action, "failure");
+  const tasks = new TasksRepository(db);
+  const scheduler = new Scheduler({ bus: new EventBus(), tasks, watchdog });
+  const parked = scheduler.enqueue(task());
+  assert.equal(scheduler.claim(), null);
+  persistence.remove(action); // Legacy activeBlocks() deleted this at expiry.
+  now = 60_001;
+  const restored = new ActionWatchdog({ now: clock, persistence });
+  restored.rehydrate();
+  const restarted = new Scheduler({ bus: new EventBus(), tasks, watchdog: restored });
+  restarted.loadFromPersistence();
+  assert.equal(restarted.claim()?.id, parked.id);
 });
