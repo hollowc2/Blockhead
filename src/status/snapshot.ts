@@ -50,7 +50,8 @@ export function deriveAutonomy(input: Pick<StatusInput, "connected" | "scheduler
   if (!input.connected) reasons.push("disconnected");
   if (input.scheduler.interruptPending && input.scheduler.pendingInterruptReason !== null) reasons.push(`interrupt:${input.scheduler.pendingInterruptReason}`);
   if (input.scheduler.active?.source === "user") reasons.push("user-task-active");
-  if (input.scheduler.queued.some((task) => task.source === "user" && task.priority >= 70)) reasons.push("user-work-pending");
+  if (input.scheduler.queued.some((task) => task.source === "user" && task.priority >= 70
+    && (task.status === "queued" || task.status === "paused"))) reasons.push("user-work-pending");
   if (input.inDeathLoop) reasons.push("death-loop-brake");
   return { paused: reasons.length > 0, reasons };
 }
