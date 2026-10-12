@@ -1796,9 +1796,13 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     if (!current) return { status: "not_ready" };
     const legStart = current.position.clone();
     legNumber += 1;
-    const leg = Math.min(TRAVEL_LEG_LENGTH, distance);
-    const fraction = leg / distance;
-    const finalLeg = distance <= TRAVEL_LEG_LENGTH + range;
+    // Transit legs measure horizontal travel. Using 3D distance kept a bot
+    // above underground ore targeting the same surface cell forever: the
+    // vertical gap alone was larger than a leg, so the destination Y was
+    // never selected.
+    const horizontalDistance = Math.hypot(location.x - current.position.x, location.z - current.position.z);
+    const finalLeg = horizontalDistance <= TRAVEL_LEG_LENGTH + range;
+    const fraction = finalLeg ? 1 : TRAVEL_LEG_LENGTH / horizontalDistance;
     const goalX = current.position.x + (location.x - current.position.x) * fraction;
     const goalZ = current.position.z + (location.z - current.position.z) * fraction;
     // The goal column's own surface: at the bot's altitude a leg across a

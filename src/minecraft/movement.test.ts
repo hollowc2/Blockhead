@@ -171,6 +171,24 @@ test("a trip cut short by a pause reports aborted, not an unreachable destinatio
   assert.deepEqual(result, { status: "aborted" });
 });
 
+test("a destination far below the bot switches to its real Y once horizontally close", async () => {
+  const position = new Vec3(0, 94, 0);
+  const legs: { x: number; y: number; z: number }[] = [];
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {},
+    entity: { position, onGround: true },
+    blockAt: (at: Vec3) => ({ position: at, name: at.y <= 93 ? "stone" : "air", boundingBox: at.y <= 93 ? "block" : "empty" }),
+    pathfinder: {
+      setMovements: () => {}, stop: () => {}, setGoal: () => {},
+      goto: async (goal: { x: number; y: number; z: number }) => { legs.push({ x: goal.x, y: goal.y, z: goal.z }); position.set(goal.x, goal.y, goal.z); },
+    },
+  } as never;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("deep-destination", signal, () => travelAndWait(bot, { x: 120, y: 35, z: 0 }, { signal, range: 1, timeoutMs: 3000 }));
+  assert.equal(result.status, "arrived");
+  assert.deepEqual(legs, [{ x: 48, y: 94, z: 0 }, { x: 96, y: 94, z: 0 }, { x: 120, y: 35, z: 0 }]);
+});
+
 test("creative flight sends packets and detects arrival without a move event", async () => {
   const packets: Array<{ x: number; y: number; z: number }> = [];
   const bot = {
