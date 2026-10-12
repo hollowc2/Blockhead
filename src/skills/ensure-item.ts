@@ -595,15 +595,9 @@ export class EnsureItemRunner {
     }
     data.availableAtStart = this.available(bare);
 
-    // Already satisfied: materialize the shortfall for equipment; bulk stock
-    // may stay in the chest.
+    // Finish verifies carried targets and withdraws them from existing stock.
+    // Bulk stock may stay in the chest.
     if (data.availableAtStart >= quantity) {
-      const carried = countItem(bot, bare);
-      if ((isEquipmentName(bare) || this.keepCarried) && carried < quantity) {
-        const withdrawn = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, bare, quantity - carried, this.opts.logger, this.signals?.signal);
-        this.withdrawAccount(bare, withdrawn.withdrawn);
-        data.withdrawals += withdrawn.withdrawn;
-      }
       return this.finish(data, baseline, startedAt, true);
     }
 
@@ -1051,6 +1045,18 @@ export class EnsureItemRunner {
   ): Promise<SkillResult<EnsureItemData>> {
     const bot = this.opts.bot;
     const bare = data.item;
+    const needsCarried = this.keepCarried || isEquipmentName(bare) || FOOD_ITEM_NAMES[bare] === true;
+    if (needsCarried) {
+      const before = countItem(bot, bare);
+      const fetched = await this.materialize(bare, data.quantity);
+      data.withdrawals += Math.max(0, countItem(bot, bare) - before);
+      if (this.stopRequested) return this.interrupted(data);
+      if (!fetched.ok || countItem(bot, bare) < data.quantity) {
+        return this.fail(data, "RESOURCE_NOT_FOUND", fetched.ok
+          ? `only ${countItem(bot, bare)}/${data.quantity} ${resourceLabel(bare)} carried`
+          : fetched.reason, true);
+      }
+    }
     data.availableAtEnd = this.available(bare);
 
     const targetMet = data.availableAtEnd >= data.quantity;

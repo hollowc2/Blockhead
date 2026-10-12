@@ -3,6 +3,61 @@ import { test } from "node:test";
 import type { Recipe } from "prismarine-recipe";
 import { charcoalLogsFor, fuelFor, planksPlan, ORE_SOURCE_BY_DROP, rankRecipes, resolvePlan, SMELT_INPUT_BY_OUTPUT, type EnsureStep, type RecipeCatalog } from "./ensure-item.js";
 
+// Reproduce the healing loop: stock exists in the chest, but there is no
+// carried food. Exercise completion with successful and failed transfers.
+for (const item of ["bread", "cooked_beef", "iron_pickaxe"]) {
+  test(`stored ${item} must be carried before an already-satisfied request succeeds`, async () => {
+    const { EnsureItemRunner } = await import("./ensure-item.js");
+    const carried: { name: string; count: number }[] = [];
+    const runner = new EnsureItemRunner({ bot: { inventory: { items: () => carried } }, config: {} } as never);
+    const calls: string[] = [];
+    const internal = runner as any;
+    internal.stored = { [item]: 55 };
+    internal.materialize = async (name: string, quantity: number) => {
+      calls.push(name);
+      carried.push({ name, count: quantity });
+      internal.stored[name] -= quantity;
+      return { ok: true };
+    };
+    internal.announce = () => {};
+    internal.recordSuccess = () => calls.push("success");
+    const data = { item, quantity: 1, withdrawals: 0 };
+    const result = await internal.finish(data, {}, Date.now(), true);
+    assert.equal(result.status, "completed");
+    assert.deepEqual(calls, [item, "success"]);
+    assert.equal(data.withdrawals, 1);
+    assert.equal(carried[0]?.count, 1);
+  });
+}
+
+for (const reportsSuccess of [false, true]) {
+  test(`a food transfer that leaves no carried food fails even when transfer reports ${reportsSuccess}`, async () => {
+    const { EnsureItemRunner } = await import("./ensure-item.js");
+    const runner = new EnsureItemRunner({ bot: { inventory: { items: () => [] } }, config: {}, logger: { info: () => {} } } as never);
+    const internal = runner as any;
+    internal.stored = { bread: 55 };
+    internal.materialize = async () => reportsSuccess ? { ok: true } : { ok: false, reason: "only 0/1 breads available in stock" };
+    internal.announce = () => {};
+    internal.recordSuccess = () => assert.fail("failed transfer must not record success");
+    const result = await internal.finish({ item: "bread", quantity: 1, withdrawals: 0 }, {}, Date.now(), true);
+    assert.equal(result.status, "failed");
+    assert.equal(result.retryable, true);
+    assert.match(result.message, /0\/1/);
+  });
+}
+
+test("already-satisfied bulk material requests may stay in storage", async () => {
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const runner = new EnsureItemRunner({ bot: { inventory: { items: () => [] } }, config: {} } as never);
+  const internal = runner as any;
+  internal.stored = { cobblestone: 55 };
+  internal.materialize = async () => assert.fail("bulk stock does not require withdrawal");
+  internal.announce = () => {};
+  internal.recordSuccess = () => {};
+  const result = await internal.finish({ item: "cobblestone", quantity: 1, withdrawals: 0 }, {}, Date.now(), true);
+  assert.equal(result.status, "completed");
+});
+
 /** Tiny fake recipe catalog (ids are arbitrary but consistent). */
 function recipe(id: number, outputCount: number, deltas: [number, number][], requiresTable = false): Recipe {
   return {
