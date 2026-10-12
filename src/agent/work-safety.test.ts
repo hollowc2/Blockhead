@@ -66,3 +66,24 @@ test("unsafe work rehydrated after restart remains parked without losing its che
     finally { safety.detach(); }
   } finally { h.close(); }
 });
+
+test("an ACTIVE crash checkpoint is parked when the session guard binds before dispatch", () => {
+  const h = harness();
+  try {
+    const task = h.scheduler.enqueue({ type: "upgrade_equipment", source: "background", priority: TaskPriority.BACKGROUND, objective: "tools", parameters: {} });
+    h.scheduler.claim(); h.scheduler.checkpoint({ gathered: 3 });
+    h.safety.detach();
+    const bus = new EventBus();
+    const restarted = new Scheduler({ bus, tasks: new TasksRepository(h.db) });
+    restarted.loadFromPersistence();
+    assert.equal(restarted.active?.id, task.id);
+    h.bot.health = 6;
+    const safety = new WorkSafetyCoordinator({ bot: h.bot, bus, scheduler: restarted, logger: pino({ level: "silent" }) });
+    safety.attach();
+    try {
+      assert.equal(restarted.active, null);
+      assert.equal(restarted.queued.find(t => t.id === task.id)?.status, TaskStatus.PAUSED);
+      assert.deepEqual(restarted.queued.find(t => t.id === task.id)?.resumeState, { gathered: 3 });
+    } finally { safety.detach(); }
+  } finally { h.close(); }
+});

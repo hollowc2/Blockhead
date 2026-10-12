@@ -98,7 +98,15 @@ export class Scheduler {
   private activationGuard: ((task: Task) => boolean) | null = null;
 
   /** Session safety gates defer work without losing its checkpoint. */
-  setActivationGuard(guard: ((task: Task) => boolean) | null): void { this.activationGuard = guard; }
+  setActivationGuard(guard: ((task: Task) => boolean) | null): void {
+    this.activationGuard = guard;
+    // A crash can restore ACTIVE before a bot session/dispatcher exists.
+    // Park that checkpoint before its executor is rebound on spawn.
+    if (this.activeTask !== null && guard?.(this.activeTask) === false) {
+      this.requestPause();
+      if (this.worldActionOwner === null) this.settleInterrupted();
+    }
+  }
 
   constructor(options: SchedulerOptions) {
     this.bus = options.bus;
