@@ -95,6 +95,10 @@ export class Scheduler {
   /** Sequence number of the last paused task (most-recently-paused resumes first). */
   private pausedSeq = 0;
   private readonly pausedAt = new Map<string, number>();
+  private activationGuard: ((task: Task) => boolean) | null = null;
+
+  /** Session safety gates defer work without losing its checkpoint. */
+  setActivationGuard(guard: ((task: Task) => boolean) | null): void { this.activationGuard = guard; }
 
   constructor(options: SchedulerOptions) {
     this.bus = options.bus;
@@ -278,6 +282,8 @@ export class Scheduler {
   /** Move a queued task into ACTIVE state, emitting `task.activated`. */
   activate(id: string): Task | null {
     if (this.halted) return null;
+    const guarded = this.queue.find(task => task.id === id);
+    if (guarded !== undefined && this.activationGuard?.(guarded) === false) return null;
     const task = this.findQueued(id);
     if (!task) return null;
     // Anti-loop gate: a blocked action stands down into BLOCKED status
@@ -549,6 +555,7 @@ export class Scheduler {
     for (const task of this.queue) {
       if (task.id === excludedId) continue;
       if (task.status !== TaskStatus.QUEUED && task.status !== TaskStatus.PAUSED) continue;
+      if (this.activationGuard?.(task) === false) continue;
       if (best === null || this.candidateKey(task) > this.candidateKey(best)) best = task;
     }
     return best;

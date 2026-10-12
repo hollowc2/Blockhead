@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Bot } from "mineflayer";
+import { Vec3 } from "vec3";
+import pino from "pino";
+import { NightShelterRunner } from "./night-shelter.js";
 import { ownerWorkPending, shelterDecision, type ShelterDecisionInput } from "../agent/night-shelter.js";
 import { findShelterSpot, isSealedPocket, isShelterNight, isThundering, shelterDigCells, shelterPocketFeet, validShelterSpot, shelterCanLeave, type CellLookup } from "./night-shelter.js";
 
@@ -25,6 +29,24 @@ const night: ShelterDecisionInput = {
   shelterLive: false,
   cooldownActive: false,
 };
+
+test("an emergency shelter stays sealed during daylight until health recovers", async () => {
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) }, health: 9, time: { timeOfDay: 6_000 }, entities: {},
+    blockAt: (at: Vec3) => ({ name: at.x === 0 && at.z === 0 && (at.y === 64 || at.y === 65) ? "air" : "stone" }),
+  } as unknown as Bot;
+  const runner = new NightShelterRunner({ bot, logger: pino({ level: "silent" }) });
+  let left = false;
+  (runner as unknown as { breakOut(): Promise<null> }).breakOut = async () => { left = true; return null; };
+  const running = runner.run({ healUntilHealth: 14 });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(left, false, "daylight alone does not release a hurt bot");
+  bot.health = 20;
+  const result = await running;
+  assert.equal(result.ok, true);
+  assert.equal(left, true);
+  assert.match(result.message ?? "", /Health recovered/);
+});
 
 test("shelter triggers at dusk with no bed, and not by day", () => {
   assert.equal(shelterDecision(night).shelter, true);

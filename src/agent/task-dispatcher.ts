@@ -536,7 +536,7 @@ export class TaskDispatcher {
         return this.opts.utility.sleep({ signals });
       case "night_shelter":
         if (this.opts.nightShelter === undefined) return this.invalidParams("night_shelter");
-        return this.opts.nightShelter.run({ signals, resumeState: task.resumeState as { interruptions?: number } | undefined });
+        return this.opts.nightShelter.run({ signals, resumeState: task.resumeState as { interruptions?: number } | undefined, healUntilHealth: typeof task.parameters.healUntilHealth === "number" ? Math.max(0, Math.min(20, task.parameters.healUntilHealth)) : undefined });
       case "eat":
         return this.opts.utility.eat({ signals });
       case "equip_best":

@@ -88,6 +88,7 @@ import { setEscapeRouteProvider, setPickaxeFallback } from "./minecraft/movement
 import { craftPickaxeInField } from "./skills/field-craft.js";
 import { normalizeDimension } from "./minecraft/protection.js";
 import { SurvivalInterruptCoordinator } from "./agent/survival-interrupts.js";
+import { WorkSafetyCoordinator } from "./agent/work-safety.js";
 import { ShutdownCoordinator, withTimeout } from "./agent/shutdown.js";
 
 const config = loadConfig("config/minecraft.yaml");
@@ -258,6 +259,7 @@ interface Session {
   dispatcher: TaskDispatcher;
   /** Fights back when a hostile attacks or closes in. */
   selfDefense: SelfDefenseReflex;
+  workSafety: WorkSafetyCoordinator;
   /** Digs in for the night when there is no bed to sleep in. */
   nightShelter: NightShelterWatch;
 }
@@ -394,6 +396,7 @@ const shutdownCoordinator = new ShutdownCoordinator({
             active.background.stop();
             active.hostile.detach();
             active.selfDefense.detach();
+            active.workSafety.detach();
             active.nightShelter.detach();
           }
           goals.dispose();
@@ -603,6 +606,8 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   // to `task.activated`, so the preemption cascade starts the next task the
   // moment the previous one settles.
   const terrainProjects = new TerrainProjectRunner(bot, { logger });
+  const workSafety = new WorkSafetyCoordinator({ bot, bus, scheduler, logger });
+  workSafety.attach();
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, lightHome, developLand, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
   const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop, recentDeathTimes: () => (state.worldId === null ? [] : deaths.list(state.worldId, 8).map((death) => Date.parse(death.createdAt))) });
@@ -625,7 +630,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   const breathWatch = new BreathWatch({ bot, logger });
   breathWatch.attach();
   bot.once("end", () => breathWatch.detach());
-  session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter };
+  session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter, workSafety };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -700,6 +705,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   background.stop();
   hostile.detach();
   selfDefense.detach();
+  workSafety.detach();
   nightShelter.detach();
   dispatcher.dispose();
   session = null;

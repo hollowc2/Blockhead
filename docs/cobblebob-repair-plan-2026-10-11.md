@@ -128,3 +128,11 @@ The LLM no longer treats identical valid wording as an execution failure: the sc
 The saved home elevation and frozen owner room remain intact. The upper starter shed already exists; moving its anchor automatically would create a second repair footprint. The birch-log obstruction is still an explicit owner-project decision, not automatically removed by development code.
 
 Validation: current type check passed; the final full suite passed **704 tests with zero failures**; the survival-door smoke passed on an isolated loopback port. Existing uncommitted movement, watchdog, scheduler, and smelting changes were preserved and were included in test coverage. They were already present in the inspected live runtime and will remain unchanged by this deployment.
+
+### Live validation follow-up
+
+The first rollout made a stone pickaxe, then exposed an additional failure: a paused equipment-upgrade trip resumed after failed defense while health was about 6/20. The previous runtime was restored and the bot paused during correction. Idle-loop readiness alone did not cover scheduler resume paths.
+
+A session activation guard now covers both direct activation and queue arbitration. Unsafe autonomous work remains queued/paused with its checkpoint intact; damage also interrupts a running autonomous task. Food, retreat, defense, shelter, and recovery remain runnable. Hurt, exposed bots can use the existing shelter skill in daylight and stay sealed until health recovers. The guard is installed before the dispatcher, survives task rehydration through session wiring, and is detached on disconnect/shutdown.
+
+Validation after correction: **708 tests passed, zero failed**, and type checking passed. The new tests reproduce failed-defense settlement, preserved checkpoints, direct-activation refusal, restart safety, urgent food availability, and daytime shelter healing. The owner explicitly chose to keep the older room parked.

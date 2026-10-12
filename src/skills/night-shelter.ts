@@ -234,7 +234,7 @@ export class NightShelterRunner {
     return this.running;
   }
 
-  async run(options: { signals?: TaskSignals; resumeState?: { interruptions?: number } } = {}): Promise<SkillResult<NightShelterData>> {
+  async run(options: { signals?: TaskSignals; resumeState?: { interruptions?: number }; healUntilHealth?: number } = {}): Promise<SkillResult<NightShelterData>> {
     if (this.running) return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "already sheltering" };
     this.running = true;
     this.signals = options.signals ?? null;
@@ -242,20 +242,20 @@ export class NightShelterRunner {
     this.interruptions = typeof options.resumeState?.interruptions === "number" ? options.resumeState.interruptions : 0;
     const data: NightShelterData = { sheltered: false, spot: null, interruptions: this.interruptions };
     try {
-      return await this.execute(data);
+      return await this.execute(data, options.healUntilHealth ?? 0);
     } finally {
       this.running = false;
       this.signals = null;
     }
   }
 
-  private async execute(data: NightShelterData): Promise<SkillResult<NightShelterData>> {
+  private async execute(data: NightShelterData, healUntilHealth = 0): Promise<SkillResult<NightShelterData>> {
     const bot = this.opts.bot;
     if (bot.entity === null || bot.entity === undefined) return this.fail(data, "NOT_READY", "bot is not spawned");
     const cell = this.lookup();
 
     if (!isSealedPocket(cell, this.feet())) {
-      if (!isShelterNight(bot.time.timeOfDay) && !isThundering(bot)) return { ok: true, status: "completed", data, message: "It is day; no shelter needed." };
+      if (bot.health >= healUntilHealth && !isShelterNight(bot.time.timeOfDay) && !isThundering(bot)) return { ok: true, status: "completed", data, message: "It is day; no shelter needed." };
       const dug = await this.digIn(data, cell);
       if (dug !== null) return dug;
     } else {
@@ -264,10 +264,10 @@ export class NightShelterRunner {
     data.sheltered = true;
 
     // Wait out the night, sealed in.
-    while (isThundering(bot) || !shelterCanLeave(bot.time.timeOfDay, this.hostileNearby())) {
+    while (bot.health < healUntilHealth || isThundering(bot) || !shelterCanLeave(bot.time.timeOfDay, this.hostileNearby())) {
       this.checkInterrupt();
       if (this.stopRequested) return this.interrupted(data);
-      if (this.opts.ownerWorkPending?.() === true) {
+      if (bot.health >= healUntilHealth && this.opts.ownerWorkPending?.() === true) {
         this.opts.logger.info("night shelter: owner work is waiting; leaving the shelter early");
         break;
       }
@@ -277,7 +277,7 @@ export class NightShelterRunner {
     this.opts.logger.info({ at: this.feet() }, "night shelter: day, breaking out");
     const out = await this.breakOut(data);
     if (out !== null) return out;
-    return { ok: true, status: "completed", data, message: "Morning. Out of the shelter." };
+    return { ok: true, status: "completed", data, message: healUntilHealth > 0 ? "Health recovered. Out of the shelter." : "Morning. Out of the shelter." };
   }
 
   /** Dig the shaft and pocket, step in, refill the shaft. Null on success. */
