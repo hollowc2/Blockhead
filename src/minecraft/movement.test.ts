@@ -344,6 +344,29 @@ function perchBot(health: number, blockAt: ReturnType<typeof perchWorld>) {
   return { bot, position };
 }
 
+test("a long trip rejected on a perch rescues before blind-walk fallback", async () => {
+  const { bot, position } = perchBot(20, perchWorld(3, -2));
+  const live = bot as any;
+  live.registry = minecraftData("1.21.4");
+  live.game = { dimension: "overworld" };
+  live.collectBlock = {};
+  let trips = 0;
+  live.pathfinder = {
+    setMovements: () => {}, stop: () => {}, setGoal: () => {},
+    goto: async () => {
+      trips += 1;
+      if (trips === 1) throw new Error("NoPath: No path to the goal!");
+      position.set(50, 0, 0);
+    },
+  };
+  const controller = new AbortController();
+  const result = await new WorldActionExecutor().run("perch-rejection", controller.signal, () =>
+    travelAndWait(bot, { x: 50, y: 0, z: 0 }, { signal: controller.signal, timeoutMs: 3000 }),
+  );
+  assert.equal(result.status, "arrived");
+  assert.equal(trips, 2);
+});
+
 test("a bot stranded on a perch steps off onto a landing within 5 blocks", async () => {
   const { bot, position } = perchBot(20, perchWorld(3, -2));
   assert.equal(await stepOffPerch(bot, { x: 50, z: 0 }), true);

@@ -1773,6 +1773,16 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
       continue;
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
+      if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      // A rejected route never reaches the later no-progress rescue. Move
+      // off the fixture/perch first, then let A* plan from the new cell.
+      if (isNoPath(result) && perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, location, signal)) {
+        perchRescues += 1;
+        noProgressLegs = 0;
+        const now = bot.entity?.position ?? current.position;
+        distance = Math.hypot(now.x - location.x, now.y - location.y, now.z - location.z);
+        continue;
+      }
       // Pathfinder failed. Fall back to dumb-walk toward the destination.
       // Give walkToward a proper budget even if the leg consumed most of the deadline.
       logger.warn({ leg: legNumber, status: result.status, error: result.status === "failed" ? result.error : undefined, position: bot.entity?.position, goal }, "travel route leg failed; attempting walkToward fallback");

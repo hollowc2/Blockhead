@@ -468,7 +468,7 @@ export class BackgroundManager {
         this.lastBlockNotice.set("readiness", readiness.reason);
       }
       if (readiness.item !== undefined && !this.kindBlocked(`rearm:${readiness.item}`)) {
-        scheduler.enqueue({ type: "ensure_item", priority: TaskPriority.MAINTENANCE, source: "background", objective: readiness.reason, parameters: { item: readiness.item, quantity: 1 }, workKey: `background:rearm:${readiness.item}` });
+        scheduler.enqueue({ type: "ensure_item", priority: TaskPriority.MAINTENANCE, source: "background", objective: readiness.reason, parameters: { item: readiness.item, quantity: readiness.quantity ?? 1 }, workKey: `background:rearm:${readiness.item}` });
         scheduler.claim();
       }
       return;

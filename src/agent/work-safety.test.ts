@@ -9,7 +9,7 @@ import { MIGRATIONS } from "../memory/migrations.js";
 import { TasksRepository } from "../memory/tasks.js";
 import { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus } from "./task.js";
-import { WorkSafetyCoordinator } from "./work-safety.js";
+import { WorkSafetyCoordinator, taskSafeToRun } from "./work-safety.js";
 
 function harness() {
   const db = new AppDatabase(":memory:"); db.runMigrations(MIGRATIONS);
@@ -20,6 +20,23 @@ function harness() {
   safety.attach();
   return { db, bot, bus, scheduler, safety, close: () => { safety.detach(); db.close(); } };
 }
+test("a healthy checkpoint waits for carried food while bread retrieval can run", () => {
+  const h = harness();
+  try {
+    h.bot.food = 20;
+    const stock: { name: string; count: number }[] = [];
+    h.bot.inventory = { items: () => stock } as never;
+    const work = h.scheduler.enqueue({ type: "upgrade_equipment", source: "goal", priority: TaskPriority.BACKGROUND, objective: "tools", parameters: {} });
+    assert.equal(h.scheduler.claim(), null);
+    assert.equal(h.scheduler.activate(work.id), null);
+    const food = h.scheduler.enqueue({ type: "ensure_item", source: "background", priority: TaskPriority.MAINTENANCE, objective: "food", parameters: { item: "bread", quantity: 6 } });
+    assert.equal(taskSafeToRun(h.bot, food), true);
+    assert.equal(h.scheduler.claim()?.id, food.id);
+    stock.push({ name: "bread", count: 6 });
+    h.scheduler.completeActive();
+    assert.equal(h.scheduler.active?.id, work.id);
+  } finally { h.close(); }
+});
 test("a failed retreat cannot resume a discretionary checkpoint while hurt", () => {
   const h = harness();
   try {

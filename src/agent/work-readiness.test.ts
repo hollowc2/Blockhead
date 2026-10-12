@@ -26,4 +26,13 @@ test("an exposed archer blocks work, but a mob behind solid cover does not", () 
 test("low health without carried food requests bread instead of waiting without regeneration", () => {
   const b = bot(); b.health = 9; b.food = 17;
   equal(workReadiness(b)?.item, "bread");
+  equal(workReadiness(b)?.quantity, 6);
+});
+
+test("healthy bots stock carried food before starting discretionary work", () => {
+  const b = bot(); b.food = 20;
+  equal(workReadiness(b)?.item, "bread");
+  equal(workReadiness(b)?.quantity, 6);
+  b.inventory.items = (() => [{ name: "bread", count: 6 }, ...["stone_sword", "stone_axe", "stone_pickaxe"].map(name => ({ name, count: 1 }))]) as never;
+  equal(workReadiness(b), null);
 });

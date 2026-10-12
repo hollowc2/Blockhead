@@ -5,6 +5,7 @@ import { isCreativeMode } from "../minecraft/mode.js";
 import { nearestThreat } from "./self-defense.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
+import { hasFoodForWork } from "./work-readiness.js";
 
 /** Survival work remains runnable while discretionary checkpoints wait. */
 export function taskSafeToRun(bot: Bot, task: Task): boolean {
@@ -12,7 +13,7 @@ export function taskSafeToRun(bot: Bot, task: Task): boolean {
   if (["defend_self", "defend_player", "go_home", "sleep", "night_shelter", "eat", "gather_food", "death_recovery", "world_project_return"].includes(task.type)) return true;
   if (task.type === "stockpile_maintenance" && task.parameters.kind === "food") return true;
   if (task.type === "ensure_item" && task.parameters.item === "bread") return true;
-  return bot.entity !== null && bot.health >= 14 && nearestThreat(bot) === null;
+  return bot.entity !== null && bot.health >= 14 && nearestThreat(bot) === null && hasFoodForWork(bot);
 }
 
 export class WorkSafetyCoordinator {

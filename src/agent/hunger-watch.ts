@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { EventBus } from "../events/bus.js";
 import { countFoodItems } from "../skills/gather-food.js";
 import type { Scheduler } from "./scheduler.js";
-import { TaskPriority, TaskStatus, type Task } from "./task.js";
+import { TaskPriority, type Task } from "./task.js";
 
 const CHECK_INTERVAL_MS = 5_000;
 /** A failed food run stands down this long before the watch tries again. */
@@ -79,7 +79,9 @@ export class HungerWatch {
   check(): void {
     const bot = this.opts.bot;
     const scheduler = this.opts.scheduler;
-    const live = (task: Task): boolean => task.workKey === WORK_KEY && task.status !== TaskStatus.BLOCKED;
+    // A blocked run already owns the request; the scheduler releases its
+    // cooldown. Re-enqueuing it every five seconds only repeats the warning.
+    const live = (task: Task): boolean => task.workKey === WORK_KEY;
     const trigger = hungerEmergency({
       alive: bot.entity !== null && bot.entity !== undefined && bot.health > 0,
       hunger: Number.isFinite(bot.food) ? bot.food : 20,

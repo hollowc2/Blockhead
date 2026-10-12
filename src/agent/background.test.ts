@@ -865,7 +865,7 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
   h.crisis = null;
   const full: StockpileSnapshot = { levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] };
   (h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> }).check = async () => full;
-  (h.options.bot as unknown as { inventory: object }).inventory = { items: () => ["stone_sword", "stone_axe", "wooden_pickaxe"].map(name => ({ name, count: 1 })) };
+  (h.options.bot as unknown as { inventory: object }).inventory = { items: () => [{ name: "bread", count: 6 }, ...["stone_sword", "stone_axe", "wooden_pickaxe"].map(name => ({ name, count: 1 }))] };
   let active: { id: string; createdAt: string; successCriteria: unknown[] } | null = null;
   const started: string[] = [];
   const cancelled: string[] = [];
