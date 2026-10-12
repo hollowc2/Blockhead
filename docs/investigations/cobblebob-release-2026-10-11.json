@@ -1,0 +1,163 @@
+{
+  "verifiedAt": "2026-10-12T03:49:37.438770+00:00",
+  "deployedCommit": "6fa339d371a85a1b368452db50f8b067c48253fa",
+  "deploymentStartedAt": "2026-10-12T03:41:17.336884+00:00",
+  "runtimeHashesVerified": true,
+  "connected": true,
+  "self": {
+    "health": 20,
+    "hunger": 20,
+    "position": {
+      "x": 67.7,
+      "y": 99.875,
+      "z": 49.3
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "task": {
+    "id": "1fd92d14-29b6-489b-82b6-a89b1a4c6eca",
+    "type": "develop_land",
+    "priority": 40,
+    "source": "background",
+    "objective": "Clear and plant the next field around home.",
+    "status": "active",
+    "createdAt": "2026-10-12T03:47:40.563Z",
+    "startedAt": "2026-10-12T03:48:42.584Z",
+    "completedAt": null,
+    "phase": null,
+    "attempts": 2,
+    "lastError": null
+  },
+  "stockpiles": {
+    "levels": {
+      "wood": 64,
+      "food": 113,
+      "fuel": 64,
+      "torches": 66
+    },
+    "targets": {
+      "wood": 64,
+      "food": 64,
+      "fuel": 64,
+      "torches": 64
+    },
+    "deficits": []
+  },
+  "ownerProject": {
+    "id": "f3adef30-a71a-40cb-96fc-71dec89484f4",
+    "source": "user",
+    "userGoal": "Build a 7x4x7 room.",
+    "origin": {
+      "x": 63,
+      "y": 96,
+      "z": 53
+    },
+    "structureType": "simple_room",
+    "status": "blocked",
+    "phase": {
+      "id": "f3adef30-a71a-40cb-96fc-71dec89484f4:phase-structural_shell-002",
+      "label": "structural_shell-002",
+      "status": "blocked",
+      "verifiedOperations": 35,
+      "totalOperations": 50
+    },
+    "verifiedOperations": 85,
+    "totalOperations": 145,
+    "currentShortage": null,
+    "lastBlockingReason": "design blocked at 68,99,53 by birch_log",
+    "blueprintHash": "b8a86828ac58864c29f0b2980bcd6cba1e309e554c26406466b78d2faad83380"
+  },
+  "latestCompletedBaseRepair": {
+    "id": "102abd52-ef7c-44d7-906f-10ff230dd984",
+    "status": "completed",
+    "last_error": "3 failed attempts: Base doorway blocked at 65,100,54: approach timed_out",
+    "completed_at": "2026-10-12T03:45:57.825Z"
+  },
+  "llmFailure": null,
+  "deathsSinceFinalDeploy": 0,
+  "deathsSinceSurvivalCorrection": 0,
+  "eventCounts": {
+    "shutdown requested": 1,
+    "database checkpointed and closed": 1,
+    "shutdown complete; exiting": 1,
+    "database opened": 1,
+    "database migrated": 1,
+    "scheduler rehydrated from persistence": 1,
+    "logged in": 1,
+    "spawned": 1,
+    "stockpile check": 1,
+    "base structure incomplete; starting build": 9,
+    "anti-loop block expired; task requeued": 1,
+    "task activated": 27,
+    "home arrival recognized by horizontal anchor": 25,
+    "trip: path update": 4,
+    "base doorway approach": 1,
+    "build_base status": 1,
+    "task completed": 24,
+    "chat received": 1,
+    "free time; developing the land": 24,
+    "task enqueued": 25,
+    "develop: taking down leftover tree trunks": 25,
+    "develop: tidy done": 23,
+    "travel route leg": 2,
+    "pathfinder trip ended without arrival": 3,
+    "pathfinder forcefully reset after stall/timeout": 3,
+    "travel route leg failed; attempting walkToward fallback": 2,
+    "walkToward clearing obstacle": 1,
+    "agent heartbeat": 22,
+    "walkToward stalled, no diggable blocks found in adjacency": 11,
+    "night shelter: digging in": 1,
+    "pause requested for active task": 2,
+    "task execution threw": 1,
+    "task paused by preemption": 1,
+    "night shelter failed": 1,
+    "task failed": 1,
+    "stepping off a partial block before travelling": 1,
+    "home route leg": 1,
+    "home route leg failed; attempting walkToward fallback": 1,
+    "walkToward climbing: towered up one block": 1,
+    "staircase climb finished": 1
+  },
+  "baseLogs": [
+    {
+      "level": 30,
+      "time": 1791776757327,
+      "pid": 134337,
+      "hostname": "maia",
+      "target": {
+        "x": 65,
+        "y": 100,
+        "z": 54
+      },
+      "lower": "air",
+      "upper": "air",
+      "support": "air",
+      "botPosition": {
+        "x": 65.46416535565734,
+        "y": 100,
+        "z": 53.5
+      },
+      "approachIndex": 0,
+      "destination": {
+        "x": 65.5,
+        "y": 100,
+        "z": 53.5
+      },
+      "travelStatus": "arrived",
+      "msg": "base doorway approach"
+    },
+    {
+      "level": 30,
+      "time": 1791776757776,
+      "pid": 134337,
+      "hostname": "maia",
+      "message": "Base structure built: walls, roof, and door at home.",
+      "msg": "build_base status"
+    }
+  ],
+  "service": "ActiveState=active\nMainPID=134326\nNRestarts=0\n",
+  "rollback": "bash /home/corey/.local/share/blockhead-backups/reliability-20261012T025145Z/rollback.sh",
+  "soakLog": "observation-20261012T034117Z.jsonl",
+  "nightValidation": "world fixed at noon (doDaylightCycle=false); game rules left unchanged"
+}
