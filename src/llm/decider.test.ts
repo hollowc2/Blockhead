@@ -107,12 +107,23 @@ test("arguments the model nests under parameters are lifted into the task", asyn
   deepStrictEqual(nested, { type: "collect_resource", resource: "stone", quantity: 8 });
 });
 
-test("an idle director may keep answering wait; a repeated real task still trips the brake", async () => {
+test("repeated valid proposals remain observable; execution failures belong to the watchdog", async () => {
   // 2026-10-05 10:44-10:58: three "wait" answers in a row threw "repeated
   // identical model decisions" 13 times and dropped to the fallback ladder.
   const waiting = decider(async () => JSON.stringify({ task: { type: "wait" } }));
   for (let i = 0; i < 5; i++) equal((await waiting.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle")).task.type, "wait");
   const looping = decider(async () => JSON.stringify({ task: { type: "build_base" } }));
-  for (let i = 0; i < 3; i++) await looping.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle");
-  await rejects(looping.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle"), /repeated identical/);
+  for (let i = 0; i < 6; i++) equal((await looping.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle")).task.type, "build_base");
+  equal(looping.runtimeState, "READY");
+  equal(looping.lastCall?.tool, "build_base");
+  equal(looping.backgroundRetryAt, 0);
+});
+
+test("a model failure publishes bounded background backoff; explicit resume clears it", async () => {
+  const maker = decider(async () => { throw new Error("unavailable"); }, 0);
+  const start = Date.now();
+  await rejects(maker.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle"));
+  equal(maker.backgroundRetryAt >= start + 60_000, true);
+  maker.resume();
+  equal(maker.backgroundRetryAt, 0);
 });

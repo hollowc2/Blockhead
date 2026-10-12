@@ -40,7 +40,7 @@ test("projects durable construction progress and blocking details", () => {
     phase: { id: "phase-1", projectId: "project-1", ordinal: 0, label: "shell-001", operationStart: 0, operationEnd: 10, status: "blocked", attempts: 1, verifiedOperations: 2, totalOperations: 10 },
   });
   deepStrictEqual(projected, {
-    id: "project-1", structureType: "castle", status: "blocked",
+    id: "project-1", source: "user", userGoal: "Build a castle", origin: { x: 0, y: 64, z: 0 }, structureType: "castle", status: "blocked",
     phase: { id: "phase-1", label: "shell-001", status: "blocked", verifiedOperations: 2, totalOperations: 10 },
     verifiedOperations: 2, totalOperations: 10, currentShortage: { material: "stone", required: 8, available: 2 },
     lastBlockingReason: "waiting for stone", blueprintHash: "hash",

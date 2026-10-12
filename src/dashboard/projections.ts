@@ -23,6 +23,9 @@ export function projectBuildProject(view: BuildProjectStatusView | null | undefi
   const { project, phase } = view;
   return {
     id: project.id,
+    source: project.source,
+    userGoal: project.userGoal,
+    origin: { x: project.origin.x, y: project.origin.y, z: project.origin.z },
     structureType: project.structureType,
     status: project.status,
     phase: phase === null ? null : {

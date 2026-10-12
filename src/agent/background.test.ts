@@ -275,7 +275,7 @@ function newHarness(health: number, food: number): Harness {
 }
 
 test("a stuck food crisis re-enqueues at most once per cooldown window and retries after expiry", async () => {
-  const h = newHarness(12, 19); // health fine: hunting is not blocked by state
+  const h = newHarness(20, 19); // health fine: hunting is not blocked by state
 
   // Actionable crisis: preempts immediately.
   await h.manager.tick();
@@ -307,7 +307,7 @@ test("a stuck food crisis re-enqueues at most once per cooldown window and retri
 });
 
 test("repeated restore failures back off exponentially and a success resets the streak", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   await h.manager.tick();
   assert.equal(h.issued.length, 1);
 
@@ -364,7 +364,7 @@ test("a food crisis is attempted even at unregenerable low health, then stands d
 });
 
 test("directed stockpile restores honor the per-kind failure cooldown", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = { task: { type: "stockpile_maintenance", kind: "food" } };
@@ -395,7 +395,7 @@ test("directed stockpile restores honor the per-kind failure cooldown", async ()
 });
 
 test("a failed director task is recorded and suppresses the same directed pick during cooldown", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = { task: { type: "build_base" } };
@@ -416,21 +416,22 @@ test("a failed director task is recorded and suppresses the same directed pick d
   h.advance(1_000);
   await h.manager.tick();
   assert.equal(h.decisionCount, 2, "the director is still consulted");
-  assert.equal(h.enqueued.length, 1, "directed build stands down inside the cooldown window");
+  assert.equal(h.enqueued.filter(task => task.type === "build_base").length, 1, "directed build stands down inside the cooldown window");
+  assert.equal(h.enqueued.at(-1)?.type, "upgrade_equipment", "other feasible work continues during the build cooldown");
   assert.equal(h.warns.filter((w) => w.kind === "build").length, 1);
   assert.match(h.lastSituation ?? "", /Recent failures: build restore failed \(walls burned down\)/);
 
   // Window expired: the same directed pick runs again.
   h.advance(59_000);
   await h.manager.tick();
-  assert.equal(h.enqueued.length, 2);
-  assert.equal(h.enqueued[1]!.type, "build_base");
+  assert.equal(h.enqueued.filter(task => task.type === "build_base").length, 2);
+  assert.equal(h.enqueued.at(-1)!.type, "build_base");
 
   h.manager.stop();
 });
 
 test("a successful director task is not marked failed and stays immediately re-pickable", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = { task: { type: "build_base" } };
@@ -451,7 +452,7 @@ test("a successful director task is not marked failed and stays immediately re-p
 });
 
 test("the LLM director maps choices to background tasks and honors wait", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = {
@@ -481,7 +482,7 @@ test("the LLM director maps choices to background tasks and honors wait", async 
 });
 
 test("a blocked user build left in the queue does not silence the director", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.queued.push({
@@ -500,7 +501,7 @@ test("a blocked user build left in the queue does not silence the director", asy
 });
 
 test("the director consults the LLM at most once per interval and then stands by", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.config.background!.llm_decision_interval_seconds = 60;
@@ -520,7 +521,7 @@ test("the director consults the LLM at most once per interval and then stands by
 });
 
 test("a director failure falls back to the deterministic ladder", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = foodCrisis();
   h.directorFails = true;
@@ -542,7 +543,7 @@ test("a director failure falls back to the deterministic ladder", async () => {
 });
 
 test("a missing base structure runs the build before storage expansion", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorFails = true;
@@ -559,7 +560,7 @@ test("a missing base structure runs the build before storage expansion", async (
 });
 
 test("the director can direct a base build", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = { task: { type: "build_base" } };
@@ -574,7 +575,7 @@ test("the director can direct a base build", async () => {
 });
 
 test("the situation digest tells the director whether the base structure is incomplete", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.directorResult = { task: { type: "wait" } };
@@ -591,7 +592,7 @@ test("the situation digest tells the director whether the base structure is inco
 });
 
 test("the death-loop brake stands the loop down and prunes stale background work", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.loop = true;
   h.queued.push({
     id: "stale-food",
@@ -646,7 +647,7 @@ const flushMacrotasks = async (): Promise<void> => {
 };
 
 test("background failure cooldown survives manager recreation", async () => {
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   await h.manager.tick();
   h.bus.emit("task.failed", { task: failedFoodTask() });
   h.manager.stop();
@@ -668,7 +669,7 @@ test("background failure cooldown survives manager recreation", async () => {
 
 test("a task completion schedules a fresh LLM decision inside the decision interval", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.config.background!.llm_decision_interval_seconds = 60;
@@ -698,7 +699,7 @@ test("a task completion schedules a fresh LLM decision inside the decision inter
 
 test("a task failure schedules a fresh LLM decision inside the decision interval", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.config.background!.llm_decision_interval_seconds = 60;
@@ -722,7 +723,7 @@ test("a task failure schedules a fresh LLM decision inside the decision interval
 
 test("only one LLM decision runs at a time; a settle event during a decision re-checks once after", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.config.background!.llm_decision_interval_seconds = 60;
@@ -756,7 +757,7 @@ test("only one LLM decision runs at a time; a settle event during a decision re-
 
 test("repeated settle events coalesce into one decision and never duplicate concurrent calls", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const h = newHarness(12, 19);
+  const h = newHarness(20, 19);
   h.crisis = null;
   h.shortage = null;
   h.config.background!.llm_decision_interval_seconds = 60;
@@ -864,7 +865,7 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
   h.crisis = null;
   const full: StockpileSnapshot = { levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] };
   (h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> }).check = async () => full;
-  (h.options.bot as unknown as { inventory: object }).inventory = { items: () => [] };
+  (h.options.bot as unknown as { inventory: object }).inventory = { items: () => ["stone_sword", "stone_axe", "wooden_pickaxe"].map(name => ({ name, count: 1 })) };
   let active: { id: string; createdAt: string; successCriteria: unknown[] } | null = null;
   const started: string[] = [];
   const cancelled: string[] = [];
@@ -910,5 +911,30 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
   deaths = [h.options.now!() - 70 * 60_000, h.options.now!() - 120 * 60_000];
   await h.manager.tick();
   assert.deepEqual(started, [], "two deaths in six hours");
+  h.manager.stop();
+});
+
+
+test("model backoff uses deterministic maintenance without another model call", async () => {
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  h.shortage = { kind: "wood", target: 64, current: 0, deficit: 64 };
+  Object.defineProperty(h.options.decider, "backgroundRetryAt", { value: h.options.now!() + 60_000, configurable: true });
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 0);
+  assert.equal(h.issued.at(-1)?.kind, "wood");
+  h.manager.stop();
+});
+
+test("low health defers proposals while food crisis handling remains available", async () => {
+  const h = newHarness(9, 20);
+  h.crisis = null;
+  h.directorResult = { task: { type: "build_base" } };
+  await h.manager.tick();
+  assert.equal(h.decisionCount, 0);
+  assert.equal(h.enqueued.length, 0);
+  h.crisis = foodCrisis();
+  await h.manager.tick();
+  assert.equal(h.issued.at(-1)?.kind, "food");
   h.manager.stop();
 });

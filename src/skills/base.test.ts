@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import pino from "pino";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import { Vec3 } from "vec3";
@@ -35,6 +36,54 @@ const HOME: HomeLocation = { x: 10.5, y: 64, z: 20.5, dimension: "overworld" };
 const CX = 10;
 const CZ = 20;
 const FY = 64;
+
+test("an unsupported doorway budgets a floor block in addition to the door", () => {
+  const map = airWorld();
+  const lower = layout().doorCells[0]!;
+  map[`${lower.x},${lower.y - 1},${lower.z}`] = "air";
+  const before = measureStructure(stubBot(map), layout());
+  assert.equal(before.doorSupportMissing, true);
+  assert.equal(before.planksNeeded, before.missingWalls + before.missingRoof + 7);
+});
+
+test("starter doorway verifies its floor before placing either door half", async () => {
+  const { placeStarterDoor } = await import("./base.js");
+  const lower = new Vec3(65, 100, 54);
+  const map = new Map<string, string>([["65,98,54", "birch_planks"]]);
+  const placed: string[] = [];
+  const bot = {
+    entity: { position: new Vec3(65.6, 100, 56.5) },
+    inventory: { items: () => [{ name: "oak_planks", count: 6 }] },
+    blockAt: (at: Vec3) => ({ position: at, name: map.get(at.toString()) ?? "air", boundingBox: map.has(at.toString()) ? "block" : "empty" }),
+  } as unknown as Bot;
+  // Vec3.toString is the map key throughout this isolated interaction fixture.
+  map.clear();
+  map.set(lower.offset(0, -2, 0).toString(), "birch_planks");
+  const result = await placeStarterDoor(bot, { name: "oak_door" } as never, lower, new Set(), undefined, pino({ level: "silent" }), {
+    travel: async () => ({ status: "already_there" }),
+    place: async (_bot, item, at) => {
+      placed.push(item.name);
+      map.set(at.toString(), item.name);
+      if (item.name === "oak_door") map.set(at.offset(0, 1, 0).toString(), item.name);
+      return bot.blockAt(at);
+    },
+  });
+  assert.equal(result.block?.name, "oak_door");
+  assert.deepEqual(placed, ["oak_planks", "oak_door"]);
+});
+
+test("failed doorway approaches never send a placement", async () => {
+  const { placeStarterDoor } = await import("./base.js");
+  let placements = 0;
+  const bot = { blockAt: () => ({ name: "air" }), entity: null } as unknown as Bot;
+  const result = await placeStarterDoor(bot, { name: "oak_door" } as never, new Vec3(65, 100, 54), new Set(), undefined, pino({ level: "silent" }), {
+    travel: async () => ({ status: "timed_out" }),
+    place: async () => { placements++; return null; },
+  });
+  assert.equal(result.block, null);
+  assert.equal(placements, 0);
+  assert.match(result.reason ?? "", /timed_out/);
+});
 
 function layout(): BaseLayout {
   return baseLayoutFor(HOME);

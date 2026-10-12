@@ -16,6 +16,9 @@ export interface GoalSummary { id: string; description: string; source: GoalSour
 export interface TaskSummary { id: string; type: string; priority: TaskPriority; source: TaskSource; objective: string; status: TaskStatus; createdAt: string; startedAt: string | null; completedAt: string | null; phase: string | null; attempts: number | null; lastError: string | null }
 export interface BuildProjectSummary {
   id: string;
+  source?: "user" | "goal";
+  userGoal?: string;
+  origin?: Position;
   structureType: string;
   status: BuildProjectStatus;
   phase: { id: string; label: string; status: BuildPhaseStatus; verifiedOperations: number; totalOperations: number } | null;

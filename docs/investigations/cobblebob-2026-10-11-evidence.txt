@@ -1,0 +1,96 @@
+JOURNAL COUNTS [["trip: path update", 3426], ["agent heartbeat", 1237], ["trip: path reset", 346], ["task activated", 126], ["task enqueued", 107], ["pathfinder forcefully reset after stall/timeout", 107], ["pathfinder trip ended without arrival", 104], ["free time; developing the land", 88], ["home route leg", 82], ["stepping off a partial block before travelling", 80], ["travel route leg", 75], ["director decision failed; falling back to deterministic ladder", 74], ["task completed", 69], ["travel route progress", 51], ["chat received", 42], ["stockpile check", 41], ["home arrival recognized by horizontal anchor", 40], ["task failed", 35], ["develop: taking down leftover tree trunks", 31], ["develop: tidy done", 31], ["background restore standing by", 28], ["pause requested for active task", 28]]
+task completed count 69
+{"time": 1791766274701, "taskId": "7bfa1345-7624-4424-9d25-47405c124495", "msg": "task completed"}
+{"time": 1791767105146, "taskId": "f0c58722-f314-4007-a576-d04df9a64c37", "msg": "task completed"}
+{"time": 1791768772766, "taskId": "38d3ea96-98e9-4cf3-9ce7-c9aa5028fcbd", "msg": "task completed"}
+{"time": 1791768793413, "taskId": "5523fb02-6989-4cda-b188-bad3536445fd", "msg": "task completed"}
+task failed count 35
+{"time": 1791768841304, "taskId": "e9ca230c-7af6-41ae-801d-bf2baa7c81f6", "lastError": "no saplings to plant the tree farm at -8,40", "msg": "task failed"}
+{"time": 1791770129167, "taskId": "208c4b92-88f3-4f88-8ebb-fb430de21118", "lastError": "no saplings to plant the tree farm at -8,40", "msg": "task failed"}
+{"time": 1791770625467, "taskId": "5f2d5c21-2b69-499b-9be2-984fd78c0c47", "lastError": "Base partially built: 0 wall, 0 roof, door missing still to go.", "msg": "task failed"}
+{"time": 1791771359839, "taskId": "9087049d-b189-472f-bf22-d825e1cc6ee4", "lastError": "no saplings to plant the tree farm at -8,40", "msg": "task failed"}
+task blocked count 0
+placement not observed count 12
+{"time": 1791766068683, "item": "dirt", "at": {"x": 26, "y": 93, "z": 3}, "reference": "grass_block", "err": "Error: Server refused to place block at (26, 93, 3): the block is still air", "bot": {"x": 26.5, "y": 93, "z": 3.680794432049459}, "msg": "placement not observed"}
+{"time": 1791766502290, "item": "oak_door", "at": {"x": 65, "y": 100, "z": 54}, "reference": "oak_planks", "err": "Error: Server did not answer the placement at (65, 100, 54): Event blockUpdate:(65, 100, 54) did not fire within timeout of 5000ms", "bot": {"x": 62.42861967290208, "y": 93, "z": 61.3}, "msg": "placement not observed"}
+{"time": 1791768811850, "item": "oak_door", "at": {"x": 65, "y": 100, "z": 54}, "reference": "oak_planks", "err": "Error: Server refused to place oak_door at (65, 100, 54): the block is still air", "bot": {"x": 65.60787908907487, "y": 100, "z": 56.5}, "msg": "placement not observed"}
+{"time": 1791770625387, "item": "oak_door", "at": {"x": 65, "y": 100, "z": 54}, "reference": "oak_planks", "err": "Error: Server refused to place oak_door at (65, 100, 54): the block is still air", "bot": {"x": 65.60799939327792, "y": 100, "z": 56.5}, "msg": "placement not observed"}
+death site is guarded; aborting recovery count 2
+{"time": 1791761805552, "reason": "skeleton within 5 blocks of the site", "msg": "death site is guarded; aborting recovery"}
+{"time": 1791762704280, "reason": "skeleton within 1 blocks of the site", "msg": "death site is guarded; aborting recovery"}
+hostile mob at the death site; aborting recovery count 0
+develop: field levelled count 21
+{"time": 1791765469361, "plot": {"dx": 48, "dz": -24}, "padY": 95, "cut": 0, "filled": 0, "complete": true, "ground": 25, "minGround": 95, "maxGround": 95, "msg": "develop: field levelled"}
+{"time": 1791765785243, "plot": {"dx": 48, "dz": -24}, "padY": 95, "cut": 0, "filled": 0, "complete": true, "ground": 25, "minGround": 95, "maxGround": 95, "msg": "develop: field levelled"}
+{"time": 1791766068687, "plot": {"dx": -40, "dz": -48}, "padY": 93, "cut": 0, "filled": 7, "complete": false, "ground": 25, "minGround": 92, "maxGround": 93, "msg": "develop: field levelled"}
+{"time": 1791766159098, "plot": {"dx": -48, "dz": -48}, "padY": 94, "cut": 0, "filled": 0, "complete": false, "ground": 25, "minGround": 93, "maxGround": 94, "msg": "develop: field levelled"}
+develop: field done count 12
+{"time": 1791765147980, "plot": {"dx": 40, "dz": -24}, "cleared": 0, "planted": 59, "tilled": 58, "msg": "develop: field done"}
+{"time": 1791765447016, "plot": {"dx": 48, "dz": -16}, "cleared": 0, "planted": 49, "tilled": 49, "msg": "develop: field done"}
+{"time": 1791765659950, "plot": {"dx": 48, "dz": -24}, "cleared": 0, "planted": 9, "tilled": 9, "msg": "develop: field done"}
+{"time": 1791765988182, "plot": {"dx": 48, "dz": -24}, "cleared": 0, "planted": 56, "tilled": 56, "msg": "develop: field done"}
+SOURCE/RUNTIME SHA256
+src/skills/base.ts same
+src/skills/develop-land.ts same
+src/llm/decider.ts same
+src/agent/background.ts same
+src/minecraft/movement.ts same
+src/agent/watchdog.ts same
+src/agent/scheduler.ts same
+src/minecraft/smelting.ts same
+COLUMNS locations ['id', 'world_id', 'dimension', 'name', 'category', 'x', 'y', 'z', 'metadata_json', 'created_at', 'updated_at']
+locations {"id": 1, "world_id": 1, "dimension": "overworld", "name": "home", "category": "home", "x": 65.0, "y": 100.0, "z": 51.0, "metadata_json": null, "created_at": "2026-10-04T00:09:59.832Z", "updated_at": "2026-10-09T01:34:05.790Z"}
+locations {"id": 2, "world_id": 1, "dimension": "overworld", "name": "tree_farm_1", "category": "waypoint", "x": 57.0, "y": 96.0, "z": 11.0, "metadata_json": null, "created_at": "2026-10-06T17:32:17.730Z", "updated_at": "2026-10-06T17:34:57.203Z"}
+locations {"id": 3, "world_id": 1, "dimension": "overworld", "name": "tree_farm_2", "category": "waypoint", "x": 57.0, "y": 96.0, "z": 91.0, "metadata_json": null, "created_at": "2026-10-06T17:34:57.216Z", "updated_at": "2026-10-06T17:34:57.216Z"}
+COLUMNS tasks ['id', 'type', 'priority', 'source', 'objective', 'parameters_json', 'status', 'resume_state_json', 'parent_task_id', 'interrupted_task_id', 'last_error', 'created_at', 'started_at', 'completed_at', 'pause_sequence', 'work_key', 'phase', 'progress_fingerprint', 'last_progress_at', 'attempts', 'project_id', 'project_phase_id', 'execution_policy']
+COLUMNS build_projects ['id', 'user_goal', 'structure_type', 'source', 'status', 'design_json', 'origin_json', 'compiler_version', 'schema_version', 'blueprint_hash', 'blueprint_json', 'current_phase_id', 'required_resources_json', 'shortages_json', 'resume_state_json', 'verification_state_json', 'created_at', 'updated_at', 'completed_at', 'last_error']
+COLUMNS death_events ['id', 'world_id', 'dimension', 'x', 'y', 'z', 'recovered', 'recovery_failed_reason', 'created_at', 'inventory_json', 'recovery_skipped_reason', 'lifecycle', 'respawned_at', 'recovery_task_id']
+COLUMNS background_failures ['action', 'failed_at', 'retry_at', 'reason']
+background_failures {"action": "build", "failed_at": 1791770625455, "retry_at": 1791772425455, "reason": "Base partially built: 0 wall, 0 roof, door missing still to go."}
+background_failures {"action": "develop", "failed_at": 1791771359822, "retry_at": 1791771599822, "reason": "no saplings to plant the tree farm at -8,40"}
+RECENT DEBUG EVENTS
+{"timestamp": "2026-10-12T02:02:01.803Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 28m ago."}
+{"timestamp": "2026-10-12T02:03:31.777Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 30m ago."}
+{"timestamp": "2026-10-12T02:03:47.088Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 0m ago."}
+{"timestamp": "2026-10-12T02:05:02.238Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 1m ago."}
+{"timestamp": "2026-10-12T02:06:32.263Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 3m ago."}
+{"timestamp": "2026-10-12T02:08:02.237Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 4m ago."}
+{"timestamp": "2026-10-12T02:09:32.253Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 6m ago."}
+{"timestamp": "2026-10-12T02:11:02.218Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 7m ago."}
+{"timestamp": "2026-10-12T02:12:32.252Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 9m ago."}
+{"timestamp": "2026-10-12T02:14:02.221Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 10m ago."}
+{"timestamp": "2026-10-12T02:16:00.749Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 12m ago; develop restore failed (no saplings to plant the tree farm at -8,40) 0m ago.\nBlocked actions (do not retry until the cooldown expires): develop_land (3 failed attempts (no saplings to plant the tree farm at -8,40); temporarily blocked until 2026-10-12T02:25:59.748Z; retry in 600s)."}
+{"timestamp": "2026-10-12T02:16:03.922Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 12m ago; develop restore failed (no saplings to plant the tree farm at -8,40) 0m ago.\nBlocked actions (do not retry until the cooldown expires): develop_land (3 failed attempts (no saplings to plant the tree farm at -8,40); temporarily blocked until 2026-10-12T02:25:59.748Z; retry in 596s)."}
+{"timestamp": "2026-10-12T02:17:30.735Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 14m ago; develop restore failed (no saplings to plant the tree farm at -8,40) 2m ago.\nBlocked actions (do not retry until the cooldown expires): develop_land (3 failed attempts (no saplings to plant the tree farm at -8,40); temporarily blocked until 2026-10-12T02:25:59.748Z; retry in 510s)."}
+{"timestamp": "2026-10-12T02:18:31.210Z", "event": "director_decision", "situation": "Stockpiles: all at or above target.\nBase structure: incomplete (0 wall, 0 roof blocks, door missing).\nTime of day: day.\nRecent failures: build restore failed (Base partially built: 0 wall, 0 roof, door missing still to go.) 15m ago; develop restore failed (no saplings to plant the tree farm at -8,40) 3m ago.\nBlocked actions (do not retry until the cooldown expires): develop_land (3 failed attempts (no saplings to plant the tree farm at -8,40); temporarily blocked until 2026-10-12T02:25:59.748Z; retry in 449s)."}
+TASK OUTCOMES SINCE SERVICE START (UTC)
+{"type": "build_base", "status": "failed", "count": 11}
+{"type": "collect_resource", "status": "completed", "count": 1}
+{"type": "death_recovery", "status": "failed", "count": 3}
+{"type": "defend_self", "status": "completed", "count": 16}
+{"type": "develop_land", "status": "cancelled", "count": 3}
+{"type": "develop_land", "status": "completed", "count": 40}
+{"type": "develop_land", "status": "failed", "count": 17}
+{"type": "ensure_item", "status": "completed", "count": 5}
+{"type": "ensure_item", "status": "failed", "count": 4}
+{"type": "gather_food", "status": "completed", "count": 2}
+{"type": "night_shelter", "status": "completed", "count": 2}
+{"type": "stockpile_maintenance", "status": "completed", "count": 3}
+BLOCKED BUILD PROJECTS
+{"id": "f3adef30-a71a-40cb-96fc-71dec89484f4", "user_goal": "Build a 7x4x7 room.", "source": "user", "status": "blocked", "origin_json": "{\"x\":63,\"y\":96,\"z\":53,\"dimension\":\"overworld\"}", "last_error": "design blocked at 68,99,53 by birch_log", "updated_at": "2026-10-04T03:18:10.729Z"}
+SUCCESSFUL MODEL RESULT LOGGING SINCE SERVICE START
+count 11
+{"timestamp": "2026-10-11T22:41:25.497Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2924}
+{"timestamp": "2026-10-11T22:45:03.340Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2518}
+{"timestamp": "2026-10-11T22:45:50.854Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2524}
+{"timestamp": "2026-10-11T23:54:45.670Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"stockpile_maintenance\",\n  \"parameters\": {\n    \"kind\": \"food\"\n  }\n}", "decision": {"task": {"type": "stockpile_maintenance", "kind": "food"}}, "duration_ms": 3743}
+{"timestamp": "2026-10-12T00:08:20.031Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 3001}
+{"timestamp": "2026-10-12T00:51:19.206Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2946}
+{"timestamp": "2026-10-12T00:55:08.007Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2698}
+{"timestamp": "2026-10-12T00:56:34.373Z", "event": "agent_decision_result", "llm_response": "{\n  \"task\": \"build_base\"\n}", "decision": {"task": {"type": "build_base"}}, "duration_ms": 2853}
+SERVICE SUMMARY
+ActiveEnterTimestamp=Sun 2026-10-11 15:33:38 PDT
+NRestarts=0
+ExecMainStatus=0
+
+CAPTURED AT 2026-10-12T02:18:33.428805+00:00

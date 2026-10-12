@@ -25,8 +25,7 @@ export class DecisionMaker {
   private readonly activeCalls = new Map<number, { callType: NonNullable<LlmActivity["callType"]>; startedAt: number }>();
   private nextActivityId = 0;
   private runtime: LlmRuntimeState = "READY";
-  private lastDecisionKey: string | null = null;
-  private repeatedDecisions = 0;
+  private retryAt = 0;
   constructor(options: DecisionMakerOptions) { this.client = options.client; this.registry = options.registry; this.debugLog = options.debugLog; this.maxRetries = options.maxRetries; this.skills = options.skills; }
   get lastCall(): LlmCallRecord | null { return this.lastCallRecord; }
   get activity(): LlmActivity {
@@ -36,7 +35,8 @@ export class DecisionMaker {
       : { thinking: true, callType: active.callType, startedAt: new Date(active.startedAt).toISOString() };
   }
   get runtimeState(): LlmRuntimeState { return this.runtime; }
-  resume(): void { this.runtime = "READY"; this.repeatedDecisions = 0; this.lastDecisionKey = null; }
+  get backgroundRetryAt(): number { return this.retryAt; }
+  resume(): void { this.runtime = "READY"; this.retryAt = 0; }
 
   async decide(input: DecisionInput, ctx: ToolContext): Promise<AgentDecision> {
     return this.withActivity("owner_instruction", async (startedAt) => {
@@ -44,7 +44,7 @@ export class DecisionMaker {
       const shots = this.skills ? fewShotsFromSkills(this.skills.recent({ limit: FEW_SHOT_FETCH })) : [];
       const result = await this.completeWithRepair(AgentDecisionSchema, buildMessages(snapshot, this.registry.describe(), shots), "agent_decision");
       const decision = result.decision as AgentDecision;
-      this.noteDecision(decision);
+      this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
       this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: concise(decision.rationale), success: true, error: null });
       return decision;
@@ -56,7 +56,7 @@ export class DecisionMaker {
       const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "director_decision", situation });
       const result = await this.completeWithRepair(NextTaskSchema, buildDirectorMessages(snapshot, situation), "director_decision");
       const decision = result.decision as NextTaskDecision;
-      this.noteDecision(decision);
+      this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
       this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale), success: true, error: null });
       return decision;
@@ -68,7 +68,7 @@ export class DecisionMaker {
       const snapshot = buildStateSnapshot(ctx, input); this.logRequest(snapshot, { event: "goal_decision", goal_context: context });
       const result = await this.completeWithRepair(NextGoalActionSchema, buildGoalDecisionMessages(snapshot, context), "goal_decision");
       const decision = result.decision as NextGoalActionDecision;
-      this.noteDecision(decision);
+      this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
       this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale), success: true, error: null });
       return decision;
@@ -81,6 +81,7 @@ export class DecisionMaker {
     this.activeCalls.set(id, { callType, startedAt });
     try { return await action(startedAt); }
     catch (error) {
+      this.retryAt = Date.now() + 60_000;
       this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: "unknown", rationale: null, success: false, error: conciseError(error) });
       throw error;
     } finally { this.activeCalls.delete(id); }
@@ -120,25 +121,8 @@ export class DecisionMaker {
     throw new Error(`model returned invalid output after ${this.maxRetries + 1} attempts: ${String(lastError)}`);
   }
 
-  private noteDecision(decision: unknown): void {
-    // Standing by is a steady state, not a loop: an idle director answering
-    // "wait" three times tripped this brake 13 times in 20 minutes
-    // (2026-10-05 10:44-10:58) and dropped to the fallback ladder each time.
-    if (isWaitDecision(decision)) {
-      this.lastDecisionKey = null;
-      this.repeatedDecisions = 0;
-      this.runtime = "READY";
-      return;
-    }
-    const key = JSON.stringify(decision);
-    if (key === this.lastDecisionKey) this.repeatedDecisions++;
-    else { this.lastDecisionKey = key; this.repeatedDecisions = 0; }
-    if (this.repeatedDecisions >= 3) {
-      this.runtime = "PAUSED";
-      throw new Error("repeated identical model decisions exceeded retry budget");
-    }
-    this.runtime = "READY";
-  }
+  // Execution outcomes belong to the scheduler watchdog. Identical valid
+  // proposals can succeed repeatedly, or be vetoed without ever running.
 
   private logRequest(snapshot: StateSnapshot, extra: Record<string, unknown> = {}): void { this.debugLog.write({ event: "agent_decision", ...extra, from: snapshot.from, instruction: snapshot.instruction, state_snapshot: snapshot, tools: this.registry.names() }); }
   private logResult(decision: unknown, raw: string, durationMs: number): void { this.debugLog.write({ event: "agent_decision_result", llm_response: raw, decision, duration_ms: durationMs }); }
@@ -158,13 +142,6 @@ function conciseError(error: unknown): string {
 
 function repairMessages(messages: readonly LlmMessage[], raw: string, error: string, shape: string): LlmMessage[] {
   return [...messages, { role: "assistant", content: raw }, { role: "user", content: `Your previous response was invalid: ${error}. Return only ${shape}. Do not include markdown, prose, or any other structure.` }];
-}
-
-/** A director task or goal action that only waits. */
-function isWaitDecision(decision: unknown): boolean {
-  if (typeof decision !== "object" || decision === null) return false;
-  const record = decision as { task?: { type?: unknown }; action?: { type?: unknown } };
-  return record.task?.type === "wait" || record.action?.type === "wait";
 }
 
 /**

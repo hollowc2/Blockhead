@@ -12,7 +12,7 @@
     $("goal").textContent = s.goal ? `${s.goal.description} (${s.goal.status})` : "No active goal";
     $("task").textContent = s.task ? `${s.task.objective} (${s.task.status})` : "No active task"; $("action").textContent = text(s.action?.label);
     const project = s.worldProject || s.buildProject; const phase = project?.phase;
-    $("project").textContent = project ? `${project.kind || project.structureType} (${project.status})` : "No active project";
+    $("project").textContent = project ? `${project.kind || project.structureType} (${project.status})${project.source === "user" ? " · owner project" : ""}${project.userGoal ? ` · ${project.userGoal}` : ""}` : "No active project";
     $("projectPhase").textContent = phase ? `${phase.label} (${phase.status})` : "—";
     $("projectProgress").textContent = project ? (project.verifiedOperations !== undefined ? `${project.verifiedOperations} / ${project.totalOperations}` : text(project.resumeState?.nextIndex, "running")) : "—";
     $("projectBlock").textContent = project?.currentShortage ? `${project.currentShortage.material}: ${project.currentShortage.required - project.currentShortage.available} missing` : (project?.lastBlockingReason || project?.blocker || "—");

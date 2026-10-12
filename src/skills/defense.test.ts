@@ -16,6 +16,15 @@ type Mob = { id: number; type: string; name: string; position: Point; health?: n
 
 const HOME: Point = { x: 0, y: 64, z: 0 };
 
+test("a failed retreat is reported as unsafe instead of a successful defense", async () => {
+  const h = harness({ health: 6 });
+  h.hooks.travel = () => ({ status: "timed_out" });
+  const result = await h.runner.defendSelf({ reflex: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "PATH_UNREACHABLE");
+  assert.equal(result.data?.retreated, false);
+});
+
 function harness(options: { health?: number; self?: Point } = {}) {
   const self = { id: 1, type: "player", name: "CobbleBob", position: { ...(options.self ?? { x: 20, y: 64, z: 0 }) } };
   const entities: Record<number, Mob> = {};

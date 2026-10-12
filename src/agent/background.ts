@@ -25,6 +25,7 @@ import type { BackgroundFailuresRepository } from "../memory/background-failures
 import { adoptHomeChests, findHomeChest, homeStorageUnloaded, pruneBlockedChests } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
+import { workReadiness } from "./work-readiness.js";
 
 /**
  * Phase 7/13: the background coordinator (spec section 4.3). This is
@@ -86,7 +87,7 @@ export interface BackgroundManagerOptions {
   /** Home lighting: dark spots around home are torched before ordinary restores. */
   lightHome?: { darkSpots(): unknown[] };
   /** Idle-time land development: clear fields and plant them. */
-  developLand?: { hasWork(): boolean };
+  developLand?: { hasWork(): boolean; nextWork?(): { plot: string; kind: string } | null };
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -182,7 +183,14 @@ export class BackgroundManager {
     const onSettled = (): void => this.scheduleKick();
     const onCompleted = ({ task }: { task: Task }): void => {
       const key = failureKey(task);
-      if (key !== null) this.failureStreak.delete(key);
+      if (key !== null) {
+        this.failureStreak.delete(key);
+        this.lastFailedAt.delete(key);
+        this.lastFailReason.delete(key);
+        this.retryAt.delete(key);
+        this.lastBlockNotice.delete(key);
+        this.opts.backgroundFailures?.remove(key);
+      }
       this.scheduleKick();
     };
     const onFailed = ({ task }: { task: Task }): void => {
@@ -447,6 +455,25 @@ export class BackgroundManager {
     // Light up home before ordinary work: unlit forest around home spawned
     // the mobs that killed the bot eight times in eight minutes and blew up
     // the home chest (2026-10-04 20:13-20:21).
+    // Terminal goal bookkeeping must still run while rearming/healing.
+    const unsafeGoal = this.opts.goals?.active();
+    if (unsafeGoal !== null && unsafeGoal !== undefined) {
+      const deaths = (this.opts.recentDeathTimes?.() ?? []).filter(at => at >= Date.parse(unsafeGoal.createdAt)).length;
+      if (deaths >= GOAL_MAX_DEATHS) this.opts.goals!.cancel(`given up after ${deaths} deaths working toward it`);
+    }
+    const readiness = workReadiness(bot);
+    if (readiness !== null) {
+      if (this.lastBlockNotice.get("readiness") !== readiness.reason) {
+        logger.info({ reason: readiness.reason }, "background waiting for safe work readiness");
+        this.lastBlockNotice.set("readiness", readiness.reason);
+      }
+      if (readiness.item !== undefined && !this.kindBlocked(`rearm:${readiness.item}`)) {
+        scheduler.enqueue({ type: "ensure_item", priority: TaskPriority.MAINTENANCE, source: "background", objective: readiness.reason, parameters: { item: readiness.item, quantity: 1 }, workKey: `background:rearm:${readiness.item}` });
+        scheduler.claim();
+      }
+      return;
+    }
+    this.lastBlockNotice.delete("readiness");
     if (this.opts.lightHome !== undefined && !this.kindBlocked("light")) {
       const dark = await this.worldProbe(async () => this.opts.lightHome!.darkSpots().length);
       if (dark > 0) {
@@ -468,7 +495,7 @@ export class BackgroundManager {
     // floor. The step either resolves the goal (criteria met / blocked /
     // cancelled), enqueues one goal task, or stands by; when it handles the
     // tick it returns and the director does not also decide.
-    if (this.opts.config.background?.llm_decisions ?? true) {
+    if ((this.opts.config.background?.llm_decisions ?? true) && (this.opts.decider.backgroundRetryAt ?? 0) <= this.now()) {
       if (await this.runGoalStep(snapshot, decisionEligible)) return;
     }
 
@@ -477,7 +504,7 @@ export class BackgroundManager {
     // clear and plant the next field. The director only ever chose "wait".
     if (await this.developWhenIdle(snapshot)) return;
 
-    if (!(this.opts.config.background?.llm_decisions ?? true)) {
+    if (!(this.opts.config.background?.llm_decisions ?? true) || (this.opts.decider.backgroundRetryAt ?? 0) > this.now()) {
       await this.deterministicFallback(snapshot);
       return;
     }
@@ -499,7 +526,7 @@ export class BackgroundManager {
         this.buildSituation(snapshot, buildCheck),
       );
       this.lastDecisionAt = now;
-      this.applyDirectedDecision(decision, snapshot);
+      if (!this.applyDirectedDecision(decision, snapshot)) await this.deterministicFallback(snapshot);
     } catch (err) {
       // Model down or invalid output: the deterministic ladder keeps the bot
       // working, and the interval is honored before the next attempt.
@@ -531,8 +558,10 @@ export class BackgroundManager {
     if (this.kindBlocked("develop")) return false;
     const work = await this.worldProbe(async () => develop.hasWork());
     if (!work) return false;
+    const planned = develop.nextWork === undefined ? null : await this.worldProbe(async () => develop.nextWork!());
+    if (planned !== null && this.kindBlocked(`develop:${planned.plot}`)) return false;
     this.opts.logger.info({}, "free time; developing the land");
-    scheduler.enqueue({ type: "develop_land", priority: TaskPriority.BACKGROUND, source: "background", objective: "Clear and plant the next field around home.", parameters: {}, workKey: "develop-land" });
+    scheduler.enqueue({ type: "develop_land", priority: TaskPriority.BACKGROUND, source: "background", objective: "Clear and plant the next field around home.", parameters: planned ?? {}, workKey: planned === null ? "develop-land" : `develop-land:${planned.kind}:${planned.plot}` });
     scheduler.claim();
     return true;
   }
@@ -660,9 +689,8 @@ export class BackgroundManager {
     // The centralized stockpile shed comes before storage expansion: chests,
     // the table, and the furnace land on blueprint slots inside it, so the
     // structure is the first infrastructure a healthy bot builds.
-    if (this.kindBlocked("build")) return;
     const buildCheck = await this.worldProbe(() => this.opts.buildBase.needsAttention());
-    if (buildCheck.needsWork) {
+    if (!this.kindBlocked("build") && buildCheck.needsWork) {
       this.opts.logger.info({ reason: buildCheck.reason }, "base structure incomplete; starting build");
       this.opts.scheduler.enqueue({
         type: "build_base",
@@ -735,6 +763,8 @@ export class BackgroundManager {
 
     const failures: string[] = [];
     const now = this.now();
+    const cooldowns = [...this.retryAt].filter(([, at]) => at > now);
+    if (cooldowns.length > 0) lines.push(`Unavailable work (choose another task or wait): ${cooldowns.map(([key, at]) => `${key} retry in ${Math.ceil((at - now) / 1000)}s`).join("; ")}.`);
     for (const [key, at] of this.lastFailedAt) {
       const ageMin = Math.max(0, Math.round((now - at) / 60_000));
       failures.push(`${key} restore failed (${this.lastFailReason.get(key) ?? "no reason recorded"}) ${ageMin}m ago`);
@@ -763,7 +793,7 @@ export class BackgroundManager {
    * interval. The chosen task is claimed immediately so it becomes ACTIVE
    * and the dispatcher runs it.
    */
-  private applyDirectedDecision(decision: NextTaskDecision, snapshot: StockpileSnapshot): void {
+  private applyDirectedDecision(decision: NextTaskDecision, snapshot: StockpileSnapshot): boolean {
     const { scheduler, maintenance, bus, logger } = this.opts;
     const task = decision.task;
     bus.emit("director.decided", { task: task.type, rationale: decision.rationale ?? null });
@@ -771,8 +801,9 @@ export class BackgroundManager {
     switch (task.type) {
       case "wait":
         logger.info({}, "director standing by");
-        return;
+        return true;
       case "collect_resource": {
+        if (this.kindBlocked(`resource:${task.resource}`)) return false;
         const quantity = task.quantity;
         scheduler.enqueue({
           type: "collect_resource",
@@ -782,18 +813,18 @@ export class BackgroundManager {
           parameters: { resource: task.resource, quantity },
         });
         scheduler.claim();
-        return;
+        return true;
       }
       case "stockpile_maintenance": {
         const deficit = snapshot.deficits.find((d) => d.kind === task.kind);
         if (deficit === undefined) {
           logger.info({ kind: task.kind }, "directed maintenance for a full stockpile; skipping");
-          return;
+          return false;
         }
         // kindBlocked logs the standing-by notice itself.
-        if (this.kindBlocked(task.kind)) return;
+        if (this.kindBlocked(task.kind)) return false;
         maintenance.runMaintenance(deficit);
-        return;
+        return true;
       }
       case "organize_storage":
         scheduler.enqueue({
@@ -804,10 +835,10 @@ export class BackgroundManager {
           parameters: {},
         });
         scheduler.claim();
-        return;
+        return true;
       case "build_base":
         // A failed build stands down into the same per-kind cooldown.
-        if (this.kindBlocked("build")) return;
+        if (this.kindBlocked("build")) return false;
         scheduler.enqueue({
           type: "build_base",
           priority: TaskPriority.BACKGROUND,
@@ -816,7 +847,7 @@ export class BackgroundManager {
           parameters: {},
         });
         scheduler.claim();
-        return;
+        return true;
       case "go_home":
         scheduler.enqueue({
           type: "go_home",
@@ -826,7 +857,7 @@ export class BackgroundManager {
           parameters: {},
         });
         scheduler.claim();
-        return;
+        return true;
     }
   }
 
@@ -1120,6 +1151,7 @@ function failureKey(task: Task): string | null {
   if (task.type === "upgrade_equipment") return "upgrade";
   if (task.type === "build_base") return "build";
   if (task.type === "light_home") return "light";
-  if (task.type === "develop_land") return "develop";
+  if (task.type === "develop_land") return task.parameters.plot === undefined ? "develop" : `develop:${String(task.parameters.plot)}`;
+  if (task.type === "ensure_item") return `rearm:${String(task.parameters.item ?? "")}`;
   return null;
 }

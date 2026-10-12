@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type { Logger } from "pino";
+import { Vec3 } from "vec3";
 import type { EventBus } from "../events/bus.js";
 import { HOSTILE_MOB_NAMES, isMobEntity, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import type { Scheduler } from "./scheduler.js";
@@ -49,8 +50,9 @@ export class SelfDefenseReflex {
     if (this.timer !== null) return;
     const onHurt = (hurt: Entity, source?: Entity | null): void => {
       if (hurt.id !== this.opts.bot.entity?.id) return;
-      if (source === null || source === undefined || !isHostileMob(source)) return;
-      this.trigger(`hurt by ${source.name ?? "hostile"}`);
+      const attacker = source !== null && source !== undefined && isHostileMob(source) ? source : nearestThreat(this.opts.bot, 24);
+      if (attacker === null) return;
+      this.trigger(`hurt with ${attacker.name ?? "hostile"} in range`, true);
     };
     this.onHurt = onHurt;
     this.opts.bot.on("entityHurt", onHurt);
@@ -85,9 +87,9 @@ export class SelfDefenseReflex {
     if (threat !== null) this.trigger(`${threat.name ?? "hostile"} within ${REFLEX_TRIGGER_RADIUS} blocks`);
   }
 
-  private trigger(reason: string): void {
+  private trigger(reason: string, hurt = false): void {
     if (this.opts.bot.entity === null || this.opts.bot.health <= 0) return;
-    if (this.failedAt !== null && this.now() - this.failedAt < FAILURE_COOLDOWN_MS) return;
+    if (!hurt && this.failedAt !== null && this.now() - this.failedAt < FAILURE_COOLDOWN_MS) return;
     const active = this.opts.scheduler.active;
     if (active?.workKey === WORK_KEY || active?.type === "defend_self" || active?.type === "defend_player") return;
     if (this.opts.scheduler.queued.some((task) => task.workKey === WORK_KEY)) return;
@@ -109,22 +111,39 @@ function isHostileMob(entity: Entity): boolean {
 }
 
 /** The nearest hostile mob close enough, and level enough, to be attacking. */
-export function nearestThreat(bot: Bot): Entity | null {
+export function nearestThreat(bot: Bot, damageRadius?: number): Entity | null {
   const self = bot.entity?.position;
   if (self === undefined || self === null) return null;
   let best: Entity | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
-  for (const entity of Object.values(bot.entities)) {
+  for (const entity of Object.values(bot.entities ?? {})) {
     if (!isHostileMob(entity) || entity.position === undefined || entity.position === null) continue;
     // A neutral mob nearby is not an attack; one that hits the bot still
     // triggers the reflex through entityHurt.
     if (PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "")) continue;
-    if (Math.abs(entity.position.y - self.y) > REFLEX_TRIGGER_HEIGHT) continue;
+    const ranged = /^(skeleton|stray|pillager|drowned)$/.test(entity.name ?? "");
+    if (Math.abs(entity.position.y - self.y) > (ranged ? 12 : REFLEX_TRIGGER_HEIGHT)) continue;
     const distance = Math.hypot(entity.position.x - self.x, entity.position.z - self.z);
-    if (distance <= REFLEX_TRIGGER_RADIUS && distance < bestDistance) {
+    const radius = damageRadius ?? (ranged ? 16 : REFLEX_TRIGGER_RADIUS);
+    if (distance <= radius && distance < bestDistance && threatLineClear(bot, entity)) {
       best = entity;
       bestDistance = distance;
     }
   }
   return best;
+}
+
+/** Solid cover separates loaded mobs from an exposed attacker. */
+export function threatLineClear(bot: Bot, entity: Entity): boolean {
+  if (typeof bot.blockAt !== "function") return true;
+  const self = bot.entity?.position;
+  if (self === undefined || self === null) return false;
+  const start = new Vec3(self.x, self.y + 1.5, self.z);
+  const end = new Vec3(entity.position.x, entity.position.y + 1.2, entity.position.z);
+  const steps = Math.ceil(start.distanceTo(end) * 2);
+  for (let i = 1; i < steps; i++) {
+    const block = bot.blockAt(start.plus(end.minus(start).scaled(i / steps)));
+    if (block === null || block.boundingBox === "block") return false;
+  }
+  return true;
 }

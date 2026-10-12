@@ -462,10 +462,10 @@ export class DefenseRunner {
    * Run from the hostiles around the bot, leaning toward home when home is
    * not back toward them. Best effort: one short trip, whatever its outcome.
    */
-  private async retreat(reason: string): Promise<void> {
+  private async retreat(reason: string): Promise<boolean> {
     const bot = this.opts.bot;
     const self = bot.entity?.position;
-    if (self === undefined || self === null) return;
+    if (self === undefined || self === null) return false;
     const threats = Object.values(bot.entities).filter((entity) =>
       entity.type !== "player" && isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "") && isLiveEntity(entity)
       && distanceBetween(entity.position, self) <= RETREAT_THREAT_RADIUS);
@@ -481,12 +481,14 @@ export class DefenseRunner {
       to: { x: Math.round(target.x), z: Math.round(target.z) },
       health: bot.health,
     }, "defense: retreating");
-    await this.actions.travel(bot, target, { range: 3, timeoutMs: RETREAT_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+    const travel = await this.actions.travel(bot, target, { range: 3, timeoutMs: RETREAT_TIMEOUT_MS, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+    return travel.status === "arrived" || travel.status === "already_there";
   }
 
   private async retreatResult(data: DefenseData, reason: string): Promise<SkillResult<DefenseData>> {
-    await this.retreat(reason);
+    const escaped = await this.retreat(reason);
     if (this.stopRequested) return this.interrupted(data);
+    if (!escaped) return this.fail(data, "PATH_UNREACHABLE", `could not retreat: ${reason}`, true);
     data.retreated = true;
     this.announce(data);
     // Running is the defense working, not failing: a failed reflex pass

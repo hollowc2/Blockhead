@@ -242,13 +242,15 @@ export interface StructureMeasurement {
   missingRoof: number;
   /** True when the door gap is empty and a door can be placed. */
   doorMissing: boolean;
+  /** The doorway has no floor; a door cannot attach to a side wall. */
+  doorSupportMissing: boolean;
   /**
    * Cells that are neither air nor a usable material — an unloaded chunk or
    * a foreign block. Never placeable without demolition; the builder counts
    * them so it does not mistake a blocked base for a complete one.
    */
   blocked: number;
-  /** Planks the missing parts consume (walls + roof + door recipe). */
+  /** Planks for walls, roof, doorway floor, and the door recipe. */
   planksNeeded: number;
   /** True when a build/repair run has something to do. */
   needsWork: boolean;
@@ -289,8 +291,11 @@ export function measureStructure(bot: Bot, layout: BaseLayout): StructureMeasure
   }
   const doorMissing = lower !== null && upper !== null && isAir(lower) && isAir(upper);
 
-  const planksNeeded = missingWalls + missingRoof + (doorMissing ? DOOR_PLANK_COST : 0);
-  return { missingWalls, missingRoof, doorMissing, blocked, planksNeeded, needsWork: planksNeeded > 0 || blocked > 0 };
+  const support = bot.blockAt(layout.doorCells[0]!.offset(0, -1, 0));
+  const doorSupportMissing = doorMissing && isAir(support);
+  if (doorMissing && !doorSupportMissing && (support === null || !isSolid(support))) blocked++;
+  const planksNeeded = missingWalls + missingRoof + (doorMissing ? DOOR_PLANK_COST : 0) + Number(doorSupportMissing);
+  return { missingWalls, missingRoof, doorMissing, doorSupportMissing, blocked, planksNeeded, needsWork: planksNeeded > 0 || blocked > 0 };
 }
 
 // --- placement primitives ---
@@ -347,7 +352,7 @@ function findReferenceFor(bot: Bot, cell: Vec3, placed: ReadonlySet<string>): Pi
 /** Conservative client-side reach check matching the block interaction ray. */
 export function isPlacementWithinReach(bot: Bot, reference: Block, face: Vec3): boolean {
   const eye = bot.entity?.position.offset(0, 1.62, 0);
-  return eye !== undefined && eye.distanceTo(reference.position.plus(face.scaled(0.5))) <= SIMPLE_BUILD_PLACE_REACH;
+  return eye !== undefined && eye.distanceTo(reference.position.offset(0.5, 0.5, 0.5).plus(face.scaled(0.5))) <= SIMPLE_BUILD_PLACE_REACH;
 }
 
 /**
@@ -374,7 +379,11 @@ async function placeAtCell(
     return name.endsWith("_door") ? isDoorBlock(block) : isPlanksItemName(block?.name ?? "");
   },
 ): Promise<Block | null> {
-  const support = findReferenceFor(bot, cell, placed);
+  const isDoor = item.name.endsWith("_door") && !item.name.endsWith("trapdoor");
+  const below = isDoor ? bot.blockAt(cell.offset(0, -1, 0)) : null;
+  const support = isDoor
+    ? below !== null && isSolid(below) && !isInteractableBlock(below) ? { reference: below, face: new Vec3(0, 1, 0) } : null
+    : findReferenceFor(bot, cell, placed);
   const before = bot.blockAt(cell);
   const inventoryBefore = bot.inventory.items().filter((carried) => carried.name === item.name).reduce((sum, carried) => sum + carried.count, 0);
   const baseLog = {
@@ -393,7 +402,7 @@ async function placeAtCell(
     return null;
   }
   const referenceFaceDistance = bot.entity === null ? null : bot.entity.position.offset(0, 1.62, 0).distanceTo(support.reference.position.plus(support.face.scaled(0.5)));
-  if (isCreativeMode(bot) && !isPlacementWithinReach(bot, support.reference, support.face)) {
+  if (!isPlacementWithinReach(bot, support.reference, support.face)) {
     context.logger?.warn({ ...baseLog, referenceFaceDistance, finalReason: "reference face out of reach" }, "simple build placement failed");
     return null;
   }
@@ -421,6 +430,43 @@ async function placeAtCell(
  * points keep the placement reference inside the interaction radius while
  * approaching from several horizontal sides and from above.
  */
+export async function placeStarterDoor(
+  bot: Bot, item: Item, lower: Vec3, placed: ReadonlySet<string>, signal: AbortSignal | undefined, logger: Logger,
+  actions: { travel?: typeof travelAndWait; place?: typeof placeAtCell } = {},
+): Promise<{ block: Block | null; reason: string | null }> {
+  let reason = "no reachable doorway approach";
+  for (const [index, dz] of [1.5, -1.5].entries()) {
+    if (signal?.aborted) return { block: null, reason: "interrupted" };
+    const destination = lower.offset(0.5, 0, dz);
+    const travel = await (actions.travel ?? travelAndWait)(bot, destination, { range: 1, timeoutMs: 15_000, signal });
+    const context = { logger, approachIndex: index, destination, travelStatus: travel.status };
+    logger.info({ target: lower, lower: blockName(bot.blockAt(lower)), upper: blockName(bot.blockAt(lower.offset(0, 1, 0))), support: blockName(bot.blockAt(lower.offset(0, -1, 0))), botPosition: bot.entity?.position, ...context, logger: undefined }, "base doorway approach");
+    if (travel.status !== "arrived" && travel.status !== "already_there") { reason = `approach ${travel.status}`; continue; }
+    if (isDoorBlock(bot.blockAt(lower)) && isDoorBlock(bot.blockAt(lower.offset(0, 1, 0)))) return { block: bot.blockAt(lower), reason: null };
+    if (!isAir(bot.blockAt(lower)) || !isAir(bot.blockAt(lower.offset(0, 1, 0)))) return { block: null, reason: "doorway cells obstructed or unloaded" };
+    const supportCell = lower.offset(0, -1, 0);
+    if (isAir(bot.blockAt(supportCell))) {
+      const plank = findPlanksItem(bot);
+      if (plank === null) return { block: null, reason: "doorway floor needs one plank" };
+      const support = await (actions.place ?? placeAtCell)(bot, plank, supportCell, placed, signal, context);
+      if (support === null || !isSolid(support)) { reason = "could not verify doorway floor"; continue; }
+    }
+    const support = bot.blockAt(supportCell);
+    if (support === null || !isSolid(support) || isInteractableBlock(support)) return { block: null, reason: "doorway needs a solid non-interactive floor" };
+    await (actions.place ?? placeAtCell)(bot, item, lower, placed, signal, context);
+    // The lower and upper block updates can arrive separately. Never retry
+    // an accepted lower half just because its upper update is one tick late.
+    for (let poll = 0; poll < 6; poll++) {
+      if (signal?.aborted) return { block: null, reason: "interrupted" };
+      const block = bot.blockAt(lower);
+      if (isDoorBlock(block) && isDoorBlock(bot.blockAt(lower.offset(0, 1, 0)))) return { block, reason: null };
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    reason = "door placement was not verified in both cells";
+  }
+  return { block: null, reason };
+}
+
 function creativePlacementApproaches(cell: Vec3): Vec3[] {
   return [
     // Below the target keeps the eye close to the top face of the support
@@ -1380,9 +1426,9 @@ export class BaseBuilderRunner {
    * and the server ignored it twice (2026-10-06 05:34, 06:00).
    */
   private async placeShellCell(item: Item, cell: Vec3, placed: ReadonlySet<string>): Promise<Block | null> {
-    await this.moveWithinSimpleBuildReach(cell);
-    if (this.stopRequested) return null;
-    return placeAtCell(this.opts.bot, item, cell, placed, this.signals?.signal);
+    const approach = await this.moveWithinSimpleBuildReach(cell);
+    if (this.stopRequested || !approach.ok) return null;
+    return placeAtCell(this.opts.bot, item, cell, placed, this.signals?.signal, { logger: this.opts.logger, travelStatus: approach.status, destination: approach.destination ?? undefined });
   }
 
   private async moveWithinSimpleBuildReach(cell: Vec3, approachIndex = 0): Promise<{ ok: boolean; status: string; destination: Vec3 | null }> {
@@ -1390,7 +1436,7 @@ export class BaseBuilderRunner {
     const self = bot.entity;
     if (self === null) return { ok: false, status: "no_entity", destination: null };
     const distance = Math.hypot(self.position.x - cell.x, self.position.y - cell.y, self.position.z - cell.z);
-    const currentSupport = isCreativeMode(bot) ? findReferenceFor(bot, cell, new Set<string>()) : null;
+    const currentSupport = findReferenceFor(bot, cell, new Set<string>());
     const currentReferenceInReach = currentSupport === null || isPlacementWithinReach(bot, currentSupport.reference, currentSupport.face);
     if (distance <= SIMPLE_BUILD_PLACE_REACH && currentReferenceInReach) return { ok: true, status: "already_there", destination: null };
 
@@ -1430,9 +1476,7 @@ export class BaseBuilderRunner {
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       this.opts.logger.warn({ cell, status: travel.status }, "simple build could not reach placement area");
     }
-    // Preserve the survival builder's existing placement fallback; creative
-    // flight is the path that requires an explicit arrival guarantee.
-    return { ok: true, status: travel.status, destination: new Vec3(approach.x, approach.y, approach.z) };
+    return { ok: travel.status === "arrived" || travel.status === "already_there", status: travel.status, destination: new Vec3(approach.x, approach.y, approach.z) };
   }
 
   /** Lightweight background probe: is the stockpile shed incomplete? */
@@ -1575,15 +1619,14 @@ export class BaseBuilderRunner {
       if (doorItem !== null) {
         const lower = layout.doorCells[0]!;
         if (isAir(bot.blockAt(lower))) {
-          // From just outside the gap: home's surface is the base roof, and a
-          // door placed from up there (5 blocks off, through the wall) was
-          // never answered (2026-10-05 14:41).
-          await travelAndWait(bot, { x: lower.x + 0.5, y: lower.y, z: lower.z + 1.5 }, { range: 1, timeoutMs: 30_000, signal: this.signals?.signal });
+          const result = await placeStarterDoor(bot, doorItem, lower, placedCells, this.signals?.signal, this.opts.logger);
           if (this.stopRequested) return this.interrupted(data);
-          const block = await placeAtCell(bot, doorItem, lower, placedCells, this.signals?.signal);
+          const block = result.block;
           if (block !== null && isDoorBlock(block)) {
             data.doorPlaced = true;
             placedCells.add(cellKey(lower));
+          } else {
+            return this.fail(data, "PATH_UNREACHABLE", `Base doorway blocked at ${cellKey(lower)}: ${result.reason}`);
           }
         }
       }

@@ -11,6 +11,7 @@ import { isDroppedItemEntity } from "../policy/combat.js";
 import { botLookup, developmentPlots, hoeWoodShort, holdsHoe, tendFarm, type FarmLookup, type PlotOffset } from "./farm.js";
 import type { SkillResult } from "./skill-library.js";
 import type { BuildingDesign } from "../building/schema.js";
+import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import { VILLAGE_ORDER, VILLAGE_SITE, villageDesign, type VillageBuilding } from "../building/village.js";
 
 /**
@@ -171,6 +172,7 @@ export interface DevelopmentState {
   buildings: number;
   /** Plots set aside for trees, and whether home is short of trees. */
   treeFarm?: TreeFarmState;
+  deferredPlots?: ReadonlySet<string>;
 }
 
 export interface TreeFarmState {
@@ -260,6 +262,7 @@ export function nextDevelopment(
   const openFields: PlotSurvey[] = [];
   const openSites: PlotSurvey[] = [];
   plots.forEach((offset, index) => {
+    if (state.deferredPlots?.has(`${offset.dx},${offset.dz}`)) return;
     const cx = Math.floor(home.x) + offset.dx;
     const cz = Math.floor(home.z) + offset.dz;
     if (farmPlots.some((farm) => sameOffset(farm, offset))) return;
@@ -285,6 +288,7 @@ export function nextDevelopment(
   if (uneven[0] !== undefined) return { kind: "level_field", survey: uneven[0], padY: modalGround(uneven[0]) };
   if (state.treeFarm?.canPlant === true) {
     for (const offset of farmPlots) {
+      if (state.deferredPlots?.has(`${offset.dx},${offset.dz}`)) continue;
       const farm = surveyTreeFarm(home, offset, lookup);
       if (farm.empty.length > 0) return { kind: "plant_trees", survey: surveyPlot(home, offset, lookup), farm };
     }
@@ -385,6 +389,9 @@ export interface DevelopLandOptions {
   fetchWood?: (signal?: AbortSignal) => Promise<void>;
   /** The tree farm's plots, kept across restarts, and saplings from the chest. */
   treeFarm?: TreeFarmStore;
+  failures?: BackgroundFailuresRepository;
+  now?: () => number;
+  actions?: { travel?: typeof travelAndWait; place?: typeof placeItemAt; collect?: typeof collectBlocks };
 }
 
 export interface TreeFarmStore {
@@ -412,10 +419,50 @@ export interface DevelopLandData {
   planted: number;
   /** Saplings planted in the tree farm. */
   trees?: number;
+  blocker?: string;
 }
 
+export interface TreePlantResult { planted: number; blocker: "no_saplings" | "path_unreachable" | "invalid_ground" | "placement_refused" | "interrupted" | null }
+
 export class DevelopLandRunner {
-  constructor(private readonly opts: DevelopLandOptions) {}
+  private readonly deferred = new Map<string, number>();
+  private readonly deferredReasons = new Map<string, string>();
+  private readonly now: () => number;
+  private get prefix(): string { return `development:${this.opts.state.worldId ?? "unknown"}:`; }
+  constructor(private readonly opts: DevelopLandOptions) {
+    this.now = opts.now ?? Date.now;
+    for (const row of opts.failures?.loadAll() ?? []) {
+      if (!row.action.startsWith(this.prefix)) continue;
+      const key = row.action.slice(this.prefix.length);
+      if (key === "saplings") this.saplingHuntAfter = row.retryAt;
+      else { this.deferred.set(key, row.retryAt); this.deferredReasons.set(key, row.reason); }
+    }
+  }
+
+  private defer(plot: PlotOffset, reason: string): void {
+    const key = `${plot.dx},${plot.dz}`;
+    const now = this.now();
+    this.deferred.set(key, now + SAPLING_HUNT_COOLDOWN_MS);
+    this.deferredReasons.set(key, reason);
+    this.opts.failures?.upsert({ action: this.prefix + key, failedAt: now, retryAt: now + SAPLING_HUNT_COOLDOWN_MS, reason });
+    this.workMemo = null;
+    this.opts.logger.info({ plot, reason, retryAt: now + SAPLING_HUNT_COOLDOWN_MS }, "develop: plot deferred");
+  }
+
+  private deferredPlots(): ReadonlySet<string> {
+    for (const [key, at] of this.deferred) if (at <= this.now() || (this.deferredReasons.get(key) === "no_saplings" && countSaplings(this.opts.bot) > 0)) {
+      this.deferred.delete(key);
+      this.deferredReasons.delete(key);
+      this.opts.failures?.remove(this.prefix + key);
+    }
+    return new Set(this.deferred.keys());
+  }
+
+  nextWork(): { plot: string; kind: Development["kind"] } | null {
+    const home = this.opts.state.home;
+    const next = home === null ? null : this.next(home);
+    return next === null ? null : { plot: `${next.survey.offset.dx},${next.survey.offset.dz}`, kind: next.kind };
+  }
 
   /**
    * Cut the site's high ground down to the pad and fill its dips with the
@@ -495,7 +542,7 @@ export class DevelopLandRunner {
 
   private next(home: { x: number; y: number; z: number }): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, levelSkip: this.levelSkip, treeFarm: this.treeFarmState() });
+    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, levelSkip: this.levelSkip, treeFarm: this.treeFarmState(), deferredPlots: this.deferredPlots() });
   }
 
   /** When a sapling hunt may run again (it found none last time). */
@@ -505,7 +552,7 @@ export class DevelopLandRunner {
     const store = this.opts.treeFarm;
     if (store === undefined) return undefined;
     const trees = Object.values(nearbyLogCensus(this.opts.bot).trees).reduce((sum, count) => sum + count, 0);
-    return { plots: store.load(), wanted: trees < TREE_FARM_WANTED_BELOW, canPlant: countSaplings(this.opts.bot) > 0 || Date.now() >= this.saplingHuntAfter };
+    return { plots: store.load(), wanted: trees < TREE_FARM_WANTED_BELOW, canPlant: countSaplings(this.opts.bot) > 0 || this.now() >= this.saplingHuntAfter };
   }
 
   /**
@@ -515,6 +562,7 @@ export class DevelopLandRunner {
    */
   private async gatherSaplings(signal?: AbortSignal): Promise<void> {
     const bot = this.opts.bot;
+    if (this.now() < this.saplingHuntAfter) return;
     await this.opts.treeFarm?.fetchSaplings(signal).catch((err) => this.opts.logger.warn({ err: String(err) }, "develop: could not take saplings from the chest"));
     if (countSaplings(bot) === 0) await this.pickUpSaplings(signal);
     if (countSaplings(bot) === 0 && signal?.aborted !== true) {
@@ -523,11 +571,12 @@ export class DevelopLandRunner {
         const leaves = bot.findBlocks({ matching: (block) => block !== null && /_leaves$/.test(block.name), maxDistance: SAPLING_SEARCH_RADIUS, count: 200 })
           .map((position) => bot.blockAt(position))
           .filter((block): block is NonNullable<typeof block> => block !== null && block.position.y <= self.y + 3 && block.position.y >= self.y - 2)
+          .filter(block => isReachableFromGround(bot, block.position) && !touchesCraftedBlock(bot, block.position))
           .sort((a, b) => a.position.distanceTo(self) - b.position.distanceTo(self))
           .slice(0, SAPLING_LEAVES_PER_RUN);
         if (leaves.length > 0) {
           this.opts.logger.info({ leaves: leaves.length }, "develop: breaking leaves for saplings");
-          await collectBlocks(bot, leaves, () => countSaplings(bot), 8, () => {}, CLEAR_TIMEOUT_MS, undefined, signal).catch((err) => {
+          await (this.opts.actions?.collect ?? collectBlocks)(bot, leaves, () => countSaplings(bot), 8, () => {}, 30_000, undefined, signal).catch((err) => {
             if (signal?.aborted === true) throw err;
             this.opts.logger.warn({ err: String(err) }, "develop: breaking leaves stopped");
           });
@@ -535,7 +584,14 @@ export class DevelopLandRunner {
         }
       }
     }
-    if (countSaplings(bot) === 0) this.saplingHuntAfter = Date.now() + SAPLING_HUNT_COOLDOWN_MS;
+    if (countSaplings(bot) === 0 && !signal?.aborted) {
+      const now = this.now();
+      this.saplingHuntAfter = now + SAPLING_HUNT_COOLDOWN_MS;
+      this.opts.failures?.upsert({ action: this.prefix + "saplings", failedAt: now, retryAt: this.saplingHuntAfter, reason: "no saplings from reachable chest, drops, or leaves" });
+    } else if (countSaplings(bot) > 0) {
+      this.saplingHuntAfter = 0;
+      this.opts.failures?.remove(this.prefix + "saplings");
+    }
   }
 
   /** Walk over sapling drops lying near the bot. */
@@ -550,34 +606,36 @@ export class DevelopLandRunner {
     for (const drop of drops) {
       if (signal?.aborted === true) return;
       if (bot.entities[drop.id] === undefined) continue;
-      await travelAndWait(bot, drop.position, { range: 1, timeoutMs: 8_000, signal });
+      if (isReachableFromGround(bot, drop.position)) await (this.opts.actions?.travel ?? travelAndWait)(bot, drop.position, { range: 1, timeoutMs: 8_000, signal });
     }
   }
 
   /** Plant saplings in the farm's empty cells; returns how many went in. */
-  private async plantTrees(farm: TreeFarmSurvey, signals?: TaskSignals): Promise<number> {
+  private async plantTrees(farm: TreeFarmSurvey, signals?: TaskSignals): Promise<TreePlantResult> {
     const bot = this.opts.bot;
     const signal = signals?.signal;
     if (countSaplings(bot) === 0) await this.gatherSaplings(signal);
     let planted = 0;
+    let blocker: TreePlantResult["blocker"] = countSaplings(bot) === 0 ? "no_saplings" : null;
     for (const cell of farm.empty) {
-      if (signal?.aborted === true || signals?.checkpoint() === false) break;
+      if (signal?.aborted === true || signals?.checkpoint() === false) { blocker = "interrupted"; break; }
       const sapling = bot.inventory.items().find((item) => /_sapling$/.test(item.name));
       if (sapling === undefined) break;
       const at = new Vec3(cell.x, cell.y, cell.z);
-      const walked = await travelAndWait(bot, at, { range: 3, timeoutMs: 20_000, signal });
-      if (walked.status !== "arrived" && walked.status !== "already_there") continue;
+      const walked = await (this.opts.actions?.travel ?? travelAndWait)(bot, at, { range: 3, timeoutMs: 20_000, signal });
+      if (walked.status !== "arrived" && walked.status !== "already_there") { blocker = "path_unreachable"; continue; }
       const cover = bot.blockAt(at);
       if (cover !== null && !isAirName(cover.name)) {
-        if (!CLEARABLE.test(cover.name) || TREE_LOG.test(cover.name) || /_sapling$/.test(cover.name)) continue;
+        if (!CLEARABLE.test(cover.name) || TREE_LOG.test(cover.name) || /_sapling$/.test(cover.name)) { blocker = "invalid_ground"; continue; }
         await digBlock(bot, cover, signal).catch(() => undefined);
       }
       const ground = bot.blockAt(at.offset(0, -1, 0));
-      if (ground === null || !FIELD_GROUND.test(ground.name) || ground.name === "farmland") continue;
-      const placed = await placeItemAt(bot, sapling, { position: at, reference: ground, face: new Vec3(0, 1, 0) }, signal).catch(() => null);
+      if (ground === null || !FIELD_GROUND.test(ground.name) || ground.name === "farmland") { blocker = "invalid_ground"; continue; }
+      const placed = await (this.opts.actions?.place ?? placeItemAt)(bot, sapling, { position: at, reference: ground, face: new Vec3(0, 1, 0) }, signal).catch((err) => { if (signal?.aborted) throw err; return null; });
       if (placed !== null && /_sapling$/.test(placed.name)) planted += 1;
+      else blocker = "placement_refused";
     }
-    return planted;
+    return { planted, blocker };
   }
 
   async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
@@ -606,7 +664,7 @@ export class DevelopLandRunner {
     await shedJunk(bot, [], signal).catch(() => 0);
     this.workMemo = null;
     const next = this.next(home);
-    if (next === null) return { ok: true, status: "completed", message: "The land around home is developed.", data };
+    if (next === null) return { ok: true, status: "completed", message: this.deferred.size > 0 || this.now() < this.saplingHuntAfter ? "No runnable development; prerequisites are cooling down." : "The land around home is developed.", data };
     const survey = next.survey;
     data.plot = survey.offset;
     if (next.kind === "tidy") {
@@ -627,11 +685,14 @@ export class DevelopLandRunner {
     }
     if (next.kind === "plant_trees") {
       this.opts.logger.info({ plot: survey.offset, empty: next.farm.empty.length, saplings: countSaplings(bot) }, "develop: planting the tree farm");
-      data.trees = await this.plantTrees(next.farm, signals);
+      const result = await this.plantTrees(next.farm, signals);
+      data.trees = result.planted;
+      data.blocker = result.blocker ?? undefined;
       if (signals?.checkpoint() === false) return interrupted();
       this.opts.logger.info({ plot: survey.offset, planted: data.trees }, "develop: tree farm planted");
       if (data.trees === 0) {
-        return { ok: false, status: "failed", errorCode: "NOT_READY", message: `no saplings to plant the tree farm at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
+        this.defer(survey.offset, result.blocker ?? "no planting progress");
+        return { ok: false, status: "failed", errorCode: result.blocker === "path_unreachable" ? "PATH_UNREACHABLE" : "NOT_READY", message: `tree farm at ${survey.offset.dx},${survey.offset.dz} deferred: ${result.blocker}`, retryable: true, data };
       }
       return { ok: true, status: "completed", message: `Planted ${data.trees} saplings in the tree farm at ${survey.offset.dx},${survey.offset.dz}.`, data };
     }
@@ -656,6 +717,11 @@ export class DevelopLandRunner {
       const level = await this.levelSite(next.origin, VILLAGE_SITE, signal);
       if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
       this.opts.logger.info({ building: next.building, cut: level.cut, filled: level.filled }, "develop: site levelled");
+      const remaining = levelPlan(next.origin, next.origin.y - 1, VILLAGE_SITE, botLookup(bot));
+      if (remaining.cut.length > 0 || remaining.fill.length > 0) {
+        this.defer(survey.offset, "building pad not verified level");
+        return { ok: false, status: "failed", errorCode: "NOT_READY", message: "building pad not verified level; site deferred", retryable: true, data };
+      }
       try {
         this.opts.builds!.start(next.building, villageDesign(next.building), { ...next.origin, dimension: home.dimension });
       } catch (err) {
@@ -670,9 +736,15 @@ export class DevelopLandRunner {
       const store = this.opts.treeFarm!;
       store.save([...store.load(), survey.offset]);
       const farm = surveyTreeFarm(home, survey.offset, botLookup(bot));
-      data.trees = await this.plantTrees(farm, signals);
+      const result = await this.plantTrees(farm, signals);
+      data.trees = result.planted;
+      data.blocker = result.blocker ?? undefined;
       if (signals?.checkpoint() === false) return interrupted();
       this.opts.logger.info({ plot: survey.offset, planted: data.trees }, "develop: tree farm planted");
+      if (data.trees === 0) {
+        this.defer(survey.offset, result.blocker ?? "no planting progress");
+        return { ok: false, status: "failed", errorCode: "NOT_READY", message: `tree farm reserved but planting deferred: ${result.blocker}`, retryable: true, data };
+      }
       return { ok: true, status: "completed", message: `Set the plot at ${survey.offset.dx},${survey.offset.dz} aside for trees and planted ${data.trees} saplings.`, data };
     }
 
@@ -683,7 +755,7 @@ export class DevelopLandRunner {
     if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
     const after = surveyPlot(home, survey.offset, botLookup(bot));
     const complete = after.groundColumns >= survey.groundColumns && after.minGround === padY && after.maxGround === padY;
-    if (!complete) this.levelSkip.add(`${survey.offset.dx},${survey.offset.dz}`);
+    if (!complete) this.defer(survey.offset, "field not verified level");
     this.opts.logger.info({ plot: survey.offset, padY, ...level, complete, ground: after.groundColumns, minGround: after.minGround, maxGround: after.maxGround }, "develop: field levelled");
     if (!complete && next.kind === "field") return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
 
@@ -700,6 +772,7 @@ export class DevelopLandRunner {
     // No progress at all would re-run on the same plot every few seconds
     // (14:41): fail so the restore cooldown spaces the retries.
     if (!complete || (data.cleared === 0 && level.cut === 0 && level.filled === 0 && farm.planted === 0 && farm.tilled === 0)) {
+      this.defer(survey.offset, "no verified clearing, levelling, or planting progress");
       return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not clear or plant the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
     }
     // A plot short of seeds is finished on the next run.

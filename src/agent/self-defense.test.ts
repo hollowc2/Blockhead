@@ -27,6 +27,28 @@ function harness() {
 const activeType = (h: ReturnType<typeof harness>): string | undefined => h.scheduler.active?.type;
 const zombie = (x: number, y = 64) => ({ id: 7, type: "hostile", name: "zombie", position: { x, y, z: 0 } });
 
+test("unattributed projectile damage finds a nearby ranged threat and bypasses failed-pass cooldown", () => {
+  const h = harness();
+  try {
+    h.reflex.attach();
+    h.bot.entities[7] = { ...zombie(12), name: "skeleton" };
+    h.reflex.scan();
+    assert.equal(activeType(h), "defend_self");
+    h.scheduler.failActive("approach failed");
+    (h.bot as unknown as EventEmitter).emit("entityHurt", h.self);
+    assert.equal(activeType(h), "defend_self", "fresh damage cannot be ignored during passive cooldown");
+  } finally { h.reflex.detach(); h.db.close(); }
+});
+
+test("unattributed fall damage with no threat does not start a fight", () => {
+  const h = harness();
+  try {
+    h.reflex.attach();
+    (h.bot as unknown as EventEmitter).emit("entityHurt", h.self);
+    assert.equal(activeType(h), undefined);
+  } finally { h.reflex.detach(); h.db.close(); }
+});
+
 test("a zombie closing in triggers one emergency defense pass that preempts owner work", () => {
   const h = harness();
   try {
