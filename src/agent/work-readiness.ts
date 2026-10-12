@@ -20,12 +20,17 @@ export function workReadiness(bot: Bot): { reason: string; item?: string; quanti
   }
   // Small test/telemetry-only adapters may not carry an inventory interface.
   if (bot.inventory?.items === undefined) return null;
-  if (Number.isFinite(bot.food) && countFoodItems(bot) < WORK_FOOD_RESERVE) {
+  if (Number.isFinite(bot.food) && countFoodItems(bot) === 0) {
     return { reason: "stock carried food before discretionary work", item: "bread", quantity: WORK_FOOD_RESERVE };
   }
   const names = bot.inventory.items().filter(item => item.count > 0).map(item => item.name);
   for (const [suffix, item] of [["_sword", "stone_sword"], ["_pickaxe", "stone_pickaxe"], ["_axe", "stone_axe"]] as const) {
     if (!names.some(name => name.endsWith(suffix))) return { reason: `rearm before discretionary work: ${item}`, item };
+  }
+  // With some food carried, replace missing tools before topping up the
+  // reserve. A bread-trip cooldown must not strand a tool-less recovery.
+  if (Number.isFinite(bot.food) && countFoodItems(bot) < WORK_FOOD_RESERVE) {
+    return { reason: "stock carried food before discretionary work", item: "bread", quantity: WORK_FOOD_RESERVE };
   }
   return null;
 }

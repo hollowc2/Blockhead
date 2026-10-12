@@ -36,3 +36,11 @@ test("healthy bots stock carried food before starting discretionary work", () =>
   b.inventory.items = (() => [{ name: "bread", count: 6 }, ...["stone_sword", "stone_axe", "stone_pickaxe"].map(name => ({ name, count: 1 }))]) as never;
   equal(workReadiness(b), null);
 });
+
+test("carried food permits missing-tool recovery before reserve top-up", () => {
+  const b = bot(["stone_sword", "iron_axe"]); b.food = 17;
+  b.inventory.items = (() => [{ name: "bread", count: 4 }, { name: "stone_sword", count: 1 }, { name: "iron_axe", count: 1 }]) as never;
+  equal(workReadiness(b)?.item, "stone_pickaxe");
+  b.inventory.items = (() => [{ name: "stone_sword", count: 1 }, { name: "iron_axe", count: 1 }]) as never;
+  equal(workReadiness(b)?.item, "bread", "an empty food supply still comes first");
+});

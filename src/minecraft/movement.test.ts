@@ -450,6 +450,40 @@ test("in the open the climb never towers up", async () => {
   assert.equal(placed, 0);
 });
 
+test("an enclosed bot without a pickaxe uses one overhead dig per pillar level", async () => {
+  const position = new Vec3(0.5, 60, 0.5);
+  const cleared = new Set<string>();
+  const pillars = new Set<string>();
+  let onGround = true;
+  let digs = 0;
+  let placed = 0;
+  const bot = {
+    entity: { position, get onGround() { return onGround; } },
+    inventory: { items: () => [{ name: "cobblestone", count: 32 }] },
+    blockAt: (at: Vec3) => {
+      const pos = at.floored();
+      const pillar = pillars.has(pos.toString());
+      const air = !pillar && ((pos.x === 0 && pos.z === 0 && (pos.y === 60 || pos.y === 61)) || cleared.has(pos.toString()));
+      return { name: air ? "air" : pillar ? "cobblestone" : "stone", position: pos, boundingBox: air ? "empty" : "block" };
+    },
+    lookAt: async () => {}, equip: async () => {},
+    dig: async (block: { position: Vec3 }) => { assert.equal(onGround, true, "wait for landing before another dig"); digs++; cleared.add(block.position.toString()); },
+    placeBlock: async (reference: { position: Vec3 }, face: Vec3) => { placed++; pillars.add(reference.position.plus(face).toString()); },
+    setControlState: (control: string, on: boolean) => {
+      if (control !== "jump") return;
+      if (on) { position.y += 1; onGround = false; }
+      else if (!onGround) setTimeout(() => { onGround = true; }, 10);
+    },
+    pathfinder: { goto: async () => assert.fail("no staircase jumps needed") },
+  } as never;
+  const signal = new AbortController().signal;
+  const gained = await new WorldActionExecutor().run("barehand-shaft", signal, () => climbToward(bot, { x: 20, y: 68, z: 0 }, block => block?.name === "stone", () => {}, { signal, deadline: Date.now() + 3000 }));
+  assert.equal(gained, 6);
+  assert.equal(digs, 6);
+  assert.equal(placed, 6);
+  assert.equal(position.x, 0.5);
+});
+
 function perchBot(health: number, blockAt: ReturnType<typeof perchWorld>) {
   const position = new Vec3(0.5, 3, 0.5); // on a 3-block column; ground at y=-2 is a 4-block drop
   const controls: Record<string, boolean> = {};

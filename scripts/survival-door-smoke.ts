@@ -8,14 +8,14 @@ import pino from "pino";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../src/agent/world-actions.js";
 import { placeStarterDoor } from "../src/skills/base.js";
-import { travelAndWait, travelHomeAndWait } from "../src/minecraft/movement.js";
+import { climbToward, travelAndWait, travelHomeAndWait } from "../src/minecraft/movement.js";
 const { goals } = createRequire(import.meta.url)("mineflayer-pathfinder");
 
 const port = Number(process.env.BLOCKHEAD_SMOKE_PORT);
 if (process.env.BLOCKHEAD_DISPOSABLE_TEST !== "1" || !Number.isInteger(port) || port < 1024 || port === 25565) throw new Error("Set BLOCKHEAD_DISPOSABLE_TEST=1 and a dedicated BLOCKHEAD_SMOKE_PORT; the live port is forbidden");
 const bot = mineflayer.createBot({ host: "127.0.0.1", port, username: "DoorTest", version: "1.21.4", auth: "offline" });
 bot.loadPlugin(pathfinder);
-const timeout = setTimeout(() => { console.error("door smoke timed out"); bot.quit(); process.exitCode = 1; }, 45_000);
+const timeout = setTimeout(() => { console.error("survival movement smoke timed out"); bot.quit(); process.exitCode = 1; }, 90_000);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 try {
   await once(bot, "spawn");
@@ -64,6 +64,16 @@ try {
   assert.equal(returned.status, "arrived");
   assert.equal(Math.floor(bot.entity.position.y), 99, "home arrival uses the interior floor, not the roof");
   console.log("PASS: survival return home reached the interior floor beneath the roof");
+  for (const command of [
+    "/gamemode creative DoorTest", "/fill 82 98 59 88 106 65 stone",
+    "/fill 84 99 61 84 100 61 air", "/tp DoorTest 84.5 99 61.5",
+    "/clear DoorTest", "/give DoorTest cobblestone 12", "/gamemode survival DoorTest",
+  ]) { bot.chat(command); await delay(150); }
+  await delay(500);
+  const climbed = await executor.run("barehand-pillar-escape", controller.signal, () => climbToward(bot, { x: 90, y: 104, z: 61 }, block => block?.name === "stone", () => {}, { signal: controller.signal, deadline: Date.now() + 35000 }));
+  assert.ok(climbed >= 3, `only climbed ${climbed}`);
+  for (const y of [99, 100, 101]) assert.equal(bot.blockAt(new Vec3(84, y, 61))?.name, "cobblestone");
+  console.log("PASS: survival bot without a pickaxe escaped upward on verified pillars");
 } catch (error) {
   console.error(error); process.exitCode = 1;
 } finally { clearTimeout(timeout); bot.quit("disposable door test complete"); }

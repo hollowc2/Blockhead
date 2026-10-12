@@ -785,7 +785,13 @@ export async function climbToward(
     const directions = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][])
       .sort((a, b) => (b[0] * towardX + b[1] * towardZ) - (a[0] * towardX + a[1] * towardZ));
     let stepped = false;
+    // With no pickaxe, each stone cell takes ~7.5 seconds by hand. Inside
+    // an enclosed shaft a supported pillar clears one cell per level;
+    // stairs clear three and repeatedly exhausted the return-home budget.
+    const hasPickaxe = bot.inventory?.items?.().some(item => item.count > 0 && item.name.endsWith("_pickaxe")) ?? false;
+    if (!hasPickaxe && enclosedAtFeet(bot, feet)) stepped = await pillarStep(bot, feet, isDiggable, equip, options.signal);
     for (const [dx, dz] of directions) {
+      if (stepped) break;
       if (options.signal?.aborted) break;
       stepped = await climbStep(bot, feet, dx, dz, isDiggable, equip, options.signal);
       if (stepped) break;
@@ -836,6 +842,16 @@ async function pillarStep(
     const deadline = Date.now() + 800;
     while ((bot.entity?.position.y ?? startY) < startY + 1 && Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 50));
     await bot.placeBlock(below, new Vec3(0, 1, 0));
+    bot.setControlState("jump", false);
+    // Mining starts with the airborne penalty baked into its duration.
+    // Starting the next overhead dig before landing took ~37.5s instead
+    // of 7.5s per stone cell in the survival smoke test.
+    const settle = Date.now() + 2_000;
+    while (bot.entity?.onGround === false && Date.now() < settle) {
+      if (signal?.aborted) return false;
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+    }
+    if (bot.entity?.onGround !== true || bot.entity.position.y < startY + 0.5) return false;
     logger.warn({ at: feet }, "walkToward climbing: towered up one block");
     return true;
   } catch (err) {
