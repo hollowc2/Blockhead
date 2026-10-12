@@ -85,6 +85,36 @@ test("failed doorway approaches never send a placement", async () => {
   assert.match(result.reason ?? "", /timed_out/);
 });
 
+test("doorway approaches use supported floors and exclude a pose occluded by neighboring masonry", async () => {
+  const { doorwayApproaches } = await import("./base.js");
+  const lower = new Vec3(65, 100, 54);
+  const blocks = new Map<string, string>();
+  blocks.set(new Vec3(65, 98, 54).toString(), "birch_planks");
+  blocks.set(new Vec3(64, 100, 55).toString(), "cobblestone");
+  for (let z = 55; z <= 57; z++) blocks.set(new Vec3(63, 99, z).toString(), "stone");
+  for (let x = 64; x <= 66; x++) for (let z = 56; z <= 57; z++) blocks.set(new Vec3(x, 99, z).toString(), "stone");
+  const bot = {
+    entity: { position: new Vec3(63.5, 100, 55.5) },
+    blockAt: (at: Vec3) => ({ position: at.floored(), name: blocks.get(at.floored().toString()) ?? "air", boundingBox: blocks.has(at.floored().toString()) ? "block" : "empty" }),
+  } as unknown as Bot;
+  const approaches = doorwayApproaches(bot, lower);
+  assert.ok(approaches.length > 0);
+  assert.ok(!approaches.some(at => at.equals(new Vec3(63.5, 100, 55.5))), "neighboring masonry obstructs the initial pose");
+  assert.ok(!approaches.some(at => at.equals(new Vec3(65.5, 100, 55.5))), "the former exact destination has no floor");
+  for (const at of approaches) assert.equal(bot.blockAt(at.offset(0, -1, 0))?.boundingBox, "block");
+});
+
+test("a bounded doorway descent preserves the health floor and normal movement limits", async () => {
+  const { doorwayDropLimit } = await import("../minecraft/movement.js");
+  assert.equal(doorwayDropLimit(13), 3, "hurt bots retain the usual limit");
+  for (const health of [14, 15, 16, 20]) {
+    const floorDepth = doorwayDropLimit(health);
+    const damage = Math.max(0, floorDepth - 1 - 3);
+    assert.ok(health - damage >= 14);
+    assert.ok(floorDepth <= 5, "only a small home-entrance descent is allowed");
+  }
+});
+
 function layout(): BaseLayout {
   return baseLayoutFor(HOME);
 }

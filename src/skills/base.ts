@@ -11,7 +11,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { creativeFlyToAndWait, travelAndWait, travelHomeAndWait, type Location, type TravelWaitResult } from "../minecraft/movement.js";
+import { creativeFlyToAndWait, travelAndWait, travelHomeAndWait, doorwayDropLimit, withPathfinderDropLimit, type Location, type TravelWaitResult } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import { bareName, countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
@@ -435,10 +435,9 @@ export async function placeStarterDoor(
   actions: { travel?: typeof travelAndWait; place?: typeof placeAtCell } = {},
 ): Promise<{ block: Block | null; reason: string | null }> {
   let reason = "no reachable doorway approach";
-  for (const [index, dz] of [1.5, -1.5].entries()) {
+  for (const [index, destination] of doorwayApproaches(bot, lower, placed).entries()) {
     if (signal?.aborted) return { block: null, reason: "interrupted" };
-    const destination = lower.offset(0.5, 0, dz);
-    const travel = await (actions.travel ?? travelAndWait)(bot, destination, { range: 1, timeoutMs: 15_000, signal });
+    const travel = await withPathfinderDropLimit(bot, doorwayDropLimit(bot.health ?? 20), () => (actions.travel ?? travelAndWait)(bot, destination, { range: 0.75, timeoutMs: 10_000, signal }));
     const context = { logger, approachIndex: index, destination, travelStatus: travel.status };
     logger.info({ target: lower, lower: blockName(bot.blockAt(lower)), upper: blockName(bot.blockAt(lower.offset(0, 1, 0))), support: blockName(bot.blockAt(lower.offset(0, -1, 0))), botPosition: bot.entity?.position, ...context, logger: undefined }, "base doorway approach");
     if (travel.status !== "arrived" && travel.status !== "already_there") { reason = `approach ${travel.status}`; continue; }
@@ -465,6 +464,36 @@ export async function placeStarterDoor(
     reason = "door placement was not verified in both cells";
   }
   return { block: null, reason };
+}
+
+/** Walk to a real floor, not the air immediately outside the doorway. */
+export function doorwayApproaches(bot: Bot, lower: Vec3, placed: ReadonlySet<string> = new Set()): Vec3[] {
+  const floor = lower.offset(0, -1, 0);
+  const reference = isAir(bot.blockAt(floor)) ? findReferenceFor(bot, floor, placed) : findReferenceFor(bot, lower, placed);
+  const candidates: Vec3[] = [];
+  if (reference !== null) {
+    const face = reference.reference.position.offset(0.5, 0.5, 0.5).plus(reference.face.scaled(0.5));
+    for (const dy of [0, -1]) for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+      // The bot must not occupy either half of the new door.
+      if (dx === 0 && dz === 0) continue;
+      const feet = lower.offset(dx, dy, dz);
+      if (!isAir(bot.blockAt(feet)) || !isAir(bot.blockAt(feet.offset(0, 1, 0))) || !isSolid(bot.blockAt(feet.offset(0, -1, 0)))) continue;
+      const destination = feet.offset(0.5, 0, 0.5);
+      const eye = destination.offset(0, 1.62, 0);
+      const delta = face.minus(eye);
+      if (delta.norm() > SIMPLE_BUILD_PLACE_REACH) continue;
+      let clear = true;
+      const steps = Math.ceil(delta.norm() * 5);
+      for (let i = 1; i < steps; i++) {
+        const block = bot.blockAt(eye.plus(delta.scaled(i / steps)));
+        if (block === null || (isSolid(block) && !block.position.equals(reference.reference.position))) { clear = false; break; }
+      }
+      if (clear) candidates.push(destination);
+    }
+  }
+  const self = bot.entity?.position;
+  if (self !== undefined && self !== null) candidates.sort((a, b) => a.distanceTo(self) - b.distanceTo(self));
+  return candidates.length > 0 ? candidates.slice(0, 4) : [lower.offset(0.5, 0, 2.5), lower.offset(0.5, 0, -0.5)];
 }
 
 function creativePlacementApproaches(cell: Vec3): Vec3[] {

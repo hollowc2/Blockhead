@@ -259,6 +259,21 @@ export async function withPathfinderDigging<T>(bot: Bot, allowDig: boolean, acti
   }
 }
 
+/** A doorway descent may need four blocks to the support floor (three air). */
+export function doorwayDropLimit(health: number): number { return health < 14 ? 3 : Math.min(5, health - 14 + 4); }
+
+export async function withPathfinderDropLimit<T>(bot: Bot, limit: number, action: () => Promise<T>): Promise<T> {
+  const movements = getMovements(bot);
+  const previous = movements?.maxDropDown;
+  if (movements !== null) movements.maxDropDown = Math.max(3, Math.min(5, limit));
+  try { return await action(); }
+  finally {
+    if (movements !== null && previous !== undefined) movements.maxDropDown = previous;
+    const current = getMovements(bot);
+    if (current !== null && previous !== undefined) current.maxDropDown = previous;
+  }
+}
+
 /**
  * Force-reinitialize the pathfinder after a stall or timeout. Stale internal
  * state (wedged A*, a never-settling goal, a corrupted Movements object) can
