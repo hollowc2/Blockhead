@@ -199,6 +199,19 @@ export const SWIM_COST = 20;
 
 function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   const registry = bot.registry;
+  // Pathfinder treats every door shape as a full obstruction, even after
+  // the server reports it open. An open door's panel leaves the cell centre
+  // clear, but is neither a standing surface nor a replaceable block.
+  const getBlock = movements.getBlock.bind(movements);
+  movements.getBlock = (pos, dx, dy, dz) => {
+    const block = getBlock(pos, dx, dy, dz);
+    if (block.name?.endsWith("_door") && block.getProperties().open === true) {
+      block.safe = true;
+      block.physical = false;
+      block.height = pos.y + dy;
+    }
+    return block;
+  };
   (movements as unknown as { exclusionAreasStep: Array<(block: { position: Vec3 }) => number> }).exclusionAreasStep.push((block) => stuckCellCost(block.position));
   for (const block of registry.blocksArray) {
     if (!isNaturalBlock(block.name) || !block.diggable) movements.blocksCantBreak.add(block.id);
@@ -706,6 +719,39 @@ export async function swimToShore(bot: Bot, toward: { x: number; z: number }, si
 async function rescueStranded(bot: Bot, toward: { x: number; z: number }, signal?: AbortSignal): Promise<boolean> {
   if (await swimToShore(bot, toward, signal)) return true;
   return stepOffPerch(bot, toward, signal);
+}
+
+/** Open one visible wooden door within interaction reach, then verify both halves. */
+export async function openReachableDoor(bot: Bot, signal?: AbortSignal): Promise<boolean> {
+  const lease = requireWorldActionLease(signal); signal ??= lease.signal;
+  throwIfAborted(signal);
+  const self = bot.entity;
+  if (self === null || typeof bot.findBlocks !== "function" || typeof bot.canSeeBlock !== "function") return false;
+  const ids = bot.registry.blocksArray.filter(block => block.name.endsWith("_door") && block.name !== "iron_door").map(block => block.id);
+  const eye = self.position.offset(0, 1.62, 0);
+  const doors = bot.findBlocks({ matching: ids, maxDistance: 6, count: 16 }).map(pos => bot.blockAt(pos))
+    .filter((block): block is NonNullable<typeof block> => block !== null)
+    .filter(block => block.getProperties().half === "lower" && block.getProperties().open === false
+      && eye.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <= 4.5 && bot.canSeeBlock(block))
+    .sort((a, b) => eye.distanceTo(a.position) - eye.distanceTo(b.position));
+  const door = doors[0];
+  if (door === undefined) return false;
+  lease.beforeMutation?.({ action: "interact", point: door.position, blockName: door.name });
+  await raceAbort(bot.activateBlock(door), signal, { timeoutMs: 2_000, label: "open door" });
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    throwIfAborted(signal);
+    const lower = bot.blockAt(door.position);
+    const upper = bot.blockAt(door.position.offset(0, 1, 0));
+    if (lower?.name === door.name && upper?.name === door.name
+      && lower.getProperties().open === true && upper.getProperties().open === true) {
+      logger.info({ at: door.position, name: door.name }, "opened door for navigation");
+      return true;
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+  }
+  logger.warn({ at: door.position, name: door.name }, "door did not open; navigation remains blocked");
+  return false;
 }
 
 /** Consecutive failed steps before a staircase climb gives up. */
@@ -1453,6 +1499,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   let legNumber = 0;
   let noProgressLegs = 0;
   let perchRescues = 0;
+  let doorsOpened = 0;
   while (distance > arrivalRange || Math.abs((bot.entity?.position.y ?? homeSurfaceY) - homeSurfaceY) > 3) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
@@ -1503,6 +1550,11 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
       continue;
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
+      if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      if (isNoPath(result) && doorsOpened < 2 && await openReachableDoor(bot, signal)) {
+        doorsOpened += 1;
+        continue;
+      }
       // NoPath is common when the bot is standing on a tree canopy or other
       // perch: the pathfinder rejects the drop before it can make any
       // progress, so the later no-progress rescue would never run. Take the
@@ -1714,10 +1766,18 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
 
   // Short trips fit in one leg and skip the decomposition overhead.
   if (initialDistance <= TRAVEL_LEG_LENGTH) {
-    const trip = bot.pathfinder
-      .goto(new goals.GoalNear(location.x, location.y, location.z, range))
-      .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
-    return raceTrip(bot, trip, { ...options, signal });
+    const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TRAVEL_TIMEOUT_MS);
+    for (let attempt = 0; ; attempt++) {
+      if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return { status: "timed_out" };
+      const trip = bot.pathfinder
+        .goto(new goals.GoalNear(location.x, location.y, location.z, range))
+        .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+      const result = await raceTrip(bot, trip, { ...options, timeoutMs: remaining, signal });
+      if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      if (attempt >= 2 || !isNoPath(result) || !await openReachableDoor(bot, signal)) return result;
+    }
   }
 
   // Long trips: decompose into bounded horizontal legs so a single bad A*
@@ -1729,6 +1789,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
   let legNumber = 0;
   let noProgressLegs = 0;
   let perchRescues = 0;
+  let doorsOpened = 0;
   while (distance > range) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
@@ -1774,6 +1835,10 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
       if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      if (isNoPath(result) && doorsOpened < 2 && await openReachableDoor(bot, signal)) {
+        doorsOpened += 1;
+        continue;
+      }
       // A rejected route never reaches the later no-progress rescue. Move
       // off the fixture/perch first, then let A* plan from the new cell.
       if (isNoPath(result) && perchRescues < MAX_PERCH_RESCUES && await rescueStranded(bot, location, signal)) {

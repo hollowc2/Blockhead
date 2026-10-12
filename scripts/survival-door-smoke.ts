@@ -1,12 +1,15 @@
 /** Run only against an operator-enabled disposable 1.21.4 server. */
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { createRequire } from "node:module";
 import mineflayer from "mineflayer";
 import { pathfinder, Movements } from "mineflayer-pathfinder";
 import pino from "pino";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../src/agent/world-actions.js";
 import { placeStarterDoor } from "../src/skills/base.js";
+import { travelAndWait } from "../src/minecraft/movement.js";
+const { goals } = createRequire(import.meta.url)("mineflayer-pathfinder");
 
 const port = Number(process.env.BLOCKHEAD_SMOKE_PORT);
 if (process.env.BLOCKHEAD_DISPOSABLE_TEST !== "1" || !Number.isInteger(port) || port < 1024 || port === 25565) throw new Error("Set BLOCKHEAD_DISPOSABLE_TEST=1 and a dedicated BLOCKHEAD_SMOKE_PORT; the live port is forbidden");
@@ -41,6 +44,22 @@ try {
   assert.equal(bot.blockAt(lower.offset(0, 1, 0))?.name, "oak_door");
   assert.equal(bot.pathfinder.movements.maxDropDown, 3, "doorway descent allowance must not leak into later trips");
   console.log("PASS: survival side-wall placement refused; verified floor repair and both door halves accepted");
+  // A closed door is the sole exit from this sealed room. The pathfinder
+  // cannot open wooden doors itself; navigation must interact and replan.
+  for (const command of [
+    "/gamemode creative DoorTest", "/fill 70 98 48 78 102 52 oak_planks",
+    "/fill 71 99 49 77 100 51 air", "/fill 74 99 49 74 100 51 oak_planks",
+    "/setblock 74 99 50 oak_door[facing=east,half=lower,open=false]",
+    "/setblock 74 100 50 oak_door[facing=east,half=upper,open=false]",
+    "/tp DoorTest 72.5 99 50.5", "/gamemode survival DoorTest",
+  ]) { bot.chat(command); await delay(150); }
+  await delay(500);
+  assert.equal(bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalNear(76, 99, 50, 0)).status, "noPath");
+  const walked = await executor.run("closed-door-exit", controller.signal, () => travelAndWait(bot, { x: 76, y: 99, z: 50 }, { range: 0, timeoutMs: 10000, signal: controller.signal, allowDig: false }));
+  assert.equal(walked.status, "arrived");
+  assert.equal(bot.blockAt(new Vec3(74, 99, 50))?.getProperties().open, true);
+  assert.equal(bot.blockAt(new Vec3(74, 100, 50))?.getProperties().open, true);
+  console.log("PASS: closed wooden door opened and survival bot walked out through it");
 } catch (error) {
   console.error(error); process.exitCode = 1;
 } finally { clearTimeout(timeout); bot.quit("disposable door test complete"); }

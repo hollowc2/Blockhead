@@ -5,6 +5,66 @@ import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
 import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback, SWIM_COST } from "./movement.js";
+import { openReachableDoor } from "./movement.js";
+
+function closedDoorBot() {
+  const pos = new Vec3(2, 64, 0);
+  const opened = [false, false];
+  let activations = 0;
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, collectBlock: {},
+    canSeeBlock: () => true,
+    findBlocks: () => [pos],
+    blockAt: (p: Vec3) => {
+      const at = p.floored();
+      const half = at.y - pos.y;
+      if (at.x === pos.x && at.z === pos.z && (half === 0 || half === 1)) {
+        return { name: "oak_door", position: at, boundingBox: "block", getProperties: () => ({ half: half === 0 ? "lower" : "upper", open: opened[half] }) };
+      }
+      return { name: at.y < 64 ? "stone" : "air", position: at, boundingBox: at.y < 64 ? "block" : "empty" };
+    },
+    activateBlock: async () => { activations++; opened[0] = true; opened[1] = true; },
+    pathfinder: { setMovements: () => {}, stop: () => {}, setGoal: () => {}, goto: async () => {} },
+  };
+  return { bot, opened, get activations() { return activations; } };
+}
+
+test("a rejected short route opens a visible wooden door and replans", async () => {
+  const h = closedDoorBot();
+  let trips = 0;
+  h.bot.pathfinder.goto = async () => {
+    trips++;
+    if (!h.opened.every(Boolean)) throw new Error("NoPath");
+    h.bot.entity.position.set(5, 64, 0);
+  };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("closed-door", signal, () => travelAndWait(h.bot as never, { x: 5, y: 64, z: 0 }, { signal, range: 1, timeoutMs: 2000 }));
+  assert.equal(result.status, "arrived");
+  assert.equal(h.activations, 1);
+  assert.equal(trips, 2);
+});
+
+test("door interactions require visibility and reach", async () => {
+  const h = closedDoorBot();
+  const signal = new AbortController().signal;
+  await new WorldActionExecutor().run("hidden-door", signal, async () => {
+    h.bot.canSeeBlock = () => false;
+    assert.equal(await openReachableDoor(h.bot as never, signal), false);
+    h.bot.canSeeBlock = () => true;
+    h.bot.entity.position.set(20, 64, 0);
+    assert.equal(await openReachableDoor(h.bot as never, signal), false);
+  });
+  assert.equal(h.activations, 0);
+});
+
+test("a door click without both server-observed open halves does not release the route", async () => {
+  const h = closedDoorBot();
+  h.bot.activateBlock = async () => { h.opened[0] = true; };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("refused-door", signal, () => openReachableDoor(h.bot as never, signal));
+  assert.equal(result, false);
+});
 
 test("cancelled movement waits for the underlying pathfinder promise to settle", async () => {
   const events: string[] = [];

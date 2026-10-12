@@ -29,3 +29,18 @@ test("a queued cooldown-blocked food run does not produce duplicate requests or 
   assert.equal(issued, 1);
   assert.equal(warned, 1);
 });
+
+test("carried food cancels active and blocked emergency hunts instead of retrying them", () => {
+  const cancelled: string[] = [];
+  const watch = new HungerWatch({
+    bot: { entity: {}, health: 16, food: 16, inventory: { items: () => [{ name: "bread", count: 5 }] } },
+    scheduler: {
+      active: { id: "active", workKey: "hunger-emergency" },
+      queued: [{ id: "blocked", workKey: "hunger-emergency" }, { id: "owner", workKey: "build" }],
+      cancel: (id: string) => cancelled.push(id),
+      enqueue: () => assert.fail("emergency already resolved"),
+    },
+  } as never);
+  watch.check();
+  assert.deepEqual(cancelled, ["blocked", "active"]);
+});

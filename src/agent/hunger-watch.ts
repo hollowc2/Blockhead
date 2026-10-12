@@ -79,13 +79,23 @@ export class HungerWatch {
   check(): void {
     const bot = this.opts.bot;
     const scheduler = this.opts.scheduler;
+    const foodCarried = countFoodItems(bot);
+    // Food supplied by another task or the owner resolves this emergency.
+    // Do not revive an old hunting checkpoint after its cooldown expires.
+    if (foodCarried > 0 || bot.food > HUNGER_EMERGENCY_FOOD) {
+      for (const task of [...scheduler.queued, ...(scheduler.active === null ? [] : [scheduler.active])]) {
+        if (task.workKey === WORK_KEY) scheduler.cancel(task.id);
+      }
+      this.failedAt = null;
+      return;
+    }
     // A blocked run already owns the request; the scheduler releases its
     // cooldown. Re-enqueuing it every five seconds only repeats the warning.
     const live = (task: Task): boolean => task.workKey === WORK_KEY;
     const trigger = hungerEmergency({
       alive: bot.entity !== null && bot.entity !== undefined && bot.health > 0,
       hunger: Number.isFinite(bot.food) ? bot.food : 20,
-      foodCarried: countFoodItems(bot),
+      foodCarried,
       foodRunLive: (scheduler.active !== null && live(scheduler.active)) || scheduler.queued.some(live),
       cooldownActive: this.failedAt !== null && this.now() - this.failedAt < FAILURE_COOLDOWN_MS,
     });
