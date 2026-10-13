@@ -191,19 +191,35 @@ export function findBlocksNearPointRefined(
   maxDistance: number,
   count: number,
 ): Vec3[] {
-  // findBlocks is synchronous: a wide scan over a log-rich area ran the
-  // refine callback ~30 s, starving keep-alives so the server kicked the bot
-  // ("Timed out") in a reconnect loop. Past the budget the scan stops
-  // matching, so it ends fast with whatever nearer sites it already found.
+  // findBlocks is synchronous and walks every block of each section holding a
+  // match: a wide scan over a forest ran ~30 s, starving keep-alives so the
+  // server kicked the bot ("Timed out") in a reconnect loop. Past the budget
+  // the scan aborts and returns the nearest hits gathered so far.
   const deadline = Date.now() + SCAN_BUDGET_MS;
-  return bot.findBlocks({
-    point,
-    matching: (block) => block !== null && Date.now() < deadline && predicate(block),
-    useExtraInfo: (block: Block) => Date.now() < deadline && refine(block.position),
-    maxDistance,
-    count,
-  });
+  const hits: Vec3[] = [];
+  try {
+    bot.findBlocks({
+      point,
+      matching: (block) => {
+        if (Date.now() > deadline) throw new ScanBudgetExceeded();
+        return block !== null && predicate(block);
+      },
+      useExtraInfo: (block: Block) => {
+        const keep = refine(block.position);
+        if (keep && block.position.distanceTo(point) <= maxDistance) hits.push(block.position.clone());
+        return keep;
+      },
+      maxDistance,
+      count,
+    });
+  } catch (error) {
+    if (!(error instanceof ScanBudgetExceeded)) throw error;
+  }
+  hits.sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
+  return hits.slice(0, count);
 }
+
+class ScanBudgetExceeded extends Error {}
 
 /** Longest a single synchronous block scan may keep matching (keep-alive timeout is 30 s). */
 const SCAN_BUDGET_MS = 4000;
