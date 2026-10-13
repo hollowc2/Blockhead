@@ -191,14 +191,22 @@ export function findBlocksNearPointRefined(
   maxDistance: number,
   count: number,
 ): Vec3[] {
+  // findBlocks is synchronous: a wide scan over a log-rich area ran the
+  // refine callback ~30 s, starving keep-alives so the server kicked the bot
+  // ("Timed out") in a reconnect loop. Past the budget the scan stops
+  // matching, so it ends fast with whatever nearer sites it already found.
+  const deadline = Date.now() + SCAN_BUDGET_MS;
   return bot.findBlocks({
     point,
-    matching: (block) => block !== null && predicate(block),
-    useExtraInfo: (block: Block) => refine(block.position),
+    matching: (block) => block !== null && Date.now() < deadline && predicate(block),
+    useExtraInfo: (block: Block) => Date.now() < deadline && refine(block.position),
     maxDistance,
     count,
   });
 }
+
+/** Longest a single synchronous block scan may keep matching (keep-alive timeout is 30 s). */
+const SCAN_BUDGET_MS = 4000;
 
 export function findBlocksNearRefined(
   bot: Bot,
