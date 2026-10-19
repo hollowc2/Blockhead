@@ -3,24 +3,92 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CobbleBob Live Viewer</title>
+  <title>CobbleBob Live</title>
   <link rel="stylesheet" href="/viewer-shell.css">
 </head>
 <body>
-  <main>
-    <header><div><p class="eyebrow">BLOCKHEAD / COBBLEBOB</p><h1>Live Minecraft View</h1></div><div id="connection" class="status">Connecting…</div></header>
-    <section class="viewer-card"><iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe><div class="viewer-help">Drag to look around · Scroll to zoom · Right-drag to pan · Press R to find CobbleBob</div></section>
-    <section class="stats-card">
-      <div class="stats-grid">
-        <div><span>Health</span><strong id="health">—</strong></div>
-        <div><span>Hunger</span><strong id="hunger">—</strong></div>
-        <div><span>Position</span><strong id="position">—</strong></div>
-        <div><span>Dimension</span><strong id="dimension">—</strong></div>
-        <div><span>Time</span><strong id="time">—</strong></div>
-        <div><span>Action</span><strong id="action">—</strong></div>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path class="mark-pixel" d="M16 2 3 9v14l13 7z"/>
+        <path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+        <path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+        <g class="mark-node"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+      </svg>
+      <div>
+        <h1>CobbleBob</h1>
+        <p class="subtitle">Blockhead autonomous agent · live</p>
       </div>
-      <div class="details"><div><b>Goal</b><span id="goal">—</span></div><div><b>Task</b><span id="task">—</span></div><div><b>LLM</b><span id="llm">—</span></div><div><b>Viewer</b><span id="viewerStatus">—</span></div></div>
+    </div>
+    <div id="connection" class="pill pill-wait" role="status"><i class="dot"></i><span id="connectionText">Connecting…</span></div>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe>
+
+      <div class="hud hud-top">
+        <div class="chip"><i id="timeIcon" class="time-icon"></i><span id="time">—</span></div>
+        <div class="chip"><span id="dimension">—</span></div>
+        <div class="chip" data-private><span class="mono" id="position">—</span></div>
+      </div>
+      <button id="fullscreen" class="icon-btn" type="button" aria-label="Toggle fullscreen" title="Fullscreen (F)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+
+      <div class="hud hud-bottom">
+        <div class="vitals">
+          <div class="bar"><div id="hearts" class="icons hearts" aria-hidden="true"></div><span class="num" id="health">—</span></div>
+          <div class="bar"><div id="food" class="icons food" aria-hidden="true"></div><span class="num" id="hunger">—</span></div>
+        </div>
+        <div class="help">Drag to look · Scroll to zoom · Right-drag to pan · <kbd>R</kbd> find CobbleBob</div>
+      </div>
+
+      <div id="offline" class="offline" hidden><div><strong>Viewer offline</strong><span id="offlineReason">Waiting for CobbleBob to reconnect…</span></div></div>
     </section>
+
+    <aside class="panel">
+      <article class="card now" data-private>
+        <h2>Now</h2>
+        <p id="action" class="action">—</p>
+        <dl>
+          <div><dt>Goal <em id="goalStatus" class="badge" hidden></em></dt><dd id="goal">—</dd><dd id="goalStep" class="sub" hidden></dd></div>
+          <div><dt>Task <em id="taskStatus" class="badge" hidden></em></dt><dd id="task">—</dd><dd id="taskPhase" class="sub" hidden></dd></div>
+        </dl>
+      </article>
+
+      <article id="buildCard" class="card" data-private hidden>
+        <h2>Construction</h2>
+        <p id="buildName" class="strong">—</p>
+        <div class="progress"><i id="buildBar"></i></div>
+        <p id="buildDetail" class="sub">—</p>
+      </article>
+
+      <article class="card mind" data-private>
+        <h2>Mind <span id="llm" class="mind-state">—</span></h2>
+        <p id="rationale" class="quote">No decisions yet.</p>
+        <p id="llmMeta" class="sub mono"></p>
+      </article>
+
+      <article class="card" data-private>
+        <h2>Surroundings</h2>
+        <p id="danger" class="strong">—</p>
+        <p id="dangerDetail" class="sub"></p>
+      </article>
+
+      <article class="card world" data-public hidden>
+        <h2>World</h2>
+        <dl class="grid2">
+          <div><dt>Health</dt><dd id="healthPublic">—</dd></div>
+          <div><dt>Hunger</dt><dd id="hungerPublic">—</dd></div>
+          <div><dt>Dimension</dt><dd id="dimensionPublic">—</dd></div>
+          <div><dt>Time</dt><dd id="timePublic">—</dd></div>
+        </dl>
+        <p class="sub">A read-only window into an autonomous Minecraft agent. CobbleBob is gathering, building and surviving on its own.</p>
+      </article>
+
+      <footer class="foot"><span>Viewer <b id="viewerStatus">—</b></span><span data-private>Up <b id="uptime">—</b></span></footer>
+    </aside>
   </main>
   <script src="/viewer-shell.js" defer></script>
 </body>
