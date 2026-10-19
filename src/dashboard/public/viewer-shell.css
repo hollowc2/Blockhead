@@ -64,7 +64,7 @@ h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -.01em; }
 .stage:fullscreen { border-radius: 0; border: 0; }
 
 .hud { position: absolute; left: 12px; right: 12px; display: flex; gap: 8px; pointer-events: none; }
-.hud-top { top: 12px; right: 60px; flex-wrap: wrap; }
+.hud-top { top: 12px; right: 104px; flex-wrap: wrap; }
 .hud-bottom { bottom: 12px; align-items: flex-end; justify-content: space-between; }
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 8px; background: #141b20cc; border: 1px solid #ffffff1f; backdrop-filter: blur(6px); font-size: .78rem; text-transform: capitalize; }
 .chip .mono { text-transform: none; }
@@ -73,7 +73,8 @@ h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -.01em; }
 .time-icon.day { background: #ffd65a; box-shadow: 0 0 8px #ffd65aaa; }
 .time-icon.night { background: transparent; box-shadow: inset -4px -2px 0 0 #cfd8ff; }
 
-.icon-btn { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #ffffff1f; background: #141b20cc; color: var(--text); cursor: pointer; backdrop-filter: blur(6px); }
+.stage-tools { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+.icon-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #ffffff1f; background: #141b20cc; color: var(--text); cursor: pointer; backdrop-filter: blur(6px); }
 .icon-btn:hover { border-color: var(--cyan); color: var(--cyan); }
 .icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -142,6 +143,10 @@ dd.sub { margin-top: 2px; }
 .msg-pending { color: var(--muted); }
 .msg-pending::after { content: "…"; animation: blink 1.2s steps(4, end) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes blink { from { width: 0; } to { width: 1.2em; } }
+.chat-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-quick button { padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; cursor: pointer; }
+.chat-quick button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+.chat-quick button:disabled { opacity: .45; cursor: default; }
 .chat-form { display: flex; gap: 8px; }
 .chat-form input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--empty); color: var(--text); font: inherit; font-size: .85rem; }
 .chat-form input:focus { outline: none; border-color: var(--cyan); }

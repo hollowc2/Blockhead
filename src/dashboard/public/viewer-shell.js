@@ -215,10 +215,21 @@
     if (document.fullscreenElement) document.exitFullscreen?.();
     else stage.requestFullscreen?.();
   }
+  // The viewer's recenter hotkey listens inside the iframe, so it only fired
+  // after clicking the 3D view; forward R (and the button) into the frame.
+  const viewerFrame = document.querySelector(".stage iframe");
+  function findBob() {
+    try {
+      const win = viewerFrame.contentWindow;
+      win.dispatchEvent(new win.KeyboardEvent("keydown", { key: "r" }));
+    } catch {}
+  }
   $("fullscreen").addEventListener("click", toggleFullscreen);
+  $("findBob").addEventListener("click", findBob);
   document.addEventListener("keydown", (event) => {
-    if (event.target instanceof HTMLInputElement) return;
-    if (event.key === "f" && !event.ctrlKey && !event.metaKey && !event.altKey) toggleFullscreen();
+    if (event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "f" || event.key === "F") toggleFullscreen();
+    else if (event.key === "r" || event.key === "R") findBob();
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.
@@ -232,12 +243,21 @@
     chatLog.scrollTop = chatLog.scrollHeight;
     return row;
   }
+  let quickAsked = false;
+  const quickButtons = [...document.querySelectorAll("#chatQuick button")];
+  const setBusy = (busy) => { chatSend.disabled = busy; quickButtons.forEach((button) => { button.disabled = busy; }); };
+  quickButtons.forEach((button) => button.addEventListener("click", () => {
+    if (chatSend.disabled) return;
+    chatInput.value = button.textContent;
+    quickAsked = true;
+    chatForm.requestSubmit();
+  }));
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const question = chatInput.value.trim();
     if (!question || chatSend.disabled) return;
     chatInput.value = "";
-    chatSend.disabled = true;
+    setBusy(true);
     addMessage("you", question);
     const pending = addMessage("bob", "Thinking");
     pending.classList.add("msg-pending");
@@ -249,8 +269,10 @@
     } catch {
       pending.remove(); addMessage("error", "Couldn't reach CobbleBob.");
     } finally {
-      chatSend.disabled = false;
-      chatInput.focus();
+      setBusy(false);
+      // Refocusing after a chip tap would pop the keyboard on phones.
+      if (!quickAsked) chatInput.focus();
+      quickAsked = false;
     }
   });
 

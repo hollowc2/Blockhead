@@ -33,9 +33,14 @@
         <div class="chip"><span id="dimension">—</span></div>
         <div class="chip" data-private><span class="mono" id="position">—</span></div>
       </div>
-      <button id="fullscreen" class="icon-btn" type="button" aria-label="Toggle fullscreen" title="Fullscreen (F)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-      </button>
+      <div class="stage-tools">
+        <button id="findBob" class="icon-btn" type="button" aria-label="Find CobbleBob" title="Find CobbleBob (R)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+        <button id="fullscreen" class="icon-btn" type="button" aria-label="Toggle fullscreen" title="Fullscreen (F)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </div>
 
       <div class="hud hud-bottom">
         <div class="vitals">
@@ -88,6 +93,13 @@
         <h2>Ask CobbleBob</h2>
         <div id="chatLog" class="chat-log" aria-live="polite">
           <p class="chat-empty">Ask what he's up to, why, or how it's going.</p>
+        </div>
+        <div id="chatQuick" class="chat-quick">
+          <button type="button">What are you doing?</button>
+          <button type="button">Why?</button>
+          <button type="button">How's it going?</button>
+          <button type="button">Any danger nearby?</button>
+          <button type="button">What's next?</button>
         </div>
         <form id="chatForm" class="chat-form" autocomplete="off">
           <input id="chatInput" type="text" maxlength="280" placeholder="What are you doing?" aria-label="Ask CobbleBob a question" required>
