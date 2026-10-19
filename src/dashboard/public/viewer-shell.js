@@ -229,23 +229,25 @@
   // The viewer's recenter hotkey listens inside the iframe, so it only fired
   // after clicking the 3D view; forward R (and the button) into the frame.
   const viewerFrame = document.querySelector(".stage iframe");
-  // Eyes mode lives in the frame's camera; the shell owns the on/off state
-  // and pushes it in, including after the frame reloads.
-  let pov = false;
-  function sendPov() {
+  // Camera modes (orbit, eyes, follow) live in the frame's camera; the shell
+  // owns the mode and pushes it in, including after the frame reloads.
+  const viewButtons = { eyes: $("povToggle"), follow: $("followToggle") };
+  let view = "orbit";
+  function sendView() {
     try {
       const win = viewerFrame.contentWindow;
-      win.dispatchEvent(new win.CustomEvent("bob-pov", { detail: pov }));
+      win.dispatchEvent(new win.CustomEvent("bob-cam", { detail: view }));
     } catch {}
   }
-  function setPov(on) {
-    pov = on;
-    $("povToggle").setAttribute("aria-pressed", String(on));
-    sendPov();
+  function setView(mode) {
+    view = mode;
+    for (const [name, button] of Object.entries(viewButtons)) button.setAttribute("aria-pressed", String(name === mode));
+    sendView();
   }
-  viewerFrame.addEventListener("load", sendPov);
+  const toggleView = (mode) => setView(view === mode ? "orbit" : mode);
+  viewerFrame.addEventListener("load", sendView);
   function findBob() {
-    if (pov) { setPov(false); return; }
+    if (view !== "orbit") { setView("orbit"); return; }
     try {
       const win = viewerFrame.contentWindow;
       win.dispatchEvent(new win.KeyboardEvent("keydown", { key: "r" }));
@@ -253,12 +255,14 @@
   }
   $("fullscreen").addEventListener("click", toggleFullscreen);
   $("findBob").addEventListener("click", findBob);
-  $("povToggle").addEventListener("click", () => setPov(!pov));
+  $("povToggle").addEventListener("click", () => toggleView("eyes"));
+  $("followToggle").addEventListener("click", () => toggleView("follow"));
   document.addEventListener("keydown", (event) => {
     if (event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "f" || event.key === "F") toggleFullscreen();
     else if (event.key === "r" || event.key === "R") findBob();
-    else if (event.key === "v" || event.key === "V") setPov(!pov);
+    else if (event.key === "v" || event.key === "V") toggleView("eyes");
+    else if (event.key === "t" || event.key === "T") toggleView("follow");
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.

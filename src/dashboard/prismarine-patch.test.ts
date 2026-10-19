@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { patchMineflayerCrafting, patchViewerClient, patchViewerFirstPerson, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
+import { FIRST_PERSON_V1, patchMineflayerCrafting, patchViewerClient, patchViewerCamera, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
 
 test("patches both modern world-height loops", () => {
   const legacy = "for (let y = 0; y < 256; y += 16) {";
@@ -41,26 +41,43 @@ test("viewer client adds an R shortcut to recenter on CobbleBob", () => {
   assert.equal(patchViewerRecenterHotkey(patched), patched);
 });
 
-test("viewer client turns upstream's permanent first-person switch into a toggle", () => {
+test("viewer client replaces upstream's permanent first-person switch with camera modes", () => {
   const source = [
     "let h=new THREE.OrbitControls(u.camera,l.domElement);",
     "!function t(){window.requestAnimationFrame(t),h&&h.update(),u.update(),l.render(u.scene,u.camera)}();",
     "(({pos:t,addMesh:i,yaw:r,pitch:o})=>{c=t;if(void 0!==r&&void 0!==o)return h&&(h.dispose(),h=null),void u.setFirstPersonCamera(t,r,o);",
     "e||(e=new a(\"1.16.4\",\"player\",u.scene).mesh,u.scene.add(e))",
   ].join("");
-  const patched = patchViewerFirstPerson(patchViewerRecenterHotkey(source));
+  const patched = patchViewerCamera(patchViewerRecenterHotkey(source));
   assert.doesNotMatch(patched, /h\.dispose\(\)/);
-  assert.match(patched, /h&&!bobPov\.on&&h\.update\(\)/);
-  assert.match(patched, /addEventListener\("bob-pov"/);
-  assert.match(patched, /bobPov\.mesh=e/);
-  assert.equal(patchViewerFirstPerson(patchViewerRecenterHotkey(patched)), patched, "re-running every patch is a no-op");
-  assert.throws(() => patchViewerFirstPerson("unrelated"), /refusing to patch/);
+  assert.match(patched, /h&&bobCam\.mode==="orbit"&&h\.update\(\),bobCam\.frame\(/);
+  assert.match(patched, /addEventListener\("bob-cam"/);
+  assert.match(patched, /bobCam\.mesh=e/);
+  assert.doesNotMatch(patched, /\n/);
+  assert.equal(patchViewerCamera(patchViewerRecenterHotkey(patched)), patched, "re-running every patch is a no-op");
+  assert.throws(() => patchViewerCamera("unrelated"), /refusing to patch/);
 });
 
-test("the installed viewer bundle carries the first-person toggle and still parses", async () => {
+test("camera patch upgrades a bundle that has the eyes-only toggle", async () => {
   const { readFile } = await import("node:fs/promises");
   const bundle = await readFile(new URL("../../node_modules/prismarine-viewer/public/index.js", import.meta.url), "utf8");
-  assert.match(bundle, /bobPov/);
+  const target = patchViewerCamera(bundle);
+  const cameraModes = target.slice(target.indexOf("});let bobCam="), target.indexOf("!function t(){window.requestAnimationFrame(t),h&&bobCam"));
+  let base = target.replace(cameraModes, "});")
+    .replace("h&&bobCam.mode===\"orbit\"&&h.update(),bobCam.frame(performance.now()),u.update()", "h&&h.update(),u.update()")
+    .replace("bobCam.seen(t,r,o);", "if(void 0!==r&&void 0!==o)return h&&(h.dispose(),h=null),void u.setFirstPersonCamera(t,r,o);")
+    .replace(",bobCam.mesh=e,e.visible=bobCam.mode!==\"eyes\")", ")");
+  assert.doesNotMatch(base, /bobCam/);
+  for (const [legacy, modern] of FIRST_PERSON_V1) base = base.replace(legacy, modern);
+  assert.match(base, /bobPov/);
+  assert.equal(patchViewerCamera(base), target);
+});
+
+test("the installed viewer bundle carries the camera modes and still parses", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const bundle = await readFile(new URL("../../node_modules/prismarine-viewer/public/index.js", import.meta.url), "utf8");
+  assert.match(bundle, /bobCam/);
+  assert.doesNotMatch(bundle, /bobPov/);
   assert.doesNotThrow(() => new Function(bundle));
 });
 
