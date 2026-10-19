@@ -748,6 +748,33 @@ test("an inaccessible home reports its entrance blocker without blind digging", 
   assert.equal(trips,1);
 });
 
+test("a cave far under the home column climbs out instead of reporting the entrance", async () => {
+  // 18:24 2026-10-18: at y=25 under a y=103 home every trip home failed with
+  // "entrance needs repair" and the staircase climb never ran.
+  const position = new Vec3(65.5, 25, 47.5);
+  const controller = new AbortController();
+  let climbed = false;
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {}, entity: { position, onGround: true },
+    blockAt: (at: Vec3) => {
+      const p = at.floored();
+      const solid = p.y <= 24 || (p.y >= 27 && p.y <= 102);
+      return { position: p, name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty", hardness: 1.5 };
+    },
+    inventory: { items: () => [] },
+    clearControlStates: () => {}, setControlState: () => {},
+    lookAt: async () => { climbed = true; controller.abort(); },
+    dig: async () => { climbed = true; controller.abort(); },
+    pathfinder: { setMovements: () => {}, stop: () => {}, setGoal: () => {}, goto: async () => { throw new Error("NoPath"); } },
+  } as any;
+  // The fallback is aborted as soon as it starts moving the bot.
+  const result = await new WorldActionExecutor().run("cave-under-home", controller.signal, () =>
+    travelHomeAndWait(bot, { x: 65, y: 103, z: 51, dimension: "overworld" }, { signal: controller.signal, timeoutMs: 3000 }))
+    .catch((err: unknown) => ({ status: "failed", error: String(err) }));
+  assert.ok(climbed, "a recovery move ran under the home column");
+  assert.doesNotMatch(String((result as { error?: string }).error), /entrance needs repair/);
+});
+
 
 test("action arrival recognizes fractional supported stance before an empty path and rejects wrong dimension", async () => {
   const h = closedDoorBot();

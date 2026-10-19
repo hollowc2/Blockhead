@@ -1209,6 +1209,8 @@ const DEFAULT_TRAVEL_TIMEOUT_MS = 120_000;
 const HOME_LEG_LENGTH = 48;
 /** Give each route leg a bounded budget so one bad leg cannot consume the trip. */
 const HOME_LEG_TIMEOUT_MS = 60_000;
+/** Further below the home floor than this, a failed approach is a climb, not a blocked door. */
+const HOME_ENTRANCE_DEPTH = 6;
 /** General travel also uses leg decomposition above this threshold. */
 const TRAVEL_LEG_LENGTH = 48;
 const TRAVEL_LEG_TIMEOUT_MS = 60_000;
@@ -1629,7 +1631,12 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
         continue;
       }
       const here = bot.entity?.position;
-      if (here !== undefined && Math.hypot(here.x - home.x, here.z - home.z) <= 12) {
+      // Only at house level is a failed approach an entrance problem. Deep in
+      // a cave under the home column (18:24 2026-10-18, y=25 under a y=103
+      // home) the staircase climb below is the way out; returning here
+      // failed every task's trip home and left the bot looping underground.
+      if (here !== undefined && Math.hypot(here.x - home.x, here.z - home.z) <= 12
+        && Math.min(homeSurfaceY, home.y) - here.y < HOME_ENTRANCE_DEPTH) {
         const cells = homeApproachCells(bot, home, homeSurfaceY, arrivalRange).filter(cell => atHomeHeight(cell.y));
         if (cells.length > 0) {
           logger.info({ cells: cells.length, position: here }, "home route trying supported arrival cells without digging");
