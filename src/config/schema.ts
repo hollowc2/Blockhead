@@ -271,6 +271,11 @@ export const MinecraftConfigSchema = z.object({
       viewer_port: z.number().int().positive().default(3001),
       viewer_distance: z.number().positive().max(8).default(6),
       /**
+       * Minecraft server directory on this host. When set, the viewer reads
+       * the bot's stats file there (read-only) for lifetime stats/milestones.
+       */
+      minecraft_server_dir: z.string().optional(),
+      /**
        * Read-only, redacted viewer on loopback for Tailscale Funnel. It
        * never proxies to the dashboard or the status/command server.
        */

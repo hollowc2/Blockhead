@@ -4,6 +4,90 @@
   const setText = (id, value, fallback) => { $(id).textContent = text(value, fallback); };
   const show = (id, visible) => { $(id).hidden = !visible; };
   let mode = null;
+  const ICONS = { day: "☀️", night: "🌙", goal: "🎯", build: "🏠", death: "💀", respawn: "✨", gather: "⛏️", tool: "🔧", hostile: "👾", explore: "🧭", home: "🛏️", fight: "🛡️", milestone: "🏆" };
+  const compact = (n) => typeof n !== "number" ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
+  const ago = (iso) => {
+    const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+  };
+  const el = (tag, className, content) => { const node = document.createElement(tag); if (className) node.className = className; if (content !== undefined) node.textContent = content; return node; };
+  const glyph = (icon) => el("span", `glyph ${icon}`, ICONS[icon] || "•");
+
+  // Panel tabs; the choice is a per-viewer convenience, so storage failures are fine.
+  const panel = $("panel");
+  function selectTab(name) {
+    panel.dataset.active = name;
+    document.querySelectorAll("[data-tab-button]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.tabButton === name)));
+    if (name === "story") { $("storyUnseen").hidden = true; }
+    try { localStorage.setItem("cobblebob.tab", name); } catch {}
+  }
+  document.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.tabButton)));
+  try { const saved = localStorage.getItem("cobblebob.tab"); if (saved === "story" || saved === "stats") selectTab(saved); } catch {}
+
+  function toast(icon, label, message, kind = "") {
+    const root = $("toasts");
+    const node = el("div", `toast ${kind}`);
+    const body = el("div");
+    body.append(el("b", "", label), el("span", "", message));
+    node.append(glyph(icon), body);
+    root.prepend(node);
+    while (root.children.length > 3) root.lastElementChild.remove();
+    setTimeout(() => node.remove(), 6200);
+  }
+
+  // Story feed: newest first; entries newer than the last poll are "fresh".
+  let lastStoryId = null;
+  function renderStory(entries) {
+    const list = $("story");
+    const newest = entries.length ? entries[entries.length - 1].id : 0;
+    // A restarted bot numbers its story from 1 again; treat that as a fresh start.
+    const firstLoad = lastStoryId === null || newest < lastStoryId;
+    const fresh = entries.filter((entry) => !firstLoad && entry.id > lastStoryId);
+    if (entries.length === 0) { lastStoryId = 0; return; }
+    list.replaceChildren(...entries.slice().reverse().map((entry) => {
+      const row = el("li", entry.highlight ? "highlight" : "");
+      if (fresh.includes(entry)) row.classList.add("fresh");
+      row.append(glyph(entry.icon), el("span", "", entry.text), el("time", "", ago(entry.at)));
+      row.lastChild.dateTime = entry.at;
+      return row;
+    }));
+    for (const entry of fresh) if (entry.highlight) toast(entry.icon, entry.icon === "death" ? "Oof" : "Just now", entry.text, entry.icon === "death" ? "death-toast" : "");
+    if (fresh.length && panel.dataset.active !== "story") $("storyUnseen").hidden = false;
+    lastStoryId = newest;
+  }
+
+  // Lifetime stats and milestones; a milestone that flips to unlocked gets a toast.
+  let unlocked = null;
+  function renderWorld(world) {
+    if (!world) return;
+    $("dayChip").hidden = world.day === null;
+    $("dayCount").textContent = `Day ${world.day ?? "—"}`;
+    $("statDay").textContent = world.day ?? "—";
+    $("statMined").textContent = compact(world.blocksMined);
+    $("statKills").textContent = compact(world.mobsKilled);
+    $("statDistance").textContent = typeof world.distanceKm === "number" ? `${compact(Math.round(world.distanceKm))} km` : "—";
+    $("statBuilds").textContent = compact(world.buildsCompleted);
+    $("statDeaths").textContent = compact(world.deaths);
+    $("nemesis").hidden = !world.nemesis;
+    $("nemesis").textContent = world.nemesis ? `Nemesis: the ${world.nemesis}. It has the most wins against CobbleBob.` : "";
+
+    const milestones = world.milestones || [];
+    const done = milestones.filter((m) => m.unlocked);
+    $("milestoneCount").textContent = `${done.length}/${milestones.length}`;
+    const ordered = done.concat(milestones.filter((m) => !m.unlocked).sort((a, b) => b.progress - a.progress));
+    $("milestones").replaceChildren(...ordered.map((m) => {
+      const item = el("li", `milestone${m.unlocked ? " unlocked" : ""}`);
+      item.title = m.unlocked ? `${m.title}: unlocked` : `${m.title}: ${Math.round(m.progress * 100)}%`;
+      const text = el("div");
+      text.append(el("strong", "", m.title), el("small", "", m.description));
+      if (!m.unlocked) { const bar = el("div", "mini"); const fill = el("i"); fill.style.width = `${Math.round(m.progress * 100)}%`; bar.append(fill); text.append(bar); }
+      item.append(el("span", "medal", "🏆"), text);
+      return item;
+    }));
+    const now = new Set(done.map((m) => m.id));
+    if (unlocked !== null) for (const m of done) if (!unlocked.has(m.id)) toast("milestone", "Milestone unlocked", m.title, "milestone-toast");
+    unlocked = now;
+  }
 
   function applyMode(isPublic) {
     if (mode === isPublic) return;
@@ -44,6 +128,8 @@
 
   function render(s) {
     applyMode(Boolean(s.public));
+    renderStory(s.story || []);
+    renderWorld(s.world);
     const self = s.self || {};
     const connected = s.connection?.connected === true;
     setConnection(connected ? "ok" : "down", connected ? "Online" : "Offline");

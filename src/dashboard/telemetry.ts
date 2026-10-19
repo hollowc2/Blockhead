@@ -10,6 +10,8 @@ import type { HostileTracker } from "../minecraft/entities.js";
 import type { DecisionMaker } from "../llm/decider.js";
 import type { LlamaClient } from "../llm/client.js";
 import type { EventHistory } from "./event-history.js";
+import type { StoryFeed } from "./story.js";
+import type { WorldStatsSummary } from "./world-stats.js";
 import { itemsSummary } from "../minecraft/inventory.js";
 import { computeDangerScore } from "../tui/danger.js";
 import { actionForTask } from "../tui/panels.js";
@@ -47,6 +49,8 @@ export interface DashboardTelemetrySource {
   decider?: DecisionMaker | null;
   client?: LlamaClient | null;
   eventHistory: EventHistory;
+  story?: StoryFeed;
+  worldStats?: () => WorldStatsSummary | null;
   viewer?: () => ViewerTelemetry;
 }
 
@@ -136,6 +140,8 @@ export class DashboardTelemetryCollector {
       recentEvents: this.source.eventHistory.recentEvents().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
       recentFailures: this.source.eventHistory.recentFailures().map((event) => ({ at: event.at, kind: event.category, message: event.message })),
       recentChat: this.source.eventHistory.recentChat().map((event) => ({ at: event.at, sender: event.category, message: event.message })),
+      story: this.source.story?.recent() ?? [],
+      world: this.source.worldStats?.() ?? null,
     };
   }
 }

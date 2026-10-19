@@ -1,5 +1,7 @@
 import type { GoalStatus, GoalSource, SuccessCriterion } from "../agent/goal.js";
 import type { StockpileKind } from "../agent/maintenance.js";
+import type { StoryEntry } from "./story.js";
+import type { WorldStatsSummary } from "./world-stats.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
 import type { BuildProjectStatus, BuildPhaseStatus, BuildMaterialShortage } from "../memory/build-projects.js";
 import type { WorldProjectKind, WorldProjectStatus, WorldProjectPhaseStatus } from "../memory/world-projects.js";
@@ -95,4 +97,8 @@ export interface DashboardSnapshot {
   recentEvents: readonly RecentEvent[];
   recentFailures: readonly RecentFailure[];
   recentChat: readonly RecentChatEntry[];
+  /** Plain-language, coordinate-free story of what CobbleBob did; safe for the public viewer. */
+  story?: readonly StoryEntry[];
+  /** Lifetime stats and milestones (server stats file + SQLite counts); safe for the public viewer. */
+  world?: WorldStatsSummary | null;
 }

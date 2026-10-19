@@ -1,15 +1,20 @@
+import type { StoryEntry } from "./story.js";
 import type { DashboardSnapshot } from "./types.js";
+import type { WorldStatsSummary } from "./world-stats.js";
 
 /**
  * Everything the public viewer page may learn about the bot. Built by
  * allowlist, never by deleting fields, so new snapshot fields stay private.
  * No coordinates, names, chat, goals, tasks, inventory or LLM activity.
+ * The story feed and lifetime stats are built coordinate-free at the source.
  */
 export interface PublicViewerState {
   public: true;
   connection: { connected: boolean };
   self: { health: number | null; hunger: number | null; dimension: string | null; timePhase: "day" | "night" | null };
   viewer: { status: DashboardSnapshot["viewer"]["status"] };
+  story: readonly StoryEntry[];
+  world: WorldStatsSummary | null;
 }
 
 export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerState {
@@ -24,6 +29,8 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
       timePhase: snapshot.self.timePhase,
     },
     viewer: { status: snapshot.viewer.status },
+    story: (snapshot.story ?? []).map(({ id, at, icon, text, highlight }) => ({ id, at, icon, text, highlight })),
+    world: snapshot.world ?? null,
   };
 }
 

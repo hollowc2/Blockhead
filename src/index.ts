@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { Bot } from "mineflayer";
 import { loadConfig } from "./config/load.js";
 import { createCobbleBob } from "./minecraft/bot.js";
@@ -81,6 +82,8 @@ import { ViewerManager } from "./dashboard/viewer.js";
 import { createPrismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { cachedPublicState } from "./dashboard/public-state.js";
 import { createViewerChat } from "./dashboard/viewer-chat.js";
+import { StoryFeed } from "./dashboard/story.js";
+import { createWorldStatsReader } from "./dashboard/world-stats.js";
 import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
@@ -100,6 +103,7 @@ const connectionState = new ConnectionStateMachine();
 // server outage does not reopen SQLite and re-run migrations on every retry.
 const bus = new EventBus();
 const eventHistory = new EventHistory({ bus });
+const storyFeed = new StoryFeed({ bus });
 const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
 const locations = new LocationsRepository(db);
@@ -272,6 +276,19 @@ let currentBootstrap: BootstrapRunner | null = null;
 // Phase 1 dashboard telemetry is process-lifetime and read-only. It is
 // constructed now so future dashboard transports can consume the same
 // reconnect-safe snapshot without owning or mutating agent services.
+// Lifetime stats for the viewer: the server's stats file (read-only) plus
+// SELECT-only counts from SQLite.
+const countCompletedBuilds = db.sql.prepare("SELECT COUNT(*) AS n FROM build_projects WHERE status = 'completed'");
+const countDeaths = db.sql.prepare("SELECT COUNT(*) AS n FROM death_events WHERE world_id = ?");
+const worldStats = createWorldStatsReader({
+  serverDir: config.dashboard?.minecraft_server_dir?.replace(/^~(?=\/)/, homedir()) ?? null,
+  username: config.server.username,
+  dbCounts: () => ({
+    buildsCompleted: (countCompletedBuilds.get() as { n: number }).n,
+    deaths: state.worldId === null ? 0 : (countDeaths.get(state.worldId) as { n: number }).n,
+  }),
+  onError: (error) => logger.debug({ err: String(error) }, "world stats unavailable"),
+});
 const dashboardTelemetry = new DashboardTelemetryCollector({
   config,
   startedAtMs: processStartedAt,
@@ -286,6 +303,8 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   decider,
   client,
   eventHistory,
+  story: storyFeed,
+  worldStats: worldStats.current,
   viewer: () => viewerManager.telemetry(),
 });
 
@@ -351,6 +370,7 @@ dashboardServer = startDashboard({
 process.on("exit", () => {
   taskOutcomes.dispose();
   eventHistory.dispose();
+  storyFeed.dispose();
 });
 
 // Phase 8: bootstrap yielded to user work resumes when that work settles —

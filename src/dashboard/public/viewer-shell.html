@@ -28,6 +28,7 @@
       <iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe>
 
       <div class="hud hud-top">
+        <div id="dayChip" class="chip chip-day" hidden><span id="dayCount">Day —</span></div>
         <div class="chip"><i id="timeIcon" class="time-icon"></i><span id="time">—</span></div>
         <div class="chip"><span id="dimension">—</span></div>
         <div class="chip" data-private><span class="mono" id="position">—</span></div>
@@ -44,11 +45,18 @@
         <div class="help">Drag to look · Scroll to zoom · Right-drag to pan · <kbd>R</kbd> find CobbleBob</div>
       </div>
 
+      <div id="toasts" class="toasts" aria-live="polite"></div>
+
       <div id="offline" class="offline" hidden><div><strong>Viewer offline</strong><span id="offlineReason">Waiting for CobbleBob to reconnect…</span></div></div>
     </section>
 
-    <aside class="panel">
-      <article class="card now" data-private>
+    <aside class="panel" id="panel" data-active="live">
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab-button="live" aria-selected="true">Live</button>
+        <button type="button" role="tab" data-tab-button="story" aria-selected="false">Story <i id="storyUnseen" class="unseen" hidden></i></button>
+        <button type="button" role="tab" data-tab-button="stats" aria-selected="false">Stats</button>
+      </nav>
+      <article class="card now" data-tab="live" data-private>
         <h2>Now</h2>
         <p id="action" class="action">—</p>
         <dl>
@@ -57,26 +65,26 @@
         </dl>
       </article>
 
-      <article id="buildCard" class="card" data-private hidden>
+      <article id="buildCard" class="card" data-tab="live" data-private hidden>
         <h2>Construction</h2>
         <p id="buildName" class="strong">—</p>
         <div class="progress"><i id="buildBar"></i></div>
         <p id="buildDetail" class="sub">—</p>
       </article>
 
-      <article class="card mind" data-private>
+      <article class="card mind" data-tab="live" data-private>
         <h2>Mind <span id="llm" class="mind-state">—</span></h2>
         <p id="rationale" class="quote">No decisions yet.</p>
         <p id="llmMeta" class="sub mono"></p>
       </article>
 
-      <article class="card" data-private>
+      <article class="card" data-tab="live" data-private>
         <h2>Surroundings</h2>
         <p id="danger" class="strong">—</p>
         <p id="dangerDetail" class="sub"></p>
       </article>
 
-      <article class="card chat" data-private>
+      <article class="card chat" data-tab="live" data-private>
         <h2>Ask CobbleBob</h2>
         <div id="chatLog" class="chat-log" aria-live="polite">
           <p class="chat-empty">Ask what he's up to, why, or how it's going.</p>
@@ -89,7 +97,7 @@
         </form>
       </article>
 
-      <article class="card world" data-public hidden>
+      <article class="card world" data-tab="live" data-public hidden>
         <h2>World</h2>
         <dl class="grid2">
           <div><dt>Health</dt><dd id="healthPublic">—</dd></div>
@@ -98,6 +106,29 @@
           <div><dt>Time</dt><dd id="timePublic">—</dd></div>
         </dl>
         <p class="sub">A read-only window into an autonomous Minecraft agent. CobbleBob is gathering, building and surviving on its own.</p>
+      </article>
+
+      <article class="card" data-tab="story">
+        <h2>Story so far</h2>
+        <ol id="story" class="story"><li class="story-empty">Nothing yet. Stick around, things happen fast.</li></ol>
+      </article>
+
+      <article class="card" data-tab="stats">
+        <h2>Lifetime</h2>
+        <div class="stat-grid">
+          <div class="stat"><b id="statDay">—</b><span>Day</span></div>
+          <div class="stat"><b id="statMined">—</b><span>Blocks mined</span></div>
+          <div class="stat"><b id="statKills">—</b><span>Mobs defeated</span></div>
+          <div class="stat"><b id="statDistance">—</b><span>Travelled</span></div>
+          <div class="stat"><b id="statBuilds">—</b><span>Buildings</span></div>
+          <div class="stat"><b id="statDeaths">—</b><span>Deaths</span></div>
+        </div>
+        <p id="nemesis" class="sub" hidden></p>
+      </article>
+
+      <article class="card" data-tab="stats">
+        <h2>Milestones <span id="milestoneCount" class="count">—</span></h2>
+        <ul id="milestones" class="milestones"></ul>
       </article>
 
       <footer class="foot"><span>Viewer <b id="viewerStatus">—</b></span><span data-private>Up <b id="uptime">—</b></span></footer>

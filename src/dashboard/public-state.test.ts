@@ -31,7 +31,21 @@ test("public state is an allowlisted, redacted projection", () => {
     connection: { connected: true },
     self: { health: 20, hunger: 17, dimension: "overworld", timePhase: "day" },
     viewer: { status: "running" },
+    story: [],
+    world: null,
   });
+});
+
+test("public state passes story and world stats through, but only their allowlisted fields", () => {
+  const snapshot = {
+    ...secretSnapshot(),
+    story: [{ id: 3, at: "2026-01-01T00:00:00.000Z", icon: "build", text: "Finished building a cottage!", highlight: true, secret: "1200 64 -950" }],
+    world: { day: 12, blocksMined: 5, itemsCrafted: 1, mobsKilled: 2, deaths: 1, distanceKm: 3.5, buildsCompleted: 1, nemesis: "zombie", milestones: [] },
+  } as unknown as DashboardSnapshot;
+  const state = toPublicViewerState(snapshot);
+  assert.deepEqual(state.story, [{ id: 3, at: "2026-01-01T00:00:00.000Z", icon: "build", text: "Finished building a cottage!", highlight: true }]);
+  assert.equal(state.world?.day, 12);
+  assert.equal(JSON.stringify(state).includes("1200"), false);
 });
 
 test("public state leaks no coordinates, names, chat, LLM data or internals", () => {
