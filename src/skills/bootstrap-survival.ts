@@ -43,6 +43,7 @@ import { isCreativeMode } from "../minecraft/mode.js";
 import { smeltItems } from "../minecraft/smelting.js";
 import {
   ARRIVE_RANGE,
+  isBuildingBlockName,
   travelAndWait,
   travelHomeAndWait,
   withPathfinderDigging,
@@ -2569,7 +2570,7 @@ function isCobbleStone(block: Block | null): boolean {
  * the bot once stood on); the real standing surface is the ground the bot
  * can actually walk on, which is what every home-anchored stage needs.
  */
-function groundLevelAt(bot: Bot, x: number, z: number): number | null {
+export function groundLevelAt(bot: Bot, x: number, z: number): number | null {
   // In a vertical shaft or an otherwise open column, scanning from the world
   // ceiling finds the lowest bedrock/deepslate floor rather than the surface
   // the bot is actually standing on. When the bot is already on (or right
@@ -2583,7 +2584,9 @@ function groundLevelAt(bot: Bot, x: number, z: number): number | null {
     // Only trust the feet when they are under open sky: a bot standing in a
     // cave beneath the home column would otherwise re-snap home onto the
     // cave floor, dragging "home" underground a little further each time.
-    if (Math.abs(feet.x - x) <= 1 && Math.abs(feet.z - z) <= 1 && isOpenSpace(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0))) && hasOpenSkyAbove(bot, feet)) {
+    // Within arrival range, not just the column itself: the home column is
+    // often a stack of stations (chest, furnace, table) nobody can stand on.
+    if (Math.abs(feet.x - x) <= ARRIVE_RANGE && Math.abs(feet.z - z) <= ARRIVE_RANGE && isOpenSpace(bot.blockAt(feet)) && isSolid(bot.blockAt(feet.offset(0, -1, 0))) && hasOpenSkyAbove(bot, feet)) {
       return feet.y;
     }
   }
@@ -2593,9 +2596,22 @@ function groundLevelAt(bot: Bot, x: number, z: number): number | null {
   for (let y = 319; y >= -64; y--) {
     const block = bot.blockAt(new Vec3(x, y, z));
     if (block === null) return null; // column not loaded yet
-    if (isDiggableGround(block)) return y + 1;
+    if (!isDiggableGround(block)) continue;
+    // A roof over open air is not ground: once the base was built over the
+    // home column, the sky-scan snapped home onto the roof and every trip
+    // home became unreachable. Skip a built layer with room beneath it.
+    if (isBuildingBlock(block)) {
+      let bottom = y;
+      while (isBuildingBlock(bot.blockAt(new Vec3(x, bottom - 1, z)))) bottom--;
+      if (isOpenSpace(bot.blockAt(new Vec3(x, bottom - 1, z)))) { y = bottom; continue; }
+    }
+    return y + 1;
   }
   return null;
+}
+
+function isBuildingBlock(block: Block | null): boolean {
+  return block !== null && isBuildingBlockName(block.name);
 }
 
 /** True when no ground block covers this cell (tree canopy does not count). */
@@ -2603,7 +2619,7 @@ function hasOpenSkyAbove(bot: Bot, feet: Vec3): boolean {
   for (let y = feet.y + 2; y <= 319; y++) {
     const block = bot.blockAt(new Vec3(feet.x, y, feet.z));
     if (block === null) return true; // above the loaded/built height
-    if (isDiggableGround(block)) return false;
+    if (isDiggableGround(block) && !isBuildingBlock(block)) return false;
   }
   return true;
 }

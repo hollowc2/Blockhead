@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BootstrapRunner, isNearAnySite, isNearSurfaceElevation, isUsableStoneRelocation, maxWoolColorCount, stoneExplorationSites } from "./bootstrap-survival.js";
+import { BootstrapRunner, groundLevelAt, isNearAnySite, isNearSurfaceElevation, isUsableStoneRelocation, maxWoolColorCount, stoneExplorationSites } from "./bootstrap-survival.js";
 import { BootstrapStage, nextBootstrapStage } from "../agent/bootstrap.js";
+import { Vec3 } from "vec3";
 
 function fakeBot(items: Array<{ name: string; count: number }>) {
   return { inventory: { items: () => items } } as any;
@@ -86,4 +87,25 @@ test("surface stone search excludes deep cave faces", () => {
   assert.equal(isNearSurfaceElevation({ y: 63 }, { y: 64 }), true);
   assert.equal(isNearSurfaceElevation({ y: 57 }, { y: 63 }), true);
   assert.equal(isNearSurfaceElevation({ y: 40 }, { y: 64 }), false);
+});
+
+function columnBot(column: Record<number, string>, feet: { x: number; y: number; z: number } | null = null) {
+  const block = (name: string) => ({ name, boundingBox: name === "air" || name === "torch" ? "empty" : "block", hardness: 1 });
+  const position = feet && { ...feet, floored: () => new Vec3(feet.x, feet.y, feet.z) };
+  return {
+    entity: position && { position },
+    blockAt: (v: Vec3) => block(v.x === 0 && v.z === 0 ? column[v.y] ?? (v.y < 90 ? "stone" : "air") : "air"),
+  } as never;
+}
+
+test("home ground level ignores a roof built over the home column", () => {
+  const house = { 95: "dirt", 96: "oak_planks", 101: "oak_planks", 102: "torch" };
+  assert.equal(groundLevelAt(columnBot(house), 0, 0), 97);
+  assert.equal(groundLevelAt(columnBot(house, { x: 0, y: 97, z: 0 }), 0, 0), 97, "standing inside the house counts");
+  assert.equal(groundLevelAt(columnBot({ ...house, 100: "oak_planks" }), 0, 0), 97, "a two-layer roof is still a roof");
+});
+
+test("home ground level still lands on natural overhangs and plank floors", () => {
+  assert.equal(groundLevelAt(columnBot({ 95: "dirt", 101: "stone" }), 0, 0), 102);
+  assert.equal(groundLevelAt(columnBot({ 95: "dirt", 96: "oak_planks" }), 0, 0), 97);
 });

@@ -871,3 +871,29 @@ test("a route out of the house walks straight through the open doorway before tu
   assert.ok(doorway > 0, "the route uses the doorway");
   assert.deepEqual([path[doorway - 1], path[doorway + 1]].map(node => node!.x), [0, 0], `straight in and out: ${JSON.stringify(path)}`);
 });
+
+test("home arrival keeps the interior floor under a tall built roof", async () => {
+  // The live base: floor at 97, plank roof at 102 and a chest left on top of it.
+  const position = new Vec3(75, 97, 51);
+  const heights: number[] = [];
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {},
+    entity: { position },
+    blockAt: (at: Vec3) => {
+      const house = Math.abs(at.x - 65) <= 3 && Math.abs(at.z - 51) <= 3;
+      const name = at.y <= 96 ? "dirt" : house && at.y === 102 ? "oak_planks" : house && at.y === 103 && at.x === 65 && at.z === 51 ? "chest" : "air";
+      return { position: at, name, boundingBox: name === "air" ? "empty" : "block" };
+    },
+    pathfinder: {
+      setMovements: () => {}, stop: () => {}, setGoal: () => {},
+      goto: async (goal: { x: number; y: number; z: number; goals?: Array<{ x: number; y: number; z: number }> }) => {
+        const target = goal.goals?.[0] ?? goal;
+        heights.push(target.y); position.set(target.x + 0.5, target.y, target.z + 0.5);
+      },
+    },
+  } as never;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("tall-roof-home", signal, () => travelHomeAndWait(bot, { x: 65, y: 97, z: 51, dimension: "overworld" }, { signal, timeoutMs: 3000 }));
+  assert.equal(result.status, "arrived");
+  assert(heights.length > 0 && heights.every((y) => y === 97), `routed to ${heights.join(",")}, not the floor at 97`);
+});

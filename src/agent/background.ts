@@ -819,7 +819,7 @@ export class BackgroundManager {
         return true;
       case "collect_resource": {
         if (this.kindBlocked(`resource:${task.resource}`)) return false;
-        const quantity = task.quantity;
+        const quantity = Math.min(task.quantity, AUTONOMOUS_GATHER_MAX);
         scheduler.enqueue({
           type: "collect_resource",
           priority: TaskPriority.BACKGROUND,
@@ -1063,6 +1063,7 @@ export class BackgroundManager {
     }
 
     const args = actionArguments(action);
+    if (action.type === "collect_resource") args.quantity = Math.min(action.quantity, AUTONOMOUS_GATHER_MAX);
     const parameters = { ...args, goalId };
     const stepLabel = goalStepLabel(action.type, args);
     goals.setCurrentStep(stepLabel);
@@ -1126,6 +1127,13 @@ function actionArguments(
   }
   return out;
 }
+
+/**
+ * One trip's worth for self-chosen gathering. The schema allows 1024 for
+ * owner-sized orders, and the model reached for that maximum ("collect 1024
+ * iron_ore" for one pickaxe), then retried it until the watchdog stepped in.
+ */
+export const AUTONOMOUS_GATHER_MAX = 64;
 
 /** Short step label for a goal action ("collect 16 food" / "craft an iron pickaxe"). */
 function goalStepLabel(type: string, args: Record<string, unknown>): string {

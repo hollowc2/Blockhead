@@ -1355,12 +1355,29 @@ export function skySurfaceY(bot: Bot, x: number, z: number): number | null {
   return null;
 }
 
-/** A low home roof is shelter overhead, not the desired arrival floor. */
+/** Placed building materials: a ceiling made of these is a roof, not a cave. */
+export function isBuildingBlockName(blockName: string): boolean {
+  const name = blockName.replace(/^minecraft:/, "");
+  return name.endsWith("_planks") || name.endsWith("_stairs") || name.endsWith("_slab") || name.endsWith("glass") ||
+    name.endsWith("_glass_pane") || name.endsWith("bricks") || name === "cobblestone" || name.endsWith("_wool");
+}
+
+/** True when a built block sits in the home column between the head and the sky surface. */
+function builtRoofOver(bot: Bot, home: HomeLocation, y: number, skyY: number): boolean {
+  for (let ry = y + 2; ry < skyY; ry++) {
+    const block = bot.blockAt(new Vec3(Math.floor(home.x), ry, Math.floor(home.z)));
+    if (block !== null && isBuildingBlockName(block.name)) return true;
+  }
+  return false;
+}
+
+/** A home roof is shelter overhead, not the desired arrival floor. */
 function homeStandingY(bot: Bot, home: HomeLocation, skyY: number | null): number {
   const y = Math.floor(home.y);
-  // Keep the sky fallback for stale buried anchors; only a small roof gap
-  // plus server-observed standing space can establish the interior floor.
-  if (skyY !== null && skyY >= y && skyY - y <= 4) {
+  // Keep the sky fallback for stale buried anchors; only a roof (a small gap,
+  // or any height when it is built) plus server-observed standing space can
+  // establish the interior floor. The base's roof is five blocks up.
+  if (skyY !== null && skyY >= y && (skyY - y <= 4 || builtRoofOver(bot, home, y, skyY))) {
     for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
       const feet = new Vec3(Math.floor(home.x) + dx, y, Math.floor(home.z) + dz);
       const floor = bot.blockAt(feet.offset(0, -1, 0));
