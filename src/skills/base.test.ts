@@ -9,6 +9,7 @@ import {
   BASE_INTERIOR_RADIUS,
   BASE_WALL_HEIGHT,
   baseLayoutFor,
+  displacedBaseOffset,
   DOOR_PLANK_COST,
   freeChestSlotSpot,
   isPlacementWithinReach,
@@ -717,4 +718,18 @@ test("replacement cannot claim a foreign block merely because another blueprint 
   assert.equal(result.errorCode, "OBSTRUCTION");
   assert.equal(result.data?.currentOperationIndex, 1);
   assert.equal(world["1,64,0"], "cobblestone");
+});
+
+test("a home-Y shift does not start a second base shell", () => {
+  const built = baseLayoutFor({ dimension: "overworld", x: 65, y: 100, z: 51 });
+  const planks = new Set([...built.wallCells, ...built.roofCells].map((cell) => `${cell.x},${cell.y},${cell.z}`));
+  const bot = {
+    blockAt: (at: Vec3) => {
+      const name = planks.has(`${at.x},${at.y},${at.z}`) ? "oak_planks" : at.y === 99 || at.y <= 96 ? "dirt" : "air";
+      return { position: at, name, boundingBox: name === "air" ? "empty" : "block" };
+    },
+  } as never;
+  assert.equal(displacedBaseOffset(bot, { dimension: "overworld", x: 65, y: 100, z: 51 }), null, "the base itself is not displaced");
+  assert.equal(displacedBaseOffset(bot, { dimension: "overworld", x: 65, y: 103, z: 51 }), -3);
+  assert.equal(displacedBaseOffset(bot, { dimension: "overworld", x: 65, y: 97, z: 51 }), 3, "the crawlspace below is not a building site");
 });

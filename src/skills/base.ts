@@ -258,6 +258,28 @@ export interface StructureMeasurement {
 }
 
 /** How much of the base shell still needs building. Pure over `blockAt`. */
+/**
+ * The base is laid out from home's Y, so every home-Y correction (97, 103,
+ * then 100 at the forest base) started another wall-and-roof shell at the
+ * new height, layering the house until no door was walkable. When a mostly
+ * built base already stands a few blocks above or below, report its offset
+ * instead of starting a second one.
+ */
+export function displacedBaseOffset(bot: Bot, home: HomeLocation): number | null {
+  const shellMissing = (dy: number): number => {
+    const layout = baseLayoutFor({ ...home, y: Math.floor(home.y) + dy });
+    const m = measureStructure(bot, layout);
+    // Foreign blocks count too: a layout buried in another floor is not a base.
+    return Math.min(1, (m.missingWalls + m.missingRoof + m.blocked) / (layout.wallCells.length + layout.roofCells.length));
+  };
+  const here = shellMissing(0);
+  if (here <= 0.5) return null;
+  for (const dy of [-1, 1, -2, 2, -3, 3, -4, 4]) {
+    if (shellMissing(dy) <= 0.25) return dy;
+  }
+  return null;
+}
+
 export function measureStructure(bot: Bot, layout: BaseLayout): StructureMeasurement {
   let missingWalls = 0;
   let missingRoof = 0;
@@ -1532,6 +1554,7 @@ export class BaseBuilderRunner {
   async needsAttention(): Promise<{ needsWork: boolean; reason: string | null }> {
     const home = this.opts.state.home;
     if (home === null) return { needsWork: false, reason: "no home configured" };
+    if (displacedBaseOffset(this.opts.bot, home) !== null) return { needsWork: false, reason: null };
     const measurement = measureStructure(this.opts.bot, baseLayoutFor(home));
     this.opts.bus.emit("structure.checked", {
       missingWalls: measurement.missingWalls,
@@ -1583,6 +1606,12 @@ export class BaseBuilderRunner {
       return this.fail(data, "PATH_UNREACHABLE", `could not reach home: ${travel.status}`);
     }
 
+    const displaced = displacedBaseOffset(bot, home);
+    if (displaced !== null) {
+      const message = `a base already stands ${Math.abs(displaced)} block${Math.abs(displaced) === 1 ? "" : "s"} ${displaced > 0 ? "above" : "below"} home; not starting a second shell`;
+      this.opts.logger.warn({ home, displaced }, "base build skipped: existing base at another height");
+      return { ok: false, status: "blocked", data, errorCode: "BLOCKED", message, retryable: false };
+    }
     const layout = baseLayoutFor(home);
     const before = measureStructure(bot, layout);
     data.missingBefore = before.planksNeeded;
