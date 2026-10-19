@@ -39,6 +39,9 @@ ci_if_changed() {
     npm ci
     lock_sum >"$stamp"
   fi
+  # New dependency patches must land even when npm ci (and so postinstall)
+  # is skipped; every patch is a no-op once applied.
+  node scripts/patch-prismarine-viewer.mjs
 }
 
 printf '%s\n' 'Installing and checking source checkout...'
