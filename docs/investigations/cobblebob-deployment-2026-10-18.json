@@ -1,0 +1,183 @@
+{
+  "approval": "user: approve",
+  "scope": "seven reviewed bot runtime files only",
+  "installedAt": "2026-10-18T19:33:36Z",
+  "rollbackAt": "2026-10-18T19:39:55Z",
+  "backupDirectory": "/home/corey/.local/share/blockhead-backups/repair-20261018",
+  "allInstalledHashesMatched": true,
+  "allRestoredHashesMatched": true,
+  "verifiedLogRemovals": 2,
+  "savedTarget114_101_71": "air",
+  "healthDuringRecordedCandidateSamples": 20,
+  "hungerAfterAutoEat": 20,
+  "acceptanceFailure": "planned tidy48,32 executed tidy32,48; failure charged wrong identity; generic watchdog held subsequent head candidate",
+  "minecraftAndLlamaRestarted": false,
+  "cvtrack": "inactive/disabled",
+  "hostChangesInstalled": false,
+  "manualWorldOrDatabaseEdits": false,
+  "note": "Code rollback preserved autonomous world progress and SQLite state; 15-minute acceptance window stopped early on defect.",
+  "candidateObservationSamples": 12,
+  "sampleWindow": {
+    "from": "2026-10-18T19:34:12.989319+00:00",
+    "to": "2026-10-18T19:39:49.206185+00:00"
+  },
+  "meaningfulEvents": [
+    {
+      "level": 30,
+      "time": 1792352040138,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 24
+      },
+      "cleared": 1,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792352040193,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792353240138,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 30,
+      "time": 1792352040260,
+      "pid": 6502,
+      "hostname": "maia",
+      "taskId": "ec8a8107-44e6-4f9e-ba9a-bcf2eb342d32",
+      "msg": "task completed"
+    },
+    {
+      "level": 30,
+      "time": 1792352099082,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 32,
+        "dz": 48
+      },
+      "cleared": 1,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792352099177,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 32,
+        "dz": 48
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792353299082,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 30,
+      "time": 1792352099233,
+      "pid": 6502,
+      "hostname": "maia",
+      "taskId": "f281dbbd-2491-4f04-abd4-26d0ba0d5459",
+      "msg": "task completed"
+    },
+    {
+      "level": 30,
+      "time": 1792352118786,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 32,
+        "dz": 48
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792352118870,
+      "pid": 6502,
+      "hostname": "maia",
+      "plot": {
+        "dx": 32,
+        "dz": 48
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792353318786,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792352118981,
+      "pid": 6502,
+      "hostname": "maia",
+      "taskId": "ba207f99-88b4-476f-bbd3-b1cfddb68c09",
+      "lastError": "No leftover logs cleared at 32,48; plot deferred.",
+      "msg": "task failed"
+    }
+  ],
+  "vitals": {
+    "minHealth": 20,
+    "minHunger": 20,
+    "finalCandidateSample": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 66.5,
+        "y": 102,
+        "z": 50.502153059770784
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    }
+  },
+  "afterRollback": {
+    "connected": true,
+    "player": "CobbleBob",
+    "health": 20,
+    "hunger": 20,
+    "position": {
+      "x": 66.5,
+      "y": 102,
+      "z": 50.502153059770784
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "finalBaselineStatus": {
+    "process": {
+      "startedAt": "2026-10-18T19:39:56.531Z",
+      "uptimeSeconds": 256.692
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 66.5,
+        "y": 102,
+        "z": 50.502153059770784
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "ownerRoomVerifiedOperations": 85,
+    "ownerRoomStatus": "blocked"
+  }
+}

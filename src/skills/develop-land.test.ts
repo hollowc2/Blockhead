@@ -155,6 +155,10 @@ test("leftover trunk over a field is taken down before the land expands", async 
   const next = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0 });
   assert.equal(next?.kind, "tidy");
   assert.deepEqual(next?.survey.leftoverLogs.map((c) => c.y).sort(), [67, 68, 69, 70]);
+  const infeasible = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0, canTidyLog: () => false });
+  assert.equal(infeasible?.kind, "field", "logs with no supported approach must not consume repeated cleanup tasks");
+  const feasible = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0, canTidyLog: log => log.y === 67 });
+  assert.equal(feasible?.kind, "tidy", "one reachable log is enough for useful cleanup");
   const skipped = nextDevelopment(HOME, world(land), new Set(), { buildBusy: true, buildings: 0, tidySkip: new Set([`${field.dx},${field.dz}`]) });
   assert.equal(skipped?.kind, "field", "an unreachable trunk does not hold development up");
 });
@@ -277,7 +281,9 @@ test("gap tidy takes floating logs but leaves standing trunks, frames and protec
 test("levelling never cuts through a crafted obstruction or cuts paths", async () => {
   const { levelPlan } = await import("./develop-land.js");
   const plan = levelPlan({ x: 0, z: 0 }, 63, 2, world({ "0,65,0": { name: "oak_planks" }, "0,64,0": { name: "dirt" }, "1,64,1": { name: "dirt_path" } }));
-  assert.deepEqual(plan, { cut: [], fill: [] });
+  assert.deepEqual(plan.cut, []);
+  assert.deepEqual(plan.fill, []);
+  assert.deepEqual(plan.blockers, ["protected oak_planks at 0,65,0", "protected dirt_path at 1,64,1"]);
 });
 
 
@@ -301,4 +307,41 @@ test("established fields qualify even with fewer natural columns than a new fiel
   const next = nextDevelopment(HOME, world(land));
   assert.equal(next?.kind, "level_field");
   assert.equal(next?.survey.groundColumns, 17);
+});
+
+test("path and partial-height farmland do not create a fictitious one-block field plane", async () => {
+  const { levelPlan, modalGround } = await import("./develop-land.js");
+  const land = developed(0);
+  land["-7,64,0"] = { name: "dirt_path" };
+  const survey = surveyPlot(HOME, { dx: -8, dz: 0 }, world(land));
+  assert.equal(survey.minGround, 63);
+  assert.equal(survey.maxGround, 63);
+  assert.equal(survey.groundColumns, 24, "preserved paths are not field soil");
+  assert.equal(modalGround(survey), 63, "farmland uses its block plane, independent of its 15/16 collision top");
+  const plan = levelPlan({ x: -10, z: -2 }, 63, 5, world(land));
+  assert.deepEqual(plan.cut, []);
+  assert.deepEqual(plan.fill, []);
+  assert.ok(plan.blockers.some(b => b.includes("dirt_path")));
+});
+
+test("recorded October18 failing plots have fill-only modal plans, not a fractional-height cut", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { levelPlan, modalGround } = await import("./develop-land.js");
+  const evidence = JSON.parse(readFileSync(new URL("../../docs/investigations/cobblebob-fields-2026-10-18.json", import.meta.url), "utf8")) as { plots: { center: { x: number; z: number }; columns: { x: number; z: number; blocks: { y: number; Name: string }[] }[] }[] };
+  const expected = [[95, 94, 5], [93, 92, 4], [94, 93, 2]];
+  evidence.plots.forEach((plot, index) => {
+    const cells = new Map<string, string>();
+    for (const column of plot.columns) for (const b of column.blocks) cells.set(`${column.x},${b.y},${column.z}`, b.Name.replace(/^minecraft:/, ""));
+    const lookup: FarmLookup = (x, y, z) => ({ name: cells.get(`${x},${y},${z}`) ?? "air" });
+    const home = { x: 65, y: 103, z: 51 };
+    const offset = { dx: plot.center.x - home.x, dz: plot.center.z - home.z };
+    const survey = surveyPlot(home, offset, lookup);
+    const [padY, minY, fills] = expected[index]!;
+    assert.equal(modalGround(survey), padY);
+    assert.equal(survey.minGround, minY);
+    const plan = levelPlan({ x: plot.center.x - 2, z: plot.center.z - 2 }, padY!, 5, lookup);
+    assert.equal(plan.cut.length, 0);
+    assert.equal(plan.fill.length, fills, "without dirt every intended mutation is unavailable");
+    assert.equal(plan.blockers.length, index === 0 ? 2 : 0, "the two cobblestone columns are preserved");
+  });
 });

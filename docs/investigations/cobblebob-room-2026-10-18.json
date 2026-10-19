@@ -1,0 +1,185 @@
+{
+  "observedAt": "2026-10-18T19:20:45.830Z",
+  "source": "fresh read-only Maia saved region r.0.0.mca, chunks3,3 and4,3",
+  "caveat": "Saved disk state may lag loaded server chunks; not a transactional live world snapshot",
+  "projectId": "f3adef30-a71a-40cb-96fc-71dec89484f4",
+  "frozenBlueprintHash": "b8a86828ac58864c29f0b2980bcd6cba1e309e554c26406466b78d2faad83380",
+  "historicalLogClassification": "Cannot establish natural-versus-player structure provenance: historical log currently absent in saved snapshot; no owner tree-clearance authorization",
+  "target": {
+    "x": 68,
+    "y": 99,
+    "z": 53,
+    "observed": {
+      "Name": "minecraft:air"
+    }
+  },
+  "verifiedPrefix": 85,
+  "matchingWithPlankEquivalence": 70,
+  "mismatches": [
+    {
+      "i": 6,
+      "at": {
+        "x": 63,
+        "y": 96,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 8,
+      "at": {
+        "x": 64,
+        "y": 96,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 10,
+      "at": {
+        "x": 65,
+        "y": 96,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 29,
+      "at": {
+        "x": 63,
+        "y": 97,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 31,
+      "at": {
+        "x": 64,
+        "y": 97,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 43,
+      "at": {
+        "x": 69,
+        "y": 97,
+        "z": 57,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 51,
+      "at": {
+        "x": 63,
+        "y": 98,
+        "z": 58,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 52,
+      "at": {
+        "x": 63,
+        "y": 98,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 54,
+      "at": {
+        "x": 64,
+        "y": 98,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 67,
+      "at": {
+        "x": 69,
+        "y": 98,
+        "z": 57,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 75,
+      "at": {
+        "x": 63,
+        "y": 99,
+        "z": 58,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 76,
+      "at": {
+        "x": 63,
+        "y": 99,
+        "z": 59,
+        "dimension": "overworld"
+      },
+      "actual": "air",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 77,
+      "at": {
+        "x": 64,
+        "y": 99,
+        "z": 53,
+        "dimension": "overworld"
+      },
+      "actual": "crafting_table",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 79,
+      "at": {
+        "x": 65,
+        "y": 99,
+        "z": 53,
+        "dimension": "overworld"
+      },
+      "actual": "crafting_table",
+      "expected": "oak_planks"
+    },
+    {
+      "i": 81,
+      "at": {
+        "x": 66,
+        "y": 99,
+        "z": 53,
+        "dimension": "overworld"
+      },
+      "actual": "crafting_table",
+      "expected": "oak_planks"
+    }
+  ]
+}

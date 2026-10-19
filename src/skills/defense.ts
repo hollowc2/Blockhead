@@ -43,6 +43,8 @@ const MELEE_RADIUS = 3.5;
 const UNREACHABLE_DISTANCE = 6;
 /** How long a target may stay out of reach before the fight is abandoned. */
 const UNREACHABLE_MS = 8_000;
+/** Close targets can also be unreachable: require approach progress or observed hits. */
+const COMBAT_PROGRESS_TIMEOUT_MS = 8_000;
 /** Poll interval for the in-fight retarget / retreat checks. */
 const FIGHT_POLL_MS = 250;
 /** How far a retreat runs from the threats. */
@@ -125,7 +127,7 @@ interface KillResult {
   retreat?: boolean;
 }
 
-type FightBreak = "retarget" | "retreat" | "outnumbered" | "unreachable";
+type FightBreak = "retarget" | "retreat" | "outnumbered" | "unreachable" | "stalled";
 
 /**
  * Deterministic defense runner: clears nearby hostile mobs, never human
@@ -514,6 +516,7 @@ export class DefenseRunner {
       if (why === "retarget") return { ok: false, retarget: true, reason: `another hostile closed in while fighting the ${name}` };
       if (why === "retreat") return { ok: false, retreat: true, reason: `health ${bot.health} fell to the retreat floor fighting the ${name}` };
       if (why === "outnumbered") return { ok: false, retreat: true, reason: `outnumbered by ${this.hostilesWithin(CROWD_RADIUS)} hostiles while fighting the ${name}` };
+      if (why === "stalled") return { ok: false, reason: `no combat progress against the ${name}` };
       return { ok: false, reason: `could not reach the ${name}` };
     };
 
@@ -547,10 +550,26 @@ export class DefenseRunner {
 
     // mineflayer-pvp chases one target until it dies; watch the fight and
     // stop it when another mob is doing the damage or the bot must run.
+    let progressAt = Date.now();
+    let bestDistance = distanceBetween(hostile.position, bot.entity.position);
+    const onTargetHurt = (entity: Entity): void => {
+      if (entity.id === hostile.id) progressAt = Date.now();
+    };
+    bot.on("entityHurt", onTargetHurt);
     const watch = setInterval(() => {
       if (broke !== null) return;
+      const self = bot.entity?.position;
+      if (self !== undefined && self !== null) {
+        const distance = distanceBetween(hostile.position, self);
+        if (distance < bestDistance - 0.5) {
+          bestDistance = distance;
+          progressAt = Date.now();
+        }
+      }
+      this.checkInterrupt();
       broke = this.fightBreak(hostile, allowRetreat, farSince);
-      if (broke !== null) void this.actions.stop(bot, this.signals?.signal).catch(() => undefined);
+      if (broke === null && Date.now() - progressAt >= COMBAT_PROGRESS_TIMEOUT_MS) broke = "stalled";
+      if (broke !== null || this.stopRequested) void this.actions.stop(bot, this.signals?.signal).catch(() => undefined);
     }, FIGHT_POLL_MS);
     try {
       await withTimeout(KILL_TIMEOUT_MS, this.actions.attack(bot, hostile, this.signals?.signal), async () => {
@@ -558,10 +577,12 @@ export class DefenseRunner {
       }, this.signals?.signal);
     } catch (err) {
       await this.actions.stop(bot, this.signals?.signal);
+      if (broke !== null) return breakResult(broke);
       if (Date.now() > deadline) return { ok: false, reason: "defense budget exceeded" };
       return { ok: false, reason: `could not kill the ${name}: ${String(err)}` };
     } finally {
       clearInterval(watch);
+      bot.off("entityHurt", onTargetHurt);
       await this.actions.stop(bot, this.signals?.signal);
     }
     if (combatOutcomeObserved(bot, hostile)) return { ok: true, killed: name };

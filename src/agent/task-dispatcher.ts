@@ -24,7 +24,7 @@ import type { EnsureItemRunner } from "../skills/ensure-item.js";
 import { runEquipmentUpgrade } from "../skills/ensure-item.js";
 import type { EnsureTorchesRunner } from "../skills/ensure-torches.js";
 import type { LightHomeRunner } from "../skills/light-home.js";
-import type { DevelopLandRunner } from "../skills/develop-land.js";
+import type { DevelopLandRunner, DevelopmentWork } from "../skills/develop-land.js";
 import { expeditionThreshold } from "../skills/expedition.js";
 import type { GatherFoodRunner, GatherFoodResumeState } from "../skills/gather-food.js";
 import { patrolHeadingDeg, patrolWaypoint } from "../skills/gather-food.js";
@@ -327,7 +327,7 @@ export class TaskDispatcher {
    * is not recorded.
    */
   private recordOutcome(task: Task, result: SkillResult): void {
-    if (result.status === "interrupted") return;
+    if (result.status === "interrupted" || task.type === "develop_land" && result.errorCode === "DEVELOPMENT_PLAN_STALE") return;
     const fingerprint = actionFingerprint(task.type, task.parameters);
     const reason = result.message ?? result.errorCode ?? "";
     if (result.status === "completed") {
@@ -342,6 +342,14 @@ export class TaskDispatcher {
   /** Settle from the lifecycle status; `ok` remains compatibility data only. */
   private settleResult(task: Task, result: SkillResult): void {
     const scheduler = this.opts.scheduler;
+    if (task.type === "develop_land" && result.errorCode === "DEVELOPMENT_PLAN_STALE") {
+      // The planned action was never attempted. Cancel this obsolete identity
+      // so the next idle pass creates a fresh task, without charging or
+      // clearing any action's watchdog history.
+      scheduler.requestCancel();
+      scheduler.settleInterrupted();
+      return;
+    }
     const projectSettlement = this.settleProject(task, result);
     if (projectSettlement !== "none") {
       switch (projectSettlement) {
@@ -607,7 +615,11 @@ export class TaskDispatcher {
         if (this.opts.developLand === undefined) {
           return { ok: false, status: "failed", errorCode: "NOT_READY", message: "land development is not wired", retryable: false };
         }
-        return this.opts.developLand.run({ signals });
+        if (task.source !== "user" && (typeof task.parameters.plot !== "string" || typeof task.parameters.kind !== "string")) {
+          return { ok: false, status: "failed", errorCode: "DEVELOPMENT_PLAN_STALE", message: "Legacy development task has no plot identity; select fresh work.", retryable: false };
+        }
+        return this.opts.developLand.run({ signals, ...(typeof task.parameters.plot === "string" && typeof task.parameters.kind === "string"
+          ? { planned: { plot: task.parameters.plot, kind: task.parameters.kind as DevelopmentWork["kind"] } } : {}) });
       case "organize_storage":
         return this.opts.organizeStorage.run({
           signals,

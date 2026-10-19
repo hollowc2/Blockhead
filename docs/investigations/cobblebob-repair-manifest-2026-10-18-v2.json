@@ -1,0 +1,87 @@
+{
+  "preparedAt": "2026-10-18T19:43:33.894757+00:00",
+  "status": "revised eight-file candidate installed and stable; scheduling/backoff verified; construction acceptance remains limited",
+  "supersedes": "first candidate installed 19:33:36Z and rolled back 19:39:55Z for task identity/fallback defect",
+  "host": "maia",
+  "account": "corey",
+  "service": "blockhead.service",
+  "sourceRoot": "/mnt/Repos/Games/Blockhead",
+  "runtimeRoot": "/home/corey/.local/share/blockhead-runtime",
+  "baselineCommit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "dependenciesUnchanged": true,
+  "files": {
+    "src/index.ts": {
+      "runtimeBaselineSha256": "77d561977ce2ab4f90e985e401d5870633c86eed47765c73e5b07d6647a177ee",
+      "candidateSha256": "7eabe61c58c9a8a611b974a5023259413d80d5b7adbfd1f45b2f5abd0e610c41"
+    },
+    "src/agent/background.ts": {
+      "runtimeBaselineSha256": "403e8d066446cbcdc5ee1e2e17e7ad3c541fd4acf5f6be7eb8b61420114ee806",
+      "candidateSha256": "cd3ea18f5e0907c29df41436e6fa569283dcb286bbd98adee64376f3f08b97fb"
+    },
+    "src/agent/task-dispatcher.ts": {
+      "runtimeBaselineSha256": "816fd3c3c937ade00ffe60caa08f1b443159ade54498166e12b633387d129c8e",
+      "candidateSha256": "70ab8f9ff6aa8bbade3410a6eb5698a3d041890f3779a1ab5d38d67495233cdb"
+    },
+    "src/minecraft/movement.ts": {
+      "runtimeBaselineSha256": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+      "candidateSha256": "83463d669cf0cd1d60eb16d2f4aa1fc3c70efffa0135b388cd768758494bf164"
+    },
+    "src/minecraft/world.ts": {
+      "runtimeBaselineSha256": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+      "candidateSha256": "66afa82dadc15d6acf717e58340263bd96cd50b994f752be1fe0bf59551305f1"
+    },
+    "src/skills/base.ts": {
+      "runtimeBaselineSha256": "a8c7ff511defa5da7b3be2b341ec910162a70b96854192ca93f91177f6a52331",
+      "candidateSha256": "f36113c1b38285c55f771249313505b5e25b956bc451ac767ffce4e6c39599c0"
+    },
+    "src/skills/develop-land.ts": {
+      "runtimeBaselineSha256": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+      "candidateSha256": "a333dc527fcc46a7f204f2d85202574edc0b11d0fbde61030b0f5417390b7e03"
+    },
+    "src/skills/farm.ts": {
+      "runtimeBaselineSha256": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+      "candidateSha256": "3bd681b1efd7c1afbac16478a69012f3ddad3569c38fc561981e87326fbcb169"
+    }
+  },
+  "proposedBackupDirectory": "/home/corey/.local/share/blockhead-backups/repair-20261018-v2",
+  "validation": {
+    "validatedAt": "2026-10-18T19:44:01.486576+00:00",
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    "fullSuite": {
+      "command": "npm test",
+      "exitCode": 0,
+      "tests": 774,
+      "passed": 774,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 34210.51811
+    },
+    "focusedDevelopmentDispatcherBackground": {
+      "passed": 103,
+      "failed": 0
+    },
+    "diffCheck": "passed",
+    "sourceCandidateHashCheck": "all eight passed",
+    "liveBaselineHashCheck": "all eight original runtime hashes passed after rollback",
+    "liveDeployment": "approved revised rollout installed; hashes checked",
+    "liveAcceptance": "scheduling/backoff and protected sample verified; productive field/room completion pending",
+    "fullLogSha256": "5a50f8a8d0c28ff763f823288fbd44dddfa87706bb9b6696f9c4f8b77d8afd57",
+    "fullLogLocal": "/tmp/cobblebob-20261018/full-tests-v2.log"
+  },
+  "deployment": {
+    "approval": "user: continue, following prior bot deployment approval and revised eight-file candidate update",
+    "installedAt": "2026-10-18T21:47:49Z",
+    "backupDirectory": "/home/corey/.local/share/blockhead-backups/repair-20261018-v2",
+    "allInstalledHashesMatch": true,
+    "hostSettingsOrManualWorldChanges": false,
+    "liveAcceptance": "scheduling/backoff and protected sample verified; productive field/room completion pending",
+    "automaticRestarts": 0,
+    "currentHealth": 20,
+    "currentHunger": 16,
+    "evidence": "cobblebob-deployment-2026-10-18-v2.json"
+  }
+}

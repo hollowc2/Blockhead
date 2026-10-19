@@ -1,0 +1,58 @@
+{
+  "observedAt": "2026-10-18T21:51:47.396792+00:00",
+  "regionMtime": "2026-10-18T21:51:38.584Z",
+  "caveat": "read-only saved disk chunks; may lag currently loaded server state",
+  "blocks": [
+    {
+      "x": 64,
+      "y": 99,
+      "z": 53,
+      "Name": "minecraft:crafting_table"
+    },
+    {
+      "x": 65,
+      "y": 99,
+      "z": 53,
+      "Name": "minecraft:crafting_table"
+    },
+    {
+      "x": 66,
+      "y": 99,
+      "z": 53,
+      "Name": "minecraft:crafting_table"
+    },
+    {
+      "x": 68,
+      "y": 99,
+      "z": 53,
+      "Name": "minecraft:air"
+    },
+    {
+      "x": 103,
+      "y": 94,
+      "z": 77,
+      "Name": "minecraft:cobblestone"
+    },
+    {
+      "x": 104,
+      "y": 94,
+      "z": 77,
+      "Name": "minecraft:cobblestone"
+    },
+    {
+      "x": 114,
+      "y": 101,
+      "z": 71,
+      "Name": "minecraft:air"
+    },
+    {
+      "x": 112,
+      "y": 96,
+      "z": 69,
+      "Properties": {
+        "moisture": "0"
+      },
+      "Name": "minecraft:farmland"
+    }
+  ]
+}

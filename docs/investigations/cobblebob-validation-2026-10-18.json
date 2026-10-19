@@ -1,0 +1,41 @@
+{
+  "validatedAt": "2026-10-18T19:28:20.427220+00:00",
+  "typecheck": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "result": "passed"
+  },
+  "fullSuite": {
+    "command": "npm test",
+    "exitCode": 0,
+    "tests": 769,
+    "passed": 769,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 35854.581531
+  },
+  "focused": {
+    "movementWorld": {
+      "passed": 54,
+      "failed": 0
+    },
+    "buildingAndProjects": {
+      "passed": 55,
+      "failed": 0
+    },
+    "developmentFarmingBackground": {
+      "passed": 96,
+      "failed": 0
+    }
+  },
+  "diffCheck": "passed",
+  "captureScriptSyntax": "bash -n passed",
+  "captureScriptReadonlyMaiaSmoke": "passed",
+  "sourceCandidateHashes": "all seven match tested manifest",
+  "runtimeBaselineFinalCheck": "all seven unchanged; main service start times unchanged and NRestarts=0; cvtrack inactive/disabled",
+  "liveDeployment": "not performed",
+  "liveWorldAcceptance": "pending explicit approval",
+  "logSha256": "38e5ae470aea6c2401d099b226f548731912c4f119197eb5bce82fe2e6a840bc",
+  "localRawLog": "/tmp/cobblebob-20261018/full-tests-final.log"
+}

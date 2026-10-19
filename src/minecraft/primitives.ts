@@ -37,7 +37,16 @@ export async function equipItem(bot: Bot, item: Item, signal?: AbortSignal): Pro
   // `bot.equip` waits for the server's inventory confirmation and never times
   // out; on 1.21 that update can be lost, and an unbounded equip wedged the
   // bootstrap hunt for 23 minutes next to a pig.
-  await raceAbort(bot.equip(item, "hand"), signal, { timeoutMs: EQUIP_TIMEOUT_MS, label: "equip" });
+  // Travel, crafting and pathfinder scaffolding can swap inventory slots.
+  // An Item retained by a caller may now point at a crafting table rather
+  // than the requested plank. Mineflayer equips by slot, so refresh it.
+  const items = bot.inventory?.items?.();
+  const current = items === undefined ? item
+    : items.find(candidate => candidate.name === item.name && candidate.slot === item.slot)
+      ?? items.find(candidate => candidate.name === item.name);
+  if (current === undefined) throw new Error(`cannot equip missing item: ${item.name}`);
+  await raceAbort(bot.equip(current, "hand"), signal, { timeoutMs: EQUIP_TIMEOUT_MS, label: "equip" });
+  if (bot.heldItem !== undefined && bot.heldItem?.name !== item.name) throw new Error(`equipped item mismatch: expected ${item.name}, observed ${bot.heldItem?.name ?? "empty"}`);
   throwIfAborted(signal);
 }
 
@@ -179,7 +188,12 @@ export async function pvpAttack(bot: Bot, target: Entity, signal?: AbortSignal):
 
 export async function pvpStop(bot: Bot, signal?: AbortSignal): Promise<void> {
   requireWorldActionCleanupLease();
-  await bot.pvp.stop();
+  // stop() clears pvp.target before awaiting path_stop (up to five seconds).
+  // A second stop() then returns immediately, leaving a queued pathfinder
+  // stop to cancel the next goto. Finish synchronously while we own movement.
+  bot.pvp.forceStop();
+  bot.pathfinder.stop();
+  bot.pathfinder.setGoal(null); // consumes pathfinder's deferred stop flag
 }
 
 export async function cancelCollection(bot: Bot): Promise<void> {

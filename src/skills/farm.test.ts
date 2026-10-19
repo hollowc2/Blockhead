@@ -120,3 +120,20 @@ test("a plot development just cleared is sown even when seeds are short", () => 
   assert.equal(cells.length, 100, "the three fields and the cleared plot");
   assert.equal(cells.filter((c) => c.x >= 14).length, 25);
 });
+
+test("a development pass works only its assigned plot even with many established farms", () => {
+  const fields: Record<string, FarmBlock> = {};
+  for (const cx of [-16, -8, 0, 8, 16]) for (const cz of [-16, -8, 0, 8, 16]) fields[`${cx},63,${cz}`] = { name: "farmland" };
+  const plot = { dx: 24, dz: 0 };
+  const cells = chooseFarmCells(HOME, world(fields), 500, plot, true);
+  assert.equal(cells.length, 25);
+  assert.ok(cells.every(cell => Math.abs(cell.x - plot.dx) <= 2 && Math.abs(cell.z - plot.dz) <= 2));
+  assert.ok(chooseFarmCells(HOME, world(fields), 500).length > 25, "normal farm maintenance retains its broad scope");
+});
+
+test("development sowing preserves a dirt path within its selected plot", () => {
+  const plot = { dx: -8, dz: 0 };
+  const cells = chooseFarmCells(HOME, world({ "-8,63,0": { name: "dirt_path" } }), 64, plot, true);
+  assert.equal(cells.length, 24);
+  assert.ok(!cells.some(cell => cell.x === -8 && cell.z === 0));
+});

@@ -655,3 +655,66 @@ test("a base shell cell out of reach is walked to before it is placed", async ()
   await internals.placeShellCell({ name: "oak_planks" }, new Vec3(0, 64, 8), new Set());
   assert.deepEqual(moves, ["0,64,8"]);
 });
+
+test("owner room blocker explains ambiguous log ownership and preserves the operation cursor", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 63, y: 96, z: 53, dimension: "overworld" },
+    operations: [{ id: "op-00085", x: 5, y: 3, z: 0, material: "oak_planks", phase: "structural_shell", replaceExisting: false, structural: true }],
+    estimates: { blocks: 1, materials: { oak_planks: 1 } }, footprint: { width: 7, height: 4, depth: 7 },
+  };
+  const world = { "68,99,53": "birch_log" };
+  const result = await designTestRunner(world).runDesignSlice(blueprint, { phaseId: "obstruction-regression", operationStart: 0, operationEnd: 1 });
+  assert.equal(result.errorCode, "OBSTRUCTION");
+  assert.match(result.message!, /68,99,53.*overworld.*op-00085.*oak_planks.*ownership is ambiguous.*not authorized/);
+  assert.equal(result.data?.currentOperationIndex, 0);
+  assert.equal(result.data?.verified, 0);
+  assert.equal(world["68,99,53"], "birch_log");
+});
+
+test("resumption refuses a changed completed prefix and preserves an installed fixture", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [0, 1].map(x => ({ id: `op-${x}`, x, y: 0, z: 0, material: "stone", phase: "structural_shell" as const, replaceExisting: false, structural: true })),
+    estimates: { blocks: 2, materials: { stone: 2 } }, footprint: { width: 2, height: 1, depth: 1 },
+  };
+  const world = { "0,64,0": "crafting_table", "1,64,0": "air" };
+  const runner = designTestRunner(world);
+  const result = await runner.runDesignSlice(blueprint, { phaseId: "obstruction-regression", operationStart: 0, operationEnd: 2, resumeState: {
+    operationStart: 0, operationEnd: 2, currentOperationIndex: 1, verified: 1, placed: 1, interruptions: 0,
+  } });
+  assert.equal(result.errorCode, "PROJECT_WORLD_CHANGED");
+  assert.match(result.message!, /op-0.*crafting_table.*preserve fixtures/);
+  assert.equal(result.data?.currentOperationIndex, 1);
+  assert.equal(result.data?.placed, 1);
+  assert.deepEqual(world, { "0,64,0": "crafting_table", "1,64,0": "air" });
+});
+
+test("fixture blockers remain protected even when tree clearance is enabled", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [{ id: "op-0", x: 0, y: 0, z: 0, material: "stone", phase: "structural_shell", replaceExisting: false, structural: true }],
+    estimates: { blocks: 1, materials: { stone: 1 } }, footprint: { width: 1, height: 1, depth: 1 },
+  };
+  const world = { "0,64,0": "chest" };
+  const result = await designTestRunner(world).runDesignSlice(blueprint, { phaseId: "obstruction-regression", operationStart: 0, operationEnd: 1, clearTrees: true });
+  assert.equal(result.errorCode, "OBSTRUCTION");
+  assert.match(result.message!, /protected fixture: preserve it/);
+  assert.equal(world["0,64,0"], "chest");
+});
+
+test("replacement cannot claim a foreign block merely because another blueprint cell uses its material", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [
+      { id: "ours", x: 0, y: 0, z: 0, material: "cobblestone", phase: "structural_shell", replaceExisting: false, structural: true },
+      { id: "foreign", x: 1, y: 0, z: 0, material: "oak_door", phase: "structural_shell", replaceExisting: true, structural: false },
+    ], estimates: { blocks: 2, materials: { cobblestone: 1, oak_door: 1 } }, footprint: { width: 2, height: 1, depth: 1 },
+  };
+  const world = { "0,64,0": "cobblestone", "1,64,0": "cobblestone" };
+  const runner = designTestRunner(world);
+  (runner as unknown as { reachCell: () => Promise<boolean> }).reachCell = async () => { assert.fail("must not attempt to dig a foreign cell"); };
+  const result = await runner.runDesignSlice(blueprint, { phaseId: "obstruction-regression", operationStart: 0, operationEnd: 2 });
+  assert.equal(result.errorCode, "OBSTRUCTION");
+  assert.equal(result.data?.currentOperationIndex, 1);
+  assert.equal(world["1,64,0"], "cobblestone");
+});

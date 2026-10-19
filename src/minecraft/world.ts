@@ -21,26 +21,62 @@ export function isRawLog(block: Block): boolean {
   return !name.startsWith("stripped_") && /^[a-z_]+_log$/.test(name);
 }
 
-/**
- * True when a block can be reached from real ground without scaffolding: some
- * cell within two blocks sideways, with feet at most three below the block,
- * has open feet and head room over a solid floor that is not leaves or a log
- * (standing in a canopy is how the pathfinder towered for acacia logs). With
- * a ~4.5 block reach that covers a trunk up to about head height + 2.
- */
-export function isReachableFromGround(bot: Bot, position: Vec3): boolean {
-  const open = (block: Block | null): boolean => block !== null && block.boundingBox === "empty" && !/water|lava/.test(block.name);
-  const ground = (block: Block | null): boolean => isSolid(block) && !/_leaves$|_log$|_wood$/.test(block.name);
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dz = -2; dz <= 2; dz++) {
-      if (dx === 0 && dz === 0) continue;
-      for (let dy = -3; dy <= 0; dy++) {
-        const feet = position.offset(dx, dy, dz);
-        if (open(bot.blockAt(feet)) && open(bot.blockAt(feet.offset(0, 1, 0))) && ground(bot.blockAt(feet.offset(0, -1, 0)))) return true;
+/** Actual supported body pose and eye reach; pathfinder node success is insufficient. */
+export function diggingStanceBlocker(bot: Bot, target: Vec3, requireAccess = false): string | null {
+  const p = bot.entity?.position;
+  if (!p) return "bot position unavailable";
+  const shapes = (b: Block): number[][] => b.shapes?.length ? b.shapes : b.boundingBox === "block" ? [[0, 0, 0, 1, 1, 1]] : [];
+  const unsafe = /water|lava|fire|magma|campfire|cactus|sweet_berry_bush|powder_snow/;
+  // Check all body cells, including the lower cell occupied above farmland/slabs.
+  for (let x = Math.floor(p.x-.29); x <= Math.floor(p.x+.29); x++)
+    for (let z = Math.floor(p.z-.29); z <= Math.floor(p.z+.29); z++)
+      for (let y = Math.floor(p.y); y <= Math.floor(p.y+1.79); y++) {
+        const b = bot.blockAt(new Vec3(x,y,z));
+        if (!b) return "standing space unloaded";
+        if (unsafe.test(b.name)) return `unsafe standing space: ${b.name}`;
+        if (shapes(b).some(([a,c,d,e,f,g]) => x+e! > p.x-.29 && x+a! < p.x+.29 && z+g! > p.z-.29 && z+d! < p.z+.29 && y+f! > p.y+.001 && y+c! < p.y+1.79)) return `standing space obstructed: ${b.name}`;
       }
+  for (const [dx,dz] of [[0,0],[-.29,-.29],[-.29,.29],[.29,-.29],[.29,.29]]) {
+    const x = p.x+dx!, z = p.z+dz!;
+    const b = bot.blockAt(new Vec3(Math.floor(x),Math.floor(p.y-.001),Math.floor(z)));
+    if (!b || unsafe.test(b.name) || /_leaves$|_log$|_wood$/.test(b.name)) return "unsafe or missing standing support";
+    if (!shapes(b).some(([a,c,d,e,f,g]) => x >= b.position.x+a! && x <= b.position.x+e! && z >= b.position.z+d! && z <= b.position.z+g! && Math.abs(b.position.y+f!-p.y) <= .08)) return "standing support does not match feet height";
+  }
+  if (p.offset(0,1.62,0).distanceTo(target.offset(.5,.5,.5)) > DIRECT_DIG_REACH) return "target outside actual eye reach";
+  if (requireAccess) {
+    const block = bot.blockAt(target);
+    if (!block || !bot.canSeeBlock(block)) return "target has no clear access";
+  }
+  return null;
+}
+
+/**
+ * Supported standing cells within digging reach, with open feet/head room.
+ * Excludes leaf/log footing so collecting a floating trunk never requires
+ * climbing its canopy. The eye-distance check includes logs four blocks up.
+ */
+export function groundDigApproaches(bot: Bot, position: Vec3): Vec3[] {
+  const open = (block: Block | null): boolean => block !== null && block.boundingBox === "empty" && !/water|lava|fire/.test(block.name);
+  const ground = (block: Block | null): boolean => isSolid(block) && !/_leaves$|_log$|_wood$|magma|campfire/.test(block.name);
+  const candidates: Vec3[] = [];
+  const centre = position.offset(0.5, 0.5, 0.5);
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    for (let dy = -4; dy <= 0; dy++) {
+      const feet = position.offset(dx, dy, dz);
+      const floor = bot.blockAt(feet.offset(0,-1,0));
+      const top = floor?.shapes?.length ? Math.max(...floor.shapes.map(s => s[4]!)) : 1;
+      const standing = feet.offset(0.5, top-1, 0.5);
+      if (standing.offset(0, 1.62, 0).distanceTo(centre) > DIRECT_DIG_REACH) continue;
+      if (open(bot.blockAt(feet)) && open(bot.blockAt(feet.offset(0, 1, 0))) && ground(bot.blockAt(feet.offset(0, -1, 0)))) candidates.push(standing);
     }
   }
-  return false;
+  const self = bot.entity?.position;
+  if (self !== undefined && self !== null) candidates.sort((a,b) => a.distanceTo(self) - b.distanceTo(self));
+  return candidates;
+}
+
+export function isReachableFromGround(bot: Bot, position: Vec3): boolean {
+  return groundDigApproaches(bot, position).length > 0;
 }
 
 /** Soil and stone a tree grows from: a log directly on one is a trunk base. */
@@ -327,23 +363,31 @@ export async function collectBlocks(
     // search ran out on every log (~30k nodes) while a plain GoalNear found
     // the same trunks in under half a second. Walk up first; the look-and-dig
     // from two blocks away is then trivial.
-    if (distance > APPROACH_FIRST_DISTANCE) {
-      const approach = await travelAndWait(bot, block.position, { range: 2, timeoutMs: Math.max(1, Math.min(targetBudgetMs, remainingMs)), signal });
+    const isLog = /_log$|_wood$/.test(block.name);
+    const feasible = () => isLog ? diggingStanceBlocker(bot, block.position) === null : withinDirectReach(bot, block.position);
+    const logApproach = isLog && !feasible()
+      ? groundDigApproaches(bot, block.position)[0] : undefined;
+    if (!feasible() && (distance > APPROACH_FIRST_DISTANCE || logApproach !== undefined)) {
+      const approach = await travelAndWait(bot, logApproach ?? block.position, { range: logApproach === undefined ? 2 : 0, timeoutMs: Math.max(1, Math.min(targetBudgetMs, remainingMs)), signal, ...(isLog ? { dimension: String(bot.game.dimension), arrivalCheck: () => diggingStanceBlocker(bot, block.position) } : {}) });
       throwIfAborted(signal);
       if (approach.status !== "arrived" && approach.status !== "already_there") {
         skipped++;
         failedTargets?.add(targetKey);
-        logSkip?.(block, new Error(`could not approach: ${approach.status}`));
+        logSkip?.(block, new Error(`could not approach: ${approach.status}${approach.status === "failed" ? `: ${approach.error}` : ""}`));
         continue;
       }
     }
     // Within reach, dig directly: the server checks reach, not sight lines,
     // and collectblock's look-at goal made the bot tower on dirt to see a log
     // from above, then dig out its own footing (two fall deaths).
-    if (withinDirectReach(bot, block.position)) {
+    if (feasible()) {
       try {
         try { await equipToolForBlock(bot, block, signal); } catch (err) { throwIfAborted(signal); }
-        await digBlock(bot, block, signal);
+        // Equipment/pathfinding yield to owner and world updates. Never dig a
+        // replacement fixture using the original natural block's policy name.
+        const current = bot.blockAt(block.position);
+        if (current === null || current.name !== block.name) throw new Error(`collection target changed: expected ${block.name}, observed ${current?.name ?? "unloaded"}`);
+        await digBlock(bot, current, signal);
         await pickUpDropsNear(bot, block.position, signal);
         continue;
       } catch (err) {
@@ -355,8 +399,16 @@ export async function collectBlocks(
         continue;
       }
     }
+    if (isLog) {
+      skipped++;
+      failedTargets?.add(targetKey);
+      logSkip?.(block, new Error(diggingStanceBlocker(bot, block.position) ?? "no supported digging approach"));
+      continue;
+    }
     try {
-      await withTimeout(Math.max(1, Math.min(perTargetTimeoutMs, deadline - Date.now())), collectBlockOperation(bot, block, { ignoreNoPath: true }, signal), async () => {
+      const current = bot.blockAt(block.position);
+      if (current === null || current.name !== block.name) throw new Error(`collection target changed: expected ${block.name}, observed ${current?.name ?? "unloaded"}`);
+      await withTimeout(Math.max(1, Math.min(perTargetTimeoutMs, deadline - Date.now())), collectBlockOperation(bot, current, { ignoreNoPath: true }, signal), async () => {
         await cancelCollection(bot);
       }, signal);
     } catch (err) {

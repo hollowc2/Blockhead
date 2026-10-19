@@ -40,7 +40,8 @@ export class SelfDefenseReflex {
   private timer: ReturnType<typeof setInterval> | null = null;
   private onHurt: ((hurt: Entity, source?: Entity | null) => void) | null = null;
   private unsubscribe: Array<() => void> = [];
-  private failedAt: number | null = null;
+  private attempt: { taskId: string; threatId: number; position: { x: number; y: number; z: number } } | null = null;
+  private failure: { threatId: number; position: { x: number; y: number; z: number }; at: number; count: number } | null = null;
 
   constructor(private readonly opts: SelfDefenseReflexOptions) {
     this.now = opts.now ?? Date.now;
@@ -52,7 +53,7 @@ export class SelfDefenseReflex {
       if (hurt.id !== this.opts.bot.entity?.id) return;
       const attacker = source !== null && source !== undefined && isHostileMob(source) ? source : nearestThreat(this.opts.bot, 24);
       if (attacker === null) return;
-      this.trigger(`hurt with ${attacker.name ?? "hostile"} in range`, true);
+      this.trigger(`hurt with ${attacker.name ?? "hostile"} in range`, attacker, true);
     };
     this.onHurt = onHurt;
     this.opts.bot.on("entityHurt", onHurt);
@@ -60,7 +61,15 @@ export class SelfDefenseReflex {
     this.timer.unref?.();
     const onSettled = (failed: boolean) => ({ task }: { task: Task }): void => {
       if (task.workKey !== WORK_KEY) return;
-      this.failedAt = failed ? this.now() : null;
+      const attempt = this.attempt;
+      if (!failed) this.failure = null;
+      else if (attempt?.taskId === task.id) {
+        const previous = this.failure;
+        const unchanged = previous?.threatId === attempt.threatId
+          && Math.hypot(previous.position.x - attempt.position.x, previous.position.y - attempt.position.y, previous.position.z - attempt.position.z) <= 3;
+        this.failure = { threatId: attempt.threatId, position: attempt.position, at: this.now(), count: unchanged ? previous.count + 1 : 1 };
+      }
+      this.attempt = null;
     };
     this.unsubscribe = [
       this.opts.bus.on("task.failed", onSettled(true)),
@@ -84,16 +93,24 @@ export class SelfDefenseReflex {
     // Only real damage (entityHurt) calls the reflex there.
     if (this.opts.scheduler.active?.type === "night_shelter") return;
     const threat = nearestThreat(this.opts.bot);
-    if (threat !== null) this.trigger(`${threat.name ?? "hostile"} within ${REFLEX_TRIGGER_RADIUS} blocks`);
+    if (threat !== null) this.trigger(`${threat.name ?? "hostile"} nearby`, threat);
   }
 
-  private trigger(reason: string, hurt = false): void {
+  private trigger(reason: string, threat: Entity, hurt = false): void {
     if (this.opts.bot.entity === null || this.opts.bot.health <= 0) return;
-    if (!hurt && this.failedAt !== null && this.now() - this.failedAt < FAILURE_COOLDOWN_MS) return;
+    const failure = this.failure;
+    const position = this.opts.bot.entity.position;
+    if (!hurt && failure?.threatId === threat.id
+      && Math.hypot(position.x - failure.position.x, position.y - failure.position.y, position.z - failure.position.z) <= 3) {
+      // Repeating an unchanged failure must leave increasing time for ordinary
+      // work to move us out of it. New threats, movement and real damage bypass.
+      const cooldown = Math.min(300_000, FAILURE_COOLDOWN_MS * 2 ** Math.min(failure.count - 1, 4));
+      if (this.now() - failure.at < cooldown) return;
+    }
     const active = this.opts.scheduler.active;
     if (active?.workKey === WORK_KEY || active?.type === "defend_self" || active?.type === "defend_player") return;
     if (this.opts.scheduler.queued.some((task) => task.workKey === WORK_KEY)) return;
-    this.opts.scheduler.enqueue({
+    const task = this.opts.scheduler.enqueue({
       type: "defend_self",
       priority: TaskPriority.REFLEX,
       source: "maintenance",
@@ -101,6 +118,7 @@ export class SelfDefenseReflex {
       parameters: { radius: REFLEX_DEFENSE_RADIUS, reflex: true },
       workKey: WORK_KEY,
     });
+    this.attempt = { taskId: task.id, threatId: threat.id, position: { x: position.x, y: position.y, z: position.z } };
     this.opts.logger.warn({ reason }, "self-defense reflex triggered");
     this.opts.scheduler.claim();
   }
@@ -118,6 +136,8 @@ export function nearestThreat(bot: Bot, damageRadius?: number): Entity | null {
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const entity of Object.values(bot.entities ?? {})) {
     if (!isHostileMob(entity) || entity.position === undefined || entity.position === null) continue;
+    const live = entity as Entity & { health?: number };
+    if (entity.isValid === false || (typeof live.health === "number" && live.health <= 0)) continue;
     // A neutral mob nearby is not an attack; one that hits the bot still
     // triggers the reflex through entityHurt.
     if (PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "")) continue;

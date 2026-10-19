@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
@@ -37,7 +38,7 @@ const WORK_MEMO_MS = 60_000;
 const CLEAR_TIMEOUT_MS = 180_000;
 
 /** Ground a field can be made from (or already is). */
-const FIELD_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|dirt_path|farmland|mycelium)$/;
+const FIELD_GROUND = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|farmland|mycelium)$/;
 /** Natural cover cleared off a field: trees, saplings, brush and flowers. */
 const CLEARABLE = /(_log|_wood|_leaves|_sapling|vine|bush|^short_grass$|^tall_grass$|^grass$|^fern$|^large_fern$|^dandelion$|^poppy$|_tulip$|^azure_bluet$|^oxeye_daisy$|^cornflower$|^allium$|^blue_orchid$|^lily_of_the_valley$|^brown_mushroom$|^red_mushroom$|^sweet_berry_bush$|^pumpkin$|^melon$)/;
 
@@ -161,11 +162,15 @@ export type Development =
   | { kind: "field"; survey: PlotSurvey }
   | { kind: "building"; survey: PlotSurvey; building: VillageBuilding; origin: { x: number; y: number; z: number } };
 
+export interface DevelopmentWork { plot: string; kind: Development["kind"] }
+
 export interface DevelopmentState {
   /** A development building is unfinished: only fields until it is done. */
   buildBusy: boolean;
   /** Plots ("dx,dz") whose leftover logs could not be reached: not tidied again. */
   tidySkip?: ReadonlySet<string>;
+  /** Only schedule cleanup when at least one log has a safe supported approach. */
+  canTidyLog?: (log: { x: number; y: number; z: number }) => boolean;
   /** Fields whose levelling was incomplete; left alone for this session. */
   levelSkip?: ReadonlySet<string>;
   /** Development buildings started so far (sets the next kind and the balance). */
@@ -173,6 +178,10 @@ export interface DevelopmentState {
   /** Plots set aside for trees, and whether home is short of trees. */
   treeFarm?: TreeFarmState;
   deferredPlots?: ReadonlySet<string>;
+  /** Bound repeated maintenance failures without suppressing useful expansion. */
+  deferMaintenance?: boolean;
+  /** Scheduler/restore blockers are eligibility, not merely an enqueue-time veto. */
+  accepts?: (work: DevelopmentWork) => boolean;
 }
 
 export interface TreeFarmState {
@@ -249,6 +258,7 @@ export function nextDevelopment(
   reserved: ReadonlySet<string> = new Set(),
   state: DevelopmentState = { buildBusy: true, buildings: 0 },
 ): Development | null {
+  const accepts = (kind: Development["kind"], survey: PlotSurvey): boolean => state.accepts?.({ kind, plot: `${survey.offset.dx},${survey.offset.dz}` }) ?? true;
   const plots = developmentPlots();
   const farmPlots = state.treeFarm?.plots ?? [];
   // The tree farm is kept off like an unfinished build: no field, no site.
@@ -273,7 +283,7 @@ export function nextDevelopment(
       // over the fields to be taken down too (2026-10-05).
       const leftovers = surveyPlot(home, offset, lookup, 4).leftoverLogs.filter((log) =>
         !touchesReserved(log.x, log.z, 0, blocked) && !touchesCraftedBlock({ blockAt: (at: Vec3) => lookup(at.x, at.y, at.z) }, new Vec3(log.x, log.y, log.z)));
-      if (leftovers.length > 0 && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push({ ...field, leftoverLogs: leftovers });
+      if (leftovers.some(log => state.canTidyLog?.(log) ?? true) && !state.tidySkip?.has(`${offset.dx},${offset.dz}`)) tidy.push({ ...field, leftoverLogs: leftovers });
       if (!touchesReserved(cx, cz, PLOT_HALF, blocked) && field.maxGround > field.minGround && field.maxGround - field.minGround <= FIELD_MAX_STEP && !state.levelSkip?.has(`${offset.dx},${offset.dz}`)) uneven.push(field);
       return;
     }
@@ -284,27 +294,31 @@ export function nextDevelopment(
     // A built site reads as mostly not ground and drops out here.
     if (site.farmland === 0 && site.groundColumns >= SITE_MIN_GROUND && site.maxGround - site.minGround <= SITE_MAX_STEP) openSites.push(site);
   });
-  if (tidy[0] !== undefined) return { kind: "tidy", survey: tidy[0] };
-  if (uneven[0] !== undefined) return { kind: "level_field", survey: uneven[0], padY: modalGround(uneven[0]) };
+  const tidyField = !state.deferMaintenance ? tidy.find(survey => accepts("tidy", survey)) : undefined;
+  if (tidyField !== undefined) return { kind: "tidy", survey: tidyField };
+  const unevenField = !state.deferMaintenance ? uneven.find(survey => accepts("level_field", survey)) : undefined;
+  if (unevenField !== undefined) return { kind: "level_field", survey: unevenField, padY: modalGround(unevenField) };
   if (state.treeFarm?.canPlant === true) {
     for (const offset of farmPlots) {
       if (state.deferredPlots?.has(`${offset.dx},${offset.dz}`)) continue;
       const farm = surveyTreeFarm(home, offset, lookup);
-      if (farm.empty.length > 0) return { kind: "plant_trees", survey: surveyPlot(home, offset, lookup), farm };
+      const survey = surveyPlot(home, offset, lookup);
+      if (farm.empty.length > 0 && accepts("plant_trees", survey)) return { kind: "plant_trees", survey, farm };
     }
   }
   const isHomePlot = (offset: PlotOffset): boolean => plots.findIndex((p) => sameOffset(p, offset)) < 3;
-  const homeField = openFields.find((field) => isHomePlot(field.offset));
+  const homeField = openFields.find((field) => isHomePlot(field.offset) && accepts("field", field));
   if (homeField !== undefined) return { kind: "field", survey: homeField };
   // Short of trees: set the nearest open outer plot aside for them.
   if (state.treeFarm?.wanted === true && farmPlots.length < TREE_FARM_PLOTS) {
-    const site = openFields.find((field) => !isHomePlot(field.offset));
+    const site = openFields.find((field) => !isHomePlot(field.offset) && accepts("tree_farm", field));
     if (site !== undefined) return { kind: "tree_farm", survey: site };
   }
 
   const buildingDue = !state.buildBusy && outerFields >= FIELDS_PER_BUILDING * (state.buildings + 1) - FIELDS_PER_BUILDING;
-  if (buildingDue && openSites.length > 0) {
-    const nearest = openSites.slice(0, SITE_CHOICES);
+  const eligibleSites = buildingDue ? openSites.filter(survey => accepts("building", survey)) : [];
+  if (eligibleSites.length > 0) {
+    const nearest = eligibleSites.slice(0, SITE_CHOICES);
     const site = nearest.reduce((best, candidate) => (candidate.maxGround - candidate.minGround < best.maxGround - best.minGround ? candidate : best));
     const building = VILLAGE_ORDER[state.buildings % VILLAGE_ORDER.length]!;
     // The pad sits on the most common ground height; higher ground is cut
@@ -314,7 +328,7 @@ export function nextDevelopment(
     const cz = Math.floor(home.z) + site.offset.dz;
     return { kind: "building", survey: site, building, origin: { x: cx - SITE_HALF, y: ground + 1, z: cz - SITE_HALF } };
   }
-  const field = openFields[0];
+  const field = openFields.find(survey => accepts("field", survey));
   return field === undefined ? null : { kind: "field", survey: field };
 }
 
@@ -326,13 +340,25 @@ export function modalGround(survey: PlotSurvey): number {
 }
 
 /** Cells to cut and fill so a site's footprint is one flat pad at `padY`. Pure over `lookup`. */
-export function levelPlan(origin: { x: number; z: number }, padY: number, size: number, lookup: FarmLookup): { cut: { x: number; y: number; z: number }[]; fill: { x: number; y: number; z: number }[] } {
+export function levelPlan(origin: { x: number; z: number }, padY: number, size: number, lookup: FarmLookup): { cut: { x: number; y: number; z: number }[]; fill: { x: number; y: number; z: number }[]; blockers: string[] } {
   const cut: { x: number; y: number; z: number }[] = [];
   const fill: { x: number; y: number; z: number }[] = [];
+  const blockers: string[] = [];
   for (let dx = 0; dx < size; dx++) {
     for (let dz = 0; dz < size; dz++) {
       const x = origin.x + dx;
       const z = origin.z + dz;
+      // Preserve the whole column under a fixture/path; do not cut its support or fill inside it.
+      let protectedColumn = false;
+      for (let y = padY + SITE_MAX_STEP + 1; y >= padY - SITE_MAX_STEP; y--) {
+        const block = lookup(x, y, z);
+        if (block === null) { blockers.push(`unloaded column ${x},${y},${z}`); protectedColumn = true; break; }
+        if (!isAirName(block.name) && !CLEARABLE.test(block.name) && !CROP.test(block.name) && !LEVEL_GROUND.test(block.name) && !/water/.test(block.name)) {
+          blockers.push(`protected ${block.name} at ${x},${y},${z}`); protectedColumn = true; break;
+        }
+        if (y <= padY && LEVEL_GROUND.test(block.name)) break;
+      }
+      if (protectedColumn) continue;
       for (let y = padY + SITE_MAX_STEP + 1; y > padY; y--) {
         const block = lookup(x, y, z);
         if (block === null) break;
@@ -353,7 +379,7 @@ export function levelPlan(origin: { x: number; z: number }, padY: number, size: 
   // Cut from the top down; fill from the bottom up so each block rests on the last.
   cut.sort((a, b) => b.y - a.y);
   fill.sort((a, b) => a.y - b.y);
-  return { cut, fill };
+  return { cut, fill, blockers };
 }
 
 /** Natural ground the levelling may cut away. */
@@ -391,7 +417,9 @@ export interface DevelopLandOptions {
   treeFarm?: TreeFarmStore;
   failures?: BackgroundFailuresRepository;
   now?: () => number;
-  actions?: { travel?: typeof travelAndWait; place?: typeof placeItemAt; collect?: typeof collectBlocks };
+  /** Last observed relevant home-store supplies; never opens containers from an idle probe. */
+  materialsAvailable?: () => Readonly<Record<string, number>>;
+  actions?: { home?: typeof travelHomeAndWait; travel?: typeof travelAndWait; place?: typeof placeItemAt; collect?: typeof collectBlocks };
 }
 
 export interface TreeFarmStore {
@@ -420,13 +448,16 @@ export interface DevelopLandData {
   /** Saplings planted in the tree farm. */
   trees?: number;
   blocker?: string;
+  cut?: number;
+  filled?: number;
+  tilled?: number;
 }
 
 export interface TreePlantResult { planted: number; blocker: "no_saplings" | "path_unreachable" | "invalid_ground" | "placement_refused" | "interrupted" | null }
 
 export class DevelopLandRunner {
-  private readonly deferred = new Map<string, number>();
-  private readonly deferredReasons = new Map<string, string>();
+  private readonly deferred = new Map<string, { retryAt: number; reason: string; attempts: number; fingerprint: string }>();
+  private maintenanceBudget = { startedAt: 0, failures: 0, retryAt: 0 };
   private readonly now: () => number;
   private get prefix(): string { return `development:${this.opts.state.worldId ?? "unknown"}:`; }
   constructor(private readonly opts: DevelopLandOptions) {
@@ -435,32 +466,91 @@ export class DevelopLandRunner {
       if (!row.action.startsWith(this.prefix)) continue;
       const key = row.action.slice(this.prefix.length);
       if (key === "saplings") this.saplingHuntAfter = row.retryAt;
-      else { this.deferred.set(key, row.retryAt); this.deferredReasons.set(key, row.reason); }
+      else if (key === "maintenance-budget") {
+        try { this.maintenanceBudget = JSON.parse(row.reason); } catch { /* Legacy records are not budgets. */ }
+      } else {
+        let record = { reason: row.reason, attempts: 1, fingerprint: "" };
+        try { const parsed = JSON.parse(row.reason); if (parsed.version === 1) record = parsed; } catch { /* Legacy plain-text blockers retain their cooldown. */ }
+        this.deferred.set(key, { ...record, retryAt: row.retryAt });
+      }
     }
   }
 
-  private defer(plot: PlotOffset, reason: string): void {
+  /** Block identities, not crop age or bot pose: growing wheat must not reset a blocked plot. */
+  private plotFingerprint(plot: PlotOffset, reason: string): string {
+    const home = this.opts.state.home;
+    if (home === null) return "no-home";
+    const hash = createHash("sha256");
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+      for (let dy = -GROUND_SEARCH_DY; dy <= GROUND_SEARCH_DY; dy++) {
+        const at = new Vec3(Math.floor(home.x) + plot.dx + dx, Math.floor(home.y) + dy, Math.floor(home.z) + plot.dz + dz);
+        const block = this.opts.bot.blockAt(at);
+        if (block === null) return "unloaded";
+        // A cleanup failure concerns trunks and supported access. Incidental
+        // harvest/replant or canopy decay must not erase its failure history.
+        // Changed foliage access is reconsidered at the bounded retry time.
+        const incidentalCover = /leftover logs/.test(reason) && (CROP.test(block.name) || CLEARABLE.test(block.name) && !TREE_LOG.test(block.name));
+        hash.update(incidentalCover ? "air" : block.name); hash.update(";");
+      }
+    }
+    // Only prerequisites relevant to this failure release it early.
+    if (/sapling/.test(reason)) hash.update(String(countSaplings(this.opts.bot) > 0));
+    if (/material|dirt|planting|tilling/.test(reason)) {
+      const items = this.opts.bot.inventory.items();
+      const relevant = /missing fill material|dirt required/.test(reason) ? /^dirt$/ : /^(dirt|wheat_seeds)$|_hoe$|_log$|_planks$/;
+      const supplies: Record<string, number> = {};
+      for (const [name, count] of Object.entries(this.opts.materialsAvailable?.() ?? {})) if (relevant.test(name) && count > 0) supplies[name] = count;
+      for (const item of items) if (relevant.test(item.name)) supplies[item.name] = (supplies[item.name] ?? 0) + item.count;
+      hash.update(JSON.stringify(Object.entries(supplies).sort()));
+    }
+    return hash.digest("hex");
+  }
+
+  private defer(plot: PlotOffset, reason: string, maintenance = false): void {
     const key = `${plot.dx},${plot.dz}`;
     const now = this.now();
-    this.deferred.set(key, now + SAPLING_HUNT_COOLDOWN_MS);
-    this.deferredReasons.set(key, reason);
-    this.opts.failures?.upsert({ action: this.prefix + key, failedAt: now, retryAt: now + SAPLING_HUNT_COOLDOWN_MS, reason });
+    const fingerprint = this.plotFingerprint(plot, reason);
+    const previous = this.deferred.get(key);
+    const attempts = previous?.fingerprint === fingerprint ? previous.attempts + 1 : 1;
+    // Persistent capped exponential backoff: a restart/expiry is not evidence of changed conditions.
+    const baseDelay = /protected/.test(reason) ? 6 * 60 * 60_000 : SAPLING_HUNT_COOLDOWN_MS;
+    const delay = Math.min(24 * 60 * 60_000, baseDelay * 2 ** Math.min(attempts - 1, 7));
+    const record = { reason, attempts, fingerprint, retryAt: now + delay };
+    this.deferred.set(key, record);
+    this.opts.failures?.upsert({ action: this.prefix + key, failedAt: now, retryAt: record.retryAt, reason: JSON.stringify({ version: 1, ...record }) });
+    if (maintenance) {
+      const budget = this.maintenanceBudget;
+      if (now >= budget.startedAt + 10 * 60_000) { budget.startedAt = now; budget.failures = 0; }
+      budget.failures++;
+      if (budget.failures >= 3) budget.retryAt = now + 10 * 60_000;
+      this.opts.failures?.upsert({ action: this.prefix + "maintenance-budget", failedAt: now, retryAt: budget.retryAt, reason: JSON.stringify(budget) });
+    }
     this.workMemo = null;
-    this.opts.logger.info({ plot, reason, retryAt: now + SAPLING_HUNT_COOLDOWN_MS }, "develop: plot deferred");
+    this.opts.logger.info({ plot, reason, attempts, retryAt: record.retryAt }, "develop: plot deferred");
   }
 
   private deferredPlots(): ReadonlySet<string> {
-    for (const [key, at] of this.deferred) if (at <= this.now() || (this.deferredReasons.get(key) === "no_saplings" && countSaplings(this.opts.bot) > 0)) {
-      this.deferred.delete(key);
-      this.deferredReasons.delete(key);
-      this.opts.failures?.remove(this.prefix + key);
+    const blocked = new Set<string>();
+    for (const [key, record] of this.deferred) {
+      const [dx, dz] = key.split(",").map(Number);
+      const fingerprint = this.plotFingerprint({ dx: dx!, dz: dz! }, record.reason);
+      // Preserve retry history after expiry; remove it only when conditions really change.
+      if (record.fingerprint !== "" && fingerprint !== "unloaded" && record.fingerprint !== fingerprint
+        || record.reason === "no_saplings" && countSaplings(this.opts.bot) > 0) {
+        this.deferred.delete(key);
+        this.opts.failures?.remove(this.prefix + key);
+      } else if (record.retryAt > this.now() || this.maintenanceBudget.retryAt > this.now()) blocked.add(key);
     }
-    return new Set(this.deferred.keys());
+    return blocked;
   }
 
-  nextWork(): { plot: string; kind: Development["kind"] } | null {
+  nextWork(accepts?: (work: DevelopmentWork) => boolean): DevelopmentWork | { plot: "home"; kind: "survey_home" } | null {
     const home = this.opts.state.home;
-    const next = home === null ? null : this.next(home);
+    const self = this.opts.bot.entity?.position;
+    // A distant chunk view is only a reason to return home and survey. It
+    // must not become an unidentified development task that mutates any plot.
+    if (home !== null && self != null && Math.hypot(self.x - home.x, self.z - home.z) > 32) return { plot: "home", kind: "survey_home" };
+    const next = home === null ? null : this.next(home, accepts);
     return next === null ? null : { plot: `${next.survey.offset.dx},${next.survey.offset.dz}`, kind: next.kind };
   }
 
@@ -469,19 +559,20 @@ export class DevelopLandRunner {
    * dirt dug out (cobblestone when the dirt runs short). Best effort: the
    * builder also digs bumps in its wall cells and props up gaps.
    */
-  private async levelSite(origin: { x: number; y: number; z: number }, size: number, signal?: AbortSignal): Promise<{ cut: number; filled: number }> {
+  private async levelSite(origin: { x: number; y: number; z: number }, size: number, signal?: AbortSignal): Promise<{ cut: number; filled: number; blocker?: string }> {
     const bot = this.opts.bot;
     const blocked = new Set(this.opts.reservedCells?.() ?? []);
     const home = this.opts.state.home;
     if (home !== null) for (const farm of this.opts.treeFarm?.load() ?? []) {
       for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) blocked.add(`${Math.floor(home.x) + farm.dx + dx},0,${Math.floor(home.z) + farm.dz + dz}`);
     }
-    if (touchesReserved(origin.x + (size - 1) / 2, origin.z + (size - 1) / 2, (size - 1) / 2, blocked)) return { cut: 0, filled: 0 };
+    if (touchesReserved(origin.x + (size - 1) / 2, origin.z + (size - 1) / 2, (size - 1) / 2, blocked)) return { cut: 0, filled: 0, blocker: "protected project or tree-farm reservation" };
     const plan = levelPlan(origin, origin.y - 1, size, botLookup(bot));
+    let blocker = plan.blockers[0];
     const cutTargets = plan.cut.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
     if (cutTargets.length > 0) {
       try {
-        await collectBlocks(bot, cutTargets, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, (block, err) => this.opts.logger.warn({ at: block.position, block: block.name, err: String(err) }, "develop: levelling cut skipped"), signal);
+        await (this.opts.actions?.collect ?? collectBlocks)(bot, cutTargets, () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, (block, err) => { blocker = `cut ${block.name} at ${block.position}: ${String(err)}`; this.opts.logger.warn({ at: block.position, block: block.name, err: String(err) }, "develop: levelling cut skipped"); }, signal);
       } catch (err) {
         if (signal?.aborted === true) throw err;
         this.opts.logger.warn({ err: String(err) }, "develop: levelling cut stopped");
@@ -497,35 +588,35 @@ export class DevelopLandRunner {
     for (const cell of plan.fill) {
       if (signal?.aborted === true) break;
       const item = findItem(bot, "dirt") ?? (size === VILLAGE_SITE || cell.y < origin.y - 1 ? findItem(bot, "cobblestone") : null);
-      if (item === null) break;
+      if (item === null) { blocker = `missing fill material: dirt required at ${cell.x},${cell.y},${cell.z}`; break; }
       const at = new Vec3(cell.x, cell.y, cell.z);
       const below = bot.blockAt(at.offset(0, -1, 0));
-      if (below === null || (below.boundingBox !== "block" && below.name !== "farmland")) continue;
-      const walked = await travelAndWait(bot, at, { range: 3, timeoutMs: 15_000, signal });
-      if (walked.status !== "arrived" && walked.status !== "already_there") continue;
+      if (below === null || (below.boundingBox !== "block" && below.name !== "farmland")) { blocker = `unsupported fill at ${cell.x},${cell.y},${cell.z}`; continue; }
+      const walked = await (this.opts.actions?.travel ?? travelAndWait)(bot, at, { range: 3, timeoutMs: 15_000, signal });
+      if (walked.status !== "arrived" && walked.status !== "already_there") { blocker = `fill approach ${walked.status} at ${cell.x},${cell.y},${cell.z}`; continue; }
       const cover = bot.blockAt(at);
       if (cover === null) continue;
       if (!isAirName(cover.name)) {
         if (!CLEARABLE.test(cover.name) && !CROP.test(cover.name) && !/water/.test(cover.name)) continue;
         if (!/water/.test(cover.name)) await digBlock(bot, cover, signal);
       }
-      const placed = await placeItemAt(bot, item, { position: at, reference: below, face: new Vec3(0, 1, 0) }, signal).catch(() => null);
-      if (placed !== null) filled += 1;
+      const placed = await (this.opts.actions?.place ?? placeItemAt)(bot, item, { position: at, reference: below, face: new Vec3(0, 1, 0) }, signal).catch((err) => { if (signal?.aborted) throw err; blocker = `fill refused at ${cell.x},${cell.y},${cell.z}: ${String(err)}`; return null; });
+      if (placed !== null && bot.blockAt(at)?.name === item.name) filled += 1;
+      else blocker ??= `fill not verified at ${cell.x},${cell.y},${cell.z}`;
     }
-    return { cut, filled };
+    if (cut < plan.cut.length) blocker ??= "planned ground cuts not verified";
+    return { cut, filled, blocker };
   }
 
-  /** Plots whose leftover logs could not be reached; not tidied again this session. */
-  private readonly tidySkip = new Set<string>();
   private readonly levelSkip = new Set<string>();
   /** The last idle-check answer, reused for a minute (surveying every ring is slow). */
   private workMemo: { at: number; work: boolean } | null = null;
 
   /** True when a plot within the development rings is left to develop. */
   hasWork(): boolean {
-    if (this.workMemo !== null && Date.now() - this.workMemo.at < WORK_MEMO_MS) return this.workMemo.work;
+    if (this.workMemo !== null && this.now() - this.workMemo.at < WORK_MEMO_MS) return this.workMemo.work;
     const work = this.computeHasWork();
-    this.workMemo = { at: Date.now(), work };
+    this.workMemo = { at: this.now(), work };
     return work;
   }
 
@@ -540,9 +631,9 @@ export class DevelopLandRunner {
     return this.next(home) !== null;
   }
 
-  private next(home: { x: number; y: number; z: number }): Development | null {
+  private next(home: { x: number; y: number; z: number }, accepts?: (work: DevelopmentWork) => boolean): Development | null {
     const builds = this.opts.builds;
-    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, tidySkip: this.tidySkip, levelSkip: this.levelSkip, treeFarm: this.treeFarmState(), deferredPlots: this.deferredPlots() });
+    return nextDevelopment(home, cachedLookup(botLookup(this.opts.bot)), this.opts.reservedCells?.() ?? new Set(), { buildBusy: builds === undefined || builds.busy(), buildings: builds?.count() ?? 0, levelSkip: this.levelSkip, treeFarm: this.treeFarmState(), deferredPlots: this.deferredPlots(), deferMaintenance: this.maintenanceBudget.retryAt > this.now(), canTidyLog: log => isReachableFromGround(this.opts.bot, new Vec3(log.x, log.y, log.z)), accepts });
   }
 
   /** When a sapling hunt may run again (it found none last time). */
@@ -638,13 +729,13 @@ export class DevelopLandRunner {
     return { planted, blocker };
   }
 
-  async run(options: { signals?: TaskSignals } = {}): Promise<SkillResult<DevelopLandData>> {
+  async run(options: { signals?: TaskSignals; planned?: DevelopmentWork } = {}): Promise<SkillResult<DevelopLandData>> {
     // Approaching floating logs must not leave pillars; field walks must not
     // place dirt back into freshly cut columns either.
     return withoutPathfinderScaffolding(this.opts.bot, () => this.runWork(options));
   }
 
-  private async runWork(options: { signals?: TaskSignals }): Promise<SkillResult<DevelopLandData>> {
+  private async runWork(options: { signals?: TaskSignals; planned?: DevelopmentWork }): Promise<SkillResult<DevelopLandData>> {
     const bot = this.opts.bot;
     const signals = options.signals;
     const signal = signals?.signal;
@@ -653,34 +744,40 @@ export class DevelopLandRunner {
     const interrupted = (): SkillResult<DevelopLandData> => ({ ok: false, status: "interrupted", message: "interrupted", data });
     if (home === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "no home to develop around", retryable: false, data };
 
-    const travel = await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, signal, shouldAbort: () => signals?.checkpoint() === false });
+    const travel = await (this.opts.actions?.home ?? travelHomeAndWait)(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS, signal, shouldAbort: () => signals?.checkpoint() === false });
     if (signals?.checkpoint() === false) return interrupted();
     if (travel.status !== "arrived" && travel.status !== "already_there") {
       return { ok: false, status: "failed", errorCode: "PATH_UNREACHABLE", message: `could not reach home: ${travel.status}`, retryable: true, data };
     }
 
+    this.workMemo = null;
+    const planned = options.planned;
+    const next = this.next(home, planned === undefined ? undefined : work => work.kind === planned.kind && work.plot === planned.plot);
+    if (planned !== undefined && next === null) return { ok: false, status: "failed", errorCode: "DEVELOPMENT_PLAN_STALE", message: `Planned ${planned.kind} at ${planned.plot} is no longer eligible; select fresh work.`, retryable: false, data };
+
     // Harvests bring seeds and saplings by the stack: shed the surplus so
     // clearing and crafting have room.
-    await shedJunk(bot, [], signal).catch(() => 0);
-    this.workMemo = null;
-    const next = this.next(home);
+    // Fill blocks are work supplies here, even though generic gathering sheds them.
+    await shedJunk(bot, ["dirt", "cobblestone"], signal).catch(() => 0);
     if (next === null) return { ok: true, status: "completed", message: this.deferred.size > 0 || this.now() < this.saplingHuntAfter ? "No runnable development; prerequisites are cooling down." : "The land around home is developed.", data };
     const survey = next.survey;
     data.plot = survey.offset;
     if (next.kind === "tidy") {
       this.opts.logger.info({ plot: survey.offset, logs: survey.leftoverLogs.length }, "develop: taking down leftover tree trunks");
-      const logs = survey.leftoverLogs.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block) => block !== null);
+      const logs = survey.leftoverLogs.map((cell) => bot.blockAt(new Vec3(cell.x, cell.y, cell.z))).filter((block): block is NonNullable<typeof block> => block !== null && TREE_LOG.test(block.name));
       try {
-        await collectBlocks(bot, logs.filter((log) => isReachableFromGround(bot, log.position)), () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, undefined, signal);
+        await (this.opts.actions?.collect ?? collectBlocks)(bot, logs.filter((log) => isReachableFromGround(bot, log.position)), () => 0, Number.POSITIVE_INFINITY, () => {}, CLEAR_TIMEOUT_MS, (block, err) => this.opts.logger.warn({ at: block.position, err: String(err) }, "develop: tidy target skipped"), signal);
       } catch (err) {
         if (signal?.aborted === true) return interrupted();
         this.opts.logger.warn({ err: String(err) }, "develop: tidying stopped");
       }
-      const left = logs.filter((log) => TREE_LOG.test(bot.blockAt(log.position)?.name ?? "")).length;
-      data.cleared = logs.length - left;
-      // Logs it cannot reach stay; the plot is not tidied again.
+      const left = survey.leftoverLogs.filter((cell) => { const current = bot.blockAt(new Vec3(cell.x, cell.y, cell.z)); return current === null || TREE_LOG.test(current.name); }).length;
+      data.cleared = logs.filter((log) => { const current = bot.blockAt(log.position); return current !== null && !TREE_LOG.test(current.name); }).length;
+      // Preserve the blocked plot across restarts; a zero-change pass must
+      // never be recorded as successful clearing.
       this.opts.logger.info({ plot: survey.offset, cleared: data.cleared, unreachable: left }, "develop: tidy done");
-      if (left > 0) this.tidySkip.add(`${survey.offset.dx},${survey.offset.dz}`);
+      if (left > 0) this.defer(survey.offset, "leftover logs unreachable from supported ground", data.cleared === 0);
+      if (data.cleared === 0 && left > 0) return { ok: false, status: "failed", errorCode: "PATH_UNREACHABLE", message: `No leftover logs cleared at ${survey.offset.dx},${survey.offset.dz}; plot deferred.`, retryable: true, data };
       return { ok: true, status: "completed", message: `Took down ${data.cleared} leftover logs over the field at ${survey.offset.dx},${survey.offset.dz}.`, data };
     }
     if (next.kind === "plant_trees") {
@@ -708,7 +805,7 @@ export class DevelopLandRunner {
         if (signal?.aborted === true) return interrupted();
         this.opts.logger.warn({ err: String(err) }, "develop: clearing stopped");
       }
-      data.cleared = targets.filter((target) => !CLEARABLE.test(bot.blockAt(target.position)?.name ?? "")).length;
+      data.cleared = targets.filter((target) => ((block) => block !== null && !CLEARABLE.test(block.name))(bot.blockAt(target.position))).length;
     }
     if (signals?.checkpoint({ plot: survey.offset }) === false) return interrupted();
 
@@ -718,8 +815,8 @@ export class DevelopLandRunner {
       if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
       this.opts.logger.info({ building: next.building, cut: level.cut, filled: level.filled }, "develop: site levelled");
       const remaining = levelPlan(next.origin, next.origin.y - 1, VILLAGE_SITE, botLookup(bot));
-      if (remaining.cut.length > 0 || remaining.fill.length > 0) {
-        this.defer(survey.offset, "building pad not verified level");
+      if (remaining.cut.length > 0 || remaining.fill.length > 0 || remaining.blockers.length > 0) {
+        this.defer(survey.offset, level.blocker ?? "building pad not verified level", level.cut === 0 && level.filled === 0 && data.cleared === 0);
         return { ok: false, status: "failed", errorCode: "NOT_READY", message: "building pad not verified level; site deferred", retryable: true, data };
       }
       try {
@@ -751,13 +848,16 @@ export class DevelopLandRunner {
     const padY = next.kind === "level_field" ? next.padY : modalGround(survey);
     const origin = { x: Math.floor(home.x) + survey.offset.dx - PLOT_HALF, y: padY + 1, z: Math.floor(home.z) + survey.offset.dz - PLOT_HALF };
     this.opts.logger.info({ plot: survey.offset, padY }, "develop: levelling a field");
-    const level = survey.maxGround === survey.minGround ? { cut: 0, filled: 0 } : await this.levelSite(origin, 5, signal);
+    const level = survey.maxGround === survey.minGround ? { cut: 0, filled: 0, blocker: undefined } : await this.levelSite(origin, 5, signal);
     if (signal?.aborted === true || signals?.checkpoint() === false) return interrupted();
+    data.cut = level.cut;
+    data.filled = level.filled;
+    data.blocker = level.blocker;
     const after = surveyPlot(home, survey.offset, botLookup(bot));
     const complete = after.groundColumns >= survey.groundColumns && after.minGround === padY && after.maxGround === padY;
-    if (!complete) this.defer(survey.offset, "field not verified level");
+    if (!complete) this.defer(survey.offset, level.blocker ?? "field not verified level", level.cut === 0 && level.filled === 0 && data.cleared === 0);
     this.opts.logger.info({ plot: survey.offset, padY, ...level, complete, ground: after.groundColumns, minGround: after.minGround, maxGround: after.maxGround }, "develop: field levelled");
-    if (!complete && next.kind === "field") return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
+    if (!complete) return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not fully level the field at ${survey.offset.dx},${survey.offset.dz}: ${level.blocker ?? "ground heights still differ"}`, retryable: true, data };
 
     // A hoe is made from carried wood; fetch some first when there is none.
     if (this.opts.fetchWood !== undefined && hoeWoodShort({ hoe: holdsHoe(bot), planks: countPlanks(bot), logs: countLogs(bot), sticks: countSticks(bot) })) {
@@ -765,14 +865,15 @@ export class DevelopLandRunner {
       if (signal?.aborted || signals?.checkpoint() === false) return interrupted();
     }
     // Till and sow it: the farm takes the cleared plot first.
-    const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal, shouldAbort: () => signals?.checkpoint() === false, preferPlot: survey.offset });
+    const farm = await tendFarm({ bot, home, logger: this.opts.logger, signal, shouldAbort: () => signals?.checkpoint() === false, preferPlot: survey.offset, onlyPreferredPlot: true });
     if (signals?.checkpoint() === false) return interrupted();
     data.planted = farm.planted;
+    data.tilled = farm.tilled;
     this.opts.logger.info({ plot: survey.offset, cleared: data.cleared, planted: farm.planted, tilled: farm.tilled }, "develop: field done");
     // No progress at all would re-run on the same plot every few seconds
     // (14:41): fail so the restore cooldown spaces the retries.
     if (!complete || (data.cleared === 0 && level.cut === 0 && level.filled === 0 && farm.planted === 0 && farm.tilled === 0)) {
-      this.defer(survey.offset, "no verified clearing, levelling, or planting progress");
+      this.defer(survey.offset, "no verified clearing, levelling, or planting progress: check seeds, hoe and materials", true);
       return { ok: false, status: "failed", errorCode: "NOT_READY", message: `could not clear or plant the field at ${survey.offset.dx},${survey.offset.dz}`, retryable: true, data };
     }
     // A plot short of seeds is finished on the next run.

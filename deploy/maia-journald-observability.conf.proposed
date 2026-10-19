@@ -1,0 +1,7 @@
+# PROPOSED ONLY: install as /etc/systemd/journald.conf.d/90-maia-evidence.conf
+# Requires separate host-change approval and journald restart approval.
+[Journal]
+Storage=persistent
+SystemMaxUse=256M
+SystemKeepFree=1G
+SyncIntervalSec=30s

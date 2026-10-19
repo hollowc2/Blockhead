@@ -1,0 +1,17 @@
+{
+  "approved": true,
+  "host": "maia",
+  "service": "blockhead.service",
+  "at": "2026-10-16T04:30:08.334208+00:00",
+  "branch": "main",
+  "commit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "serviceState": "ActiveState=active\nSubState=running\nMainPID=2440769\nNRestarts=0\nExecStart={ path=/home/corey/.local/share/blockhead-runtime/node_modules/.bin/tsx ; argv[]=/home/corey/.local/share/blockhead-runtime/node_modules/.bin/tsx /home/corey/.local/share/blockhead-runtime/src/index.ts ; ignore_errors=no ; start_time=[Thu 2026-10-15 21:01:14 PDT] ; stop_time=[n/a] ; pid=2440769 ; code=(null) ; status=0/0 }\nWorkingDirectory=/mnt/Repos/Games/Blockhead",
+  "rollback": "systemctl --user stop blockhead.service; tar -xzf /home/corey/.local/share/blockhead-backups/development-navigation-20261015/runtime-files.tar.gz -C /home/corey/.local/share/blockhead-runtime; systemctl --user start blockhead.service",
+  "installedHashes": {
+    "src/minecraft/movement.ts": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+    "src/minecraft/world.ts": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+    "src/skills/develop-land.ts": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+    "src/skills/farm.ts": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1"
+  },
+  "postStartService": "ActiveState=active\nSubState=running\nMainPID=2452394\nNRestarts=0"
+}

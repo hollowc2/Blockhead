@@ -1,0 +1,23 @@
+{
+  "status": "revised eight-file candidate installed and stable; scheduling/backoff verified; construction acceptance remains limited",
+  "deploymentRecord": "cobblebob-deployment-2026-10-18-v2.json",
+  "runtimeFiles": 8,
+  "localValidation": {
+    "testsPassed": 774,
+    "testsFailed": 0,
+    "typecheck": "passed"
+  },
+  "currentSelf": {
+    "connected": true,
+    "player": "CobbleBob",
+    "health": 20,
+    "hunger": 16,
+    "position": {
+      "x": 66.5,
+      "y": 102,
+      "z": 50.50215244402714
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "observedAt": "2026-10-18T19:34:46.239Z",
+  "source": "read-only saved chunk7,4; may lag loaded server state",
+  "lastUpdate": [
+    0,
+    18980402
+  ],
+  "blocks": [
+    {
+      "x": 114,
+      "y": 101,
+      "z": 71,
+      "Name": "minecraft:air"
+    },
+    {
+      "x": 112,
+      "y": 96,
+      "z": 69,
+      "Properties": {
+        "moisture": "0"
+      },
+      "Name": "minecraft:farmland"
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 70,
+      "Properties": {
+        "snowy": "false"
+      },
+      "Name": "minecraft:grass_block"
+    },
+    {
+      "x": 114,
+      "y": 97,
+      "z": 70,
+      "Name": "minecraft:air"
+    }
+  ]
+}

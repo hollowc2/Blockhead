@@ -1,0 +1,66 @@
+{
+  "baselineCommit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "host": "maia",
+  "service": "blockhead.service",
+  "deploymentStatus": "deployed; five-minute observation complete; original combat loop cleared",
+  "validation": {
+    "typecheck": "passed",
+    "tests": 739,
+    "passed": 739,
+    "failed": 0
+  },
+  "files": {
+    "src/minecraft/primitives.ts": {
+      "before": "404296d369c4066c195f01861bc67e99010aaea82a7b00f3ad486537ed577e6d",
+      "after": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f"
+    },
+    "src/skills/defense.ts": {
+      "before": "0d4ba189e9eea630a66759169374a801919dccaa31406318828f14f9c0a19af7",
+      "after": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca"
+    },
+    "src/agent/self-defense.ts": {
+      "before": "81b5336b9a6454ecb299a855a8e158dc19f06cd1d751e04bdd2bbc9a9385204c",
+      "after": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25"
+    }
+  },
+  "backupDirectory": "/home/corey/.local/share/blockhead-backups/defense-handoff-20261015",
+  "approval": "Corey approved live deployment in this conversation.",
+  "liveValidation": {
+    "samples": 21,
+    "first": "2026-10-16T04:01:29.594621+00:00",
+    "last": "2026-10-16T04:06:36.642937+00:00",
+    "durationSeconds": 307.048316,
+    "lastSelf": {
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 66.5,
+        "y": 102,
+        "z": 50.50611421738757
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "completedTaskCount": 25,
+    "taskFailures": [
+      {
+        "level": 40,
+        "time": 1792123434845,
+        "pid": 2440782,
+        "hostname": "maia",
+        "taskId": "fec6d1f0-1ce7-4087-ad27-9afb87964426",
+        "lastError": "could not reach home: failed",
+        "msg": "task failed"
+      }
+    ],
+    "pathStoppedEvents": 0,
+    "defenseBreaks": [],
+    "serviceState": "ActiveState=active\nSubState=running\nNRestarts=0\n",
+    "inventorySwords": [
+      {
+        "name": "stone_sword",
+        "count": 1
+      }
+    ]
+  }
+}

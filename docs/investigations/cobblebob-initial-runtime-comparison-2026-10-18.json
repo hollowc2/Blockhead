@@ -1,0 +1,37 @@
+{
+  "src/agent/self-defense.ts": {
+    "initialSource": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25",
+    "runtime": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25",
+    "matches": true
+  },
+  "src/minecraft/movement.ts": {
+    "initialSource": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+    "runtime": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+    "matches": true
+  },
+  "src/minecraft/primitives.ts": {
+    "initialSource": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f",
+    "runtime": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f",
+    "matches": true
+  },
+  "src/minecraft/world.ts": {
+    "initialSource": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+    "runtime": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+    "matches": true
+  },
+  "src/skills/defense.ts": {
+    "initialSource": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca",
+    "runtime": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca",
+    "matches": true
+  },
+  "src/skills/develop-land.ts": {
+    "initialSource": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+    "runtime": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+    "matches": true
+  },
+  "src/skills/farm.ts": {
+    "initialSource": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+    "runtime": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+    "matches": true
+  }
+}

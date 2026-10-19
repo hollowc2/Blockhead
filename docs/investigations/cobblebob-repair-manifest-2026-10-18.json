@@ -1,0 +1,96 @@
+{
+  "preparedAt": "2026-10-18T19:27:35.856183+00:00",
+  "status": "approved rollout installed then rolled back after scheduling acceptance defect",
+  "host": "maia",
+  "account": "corey",
+  "service": "blockhead.service",
+  "sourceRoot": "/mnt/Repos/Games/Blockhead",
+  "runtimeRoot": "/home/corey/.local/share/blockhead-runtime",
+  "baselineCommit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "dependenciesUnchanged": true,
+  "files": {
+    "src/index.ts": {
+      "runtimeBaselineSha256": "77d561977ce2ab4f90e985e401d5870633c86eed47765c73e5b07d6647a177ee",
+      "candidateSha256": "7eabe61c58c9a8a611b974a5023259413d80d5b7adbfd1f45b2f5abd0e610c41"
+    },
+    "src/agent/background.ts": {
+      "runtimeBaselineSha256": "403e8d066446cbcdc5ee1e2e17e7ad3c541fd4acf5f6be7eb8b61420114ee806",
+      "candidateSha256": "4ce0cea5ab19a32342562f2b10cae72f0a4360fe025127145da120e5f0026f2b"
+    },
+    "src/minecraft/movement.ts": {
+      "runtimeBaselineSha256": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+      "candidateSha256": "83463d669cf0cd1d60eb16d2f4aa1fc3c70efffa0135b388cd768758494bf164"
+    },
+    "src/minecraft/world.ts": {
+      "runtimeBaselineSha256": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+      "candidateSha256": "66afa82dadc15d6acf717e58340263bd96cd50b994f752be1fe0bf59551305f1"
+    },
+    "src/skills/base.ts": {
+      "runtimeBaselineSha256": "a8c7ff511defa5da7b3be2b341ec910162a70b96854192ca93f91177f6a52331",
+      "candidateSha256": "f36113c1b38285c55f771249313505b5e25b956bc451ac767ffce4e6c39599c0"
+    },
+    "src/skills/develop-land.ts": {
+      "runtimeBaselineSha256": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+      "candidateSha256": "25d746020de8277050f58cf9da2eacec0eeb88faba901f9fd56663c1ef972e1e"
+    },
+    "src/skills/farm.ts": {
+      "runtimeBaselineSha256": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+      "candidateSha256": "3bd681b1efd7c1afbac16478a69012f3ddad3569c38fc561981e87326fbcb169"
+    }
+  },
+  "validation": {
+    "validatedAt": "2026-10-18T19:28:20.427220+00:00",
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "result": "passed"
+    },
+    "fullSuite": {
+      "command": "npm test",
+      "exitCode": 0,
+      "tests": 769,
+      "passed": 769,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 35854.581531
+    },
+    "focused": {
+      "movementWorld": {
+        "passed": 54,
+        "failed": 0
+      },
+      "buildingAndProjects": {
+        "passed": 55,
+        "failed": 0
+      },
+      "developmentFarmingBackground": {
+        "passed": 96,
+        "failed": 0
+      }
+    },
+    "diffCheck": "passed",
+    "captureScriptSyntax": "bash -n passed",
+    "captureScriptReadonlyMaiaSmoke": "passed",
+    "sourceCandidateHashes": "all seven match tested manifest",
+    "runtimeBaselineFinalCheck": "all seven unchanged; main service start times unchanged and NRestarts=0; cvtrack inactive/disabled",
+    "liveDeployment": "not performed",
+    "liveWorldAcceptance": "pending explicit approval",
+    "logSha256": "38e5ae470aea6c2401d099b226f548731912c4f119197eb5bce82fe2e6a840bc",
+    "localRawLog": "/tmp/cobblebob-20261018/full-tests-final.log"
+  },
+  "deployment": {
+    "approvedBy": "Corey",
+    "approval": "approve",
+    "scope": "seven-file bot runtime installation and blockhead.service restart; no host settings or manual world repair",
+    "installedAt": "2026-10-18T19:33:36Z",
+    "backupDirectory": "/home/corey/.local/share/blockhead-backups/repair-20261018",
+    "allInstalledHashesMatch": true,
+    "minecraftAndLlamaRestarted": false,
+    "cvtrack": "inactive and disabled",
+    "liveAcceptance": "failed scheduling identity/fallback; two verified logs removed and safe vitals; observation ended early",
+    "rolledBackAt": "2026-10-18T19:39:55Z",
+    "rollback": "seven original runtime files restored and baseline hashes verified; database/world not reverted",
+    "currentRuntime": "original baseline"
+  }
+}

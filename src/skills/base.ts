@@ -11,7 +11,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { CollectResourceRunner } from "./collect-resource.js";
 import type { HomeLocation } from "../minecraft/movement.js";
-import { creativeFlyToAndWait, travelAndWait, travelHomeAndWait, doorwayDropLimit, withPathfinderDropLimit, type Location, type TravelWaitResult } from "../minecraft/movement.js";
+import { withoutPathfinderScaffolding, creativeFlyToAndWait, travelAndWait, travelHomeAndWait, doorwayDropLimit, withPathfinderDropLimit, type Location, type TravelWaitResult } from "../minecraft/movement.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import { bareName, countLogs, countPlanks, isPlanksItemName, itemsSummary } from "../minecraft/inventory.js";
 import {
@@ -29,6 +29,7 @@ import {
 import { ChatThrottle, gameChatBudgetAllows, withTimeout, type SkillResult } from "./skill-library.js";
 import { cancelCollection, collectBlockOperation, digBlock, digOwnBuildBlock, equipToolForBlock } from "../minecraft/primitives.js";
 import { isNaturalBlock } from "../minecraft/natural-blocks.js";
+import { isProtectedFixtureName } from "../terrain/classification.js";
 
 /**
  * Plank blueprints accept any wood: a birch-forest bot builds the same house
@@ -1006,6 +1007,13 @@ export class BaseBuilderRunner {
 
   /** Execute one bounded, resumable range from an already-frozen blueprint. */
   async runDesignSlice(blueprint: Blueprint, options: DesignSliceOptions): Promise<SkillResult<DesignSliceData>> {
+    // Navigation must not refill a cleared blueprint cell with a dirt pillar
+    // between clearance and the intended placement. Explicit build support
+    // remains owned and verified by this runner.
+    return withoutPathfinderScaffolding(this.opts.bot, () => this.runDesignSliceWork(blueprint, options));
+  }
+
+  private async runDesignSliceWork(blueprint: Blueprint, options: DesignSliceOptions): Promise<SkillResult<DesignSliceData>> {
     if (this.running) return { ok: false, status: "blocked", errorCode: "ALREADY_RUNNING", message: "another build is already running" };
     const operationStart = Math.max(0, Math.min(options.operationStart, blueprint.operations.length));
     const operationEnd = Math.max(operationStart, Math.min(options.operationEnd, blueprint.operations.length));
@@ -1062,6 +1070,18 @@ export class BaseBuilderRunner {
       const self = this.opts.bot.entity?.position;
       const nearSite = self !== undefined && self !== null && Math.hypot(self.x - blueprint.origin.x, self.z - blueprint.origin.z) <= DESIGN_SITE_NEAR;
       if (travel.status !== "arrived" && travel.status !== "already_there" && !nearSite) return { ok: false, status: "blocked", errorCode: "PATH_UNREACHABLE", message: `could not reach design anchor: ${travel.status}`, data };
+      // A persisted cursor is historical evidence, not proof the world still
+      // matches it. Refuse drift before making new changes, especially when
+      // an owner has installed fixtures in a previously completed wall.
+      if (resumeCursor > 0) {
+        const previous = this.verifyDesignOperations(blueprint, 0, resumeCursor);
+        if (previous.verified !== previous.inspected) {
+          data.mismatchSamples.push(...previous.mismatches);
+          data.firstUnresolvedOperationId = previous.mismatches[0]?.operationId;
+          return { ok: false, status: "blocked", errorCode: "PROJECT_WORLD_CHANGED", retryable: false,
+            message: `design completed prefix no longer matches the world (${previous.verified}/${previous.inspected}); inspect ${previous.mismatches.map((m) => `${m.operationId}: expected ${m.expected}, observed ${m.actual ?? "unloaded"}`).join("; ")}; preserve fixtures and reconcile before resuming`, data };
+        }
+      }
       // Keep a local record for the survival-mode delayed-cache fallback.
       // Creative mode still requires an authoritative server block, so this
       // never turns an unobserved placement into a success.
@@ -1102,7 +1122,7 @@ export class BaseBuilderRunner {
           // own block (never anything else) and place the replacement.
           const current = this.opts.bot.blockAt(cell);
           const ours = current !== null && !isAir(current)
-            && blueprint.operations.some((candidate) => candidate.replaceExisting !== true && materialMatches(bareName(current.name), candidate.material));
+            && blueprint.operations.slice(0, index).some((candidate) => candidate.replaceExisting !== true && sameOperationCell(blueprint, candidate, cell) && materialMatches(bareName(current.name), candidate.material));
           if (ours && await this.reachCell(cell)) {
             try {
               await equipToolForBlock(this.opts.bot, current!, this.signals?.signal).catch(() => undefined);
@@ -1119,7 +1139,7 @@ export class BaseBuilderRunner {
             data.mismatchSamples.push({ operationId: operation.id, expected: operation.material, actual: bareName(existing.name) });
             data.firstUnresolvedOperationId = operation.id;
             data.remaining = operationEnd - index;
-            return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} by ${existing.name}`, data };
+            return { ok: false, status: "blocked", errorCode: "OBSTRUCTION", message: `design blocked at ${cell.x},${cell.y},${cell.z} (${blueprint.origin.dimension}) by ${existing.name}; operation ${operation.id} requires ${operation.material}; ${isProtectedFixtureName(existing.name) ? "protected fixture: preserve it; owner must choose a different design or explicitly reconcile the site" : TREE_TRUNK.test(bareName(existing.name)) && options.clearTrees !== true ? "log ownership is ambiguous; tree clearance is not authorized for this build; owner must inspect and approve removal or change the design" : "clearance was not authorized or could not be verified; inspect access and protection before retrying"}`, data };
           }
           await digBlock(this.opts.bot, existing, this.signals?.signal);
         }
@@ -1171,7 +1191,7 @@ export class BaseBuilderRunner {
           const head = this.opts.bot.blockAt(headCell);
           if (head !== null && !isAir(head) && !materialMatches(bareName(head.name), operation.material)) {
             if (isNaturalBlock(head.name)) await this.clearNaturalCell(headCell);
-            else if (blueprint.operations.some((candidate) => candidate.replaceExisting !== true && materialMatches(bareName(head.name), candidate.material)) && await this.reachCell(headCell)) {
+            else if (blueprint.operations.slice(0, index).some((candidate) => candidate.replaceExisting !== true && sameOperationCell(blueprint, candidate, headCell) && materialMatches(bareName(head.name), candidate.material)) && await this.reachCell(headCell)) {
               try {
                 await equipToolForBlock(this.opts.bot, head, this.signals?.signal).catch(() => undefined);
                 await digOwnBuildBlock(this.opts.bot, head, this.signals?.signal);
@@ -1800,4 +1820,12 @@ export class BaseBuilderRunner {
       description,
     });
   }
+}
+
+/** Own-build replacement authority applies only to this exact frozen cell. */
+function sameOperationCell(blueprint: Blueprint, operation: Blueprint["operations"][number], cell: Vec3): boolean {
+  return (operation.absolute?.x ?? blueprint.origin.x + operation.x) === cell.x
+    && (operation.absolute?.y ?? blueprint.origin.y + operation.y) === cell.y
+    && (operation.absolute?.z ?? blueprint.origin.z + operation.z) === cell.z
+    && (operation.absolute?.dimension ?? blueprint.origin.dimension) === blueprint.origin.dimension;
 }

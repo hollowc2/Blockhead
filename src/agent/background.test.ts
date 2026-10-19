@@ -938,3 +938,79 @@ test("low health defers proposals while food crisis handling remains available",
   assert.equal(h.issued.at(-1)?.kind, "food");
   h.manager.stop();
 });
+
+test("manager recreation expires only its own cooldowns and preserves durable development retry history", async () => {
+  const h = newHarness(20, 19);
+  h.manager.stop();
+  const history = [
+    { action: "development:1:-8,0", failedAt: 1, retryAt: 2, reason: JSON.stringify({ version: 1, attempts: 4, fingerprint: "same-terrain", reason: "missing fill material" }) },
+    { action: "development:1:maintenance-budget", failedAt: 1, retryAt: 2, reason: JSON.stringify({ startedAt: 1, failures: 3, retryAt: 2 }) },
+    { action: "another-owner:history", failedAt: 1, retryAt: 2, reason: "keep foreign records too" },
+  ];
+  for (const row of history) h.backgroundFailures.upsert(row);
+  for (const action of ["food", "develop:-8,0", "resource:oak_log", "rearm:iron_sword"]) {
+    h.backgroundFailures.upsert({ action, failedAt: 1, retryAt: 2, reason: "expired restore" });
+  }
+  for (let restart = 0; restart < 2; restart++) {
+    const restored = new BackgroundManager(h.options);
+    assert.deepEqual(h.backgroundFailures.loadAll(), history, "second restart must retain the same development attempts and budget");
+    restored.stop();
+  }
+});
+
+test("watchdog-blocked development head does not mask eligible fallback work or repeatedly enqueue a blocked task", async () => {
+  const { actionFingerprint } = await import("./watchdog.js");
+  const h = newHarness(20, 20);
+  try {
+    h.crisis = null;
+    (h.options.state as any).timePhase = "day";
+    (h.options.maintenance as any).check = async () => ({ levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] });
+    const head = { kind: "tidy", plot: "48,32" };
+    const fallback = { kind: "field", plot: "-48,-48" };
+    const blocked = [head];
+    (h.options.scheduler as any).blockedActions = () => blocked.map(work => ({ action: actionFingerprint("develop_land", work), reason: "blocked", retryInSeconds: 600 }));
+    h.options.developLand = { hasWork: () => true, nextWork: accepts => [head, fallback].find(work => accepts?.(work) ?? true) ?? null };
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 1);
+    assert.deepEqual(h.enqueued[0]!.parameters, fallback);
+    assert.equal(h.enqueued[0]!.workKey, "develop-land:field:-48,-48");
+    h.queued.length = 0; h.enqueued.length = 0; blocked.push(fallback);
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 0, "wait without creating or deduplicating watchdog-blocked work");
+  } finally { h.manager.stop(); }
+});
+
+test("distant development survey returns home under a navigation identity", async () => {
+  const { actionFingerprint } = await import("./watchdog.js");
+  const h = newHarness(20, 20);
+  try {
+    h.crisis = null;
+    (h.options.state as any).timePhase = "day";
+    (h.options.maintenance as any).check = async () => ({ levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] });
+    h.options.developLand = { hasWork: () => true, nextWork: () => ({ plot: "home", kind: "survey_home" }) };
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 1);
+    assert.equal(h.enqueued[0]!.type, "go_home");
+    assert.equal(h.enqueued[0]!.workKey, "develop-land:survey-home");
+    h.queued.length = 0; h.enqueued.length = 0;
+    (h.options.scheduler as any).blockedActions = () => [{ action: actionFingerprint("go_home", {}), reason: "no safe entrance", retryInSeconds: 600 }];
+    const didEnqueue = await (h.manager as any).developWhenIdle({ levels: {}, targets: {}, deficits: [] });
+    assert.equal(didEnqueue, false);
+    assert.equal(h.enqueued.length, 0, "blocked home navigation does not consume useful fallback or create another held task");
+  } finally { h.manager.stop(); }
+});
+
+
+test("automatic home sleep handles daytime thunderstorms and respects auto_sleep", () => {
+  const h = newHarness(20, 20);
+  const state = h.options.state as unknown as { home: { x: number; y: number; z: number }; timePhase: string };
+  state.home = { x: 0, y: 64, z: 0 }; state.timePhase = "day";
+  h.options.bot.entity.position = { x: 0, y: 64, z: 0 } as never;
+  const shouldSleep = () => (h.manager as unknown as { shouldSleepAtHome(): boolean }).shouldSleepAtHome();
+  h.options.bot.thunderState = 0;
+  assert.equal(shouldSleep(), false);
+  h.options.bot.thunderState = 1;
+  assert.equal(shouldSleep(), true);
+  h.config.behavior = { auto_sleep: false } as never;
+  assert.equal(shouldSleep(), false);
+});

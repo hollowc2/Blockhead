@@ -1,0 +1,65 @@
+{
+  "caveat": "Read-only SQLite snapshots; container contents reflect last observation, not a transactional live inventory",
+  "storage": [
+    {
+      "label": "home_main_chest",
+      "x": 65,
+      "y": 103,
+      "z": 49,
+      "lastSeenAt": "2026-10-18T19:22:08.582Z",
+      "metadata": "{\"contents\":{}}"
+    },
+    {
+      "label": "home_chest",
+      "x": 67,
+      "y": 99,
+      "z": 49,
+      "lastSeenAt": "2026-10-18T19:22:08.039Z",
+      "metadata": "{\"contents\":{\"charcoal\":81,\"bread\":49,\"torch\":65,\"oak_log\":61,\"coal\":1}}"
+    },
+    {
+      "label": "food_chest",
+      "x": 63,
+      "y": 103,
+      "z": 49,
+      "lastSeenAt": "2026-10-18T19:22:07.312Z",
+      "metadata": "{\"contents\":{\"bread\":57}}"
+    },
+    {
+      "label": "wood_chest",
+      "x": 67,
+      "y": 103,
+      "z": 49,
+      "lastSeenAt": "2026-10-18T19:22:06.612Z",
+      "metadata": "{\"contents\":{\"birch_log\":25,\"oak_log\":5}}"
+    },
+    {
+      "label": "misc_chest",
+      "x": 65,
+      "y": 103,
+      "z": 51,
+      "lastSeenAt": "2026-10-18T19:22:05.563Z",
+      "metadata": "{\"contents\":{\"torch\":67}}"
+    }
+  ],
+  "blockedPlots": [
+    [
+      "development:1:40,24",
+      1792350790745,
+      1792351990745,
+      "field not verified level"
+    ],
+    [
+      "development:1:-40,-48",
+      1792350799038,
+      1792351999038,
+      "field not verified level"
+    ],
+    [
+      "development:1:-48,-48",
+      1792350806895,
+      1792352006895,
+      "field not verified level"
+    ]
+  ]
+}

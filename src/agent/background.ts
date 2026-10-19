@@ -25,6 +25,7 @@ import type { BackgroundFailuresRepository } from "../memory/background-failures
 import { adoptHomeChests, findHomeChest, homeStorageUnloaded, pruneBlockedChests } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
+import { actionFingerprint } from "./watchdog.js";
 import { workReadiness } from "./work-readiness.js";
 
 /**
@@ -87,7 +88,7 @@ export interface BackgroundManagerOptions {
   /** Home lighting: dark spots around home are torched before ordinary restores. */
   lightHome?: { darkSpots(): unknown[] };
   /** Idle-time land development: clear fields and plant them. */
-  developLand?: { hasWork(): boolean; nextWork?(): { plot: string; kind: string } | null };
+  developLand?: { hasWork(): boolean; nextWork?(accepts?: (work: { plot: string; kind: string }) => boolean): { plot: string; kind: string } | null };
   logger: Logger;
   /** Injectable wall clock (tests advance it to exercise the restore cooldown). */
   now?: () => number;
@@ -155,6 +156,9 @@ export class BackgroundManager {
     this.now = options.now ?? Date.now;
     const now = this.now();
     for (const state of options.backgroundFailures?.loadAll() ?? []) {
+      // This repository is shared with development. Expiry is meaningful
+      // history for that owner, not permission for this manager to delete it.
+      if (!isRestoreFailureKey(state.action)) continue;
       if (state.retryAt <= now) {
         options.backgroundFailures?.remove(state.action);
         continue;
@@ -417,7 +421,7 @@ export class BackgroundManager {
 
     // Night without owner work: go home and stay there. Background errands
     // far from home at night are how the bot dies and loses its inventory.
-    if (this.opts.state.timePhase === "night") {
+    if (this.opts.state.timePhase === "night" || (this.opts.bot.thunderState ?? 0) > 0) {
       const home = this.opts.state.home;
       const self = this.opts.bot.entity?.position;
       if (home !== null && self !== undefined && self !== null && Math.hypot(self.x - home.x, self.z - home.z) > NIGHT_HOME_RADIUS) {
@@ -436,7 +440,7 @@ export class BackgroundManager {
 
     // Phase 13 (spec 9): automatic night sleep is code-owned. When the bot is
     // idle, home, and it is night, it sleeps instead of starting new work.
-    if (this.opts.config.behavior?.auto_sleep !== false && this.opts.state.timePhase === "night") {
+    if (this.shouldSleepAtHome()) {
       const home = this.opts.state.home;
       const self = this.opts.bot.entity?.position;
       if (home !== null && self !== null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS) {
@@ -558,8 +562,19 @@ export class BackgroundManager {
     if (this.kindBlocked("develop")) return false;
     const work = await this.worldProbe(async () => develop.hasWork());
     if (!work) return false;
-    const planned = develop.nextWork === undefined ? null : await this.worldProbe(async () => develop.nextWork!());
-    if (planned !== null && this.kindBlocked(`develop:${planned.plot}`)) return false;
+    const blocked = new Set(scheduler.blockedActions().map(block => block.action));
+    const accepts = (candidate: { plot: string; kind: string }): boolean => !this.kindBlocked(`develop:${candidate.plot}`)
+      && !blocked.has(actionFingerprint("develop_land", candidate));
+    const planned = develop.nextWork === undefined ? null : await this.worldProbe(async () => develop.nextWork!(accepts));
+    if (develop.nextWork !== undefined && planned === null) return false;
+    if (planned?.kind === "survey_home") {
+      if (blocked.has(actionFingerprint("go_home", {}))) return false;
+      scheduler.enqueue({ type: "go_home", priority: TaskPriority.BACKGROUND, source: "background", objective: "Return home to survey eligible development work.", parameters: {}, workKey: "develop-land:survey-home" });
+      scheduler.claim();
+      return true;
+    }
+    // Defensive for integrations without the predicate-aware planner.
+    if (planned !== null && !accepts(planned)) return false;
     this.opts.logger.info({}, "free time; developing the land");
     scheduler.enqueue({ type: "develop_land", priority: TaskPriority.BACKGROUND, source: "background", objective: "Clear and plant the next field around home.", parameters: planned ?? {}, workKey: planned === null ? "develop-land" : `develop-land:${planned.kind}:${planned.plot}` });
     scheduler.claim();
@@ -567,10 +582,10 @@ export class BackgroundManager {
   }
 
   private shouldSleepAtHome(): boolean {
-    if (this.opts.config.behavior?.auto_sleep === false || this.opts.state.timePhase !== "night") return false;
+    if (this.opts.config.behavior?.auto_sleep === false || (this.opts.state.timePhase !== "night" && (this.opts.bot.thunderState ?? 0) <= 0)) return false;
     const home = this.opts.state.home;
     const self = this.opts.bot.entity?.position;
-    return home !== null && self !== null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS;
+    return home !== null && self != null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS;
   }
 
   private async worldProbe<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -1136,6 +1151,12 @@ function goalStepLabel(type: string, args: Record<string, unknown>): string {
 
 /** Longest a failing background restore waits before trying again. */
 const MAX_RESTORE_COOLDOWN_MS = 30 * 60_000;
+
+/** Only the restore manager may expire these shared-repository records. */
+function isRestoreFailureKey(action: string): boolean {
+  return ["wood", "food", "fuel", "torches", "upgrade", "build", "light", "develop"].includes(action)
+    || /^(resource|develop|rearm):/.test(action);
+}
 
 /** The per-kind cooldown key of a loop-owned restore task, or null. */
 function failureKey(task: Task): string | null {

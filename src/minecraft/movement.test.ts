@@ -175,18 +175,31 @@ test("home arrival targets a verified interior floor beneath a low roof", async 
     entity: { position },
     blockAt: (at: Vec3) => {
       const house = Math.abs(at.x - 65) <= 3 && Math.abs(at.z - 51) <= 3;
-      const solid = house ? at.y <= 99 || at.y === 102 : at.y <= 97;
+      const solid = house ? at.y <= 96 || at.y === 99 || at.y === 102 : at.y <= 97;
       return { position: at, name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty" };
     },
     pathfinder: {
       setMovements: () => {}, stop: () => {}, setGoal: () => {},
-      goto: async (goal: { x: number; y: number; z: number }) => { heights.push(goal.y); position.set(goal.x, goal.y, goal.z); },
+      goto: async (goal: { x: number; y: number; z: number; goals?: Array<{ x: number; y: number; z: number }> }) => {
+        const target = goal.goals?.[0] ?? goal;
+        heights.push(target.y); position.set(target.x + 0.5, target.y, target.z + 0.5);
+      },
     },
   } as never;
   const signal = new AbortController().signal;
   const result = await new WorldActionExecutor().run("sheltered-home", signal, () => travelHomeAndWait(bot, { x: 65, y: 100, z: 51, dimension: "overworld" }, { signal, timeoutMs: 3000 }));
   assert.equal(result.status, "arrived");
   assert.deepEqual(heights, [100], "the roof at 103 is not the arrival floor");
+  position.set(65, 97, 51);
+  const fromCellar = await new WorldActionExecutor().run("cellar-home", signal, () => travelHomeAndWait(bot, { x: 65, y: 100, z: 51, dimension: "overworld" }, { signal, timeoutMs: 3000 }));
+  assert.equal(fromCellar.status, "arrived", "a cellar under home must not count as already arrived");
+  assert.deepEqual(heights, [100, 100], "both approaches reach the interior floor beside the bed and storage");
+  position.set(65, 97, 51);
+  const stuck = bot as unknown as { health: number; pathfinder: { goto: () => Promise<void> } };
+  stuck.health = 9; // A low-health bot must report failure rather than attempt a perch rescue.
+  stuck.pathfinder.goto = async () => {};
+  const blocked = await new WorldActionExecutor().run("cellar-no-progress", signal, () => travelHomeAndWait(bot, { x: 65, y: 100, z: 51, dimension: "overworld" }, { signal, timeoutMs: 3000 }));
+  assert.equal(blocked.status, "failed", "empty-path/no-progress cannot claim cellar arrival");
 });
 
 test("a trip cut short by a pause reports aborted, not an unreachable destination", async () => {
@@ -683,4 +696,116 @@ test("swimming costs enough that a lake is walked around", () => {
 
 test("a healthy bot can escape a 7-block perch while retaining at least 10 health", async () => {
   assert.equal(await stepOffPerch(perchBot(20, perchWorld(3, -5)).bot, { x: 50, z: 0 }), true);
+});
+
+test("a failed home approach tries supported standing cells without tunneling under the house", async () => {
+  const position = new Vec3(65.5, 102, 55.5);
+  let trips = 0;
+  let movements: any;
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {}, entity: { position },
+    blockAt: (at: Vec3) => {
+      // The centre of this raised, roofed house is obstructed. Its verified
+      // interior floor at 66,102,50 remains reachable from a different side.
+      const p = at.floored();
+      const solid = p.y === 105 || (p.x === 66 && p.z === 50 && p.y === 101)
+        || (p.x === 65 && p.z === 51 && p.y === 102) || p.y <= 98;
+      return { position: p, name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty" };
+    },
+    pathfinder: {
+      setMovements: (m: any) => { movements = m; }, stop: () => {}, setGoal: () => {},
+      goto: async (goal: any) => {
+        trips++;
+        if (trips === 1) throw new Error("Timeout: Took too long to decide path to goal");
+        assert.equal(movements.canDig, false);
+        assert.deepEqual(movements.scafoldingBlocks, []);
+        assert.ok(goal.goals.some((g: any) => g.x === 66 && g.y === 102 && g.z === 50));
+        position.set(66.5,102,50.5);
+      },
+    },
+  } as any;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("home-supported", signal, () => travelHomeAndWait(bot, { x:65,y:103,z:51,dimension:"overworld" }, { signal, timeoutMs: 3000 }));
+  assert.equal(result.status, "arrived");
+  assert.equal(trips, 2);
+  assert.equal(movements.canDig, true, "temporary movement limits are restored");
+});
+
+test("an inaccessible home reports its entrance blocker without blind digging", async () => {
+  const position = new Vec3(65.5,102,55.5);
+  let trips = 0;
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {}, entity: { position },
+    blockAt: (at: Vec3) => ({ position: at, name: "oak_planks", boundingBox: "block" }),
+    dig: async () => { assert.fail("home walls must not be dug"); },
+    lookAt: async () => { assert.fail("blind walking must not start at an inaccessible house"); },
+    pathfinder: { setMovements: () => {}, stop: () => {}, setGoal: () => {}, goto: async () => { trips++; throw new Error("NoPath"); } },
+  } as any;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("blocked-home",signal,()=>travelHomeAndWait(bot,{x:65,y:103,z:51,dimension:"overworld"},{signal,timeoutMs:3000}));
+  assert.equal(result.status,"failed");
+  assert.match((result as {error:string}).error,/entrance needs repair/);
+  assert.equal(trips,1);
+});
+
+
+test("action arrival recognizes fractional supported stance before an empty path and rejects wrong dimension", async () => {
+  const h = closedDoorBot();
+  h.bot.entity.position.set(112.5,96.9375,69.5483);
+  let trips = 0;
+  h.bot.pathfinder.goto = async () => { trips++; };
+  const signal = new AbortController().signal;
+  await new WorldActionExecutor().run("fractional-arrival", signal, async () => {
+    const options = { signal, range:0, dimension:"overworld", arrivalCheck:()=>null };
+    assert.equal((await travelAndWait(h.bot as never,{x:112.5,y:97,z:69.5},options)).status,"already_there");
+    assert.equal((await travelAndWait(h.bot as never,{x:112.5,y:97,z:69.5},{...options,dimension:"the_nether"})).status,"wrong_dimension");
+  });
+  assert.equal(trips,0);
+});
+
+test("empty-path success cannot satisfy an infeasible action or repeat indefinitely", async () => {
+  const h = closedDoorBot();
+  let trips = 0;
+  h.bot.pathfinder.goto = async () => { trips++; };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("invalid-action-arrival", signal, () => travelAndWait(h.bot as never,{x:1,y:64,z:0},{signal,range:0,arrivalCheck:()=>"target outside actual eye reach"}));
+  assert.deepEqual(result,{status:"failed",error:"arrival precondition: target outside actual eye reach"});
+  assert.equal(trips,1);
+});
+
+
+test("installed GoalNear resolves the observed fractional pose as an empty-path goal", async () => {
+  const { createRequire } = await import("node:module");
+  const { goals } = createRequire(import.meta.url)("mineflayer-pathfinder");
+  const goal = new goals.GoalNear(112.5,97,69.5,0);
+  assert.equal(goal.isEnd({x:112,y:97,z:69}),true);
+  assert.ok(new Vec3(112.5,96.9375,69.5483).distanceTo(new Vec3(112.5,97,69.5)) > .078);
+});
+
+test("creative transport cannot bypass action arrival or post-flight dimension checks", async () => {
+  const signal = new AbortController().signal;
+  const h = closedDoorBot();
+  const bot = Object.assign(h.bot, {
+    game:{dimension:"overworld",gameMode:"creative"},
+    creative:{flyTo:async()=>{},startFlying:()=>{},stopFlying:()=>{}},
+    physics:{gravity:0},supportFeature:()=>true,
+    _client:{write:()=>{}},
+  });
+  await new WorldActionExecutor().run("creative-action-boundary",signal,async()=>{
+    const failed = await travelAndWait(bot as never,{x:.5,y:64,z:.5},{signal,dimension:"overworld",arrivalCheck:()=>"unsupported action pose"});
+    assert.deepEqual(failed,{status:"failed",error:"arrival precondition: unsupported action pose"});
+    bot._client.write = () => {bot.game.dimension="the_nether";};
+    const changed = await travelAndWait(bot as never,{x:.5,y:64,z:.5},{signal,dimension:"overworld",arrivalCheck:()=>"awaiting flight"});
+    assert.equal(changed.status,"wrong_dimension");
+  });
+});
+
+test("a transit leg landing inside distance range still requires action preconditions", async () => {
+  const h = closedDoorBot();
+  let trips = 0;
+  h.bot.pathfinder.goto = async () => {trips++;h.bot.entity.position.set(120,64,0);};
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("transit-action-boundary",signal,()=>travelAndWait(h.bot as never,{x:120,y:64,z:0},{signal,range:2,arrivalCheck:()=>"target access obstructed"}));
+  assert.deepEqual(result,{status:"failed",error:"arrival precondition: target access obstructed"});
+  assert.equal(trips,1);
 });

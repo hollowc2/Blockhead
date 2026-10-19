@@ -1,0 +1,145 @@
+{
+  "capturedAt": "2026-10-16T03:07:30.571590+00:00",
+  "host": "maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "serviceState": "ActiveState=active\nSubState=running\nMainPID=774796\nNRestarts=0\n",
+  "runtimeFileHashes": {
+    "src/minecraft/primitives.ts": "404296d369c4066c195f01861bc67e99010aaea82a7b00f3ad486537ed577e6d",
+    "src/skills/defense.ts": "0d4ba189e9eea630a66759169374a801919dccaa31406318828f14f9c0a19af7",
+    "src/agent/self-defense.ts": "81b5336b9a6454ecb299a855a8e158dc19f06cd1d751e04bdd2bbc9a9385204c"
+  },
+  "runtimeNode": "v26.7.0",
+  "state": {
+    "process": {
+      "startedAt": "2026-10-13T06:17:12.037Z",
+      "uptimeSeconds": 247818.528
+    },
+    "connection": {
+      "connected": true,
+      "player": "CobbleBob",
+      "server": "127.0.0.1:25565"
+    },
+    "self": {
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 52.5,
+        "y": 98,
+        "z": 40.41018347862033
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": null,
+    "danger": {
+      "score": 0.38333333333333336,
+      "nearestHostile": {
+        "type": "skeleton",
+        "distance": 2
+      },
+      "hostileCount": 83
+    },
+    "stockpiles": {
+      "levels": {
+        "wood": 94,
+        "food": 497,
+        "fuel": 82,
+        "torches": 134
+      },
+      "targets": {
+        "wood": 64,
+        "food": 64,
+        "fuel": 64,
+        "torches": 64
+      },
+      "deficits": []
+    },
+    "buildProject": {
+      "id": "f3adef30-a71a-40cb-96fc-71dec89484f4",
+      "source": "user",
+      "userGoal": "Build a 7x4x7 room.",
+      "origin": {
+        "x": 63,
+        "y": 96,
+        "z": 53
+      },
+      "structureType": "simple_room",
+      "status": "blocked",
+      "phase": {
+        "id": "f3adef30-a71a-40cb-96fc-71dec89484f4:phase-structural_shell-002",
+        "label": "structural_shell-002",
+        "status": "blocked",
+        "verifiedOperations": 35,
+        "totalOperations": 50
+      },
+      "verifiedOperations": 85,
+      "totalOperations": 145,
+      "currentShortage": null,
+      "lastBlockingReason": "design blocked at 68,99,53 by birch_log",
+      "blueprintHash": "b8a86828ac58864c29f0b2980bcd6cba1e309e554c26406466b78d2faad83380"
+    }
+  },
+  "recentEvents": [
+    {
+      "at": "2026-10-16T02:58:13.952Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T02:59:16.100Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    },
+    {
+      "at": "2026-10-16T02:59:46.570Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T03:00:49.205Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    },
+    {
+      "at": "2026-10-16T03:01:19.592Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T03:02:21.745Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    },
+    {
+      "at": "2026-10-16T03:02:52.622Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T03:03:54.789Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    },
+    {
+      "at": "2026-10-16T03:04:26.037Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T03:05:28.411Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    },
+    {
+      "at": "2026-10-16T03:05:58.694Z",
+      "kind": "task",
+      "message": "Task activated: Fight off attackers (skeleton within 6 blocks)."
+    },
+    {
+      "at": "2026-10-16T03:07:00.835Z",
+      "kind": "task",
+      "message": "Task failed: Fight off attackers (skeleton within 6 blocks). \u2014 could not retreat: could not kill the skeleton: TimeoutError: operation timed out after 60000ms"
+    }
+  ]
+}

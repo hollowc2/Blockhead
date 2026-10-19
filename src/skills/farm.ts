@@ -91,7 +91,7 @@ const VERIFY_POLL_MS = 100;
 /** Below this hunger the run skips sowing and goes straight to the hunt. */
 const STARVING_HUNGER = 6;
 
-const TILLABLE = new Set(["grass_block", "dirt", "dirt_path", "coarse_dirt"]);
+const TILLABLE = new Set(["grass_block", "dirt", "coarse_dirt"]);
 /** Plants that sit on soil and break in one hit; cleared before tilling. */
 const CLEARABLE_PLANT = /^(?:short_grass|grass|tall_grass|fern|large_fern|dandelion|poppy|azure_bluet|oxeye_daisy|cornflower|allium|blue_orchid|[a-z_]+_tulip|lily_of_the_valley|dead_bush)$/;
 const SEED_GRASS = new Set(["short_grass", "grass", "tall_grass", "fern", "large_fern"]);
@@ -185,7 +185,8 @@ function plotCells(home: { x: number; y: number; z: number }, offset: { dx: numb
  * tilled never fired: harvested farmland dries back to dirt.) Pure over
  * `lookup`.
  */
-export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup, seeds = 0, prefer: PlotOffset | null = null): FarmCell[] {
+export function chooseFarmCells(home: { x: number; y: number; z: number }, lookup: FarmLookup, seeds = 0, prefer: PlotOffset | null = null, onlyPreferred = false): FarmCell[] {
+  if (onlyPreferred && prefer !== null) return plotCells(home, prefer, lookup);
   // Outer development plots join the farm once they hold farmland, or when
   // land development has just cleared one (`prefer`); the farm does not
   // sprawl onto them by itself.
@@ -233,6 +234,8 @@ export interface TendFarmOptions {
   shouldAbort?: () => boolean;
   /** A plot land development just cleared: sow it first. */
   preferPlot?: PlotOffset;
+  /** Development owns one plot; do not harvest or sow unrelated established fields. */
+  onlyPreferredPlot?: boolean;
 }
 
 export interface TendFarmResult {
@@ -372,7 +375,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   };
 
   // 1. Harvest. Collecting the crop breaks it and picks up wheat + seeds.
-  let cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null);
+  let cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null, opts.onlyPreferredPlot === true);
   const ripe = cells.filter(isMatureWheat).map((c) => new Vec3(c.x, c.y + 1, c.z));
   if (ripe.length > 0) {
     const before = countItem(bot, "wheat");
@@ -396,7 +399,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   if (bot.food < STARVING_HUNGER) return result;
 
   // 3. Seeds for every open cell, from grass around home.
-  cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null);
+  cells = chooseFarmCells(home, lookup, countItem(bot, "wheat_seeds"), opts.preferPlot ?? null, opts.onlyPreferredPlot === true);
   const toSow = sowingOrder(cells);
   if (toSow.length === 0) return result;
   if (countItem(bot, "wheat_seeds") < toSow.length) {

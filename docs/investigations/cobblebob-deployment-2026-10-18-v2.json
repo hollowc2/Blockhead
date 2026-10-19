@@ -1,0 +1,73 @@
+{
+  "status": "revised eight-file candidate installed and stable; scheduling/backoff verified; construction acceptance remains limited",
+  "approval": "user: continue after revised candidate/test and rollout updates; prior bot rollout approval retained",
+  "installedAt": "2026-10-18T21:47:49Z",
+  "backupDirectory": "/home/corey/.local/share/blockhead-backups/repair-20261018-v2",
+  "allInstalledHashesMatch": true,
+  "automaticRestarts": 0,
+  "minecraftAndLlamaRestarted": false,
+  "cvtrack": "inactive and disabled",
+  "hostConfigurationChanges": false,
+  "manualWorldOrDatabaseChanges": false,
+  "initialObservation": {
+    "samples": 31,
+    "from": "2026-10-18T21:48:02.192640+00:00",
+    "to": "2026-10-18T22:03:19.395290+00:00",
+    "spanSeconds": 917.203,
+    "minHealth": 20,
+    "minHunger": 18,
+    "newTaskResults": 0,
+    "interpretation": "Initial retained cooldowns caused waiting; this window alone did not exercise new work."
+  },
+  "laterJournalCapture": {
+    "at": "2026-10-19T00:16:36.386130+00:00",
+    "developmentAndHomeTasks": 37,
+    "checkedExecutedIdentities": 36,
+    "allIdentitiesMatch": true,
+    "zeroChangeCleanupAttempts": 36,
+    "maxCleanupAttemptsPerRollingTenMinutes": 3,
+    "observedBackoffMinutes": [
+      20,
+      40,
+      80
+    ],
+    "highestPersistedAttemptCountObserved": 3,
+    "watchdogHeldTaskEvents": 0,
+    "additionalVerifiedLogRemovals": 0,
+    "fieldExecutions": 0,
+    "completedHomeReturns": 1,
+    "observationCaveat": "31 regular samples cover the first 15 minutes only; later evidence is retrospective journal and database capture, not continuous vitals sampling."
+  },
+  "currentSelf": {
+    "connected": true,
+    "player": "CobbleBob",
+    "health": 20,
+    "hunger": 16,
+    "position": {
+      "x": 66.5,
+      "y": 102,
+      "z": 50.50215244402714
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "currentOwnerRoom": {
+    "status": "blocked",
+    "verifiedOperations": 85,
+    "totalOperations": 145
+  },
+  "protectedSample": {
+    "cells": 8,
+    "allUnchanged": true,
+    "afterObservedAt": "2026-10-19T00:18:13.611Z",
+    "caveat": "read-only saved disk chunks; may lag loaded server state"
+  },
+  "remainingLimits": [
+    "No new productive block changes observed in revised rollout; two log removals from first trial remain verified in saved state.",
+    "No successful live field filling: material supply/placement acceptance remains pending.",
+    "Owner room remains parked; loaded-world reconciliation and owner fixture/site decisions remain pending.",
+    "Restart persistence and combat/owner preemption boundaries covered by tests; no extra validation restart or owner construction was performed.",
+    "Four night-shelter attempts reported no safe ground during later journal window; no cause or regression attribution established.",
+    "Maia freeze cause remains unknown; proposed host settings not applied."
+  ]
+}

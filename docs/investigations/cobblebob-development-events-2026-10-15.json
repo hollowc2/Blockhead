@@ -1,0 +1,464 @@
+[
+  {
+    "level": 30,
+    "time": 1792125036070,
+    "pid": 2452412,
+    "hostname": "maia",
+    "cells": 16,
+    "position": {
+      "x": 65.49018629485218,
+      "y": 102,
+      "z": 55.5057330402643
+    },
+    "msg": "home route trying supported arrival cells without digging"
+  },
+  {
+    "level": 30,
+    "time": 1792125053767,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 0,
+      "dz": -8
+    },
+    "cleared": 1,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125053895,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "8bc259da-5d06-4e63-b8d3-53c0b130a29f",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125075879,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": 0
+    },
+    "cleared": 1,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125075919,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "49bd9d69-53f1-442e-8a5e-24daad2d94c0",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125092477,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": -8
+    },
+    "cleared": 1,
+    "unreachable": 1,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125092511,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": -8
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126292477,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 30,
+    "time": 1792125092556,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "6447a92d-be14-4723-9406-3fed41ef6a62",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125101293,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": 16
+    },
+    "cleared": 0,
+    "unreachable": 15,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125101347,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": 16
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126301294,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125101414,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "10d0648c-1ee3-4b92-a870-ac23f4d39caf",
+    "lastError": "No leftover logs cleared at 16,16; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125107725,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 0,
+      "dz": -24
+    },
+    "cleared": 0,
+    "unreachable": 1,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125107761,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 0,
+      "dz": -24
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126307725,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125107861,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "a5b40eca-c163-4bf9-bf29-4ec53a35d718",
+    "lastError": "No leftover logs cleared at 0,-24; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125122111,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": -24,
+      "dz": 8
+    },
+    "cleared": 1,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125122211,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "5e78adb5-8086-48c0-b585-f87ff8cf8c11",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125156378,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": -8,
+      "dz": 24
+    },
+    "cleared": 2,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125156969,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "eb56e5fb-88f2-4ded-a1a7-4e7151b53eb6",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125171229,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 8,
+      "dz": -24
+    },
+    "cleared": 0,
+    "unreachable": 1,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125171317,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 8,
+      "dz": -24
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126371229,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125171440,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "a6da5181-0995-4b2d-a050-d900691c6181",
+    "lastError": "No leftover logs cleared at 8,-24; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125185880,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 24,
+      "dz": -8
+    },
+    "cleared": 2,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125185967,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "3c6d31d9-cb88-404e-ac5f-a906e2966801",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125193993,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": 24
+    },
+    "cleared": 0,
+    "unreachable": 4,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125194067,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": 24
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126393993,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125194170,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "0ff7d409-b71e-4492-9138-da7768530011",
+    "lastError": "No leftover logs cleared at 16,24; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125200254,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": -32,
+      "dz": -8
+    },
+    "cleared": 0,
+    "unreachable": 2,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125200303,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": -32,
+      "dz": -8
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126400254,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125200404,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "1d90c053-7754-4f26-9827-935e592a4bd0",
+    "lastError": "No leftover logs cleared at -32,-8; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125204836,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 8,
+      "dz": -32
+    },
+    "cleared": 0,
+    "unreachable": 1,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125204858,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 8,
+      "dz": -32
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126404836,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 40,
+    "time": 1792125204981,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "2baf42ab-a990-4b75-aabd-072f52dd6560",
+    "lastError": "No leftover logs cleared at 8,-32; plot deferred.",
+    "msg": "task failed"
+  },
+  {
+    "level": 30,
+    "time": 1792125218660,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 32,
+      "dz": 8
+    },
+    "cleared": 1,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125218734,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "e48a6d0a-4ad2-47b5-a4bf-bedbca05b696",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125244449,
+    "pid": 2452412,
+    "hostname": "maia",
+    "kills": 1,
+    "msg": "defense status"
+  },
+  {
+    "level": 30,
+    "time": 1792125244504,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "46c52058-7268-4235-b60c-3a83003eeb64",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125259127,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": -32,
+      "dz": -16
+    },
+    "cleared": 1,
+    "unreachable": 0,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125259195,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "1e3ea221-2015-4b32-bc57-5ceac7805078",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125291416,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": -32
+    },
+    "cleared": 2,
+    "unreachable": 4,
+    "msg": "develop: tidy done"
+  },
+  {
+    "level": 30,
+    "time": 1792125291474,
+    "pid": 2452412,
+    "hostname": "maia",
+    "plot": {
+      "dx": 16,
+      "dz": -32
+    },
+    "reason": "leftover logs unreachable from supported ground",
+    "retryAt": 1792126491417,
+    "msg": "develop: plot deferred"
+  },
+  {
+    "level": 30,
+    "time": 1792125291508,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "0c851218-ed02-4140-9fe9-39e2d5a6fb1e",
+    "msg": "task completed"
+  },
+  {
+    "level": 30,
+    "time": 1792125308353,
+    "pid": 2452412,
+    "hostname": "maia",
+    "taskId": "e3b7574f-7866-4e0e-9b02-cb1aee2f8c65",
+    "msg": "task completed"
+  }
+]

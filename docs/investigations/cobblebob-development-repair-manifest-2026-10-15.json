@@ -1,0 +1,54 @@
+{
+  "baselineCommit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "host": "maia",
+  "service": "blockhead.service",
+  "deploymentStatus": "deployed and verified by five-minute live observation",
+  "validation": {
+    "typecheck": "passed",
+    "tests": 745,
+    "passed": 745,
+    "failed": 0
+  },
+  "files": {
+    "src/minecraft/movement.ts": {
+      "before": "a7aa9f9863ef5e97eacdea54c23dc09493adf62297c73d39a73a5e86b5a7af0b",
+      "after": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3"
+    },
+    "src/minecraft/world.ts": {
+      "before": "789347c72e430d7cd2dd108d2230e992011457e9754bf607bb503d9d82f342de",
+      "after": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9"
+    },
+    "src/skills/develop-land.ts": {
+      "before": "69ccbb3de00a18c498915a805d2def99fc113b0841e34869c617896a02409422",
+      "after": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa"
+    },
+    "src/skills/farm.ts": {
+      "before": "3fab16e659068d0098abdf48a823e14a12816bac3fd5bd3fb5bb5562971793bd",
+      "after": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1"
+    }
+  },
+  "backupDirectory": "/home/corey/.local/share/blockhead-backups/development-navigation-20261015",
+  "liveValidation": {
+    "samples": 21,
+    "from": "2026-10-16T04:30:16.133602+00:00",
+    "to": "2026-10-16T04:35:23.364874+00:00",
+    "durationSeconds": 307.231272,
+    "logsRemoved": 12,
+    "supportedHomeRecoveryAttempts": 1,
+    "persistedCleanupCooldownCount": 8,
+    "lastSelf": {
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 93.77052382320758,
+        "y": 96,
+        "z": 79.4996691445742
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "allRuntimeHashesMatch": true,
+    "service": "ActiveState=active\nSubState=running\nNRestarts=0\n",
+    "farmSowingEvents": []
+  }
+}

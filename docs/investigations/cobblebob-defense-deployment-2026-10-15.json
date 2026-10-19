@@ -1,0 +1,16 @@
+{
+  "approved": true,
+  "host": "maia",
+  "service": "blockhead.service",
+  "at": "2026-10-16T04:01:12.532470+00:00",
+  "branch": "main",
+  "commit": "24202c2d77a490f89d82a05929e875be0cc5eaa0",
+  "serviceState": "ActiveState=active\nSubState=running\nMainPID=774796\nNRestarts=0\nExecStart={ path=/home/corey/.local/share/blockhead-runtime/node_modules/.bin/tsx ; argv[]=/home/corey/.local/share/blockhead-runtime/node_modules/.bin/tsx /home/corey/.local/share/blockhead-runtime/src/index.ts ; ignore_errors=no ; start_time=[Mon 2026-10-12 23:17:10 PDT] ; stop_time=[n/a] ; pid=774796 ; code=(null) ; status=0/0 }\nWorkingDirectory=/mnt/Repos/Games/Blockhead",
+  "rollback": "systemctl --user stop blockhead.service; tar -xzf /home/corey/.local/share/blockhead-backups/defense-handoff-20261015/runtime-files.tar.gz -C /home/corey/.local/share/blockhead-runtime; systemctl --user start blockhead.service",
+  "installedHashes": {
+    "src/minecraft/primitives.ts": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f",
+    "src/skills/defense.ts": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca",
+    "src/agent/self-defense.ts": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25"
+  },
+  "postStartService": "ActiveState=active\nSubState=running\nMainPID=2440769\nNRestarts=0"
+}

@@ -17,6 +17,7 @@ const pathfinder = require("mineflayer-pathfinder") as {
   goals: {
     GoalNear: new (x: number, y: number, z: number, range: number) => Pathfinder.goals.GoalNear;
     GoalFollow: new (entity: Entity, range: number) => Pathfinder.goals.GoalFollow;
+    GoalCompositeAny: new (goals: Pathfinder.goals.Goal[]) => Pathfinder.goals.GoalCompositeAny<Pathfinder.goals.Goal>;
   };
 };
 const { goals, Movements } = pathfinder;
@@ -1188,6 +1189,8 @@ export interface TravelWaitOptions {
    * cell (used by dig-trench primitives that advance one block at a time).
    */
   range?: number;
+  /** Action-specific arrival: null means actual action preconditions hold. */
+  arrivalCheck?: () => string | null;
   /**
    * Polled every ~250ms during the trip (Phase 8 cooperative interrupts).
    * When it returns true the trip resolves `"aborted"` and the pathfinder
@@ -1308,6 +1311,25 @@ function homeStandingY(bot: Bot, home: HomeLocation, skyY: number | null): numbe
     }
   }
   return skyY ?? surfaceStandingY(bot, home.x, home.z, y);
+}
+
+/** Real standing cells at home, excluding containers, walls, caves and liquids. */
+export function homeApproachCells(bot: Bot, home: HomeLocation, standingY: number, range: number): Vec3[] {
+  if (typeof bot.blockAt !== "function") return [];
+  const open = (block: ReturnType<Bot["blockAt"]>): boolean => block !== null && block.boundingBox === "empty" && !/water|lava|fire/.test(block.name);
+  const cells: Vec3[] = [];
+  const radius = Math.ceil(range);
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) {
+    const x = Math.floor(home.x) + dx, z = Math.floor(home.z) + dz;
+    if (Math.hypot(x + 0.5 - home.x, z + 0.5 - home.z) > range) continue;
+    for (let y = Math.floor(standingY) - 2; y <= Math.floor(standingY) + 2; y++) {
+      const feet = new Vec3(x,y,z);
+      const floor = bot.blockAt(feet.offset(0,-1,0));
+      if (floor?.boundingBox !== "block" || /water|lava|magma|campfire|_leaves$|_log$/.test(floor.name)) continue;
+      if (open(bot.blockAt(feet)) && open(bot.blockAt(feet.offset(0,1,0)))) cells.push(feet);
+    }
+  }
+  return cells;
 }
 
 /**
@@ -1516,7 +1538,11 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   // and then found no crafting table. Re-resolve it on every leg.
   let skyHomeY = skySurfaceY(bot, home.x, home.z);
   let homeSurfaceY = homeStandingY(bot, home, skyHomeY);
-  const verticallyAtHome = Math.abs(p.y - homeSurfaceY) <= 3;
+  // A low roof establishes an interior floor. Being three blocks below it
+  // can mean standing in the cellar, unable to reach the chests or bed.
+  const atHomeHeight = (y: number): boolean => Math.abs(y - homeSurfaceY)
+    <= (skyHomeY !== null && skyHomeY - homeSurfaceY >= 2 ? 1.25 : 3);
+  const verticallyAtHome = atHomeHeight(p.y);
   if (initialDistance <= arrivalRange && verticallyAtHome) {
     logger.info({
       position: p,
@@ -1542,7 +1568,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
   let noProgressLegs = 0;
   let perchRescues = 0;
   let doorsOpened = 0;
-  while (distance > arrivalRange || Math.abs((bot.entity?.position.y ?? homeSurfaceY) - homeSurfaceY) > 3) {
+  while (distance > arrivalRange || !atHomeHeight(bot.entity?.position.y ?? homeSurfaceY)) {
     if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const current = bot.entity;
     if (!current) return { status: "not_ready" };
@@ -1580,8 +1606,13 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
       arrivalRange,
       timeoutMs: legTimeout,
     }, "home route leg");
+    const interiorCells = finalLeg && skyHomeY !== null && skyHomeY - homeSurfaceY >= 2
+      ? homeApproachCells(bot, home, homeSurfaceY, arrivalRange).filter(cell => atHomeHeight(cell.y)) : [];
+    const routeGoal = interiorCells.length > 0
+      ? new goals.GoalCompositeAny(interiorCells.map(cell => new goals.GoalNear(cell.x, cell.y, cell.z, 0)))
+      : new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3));
     const trip = bot.pathfinder
-      .goto(new goals.GoalNear(goal.x, goal.y, goal.z, Math.min(range, 3)))
+      .goto(routeGoal)
       .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
     const result = await raceTrip(bot, trip, { ...options, timeoutMs: legTimeout, signal });
     if (result.status === "timed_out" && Date.now() < deadline && (!finalLeg || movedSince(bot, legStart, 2)) && !trappedBelow(bot, home, legStart)) {
@@ -1593,9 +1624,28 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     }
     if (result.status !== "arrived" && result.status !== "already_there") {
       if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
-      if (isNoPath(result) && doorsOpened < 2 && await openReachableDoor(bot, signal)) {
+      if (doorsOpened < 2 && await openReachableDoor(bot, signal)) {
         doorsOpened += 1;
         continue;
+      }
+      const here = bot.entity?.position;
+      if (here !== undefined && Math.hypot(here.x - home.x, here.z - home.z) <= 12) {
+        const cells = homeApproachCells(bot, home, homeSurfaceY, arrivalRange).filter(cell => atHomeHeight(cell.y));
+        if (cells.length > 0) {
+          logger.info({ cells: cells.length, position: here }, "home route trying supported arrival cells without digging");
+          const approach = await withoutPathfinderScaffolding(bot, () => withPathfinderDigging(bot, false, async () => {
+            const trip = bot.pathfinder.goto(new goals.GoalCompositeAny(cells.map(cell => new goals.GoalNear(cell.x, cell.y, cell.z, 0))))
+              .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+            return raceTrip(bot, trip, { ...options, timeoutMs: Math.max(1, Math.min(10_000, deadline - Date.now())), signal });
+          }));
+          if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+          const arrived = bot.entity?.position;
+          if (approach.status === "arrived" && arrived !== undefined
+            && Math.hypot(arrived.x-home.x, arrived.z-home.z) <= arrivalRange && atHomeHeight(arrived.y)) return approach;
+        }
+        // A blind walker here tunnels under the house or tries to dig its
+        // walls. Preserve the structure and report the actual access blocker.
+        return { status: "failed", error: "no supported route into home; entrance needs repair" };
       }
       // NoPath is common when the bot is standing on a tree canopy or other
       // perch: the pathfinder rejects the drop before it can make any
@@ -1633,7 +1683,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
     const previousY = current.position.y;
     distance = Math.hypot(after.position.x - home.x, after.position.z - home.z);
     const verticalDistance = Math.abs(after.position.y - homeSurfaceY);
-    if (distance <= arrivalRange && verticalDistance <= 3) return { status: "arrived" };
+    if (distance <= arrivalRange && atHomeHeight(after.position.y)) return { status: "arrived" };
     // GoalNear may resolve successfully at its own geometric boundary while
     // floating-point position leaves us a hair outside that same boundary.
     // Never turn that into a hot loop of immediately-successful route legs.
@@ -1658,7 +1708,7 @@ async function travelHomeAndWaitImpl(bot: Bot, home: HomeLocation, options: Trav
         verticalDistance: Number(verticalDistance.toFixed(3)),
         arrivalRange,
       }, "home route made no progress");
-      return distance <= arrivalRange + 0.01 && verticalDistance <= 3
+      return distance <= arrivalRange + 0.01 && atHomeHeight(after.position.y)
         ? { status: "arrived" }
         : { status: "failed", error: `home route made no progress at horizontal distance ${distance.toFixed(2)}` };
     }
@@ -1794,6 +1844,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
   }
   if (!bot.registry) return { status: "not_ready" };
   if (signal.aborted) return { status: "aborted" };
+  if (options.arrivalCheck?.() === null) return { status: "already_there" };
   if (isCreativeMode(bot) && bot.creative?.flyTo !== undefined) {
     return creativeFlyToAndWait(bot, location, { timeoutMs: options.timeoutMs, signal });
   }
@@ -1802,7 +1853,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
 
   const p = self.position;
   const initialDistance = Math.hypot(p.x - location.x, p.y - location.y, p.z - location.z);
-  if (initialDistance <= range) {
+  if (options.arrivalCheck ? options.arrivalCheck() === null : initialDistance <= range) {
     return { status: "already_there" };
   }
 
@@ -1818,6 +1869,11 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
         .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
       const result = await raceTrip(bot, trip, { ...options, timeoutMs: remaining, signal });
       if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
+      if (options.dimension && String(bot.game.dimension).replace(/^minecraft:/, "") !== options.dimension.replace(/^minecraft:/, "")) return { status: "wrong_dimension" };
+      if (result.status === "arrived" && options.arrivalCheck) {
+        const blocker = options.arrivalCheck();
+        return blocker === null ? result : { status: "failed", error: `arrival precondition: ${blocker}` };
+      }
       if (attempt >= 2 || !isNoPath(result) || !await openReachableDoor(bot, signal)) return result;
     }
   }
@@ -1907,14 +1963,19 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
         signal,
         allowDig: options.allowDig,
       });
-      if (fallback.arrived) return { status: "arrived" };
+      if (fallback.arrived) {
+        const blocker = options.arrivalCheck?.();
+        return blocker == null ? { status: "arrived" } : { status: "failed", error: `arrival precondition: ${blocker}` };
+      }
       return result;
     }
+    if (options.dimension && String(bot.game.dimension).replace(/^minecraft:/, "") !== options.dimension.replace(/^minecraft:/, "")) return { status: "wrong_dimension" };
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
     const previousDistance = distance;
     distance = Math.hypot(after.position.x - location.x, after.position.y - location.y, after.position.z - location.z);
-    if (distance <= range) return { status: "arrived" };
+    if (options.arrivalCheck ? options.arrivalCheck() === null : distance <= range) return { status: "arrived" };
+    if (finalLeg && options.arrivalCheck) return { status: "failed", error: `arrival precondition: ${options.arrivalCheck()}` };
     const horizontalDelta = previousDistance - distance;
     if (horizontalDelta < 0.01) noProgressLegs += 1;
     else noProgressLegs = 0;
@@ -1933,7 +1994,7 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
         distance: Number(distance.toFixed(3)),
         range,
       }, "travel route made no progress");
-      return distance <= range + 0.01
+      return (options.arrivalCheck ? options.arrivalCheck() === null : distance <= range + 0.01)
         ? { status: "arrived" }
         : { status: "failed", error: `travel route made no progress at distance ${distance.toFixed(2)}` };
     }
@@ -1941,13 +2002,21 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
   return { status: "arrived" };
 }
 
+/** Final boundary applies to every transport branch, including creative and fallbacks. */
+function verifyActionArrival(bot: Bot, result: TravelWaitResult, options: TravelWaitOptions): TravelWaitResult {
+  if (result.status !== "arrived" && result.status !== "already_there") return result;
+  if (options.dimension && String(bot.game.dimension).replace(/^minecraft:/, "") !== options.dimension.replace(/^minecraft:/, "")) return { status: "wrong_dimension" };
+  const blocker = options.arrivalCheck?.();
+  return blocker == null ? result : { status: "failed", error: `arrival precondition: ${blocker}` };
+}
+
 export async function travelAndWait(bot: Bot, location: Location, options: TravelWaitOptions = {}): Promise<TravelWaitResult> {
   await climbOutFirst(bot, location, options);
   const allowDig = options.allowDig ?? true;
   const result = interruptedTrip(await withPathfinderDigging(bot, allowDig, () => travelAndWaitImpl(bot, location, options)), options);
-  if (allowDig || !isNoPath(result)) return result;
+  if (allowDig || !isNoPath(result)) return verifyActionArrival(bot, result, options);
   logger.warn({ location }, "no walkable route; retrying with natural-terrain digging");
-  return interruptedTrip(await withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true })), options);
+  return verifyActionArrival(bot, interruptedTrip(await withPathfinderDigging(bot, true, () => travelAndWaitImpl(bot, location, { ...options, allowDig: true })), options), options);
 }
 
 /** Distance from which a block's window reliably opens (vanilla reach is ~4.5). */

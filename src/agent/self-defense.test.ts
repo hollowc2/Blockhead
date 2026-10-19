@@ -132,3 +132,49 @@ test("an enderman nearby does not trigger the reflex; one that hits the bot does
     assert.equal(activeType(h), "defend_self");
   } finally { h.reflex.detach(); h.db.close(); }
 });
+
+test("unchanged failed threats back off, while movement and new damage release defense", () => {
+  const h = harness();
+  try {
+    h.reflex.attach();
+    h.bot.entities[7] = zombie(3);
+    h.reflex.scan();
+    h.scheduler.failActive("stalled");
+    h.advance(30_000);
+    h.reflex.scan();
+    assert.equal(activeType(h), "defend_self");
+    h.scheduler.failActive("still stalled");
+    h.advance(30_000);
+    h.reflex.scan();
+    assert.equal(activeType(h), undefined, "second unchanged failure backs off for a minute");
+    h.self.position.z = 4;
+    h.reflex.scan();
+    assert.equal(activeType(h), "defend_self", "moving away releases the old failure context");
+    h.scheduler.failActive("failed after moving");
+    (h.bot as unknown as EventEmitter).emit("entityHurt", h.self, h.bot.entities[7]);
+    assert.equal(activeType(h), "defend_self", "actual damage bypasses backoff");
+  } finally { h.reflex.detach(); h.db.close(); }
+});
+
+test("a new attacker bypasses another mob's failed-defense cooldown", () => {
+  const h = harness();
+  try {
+    h.reflex.attach();
+    h.bot.entities[7] = zombie(3);
+    h.reflex.scan();
+    h.scheduler.failActive("stalled");
+    h.bot.entities[8] = { ...zombie(1), id: 8 };
+    h.reflex.scan();
+    assert.equal(activeType(h), "defend_self");
+  } finally { h.reflex.detach(); h.db.close(); }
+});
+
+test("dead and invalid entities cannot repeatedly trigger passive defense", () => {
+  const h = harness();
+  try {
+    h.bot.entities[7] = { ...zombie(3), health: 0 };
+    h.bot.entities[8] = { ...zombie(2), id: 8, isValid: false };
+    h.reflex.scan();
+    assert.equal(activeType(h), undefined);
+  } finally { h.reflex.detach(); h.db.close(); }
+});

@@ -1,0 +1,23 @@
+{
+  "samples": 21,
+  "from": "2026-10-16T04:30:16.133602+00:00",
+  "to": "2026-10-16T04:35:23.364874+00:00",
+  "durationSeconds": 307.231272,
+  "logsRemoved": 12,
+  "supportedHomeRecoveryAttempts": 1,
+  "persistedCleanupCooldownCount": 8,
+  "lastSelf": {
+    "health": 20,
+    "hunger": 20,
+    "position": {
+      "x": 93.77052382320758,
+      "y": 96,
+      "z": 79.4996691445742
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "allRuntimeHashesMatch": true,
+  "service": "ActiveState=active\nSubState=running\nNRestarts=0\n",
+  "farmSowingEvents": []
+}

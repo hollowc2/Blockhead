@@ -141,7 +141,7 @@ test("a thunderstorm at noon is shelter time, like night", () => {
   const noon = { ...night, timeOfDay: 6_000 };
   assert.equal(shelterDecision(noon).shelter, false);
   assert.deepEqual(shelterDecision({ ...noon, thundering: true }), { shelter: true, reason: "thunderstorm" });
-  assert.equal(shelterDecision({ ...noon, thundering: true, bedAvailable: true }).shelter, true, "a bed is no help by day");
+  assert.equal(shelterDecision({ ...noon, thundering: true, bedAvailable: true }).shelter, false, "a bed handles daytime thunderstorms through the sleep path");
   assert.equal(isThundering({ thunderState: 1 }), true);
   assert.equal(isThundering({ thunderState: 0 }), false);
   assert.equal(isThundering({}), false);

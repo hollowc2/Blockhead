@@ -1,0 +1,4110 @@
+{
+  "capturedAt": "2026-10-19T00:16:36.386130+00:00",
+  "deploymentStart": "2026-10-18T21:47:49Z",
+  "tasks": [
+    {
+      "id": "66046451-f2b7-4816-811c-9c199f17ab13",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:10:58.329Z",
+      "started_at": "2026-10-18T22:10:58.347Z",
+      "completed_at": "2026-10-18T22:10:59.859Z",
+      "work_key": "develop-land:tidy:16,-8",
+      "last_error": "No leftover logs cleared at 16,-8; plot deferred."
+    },
+    {
+      "id": "39ad9555-54bd-4b0b-8a78-c78e05daa20d",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:11:05.341Z",
+      "started_at": "2026-10-18T22:11:05.355Z",
+      "completed_at": "2026-10-18T22:11:06.684Z",
+      "work_key": "develop-land:tidy:16,16",
+      "last_error": "No leftover logs cleared at 16,16; plot deferred."
+    },
+    {
+      "id": "3e874782-cefe-4926-b8f0-441f6f81cba4",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"0,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:11:12.945Z",
+      "started_at": "2026-10-18T22:11:12.957Z",
+      "completed_at": "2026-10-18T22:11:14.580Z",
+      "work_key": "develop-land:tidy:0,-24",
+      "last_error": "No leftover logs cleared at 0,-24; plot deferred."
+    },
+    {
+      "id": "1bd34a6a-5977-42bf-a8ba-65d184803b0a",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:21:27.802Z",
+      "started_at": "2026-10-18T22:21:27.820Z",
+      "completed_at": "2026-10-18T22:21:29.083Z",
+      "work_key": "develop-land:tidy:8,-24",
+      "last_error": "No leftover logs cleared at 8,-24; plot deferred."
+    },
+    {
+      "id": "d22fdff2-8c64-4836-8dae-5e6e52737fb1",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:21:34.926Z",
+      "started_at": "2026-10-18T22:21:34.940Z",
+      "completed_at": "2026-10-18T22:21:36.190Z",
+      "work_key": "develop-land:tidy:16,24",
+      "last_error": "No leftover logs cleared at 16,24; plot deferred."
+    },
+    {
+      "id": "8aad1447-cd4c-46e9-b5b6-fb346d58bf64",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-32,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:21:42.962Z",
+      "started_at": "2026-10-18T22:21:42.975Z",
+      "completed_at": "2026-10-18T22:21:44.360Z",
+      "work_key": "develop-land:tidy:-32,-8",
+      "last_error": "No leftover logs cleared at -32,-8; plot deferred."
+    },
+    {
+      "id": "c9c17846-2ea3-4b43-8d64-c9ca9a600010",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:31:58.142Z",
+      "started_at": "2026-10-18T22:31:58.160Z",
+      "completed_at": "2026-10-18T22:31:59.460Z",
+      "work_key": "develop-land:tidy:8,-32",
+      "last_error": "No leftover logs cleared at 8,-32; plot deferred."
+    },
+    {
+      "id": "a324801f-7543-494e-9497-0132ee4e2df8",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:32:05.296Z",
+      "started_at": "2026-10-18T22:32:05.309Z",
+      "completed_at": "2026-10-18T22:32:06.619Z",
+      "work_key": "develop-land:tidy:16,-32",
+      "last_error": "No leftover logs cleared at 16,-32; plot deferred."
+    },
+    {
+      "id": "56c85cd7-4e22-4f9f-a9a1-78e8a3603afd",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:32:12.714Z",
+      "started_at": "2026-10-18T22:32:12.729Z",
+      "completed_at": "2026-10-18T22:32:13.990Z",
+      "work_key": "develop-land:tidy:-40,-8",
+      "last_error": "No leftover logs cleared at -40,-8; plot deferred."
+    },
+    {
+      "id": "5ce38998-41dc-49b5-a8a9-10c182a27ff5",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:42:28.199Z",
+      "started_at": "2026-10-18T22:42:28.219Z",
+      "completed_at": "2026-10-18T22:42:29.442Z",
+      "work_key": "develop-land:tidy:16,-8",
+      "last_error": "No leftover logs cleared at 16,-8; plot deferred."
+    },
+    {
+      "id": "5475b161-f0b1-44b1-9851-22c81c00fac0",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:42:35.158Z",
+      "started_at": "2026-10-18T22:42:35.169Z",
+      "completed_at": "2026-10-18T22:42:36.467Z",
+      "work_key": "develop-land:tidy:16,16",
+      "last_error": "No leftover logs cleared at 16,16; plot deferred."
+    },
+    {
+      "id": "9919cae7-a8e2-40ce-912f-92fb3fce773b",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"0,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:42:43.117Z",
+      "started_at": "2026-10-18T22:42:43.138Z",
+      "completed_at": "2026-10-18T22:42:44.383Z",
+      "work_key": "develop-land:tidy:0,-24",
+      "last_error": "No leftover logs cleared at 0,-24; plot deferred."
+    },
+    {
+      "id": "a24480fd-bbbf-41c5-8874-7587bdf68401",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:52:58.229Z",
+      "started_at": "2026-10-18T22:52:58.248Z",
+      "completed_at": "2026-10-18T22:52:59.753Z",
+      "work_key": "develop-land:tidy:8,-24",
+      "last_error": "No leftover logs cleared at 8,-24; plot deferred."
+    },
+    {
+      "id": "f7a4ead5-7ada-4a90-987a-53d4be99bf90",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:53:05.255Z",
+      "started_at": "2026-10-18T22:53:05.275Z",
+      "completed_at": "2026-10-18T22:53:06.633Z",
+      "work_key": "develop-land:tidy:16,24",
+      "last_error": "No leftover logs cleared at 16,24; plot deferred."
+    },
+    {
+      "id": "1d4b955e-fce0-46a0-ad1c-3d57bb6b0c04",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-32,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T22:53:13.214Z",
+      "started_at": "2026-10-18T22:53:13.235Z",
+      "completed_at": "2026-10-18T22:53:14.715Z",
+      "work_key": "develop-land:tidy:-32,-8",
+      "last_error": "No leftover logs cleared at -32,-8; plot deferred."
+    },
+    {
+      "id": "0528010a-817b-4058-9cb9-94fd45821838",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:03:57.564Z",
+      "started_at": "2026-10-18T23:03:57.585Z",
+      "completed_at": "2026-10-18T23:03:59.163Z",
+      "work_key": "develop-land:tidy:8,-32",
+      "last_error": "No leftover logs cleared at 8,-32; plot deferred."
+    },
+    {
+      "id": "31c20d6b-497f-40f9-a797-faf8ebcd2515",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:04:05.535Z",
+      "started_at": "2026-10-18T23:04:05.555Z",
+      "completed_at": "2026-10-18T23:04:06.746Z",
+      "work_key": "develop-land:tidy:16,-32",
+      "last_error": "No leftover logs cleared at 16,-32; plot deferred."
+    },
+    {
+      "id": "a5e743ce-1813-47d3-967d-29a4a0ece45b",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:04:12.694Z",
+      "started_at": "2026-10-18T23:04:12.708Z",
+      "completed_at": "2026-10-18T23:04:13.984Z",
+      "work_key": "develop-land:tidy:-40,-8",
+      "last_error": "No leftover logs cleared at -40,-8; plot deferred."
+    },
+    {
+      "id": "1ea71196-a440-45f0-9cbb-89cfc391cdce",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:14:28.061Z",
+      "started_at": "2026-10-18T23:14:28.080Z",
+      "completed_at": "2026-10-18T23:14:29.270Z",
+      "work_key": "develop-land:tidy:-40,-16",
+      "last_error": "No leftover logs cleared at -40,-16; plot deferred."
+    },
+    {
+      "id": "4cf16c20-c0ee-46a3-9f0a-5a1fb1b2ce86",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"40,16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:14:35.042Z",
+      "started_at": "2026-10-18T23:14:35.053Z",
+      "completed_at": "2026-10-18T23:14:36.219Z",
+      "work_key": "develop-land:tidy:40,16",
+      "last_error": "No leftover logs cleared at 40,16; plot deferred."
+    },
+    {
+      "id": "bc707e98-67c4-4f95-9c54-d7df101cab0c",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-40\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:14:43.456Z",
+      "started_at": "2026-10-18T23:14:43.476Z",
+      "completed_at": "2026-10-18T23:14:44.800Z",
+      "work_key": "develop-land:tidy:-40,-40",
+      "last_error": "No leftover logs cleared at -40,-40; plot deferred."
+    },
+    {
+      "id": "4bad4e37-cc5d-49e6-bb16-8cafee3a482d",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:24:58.462Z",
+      "started_at": "2026-10-18T23:24:58.482Z",
+      "completed_at": "2026-10-18T23:24:59.738Z",
+      "work_key": "develop-land:tidy:16,-8",
+      "last_error": "No leftover logs cleared at 16,-8; plot deferred."
+    },
+    {
+      "id": "b56bce31-c624-4116-9c1a-fb20a708217b",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:25:04.948Z",
+      "started_at": "2026-10-18T23:25:04.964Z",
+      "completed_at": "2026-10-18T23:25:06.177Z",
+      "work_key": "develop-land:tidy:16,16",
+      "last_error": "No leftover logs cleared at 16,16; plot deferred."
+    },
+    {
+      "id": "a0b32fbf-92aa-4e75-9e48-16b9775b016c",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"0,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:25:12.603Z",
+      "started_at": "2026-10-18T23:25:12.623Z",
+      "completed_at": "2026-10-18T23:25:13.790Z",
+      "work_key": "develop-land:tidy:0,-24",
+      "last_error": "No leftover logs cleared at 0,-24; plot deferred."
+    },
+    {
+      "id": "cfe7bd9e-2662-4de6-a665-e32da337cd1d",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:35:27.956Z",
+      "started_at": "2026-10-18T23:35:27.977Z",
+      "completed_at": "2026-10-18T23:35:29.188Z",
+      "work_key": "develop-land:tidy:8,-24",
+      "last_error": "No leftover logs cleared at 8,-24; plot deferred."
+    },
+    {
+      "id": "0245bd95-11d1-463a-b3d6-d575f9a9141a",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,24\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:35:35.203Z",
+      "started_at": "2026-10-18T23:35:35.232Z",
+      "completed_at": "2026-10-18T23:35:36.432Z",
+      "work_key": "develop-land:tidy:16,24",
+      "last_error": "No leftover logs cleared at 16,24; plot deferred."
+    },
+    {
+      "id": "6d3ca7f4-c166-4727-85ee-a3015f3e7a44",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-32,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:35:43.259Z",
+      "started_at": "2026-10-18T23:35:43.274Z",
+      "completed_at": "2026-10-18T23:35:44.814Z",
+      "work_key": "develop-land:tidy:-32,-8",
+      "last_error": "No leftover logs cleared at -32,-8; plot deferred."
+    },
+    {
+      "id": "f3182d8a-82c7-4c19-a15d-2329e3ed0082",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"8,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:45:58.186Z",
+      "started_at": "2026-10-18T23:45:58.205Z",
+      "completed_at": "2026-10-18T23:45:59.451Z",
+      "work_key": "develop-land:tidy:8,-32",
+      "last_error": "No leftover logs cleared at 8,-32; plot deferred."
+    },
+    {
+      "id": "d0bada54-1e2b-40bc-a45d-a383145f462d",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"16,-32\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:46:05.166Z",
+      "started_at": "2026-10-18T23:46:05.177Z",
+      "completed_at": "2026-10-18T23:46:06.442Z",
+      "work_key": "develop-land:tidy:16,-32",
+      "last_error": "No leftover logs cleared at 16,-32; plot deferred."
+    },
+    {
+      "id": "78f8a3fa-37f0-42c1-92fa-57540d8f8986",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:46:13.316Z",
+      "started_at": "2026-10-18T23:46:13.333Z",
+      "completed_at": "2026-10-18T23:46:14.581Z",
+      "work_key": "develop-land:tidy:-40,-8",
+      "last_error": "No leftover logs cleared at -40,-8; plot deferred."
+    },
+    {
+      "id": "a1de22b4-5c1e-4484-95b7-3f6477e78d4a",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:56:28.106Z",
+      "started_at": "2026-10-18T23:56:28.122Z",
+      "completed_at": "2026-10-18T23:56:29.328Z",
+      "work_key": "develop-land:tidy:-40,-16",
+      "last_error": "No leftover logs cleared at -40,-16; plot deferred."
+    },
+    {
+      "id": "b598902b-b2bf-467d-b8a2-23266d362bfb",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"40,16\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:56:35.055Z",
+      "started_at": "2026-10-18T23:56:35.066Z",
+      "completed_at": "2026-10-18T23:56:36.286Z",
+      "work_key": "develop-land:tidy:40,16",
+      "last_error": "No leftover logs cleared at 40,16; plot deferred."
+    },
+    {
+      "id": "de977f54-eb44-4697-9484-cac276f98fe8",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-40,-40\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-18T23:56:42.604Z",
+      "started_at": "2026-10-18T23:56:42.655Z",
+      "completed_at": "2026-10-18T23:56:43.812Z",
+      "work_key": "develop-land:tidy:-40,-40",
+      "last_error": "No leftover logs cleared at -40,-40; plot deferred."
+    },
+    {
+      "id": "3872c9a1-94b6-4d16-8990-504c02ff8b7d",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"48,0\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-19T00:06:57.753Z",
+      "started_at": "2026-10-19T00:06:57.768Z",
+      "completed_at": "2026-10-19T00:06:58.927Z",
+      "work_key": "develop-land:tidy:48,0",
+      "last_error": "No leftover logs cleared at 48,0; plot deferred."
+    },
+    {
+      "id": "af141ff9-7971-46dc-ac63-1be4a5ebcb4b",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"-8,48\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-19T00:07:04.907Z",
+      "started_at": "2026-10-19T00:07:04.919Z",
+      "completed_at": "2026-10-19T00:07:06.039Z",
+      "work_key": "develop-land:tidy:-8,48",
+      "last_error": "No leftover logs cleared at -8,48; plot deferred."
+    },
+    {
+      "id": "4c37b97e-e408-46a0-90d1-46d202ad1fec",
+      "type": "develop_land",
+      "parameters_json": "{\"plot\":\"48,8\",\"kind\":\"tidy\"}",
+      "status": "failed",
+      "created_at": "2026-10-19T00:07:12.866Z",
+      "started_at": "2026-10-19T00:07:12.881Z",
+      "completed_at": "2026-10-19T00:07:33.790Z",
+      "work_key": "develop-land:tidy:48,8",
+      "last_error": "No leftover logs cleared at 48,8; plot deferred."
+    },
+    {
+      "id": "855d1f1a-c04b-4e8f-93cb-79e868c1d1be",
+      "type": "go_home",
+      "parameters_json": "{}",
+      "status": "completed",
+      "created_at": "2026-10-19T00:07:34.899Z",
+      "started_at": "2026-10-19T00:07:34.914Z",
+      "completed_at": "2026-10-19T00:07:46.181Z",
+      "work_key": "develop-land:survey-home",
+      "last_error": null
+    }
+  ],
+  "executionIdentityChecks": [
+    {
+      "taskId": "66046451-f2b7-4816-811c-9c199f17ab13",
+      "workKey": "develop-land:tidy:16,-8",
+      "planned": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792361459742
+    },
+    {
+      "taskId": "39ad9555-54bd-4b0b-8a78-c78e05daa20d",
+      "workKey": "develop-land:tidy:16,16",
+      "planned": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792361466573
+    },
+    {
+      "taskId": "3e874782-cefe-4926-b8f0-441f6f81cba4",
+      "workKey": "develop-land:tidy:0,-24",
+      "planned": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792361474146
+    },
+    {
+      "taskId": "1bd34a6a-5977-42bf-a8ba-65d184803b0a",
+      "workKey": "develop-land:tidy:8,-24",
+      "planned": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362089017
+    },
+    {
+      "taskId": "d22fdff2-8c64-4836-8dae-5e6e52737fb1",
+      "workKey": "develop-land:tidy:16,24",
+      "planned": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362096115
+    },
+    {
+      "taskId": "8aad1447-cd4c-46e9-b5b6-fb346d58bf64",
+      "workKey": "develop-land:tidy:-32,-8",
+      "planned": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362104296
+    },
+    {
+      "taskId": "c9c17846-2ea3-4b43-8d64-c9ca9a600010",
+      "workKey": "develop-land:tidy:8,-32",
+      "planned": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362719329
+    },
+    {
+      "taskId": "a324801f-7543-494e-9497-0132ee4e2df8",
+      "workKey": "develop-land:tidy:16,-32",
+      "planned": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362726537
+    },
+    {
+      "taskId": "56c85cd7-4e22-4f9f-a9a1-78e8a3603afd",
+      "workKey": "develop-land:tidy:-40,-8",
+      "planned": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792362733890
+    },
+    {
+      "taskId": "5ce38998-41dc-49b5-a8a9-10c182a27ff5",
+      "workKey": "develop-land:tidy:16,-8",
+      "planned": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363349376
+    },
+    {
+      "taskId": "5475b161-f0b1-44b1-9851-22c81c00fac0",
+      "workKey": "develop-land:tidy:16,16",
+      "planned": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363356324
+    },
+    {
+      "taskId": "9919cae7-a8e2-40ce-912f-92fb3fce773b",
+      "workKey": "develop-land:tidy:0,-24",
+      "planned": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363364287
+    },
+    {
+      "taskId": "a24480fd-bbbf-41c5-8874-7587bdf68401",
+      "workKey": "develop-land:tidy:8,-24",
+      "planned": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363979430
+    },
+    {
+      "taskId": "f7a4ead5-7ada-4a90-987a-53d4be99bf90",
+      "workKey": "develop-land:tidy:16,24",
+      "planned": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363986454
+    },
+    {
+      "taskId": "1d4b955e-fce0-46a0-ad1c-3d57bb6b0c04",
+      "workKey": "develop-land:tidy:-32,-8",
+      "planned": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792363994592
+    },
+    {
+      "taskId": "0528010a-817b-4058-9cb9-94fd45821838",
+      "workKey": "develop-land:tidy:8,-32",
+      "planned": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792364638861
+    },
+    {
+      "taskId": "31c20d6b-497f-40f9-a797-faf8ebcd2515",
+      "workKey": "develop-land:tidy:16,-32",
+      "planned": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792364646662
+    },
+    {
+      "taskId": "a5e743ce-1813-47d3-967d-29a4a0ece45b",
+      "workKey": "develop-land:tidy:-40,-8",
+      "planned": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792364653866
+    },
+    {
+      "taskId": "1ea71196-a440-45f0-9cbb-89cfc391cdce",
+      "workKey": "develop-land:tidy:-40,-16",
+      "planned": {
+        "plot": "-40,-16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365269204
+    },
+    {
+      "taskId": "4cf16c20-c0ee-46a3-9f0a-5a1fb1b2ce86",
+      "workKey": "develop-land:tidy:40,16",
+      "planned": {
+        "plot": "40,16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "40,16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365276148
+    },
+    {
+      "taskId": "bc707e98-67c4-4f95-9c54-d7df101cab0c",
+      "workKey": "develop-land:tidy:-40,-40",
+      "planned": {
+        "plot": "-40,-40",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-40",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365284737
+    },
+    {
+      "taskId": "4bad4e37-cc5d-49e6-bb16-8cafee3a482d",
+      "workKey": "develop-land:tidy:16,-8",
+      "planned": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365899660
+    },
+    {
+      "taskId": "b56bce31-c624-4116-9c1a-fb20a708217b",
+      "workKey": "develop-land:tidy:16,16",
+      "planned": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365906066
+    },
+    {
+      "taskId": "a0b32fbf-92aa-4e75-9e48-16b9775b016c",
+      "workKey": "develop-land:tidy:0,-24",
+      "planned": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "0,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792365913706
+    },
+    {
+      "taskId": "cfe7bd9e-2662-4de6-a665-e32da337cd1d",
+      "workKey": "develop-land:tidy:8,-24",
+      "planned": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792366529129
+    },
+    {
+      "taskId": "0245bd95-11d1-463a-b3d6-d575f9a9141a",
+      "workKey": "develop-land:tidy:16,24",
+      "planned": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,24",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792366536362
+    },
+    {
+      "taskId": "6d3ca7f4-c166-4727-85ee-a3015f3e7a44",
+      "workKey": "develop-land:tidy:-32,-8",
+      "planned": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-32,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792366544580
+    },
+    {
+      "taskId": "f3182d8a-82c7-4c19-a15d-2329e3ed0082",
+      "workKey": "develop-land:tidy:8,-32",
+      "planned": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "8,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367159372
+    },
+    {
+      "taskId": "d0bada54-1e2b-40bc-a45d-a383145f462d",
+      "workKey": "develop-land:tidy:16,-32",
+      "planned": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "16,-32",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367166336
+    },
+    {
+      "taskId": "78f8a3fa-37f0-42c1-92fa-57540d8f8986",
+      "workKey": "develop-land:tidy:-40,-8",
+      "planned": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367174498
+    },
+    {
+      "taskId": "a1de22b4-5c1e-4484-95b7-3f6477e78d4a",
+      "workKey": "develop-land:tidy:-40,-16",
+      "planned": {
+        "plot": "-40,-16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367789245
+    },
+    {
+      "taskId": "b598902b-b2bf-467d-b8a2-23266d362bfb",
+      "workKey": "develop-land:tidy:40,16",
+      "planned": {
+        "plot": "40,16",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "40,16",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367796178
+    },
+    {
+      "taskId": "de977f54-eb44-4697-9484-cac276f98fe8",
+      "workKey": "develop-land:tidy:-40,-40",
+      "planned": {
+        "plot": "-40,-40",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-40,-40",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792367803748
+    },
+    {
+      "taskId": "3872c9a1-94b6-4d16-8990-504c02ff8b7d",
+      "workKey": "develop-land:tidy:48,0",
+      "planned": {
+        "plot": "48,0",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "48,0",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792368418848
+    },
+    {
+      "taskId": "af141ff9-7971-46dc-ac63-1be4a5ebcb4b",
+      "workKey": "develop-land:tidy:-8,48",
+      "planned": {
+        "plot": "-8,48",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "-8,48",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792368425972
+    },
+    {
+      "taskId": "4c37b97e-e408-46a0-90d1-46d202ad1fec",
+      "workKey": "develop-land:tidy:48,8",
+      "planned": {
+        "plot": "48,8",
+        "kind": "tidy"
+      },
+      "executed": {
+        "plot": "48,8",
+        "kind": "tidy"
+      },
+      "identityMatches": true,
+      "at": 1792368434181
+    }
+  ],
+  "events": [
+    {
+      "level": 30,
+      "time": 1792361458312,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792361458346,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "66046451-f2b7-4816-811c-9c199f17ab13",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792361458381,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "66046451-f2b7-4816-811c-9c199f17ab13",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792361459742,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792361459744,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792361459836,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792362659744,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792361459837,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-8\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792361459910,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "66046451-f2b7-4816-811c-9c199f17ab13",
+      "lastError": "No leftover logs cleared at 16,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792361465327,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792361465354,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "39ad9555-54bd-4b0b-8a78-c78e05daa20d",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792361465372,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "39ad9555-54bd-4b0b-8a78-c78e05daa20d",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792361466573,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "logs": 15,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792361466583,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "cleared": 0,
+      "unreachable": 15,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792361466663,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792362666583,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792361466664,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,16\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792361466730,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "39ad9555-54bd-4b0b-8a78-c78e05daa20d",
+      "lastError": "No leftover logs cleared at 16,16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792361472931,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792361472957,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3e874782-cefe-4926-b8f0-441f6f81cba4",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792361472976,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3e874782-cefe-4926-b8f0-441f6f81cba4",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792361474146,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792361474147,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792361474547,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792362674147,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792361474548,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"0,-24\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792361474633,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3e874782-cefe-4926-b8f0-441f6f81cba4",
+      "lastError": "No leftover logs cleared at 0,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362087785,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362087819,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1bd34a6a-5977-42bf-a8ba-65d184803b0a",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362087845,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1bd34a6a-5977-42bf-a8ba-65d184803b0a",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362089017,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362089018,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362089058,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363289018,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362089059,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-24\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362089134,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1bd34a6a-5977-42bf-a8ba-65d184803b0a",
+      "lastError": "No leftover logs cleared at 8,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362094906,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362094939,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d22fdff2-8c64-4836-8dae-5e6e52737fb1",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362094967,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d22fdff2-8c64-4836-8dae-5e6e52737fb1",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362096115,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362096118,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362096169,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363296118,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362096169,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,24\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362096236,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d22fdff2-8c64-4836-8dae-5e6e52737fb1",
+      "lastError": "No leftover logs cleared at 16,24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362102948,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362102975,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "8aad1447-cd4c-46e9-b5b6-fb346d58bf64",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362103004,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "8aad1447-cd4c-46e9-b5b6-fb346d58bf64",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362104296,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362104297,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362104338,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363304298,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362104338,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-32,-8\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362104406,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "8aad1447-cd4c-46e9-b5b6-fb346d58bf64",
+      "lastError": "No leftover logs cleared at -32,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362718126,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362718159,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "c9c17846-2ea3-4b43-8d64-c9ca9a600010",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362718182,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "c9c17846-2ea3-4b43-8d64-c9ca9a600010",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362719329,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362719330,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362719438,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363919330,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362719440,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-32\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362719508,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "c9c17846-2ea3-4b43-8d64-c9ca9a600010",
+      "lastError": "No leftover logs cleared at 8,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362725222,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362725308,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a324801f-7543-494e-9497-0132ee4e2df8",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362725334,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a324801f-7543-494e-9497-0132ee4e2df8",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362726537,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362726541,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362726600,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363926541,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362726600,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-32\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362726669,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a324801f-7543-494e-9497-0132ee4e2df8",
+      "lastError": "No leftover logs cleared at 16,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792362732701,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792362732728,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "56c85cd7-4e22-4f9f-a9a1-78e8a3603afd",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792362732745,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "56c85cd7-4e22-4f9f-a9a1-78e8a3603afd",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792362733890,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792362733892,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792362733968,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792363933892,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792362733969,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-8\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792362734036,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "56c85cd7-4e22-4f9f-a9a1-78e8a3603afd",
+      "lastError": "No leftover logs cleared at -40,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363348182,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363348218,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5ce38998-41dc-49b5-a8a9-10c182a27ff5",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363348242,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5ce38998-41dc-49b5-a8a9-10c182a27ff5",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363349376,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363349377,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363349418,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792365749377,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363349419,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-8\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363349486,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5ce38998-41dc-49b5-a8a9-10c182a27ff5",
+      "lastError": "No leftover logs cleared at 16,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363355144,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363355168,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5475b161-f0b1-44b1-9851-22c81c00fac0",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363355189,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5475b161-f0b1-44b1-9851-22c81c00fac0",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363356324,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "logs": 15,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363356335,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "cleared": 0,
+      "unreachable": 15,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363356444,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792365756335,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363356445,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,16\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363356512,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5475b161-f0b1-44b1-9851-22c81c00fac0",
+      "lastError": "No leftover logs cleared at 16,16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363363096,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363363137,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "9919cae7-a8e2-40ce-912f-92fb3fce773b",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363363163,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "9919cae7-a8e2-40ce-912f-92fb3fce773b",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363364287,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363364288,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363364363,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792365764288,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363364363,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"0,-24\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363364430,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "9919cae7-a8e2-40ce-912f-92fb3fce773b",
+      "lastError": "No leftover logs cleared at 0,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363978214,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363978247,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a24480fd-bbbf-41c5-8874-7587bdf68401",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363978277,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a24480fd-bbbf-41c5-8874-7587bdf68401",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363979430,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363979431,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363979678,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792366379431,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363979680,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-24\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363979807,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a24480fd-bbbf-41c5-8874-7587bdf68401",
+      "lastError": "No leftover logs cleared at 8,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363985119,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363985274,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f7a4ead5-7ada-4a90-987a-53d4be99bf90",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363985300,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f7a4ead5-7ada-4a90-987a-53d4be99bf90",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363986454,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363986458,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363986608,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792366386458,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363986609,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,24\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363986680,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f7a4ead5-7ada-4a90-987a-53d4be99bf90",
+      "lastError": "No leftover logs cleared at 16,24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792363993200,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792363993234,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1d4b955e-fce0-46a0-ad1c-3d57bb6b0c04",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792363993260,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1d4b955e-fce0-46a0-ad1c-3d57bb6b0c04",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792363994592,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792363994594,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792363994690,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792366394594,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792363994690,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-32,-8\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792363994769,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1d4b955e-fce0-46a0-ad1c-3d57bb6b0c04",
+      "lastError": "No leftover logs cleared at -32,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364069857,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b519916c-9e3a-4d00-a98c-8cbe57f04cf7",
+      "type": "night_shelter",
+      "priority": 90,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364069883,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b519916c-9e3a-4d00-a98c-8cbe57f04cf7",
+      "type": "night_shelter",
+      "msg": "task activated"
+    },
+    {
+      "level": 40,
+      "time": 1792364069969,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b519916c-9e3a-4d00-a98c-8cbe57f04cf7",
+      "lastError": "no safe ground to dig a night shelter in nearby",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364134883,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5b93459d-803a-493f-9c4c-a630ab3ffe3a",
+      "type": "night_shelter",
+      "priority": 90,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364134909,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5b93459d-803a-493f-9c4c-a630ab3ffe3a",
+      "type": "night_shelter",
+      "msg": "task activated"
+    },
+    {
+      "level": 40,
+      "time": 1792364134961,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "5b93459d-803a-493f-9c4c-a630ab3ffe3a",
+      "lastError": "no safe ground to dig a night shelter in nearby",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364195241,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3faec260-1469-4343-9fbb-ff23eba62a6c",
+      "type": "night_shelter",
+      "priority": 90,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364195273,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3faec260-1469-4343-9fbb-ff23eba62a6c",
+      "type": "night_shelter",
+      "msg": "task activated"
+    },
+    {
+      "level": 40,
+      "time": 1792364195342,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3faec260-1469-4343-9fbb-ff23eba62a6c",
+      "lastError": "no safe ground to dig a night shelter in nearby",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364256269,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "73681037-e02a-47f9-9102-c49a6dd132cb",
+      "type": "night_shelter",
+      "priority": 90,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364256362,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "73681037-e02a-47f9-9102-c49a6dd132cb",
+      "type": "night_shelter",
+      "msg": "task activated"
+    },
+    {
+      "level": 40,
+      "time": 1792364256441,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "73681037-e02a-47f9-9102-c49a6dd132cb",
+      "lastError": "no safe ground to dig a night shelter in nearby",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364637551,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792364637584,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0528010a-817b-4058-9cb9-94fd45821838",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364637611,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0528010a-817b-4058-9cb9-94fd45821838",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792364638861,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792364638863,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792364639143,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792367038863,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792364639144,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-32\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792364639211,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0528010a-817b-4058-9cb9-94fd45821838",
+      "lastError": "No leftover logs cleared at 8,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364645521,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792364645555,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "31c20d6b-497f-40f9-a797-faf8ebcd2515",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364645580,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "31c20d6b-497f-40f9-a797-faf8ebcd2515",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792364646662,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792364646665,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792364646723,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792367046665,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792364646723,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-32\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792364646790,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "31c20d6b-497f-40f9-a797-faf8ebcd2515",
+      "lastError": "No leftover logs cleared at 16,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792364652680,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792364652708,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a5e743ce-1813-47d3-967d-29a4a0ece45b",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792364652731,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a5e743ce-1813-47d3-967d-29a4a0ece45b",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792364653866,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792364653868,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792364653959,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792367053868,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792364653960,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-8\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792364654027,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a5e743ce-1813-47d3-967d-29a4a0ece45b",
+      "lastError": "No leftover logs cleared at -40,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365268050,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365268079,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1ea71196-a440-45f0-9cbb-89cfc391cdce",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365268102,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1ea71196-a440-45f0-9cbb-89cfc391cdce",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365269204,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365269205,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365269247,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792366469206,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365269247,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-16\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365269314,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "1ea71196-a440-45f0-9cbb-89cfc391cdce",
+      "lastError": "No leftover logs cleared at -40,-16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365275028,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365275053,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4cf16c20-c0ee-46a3-9f0a-5a1fb1b2ce86",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365275073,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4cf16c20-c0ee-46a3-9f0a-5a1fb1b2ce86",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365276148,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365276151,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365276195,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792366476151,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365276195,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"40,16\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365276262,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4cf16c20-c0ee-46a3-9f0a-5a1fb1b2ce86",
+      "lastError": "No leftover logs cleared at 40,16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365283438,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365283476,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "bc707e98-67c4-4f95-9c54-d7df101cab0c",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365283504,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "bc707e98-67c4-4f95-9c54-d7df101cab0c",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365284737,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365284738,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365284776,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792366484738,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365284776,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-40\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365284844,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "bc707e98-67c4-4f95-9c54-d7df101cab0c",
+      "lastError": "No leftover logs cleared at -40,-40; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365898448,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365898481,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4bad4e37-cc5d-49e6-bb16-8cafee3a482d",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365898510,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4bad4e37-cc5d-49e6-bb16-8cafee3a482d",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365899660,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365899661,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365899718,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792370699662,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365899719,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-8\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365899794,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4bad4e37-cc5d-49e6-bb16-8cafee3a482d",
+      "lastError": "No leftover logs cleared at 16,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365904934,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365904964,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b56bce31-c624-4116-9c1a-fb20a708217b",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365904988,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b56bce31-c624-4116-9c1a-fb20a708217b",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365906066,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "logs": 15,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365906078,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "cleared": 0,
+      "unreachable": 15,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365906154,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792370706078,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365906155,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,16\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365906227,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b56bce31-c624-4116-9c1a-fb20a708217b",
+      "lastError": "No leftover logs cleared at 16,16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792365912589,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792365912623,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a0b32fbf-92aa-4e75-9e48-16b9775b016c",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792365912648,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a0b32fbf-92aa-4e75-9e48-16b9775b016c",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792365913706,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792365913707,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792365913768,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 0,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792370713707,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792365913768,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"0,-24\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792365913837,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a0b32fbf-92aa-4e75-9e48-16b9775b016c",
+      "lastError": "No leftover logs cleared at 0,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792366527940,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792366527976,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "cfe7bd9e-2662-4de6-a665-e32da337cd1d",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792366527999,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "cfe7bd9e-2662-4de6-a665-e32da337cd1d",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792366529129,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792366529130,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792366529166,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371329131,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792366529166,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-24\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792366529617,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "cfe7bd9e-2662-4de6-a665-e32da337cd1d",
+      "lastError": "No leftover logs cleared at 8,-24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792366535187,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792366535231,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0245bd95-11d1-463a-b3d6-d575f9a9141a",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792366535255,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0245bd95-11d1-463a-b3d6-d575f9a9141a",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792366536362,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792366536365,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792366536409,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": 24
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371336366,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792366536410,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,24\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792366536477,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "0245bd95-11d1-463a-b3d6-d575f9a9141a",
+      "lastError": "No leftover logs cleared at 16,24; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792366543244,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792366543274,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "6d3ca7f4-c166-4727-85ee-a3015f3e7a44",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792366543301,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "6d3ca7f4-c166-4727-85ee-a3015f3e7a44",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792366544580,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792366544582,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792366544791,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -32,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371344582,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792366544791,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-32,-8\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792366544859,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "6d3ca7f4-c166-4727-85ee-a3015f3e7a44",
+      "lastError": "No leftover logs cleared at -32,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367158170,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367158204,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f3182d8a-82c7-4c19-a15d-2329e3ed0082",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367158237,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f3182d8a-82c7-4c19-a15d-2329e3ed0082",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367159372,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367159373,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367159427,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 8,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371959373,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367159428,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"8,-32\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367159494,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "f3182d8a-82c7-4c19-a15d-2329e3ed0082",
+      "lastError": "No leftover logs cleared at 8,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367165152,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367165177,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d0bada54-1e2b-40bc-a45d-a383145f462d",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367165197,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d0bada54-1e2b-40bc-a45d-a383145f462d",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367166336,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367166339,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367166419,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 16,
+        "dz": -32
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371966339,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367166419,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"16,-32\"}",
+      "failures": 15,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367166486,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "d0bada54-1e2b-40bc-a45d-a383145f462d",
+      "lastError": "No leftover logs cleared at 16,-32; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367173300,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367173333,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "78f8a3fa-37f0-42c1-92fa-57540d8f8986",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367173367,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "78f8a3fa-37f0-42c1-92fa-57540d8f8986",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367174498,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "logs": 2,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367174500,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "cleared": 0,
+      "unreachable": 2,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367174557,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 3,
+      "retryAt": 1792371974500,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367174558,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-8\"}",
+      "failures": 16,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367174625,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "78f8a3fa-37f0-42c1-92fa-57540d8f8986",
+      "lastError": "No leftover logs cleared at -40,-8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367788087,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367788121,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a1de22b4-5c1e-4484-95b7-3f6477e78d4a",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367788148,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a1de22b4-5c1e-4484-95b7-3f6477e78d4a",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367789245,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367789248,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367789305,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792370189248,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367789306,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-16\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367789373,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "a1de22b4-5c1e-4484-95b7-3f6477e78d4a",
+      "lastError": "No leftover logs cleared at -40,-16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367795041,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367795066,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b598902b-b2bf-467d-b8a2-23266d362bfb",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367795086,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b598902b-b2bf-467d-b8a2-23266d362bfb",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367796178,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "logs": 4,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367796181,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "cleared": 0,
+      "unreachable": 4,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367796265,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 40,
+        "dz": 16
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792370196181,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367796265,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"40,16\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367796334,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "b598902b-b2bf-467d-b8a2-23266d362bfb",
+      "lastError": "No leftover logs cleared at 40,16; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792367802593,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792367802655,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "de977f54-eb44-4697-9484-cac276f98fe8",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792367802693,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "de977f54-eb44-4697-9484-cac276f98fe8",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792367803748,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792367803749,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792367803789,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -40,
+        "dz": -40
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 2,
+      "retryAt": 1792370203749,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792367803789,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-40,-40\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792367803869,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "de977f54-eb44-4697-9484-cac276f98fe8",
+      "lastError": "No leftover logs cleared at -40,-40; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792368417739,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792368417767,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3872c9a1-94b6-4d16-8990-504c02ff8b7d",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792368417793,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3872c9a1-94b6-4d16-8990-504c02ff8b7d",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792368418848,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 0
+      },
+      "logs": 1,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792368418849,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 0
+      },
+      "cleared": 0,
+      "unreachable": 1,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792368418902,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 0
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792369618849,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792368418902,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"48,0\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792368418974,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "3872c9a1-94b6-4d16-8990-504c02ff8b7d",
+      "lastError": "No leftover logs cleared at 48,0; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792368424891,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792368424919,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "af141ff9-7971-46dc-ac63-1be4a5ebcb4b",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792368424942,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "af141ff9-7971-46dc-ac63-1be4a5ebcb4b",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792368425972,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -8,
+        "dz": 48
+      },
+      "logs": 8,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 30,
+      "time": 1792368425978,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -8,
+        "dz": 48
+      },
+      "cleared": 0,
+      "unreachable": 8,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792368426017,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": -8,
+        "dz": 48
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792369625978,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792368426017,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"-8,48\"}",
+      "failures": 13,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792368426084,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "af141ff9-7971-46dc-ac63-1be4a5ebcb4b",
+      "lastError": "No leftover logs cleared at -8,48; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792368432852,
+      "pid": 11536,
+      "hostname": "maia",
+      "msg": "free time; developing the land"
+    },
+    {
+      "level": 30,
+      "time": 1792368432881,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4c37b97e-e408-46a0-90d1-46d202ad1fec",
+      "type": "develop_land",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792368432902,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4c37b97e-e408-46a0-90d1-46d202ad1fec",
+      "type": "develop_land",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792368434181,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 8
+      },
+      "logs": 10,
+      "msg": "develop: taking down leftover tree trunks"
+    },
+    {
+      "level": 40,
+      "time": 1792368453260,
+      "pid": 11536,
+      "hostname": "maia",
+      "at": {
+        "x": 110,
+        "y": 103,
+        "z": 61
+      },
+      "err": "Error: could not approach: failed: Timeout: Took to long to decide path to goal!",
+      "msg": "develop: tidy target skipped"
+    },
+    {
+      "level": 40,
+      "time": 1792368453345,
+      "pid": 11536,
+      "hostname": "maia",
+      "at": {
+        "x": 110,
+        "y": 103,
+        "z": 62
+      },
+      "err": "Error: could not approach: failed: arrival precondition: target outside actual eye reach",
+      "msg": "develop: tidy target skipped"
+    },
+    {
+      "level": 30,
+      "time": 1792368453345,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 8
+      },
+      "cleared": 0,
+      "unreachable": 10,
+      "msg": "develop: tidy done"
+    },
+    {
+      "level": 30,
+      "time": 1792368453759,
+      "pid": 11536,
+      "hostname": "maia",
+      "plot": {
+        "dx": 48,
+        "dz": 8
+      },
+      "reason": "leftover logs unreachable from supported ground",
+      "attempts": 1,
+      "retryAt": 1792369653346,
+      "msg": "develop: plot deferred"
+    },
+    {
+      "level": 40,
+      "time": 1792368453775,
+      "pid": 11536,
+      "hostname": "maia",
+      "action": "develop_land:{\"kind\":\"tidy\",\"plot\":\"48,8\"}",
+      "failures": 14,
+      "cooldownMs": 600000,
+      "msg": "action blocked by anti-loop watchdog"
+    },
+    {
+      "level": 40,
+      "time": 1792368453847,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "4c37b97e-e408-46a0-90d1-46d202ad1fec",
+      "lastError": "No leftover logs cleared at 48,8; plot deferred.",
+      "msg": "task failed"
+    },
+    {
+      "level": 30,
+      "time": 1792368454914,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "855d1f1a-c04b-4e8f-93cb-79e868c1d1be",
+      "type": "go_home",
+      "priority": 40,
+      "msg": "task enqueued"
+    },
+    {
+      "level": 30,
+      "time": 1792368454939,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "855d1f1a-c04b-4e8f-93cb-79e868c1d1be",
+      "type": "go_home",
+      "msg": "task activated"
+    },
+    {
+      "level": 30,
+      "time": 1792368466215,
+      "pid": 11536,
+      "hostname": "maia",
+      "taskId": "855d1f1a-c04b-4e8f-93cb-79e868c1d1be",
+      "msg": "task completed"
+    }
+  ]
+}

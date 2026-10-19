@@ -341,3 +341,33 @@ test("a death site near another recent death is a trap, not a recovery trip", as
   assert.equal(recentDeathNearby(deaths, { deathId: 84, x: 200, y: 64, z: 8 }, now), null, "far away");
   assert.equal(recentDeathNearby(deaths.slice(0, 1).concat(deaths.slice(2)), { deathId: 84, x: 2, y: 52, z: 8 }, now), null, "too long ago");
 });
+
+test("a nearby target with no observed combat progress releases the fight early", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const h = harness();
+  h.add(mob(7, "skeleton", { x: 22, y: 64, z: 0 }));
+  h.hooks.attack = () => new Promise<void>(() => undefined);
+  const run = h.runner.defendSelf({ reflex: true });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(8_000);
+  const result = await run;
+  assert.equal(result.data?.retreated, true);
+  assert.match(result.message ?? "", /no combat progress/);
+  assert.equal(h.bot.listenerCount("entityHurt"), 0);
+});
+
+test("observed target damage extends the combat progress budget", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const h = harness();
+  const target = h.add(mob(7, "skeleton", { x: 22, y: 64, z: 0 }));
+  h.hooks.attack = () => new Promise<void>(() => undefined);
+  const run = h.runner.defendSelf({ reflex: true });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(7_000);
+  (h.bot as unknown as EventEmitter).emit("entityHurt", target);
+  t.mock.timers.tick(7_000);
+  assert.equal(h.travels.length, 0, "a fight landing hits remains active");
+  t.mock.timers.tick(1_000);
+  const result = await run;
+  assert.equal(result.data?.retreated, true);
+});

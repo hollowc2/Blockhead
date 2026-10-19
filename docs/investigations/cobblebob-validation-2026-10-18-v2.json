@@ -1,0 +1,28 @@
+{
+  "validatedAt": "2026-10-18T19:44:01.486576+00:00",
+  "typecheck": {
+    "command": "npm run typecheck",
+    "exitCode": 0
+  },
+  "fullSuite": {
+    "command": "npm test",
+    "exitCode": 0,
+    "tests": 774,
+    "passed": 774,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "durationMs": 34210.51811
+  },
+  "focusedDevelopmentDispatcherBackground": {
+    "passed": 103,
+    "failed": 0
+  },
+  "diffCheck": "passed",
+  "sourceCandidateHashCheck": "all eight passed",
+  "liveBaselineHashCheck": "all eight original runtime hashes passed after rollback",
+  "liveDeployment": "subsequently approved and installed at 2026-10-18T21:47:49Z",
+  "liveAcceptance": "identity/backoff and protected sample verified; field/room construction remains pending; see deployment evidence",
+  "fullLogSha256": "5a50f8a8d0c28ff763f823288fbd44dddfa87706bb9b6696f9c4f8b77d8afd57",
+  "fullLogLocal": "/tmp/cobblebob-20261018/full-tests-v2.log"
+}

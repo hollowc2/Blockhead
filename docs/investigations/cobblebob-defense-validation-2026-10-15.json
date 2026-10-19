@@ -1,0 +1,38 @@
+{
+  "samples": 21,
+  "first": "2026-10-16T04:01:29.594621+00:00",
+  "last": "2026-10-16T04:06:36.642937+00:00",
+  "durationSeconds": 307.048316,
+  "lastSelf": {
+    "health": 20,
+    "hunger": 20,
+    "position": {
+      "x": 66.5,
+      "y": 102,
+      "z": 50.50611421738757
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "completedTaskCount": 25,
+  "taskFailures": [
+    {
+      "level": 40,
+      "time": 1792123434845,
+      "pid": 2440782,
+      "hostname": "maia",
+      "taskId": "fec6d1f0-1ce7-4087-ad27-9afb87964426",
+      "lastError": "could not reach home: failed",
+      "msg": "task failed"
+    }
+  ],
+  "pathStoppedEvents": 0,
+  "defenseBreaks": [],
+  "serviceState": "ActiveState=active\nSubState=running\nNRestarts=0\n",
+  "inventorySwords": [
+    {
+      "name": "stone_sword",
+      "count": 1
+    }
+  ]
+}

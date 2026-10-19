@@ -1,0 +1,388 @@
+{
+  "at": "2026-10-19T01:15:37.527060+00:00",
+  "status": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-19T01:02:09.734Z",
+      "uptimeSeconds": 807.723
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 64.5,
+        "y": 103.5625,
+        "z": 52.5
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-19T01:12:46.460Z",
+      "lastSuccessAgeSeconds": 170.997,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-19T01:12:43.651Z",
+        "latencyMs": 2809,
+        "tool": "wait",
+        "rationale": null,
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": {
+      "id": "5929c4fb-8bd3-4606-a236-2878eef3e5e0",
+      "type": "go_home",
+      "source": "background",
+      "objective": "Return home to survey eligible development work.",
+      "status": "completed",
+      "lastError": null,
+      "at": "2026-10-19T01:15:36.965Z"
+    },
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": [
+      {
+        "id": "5929c4fb-8bd3-4606-a236-2878eef3e5e0",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:15:36.965Z"
+      },
+      {
+        "id": "7deac785-6412-47ae-b6e8-d45deb10b4af",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:14:40.732Z"
+      },
+      {
+        "id": "97f7f038-7535-4955-a23a-fceaa9c14ba7",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:08:50.723Z"
+      },
+      {
+        "id": "cd95e081-a178-4e15-85de-dc0ef93ef3a1",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:08:29.905Z"
+      },
+      {
+        "id": "a07dcf96-751f-4c43-bea4-143e554ca7b3",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:07:54.393Z"
+      },
+      {
+        "id": "20a63138-4c19-43dd-ac5a-41f36886138a",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:07:34.465Z"
+      },
+      {
+        "id": "d10e61e3-ad3f-46d1-a7dc-02a9ac5bb968",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:06:56.924Z"
+      },
+      {
+        "id": "4a0c8caf-14e0-4a4d-bd24-580f9c7f1f92",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "failed",
+        "lastError": "No leftover logs cleared at -40,-48; plot deferred.",
+        "at": "2026-10-19T01:06:36.493Z"
+      },
+      {
+        "id": "4a213b76-bfdf-4197-8277-a2ddd04d63ac",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:05:55.972Z"
+      },
+      {
+        "id": "c1310796-2d82-4b6a-9d30-14c1f3273c33",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:05:33.600Z"
+      },
+      {
+        "id": "c158cc19-633f-43d4-8f2a-ba0ec9b64e13",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:04:55.862Z"
+      },
+      {
+        "id": "f5f32cdf-da09-431b-9c6e-5150e2579dc1",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:04:33.480Z"
+      },
+      {
+        "id": "054ed536-5d53-43b0-bb4b-ea7c843d3a17",
+        "type": "go_home",
+        "source": "background",
+        "objective": "Return home to survey eligible development work.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-19T01:03:21.178Z"
+      },
+      {
+        "id": "825ad7ce-a90f-488d-a86b-4f9b49321d99",
+        "type": "develop_land",
+        "source": "background",
+        "objective": "Clear and plant the next field around home.",
+        "status": "failed",
+        "lastError": "could not fully level the field at 40,24: fill approach timed_out at 104,95,76",
+        "at": "2026-10-19T01:03:05.553Z"
+      }
+    ]
+  },
+  "room": {
+    "id": "f3adef30-a71a-40cb-96fc-71dec89484f4",
+    "status": "completed",
+    "completed_at": "2026-10-19T00:48:15.807Z",
+    "last_error": null,
+    "verification": {
+      "lastVerifiedAt": "2026-10-19T00:48:15.807Z",
+      "verifiedOperations": 145,
+      "totalOperations": 145,
+      "mismatchedOperationIds": [],
+      "finalVerificationPassed": true
+    }
+  },
+  "runtimeHashes": {
+    "src/agent/background.ts": "d1bb93fad20c0733a0875605d813dfcce4b7cf86faf0210728a054e0361788c1",
+    "src/agent/night-shelter.ts": "5a4aeb4ae130e6fa7c7c931d4eb9c94e6f3630efc2d2bfefea032c351f846685",
+    "src/minecraft/primitives.ts": "b9e9ef3312b43eafa489b9a94798b13ea726a1c240932070a66d0e79d96e7e91",
+    "src/minecraft/movement.ts": "61739984d59d4221e5a741eb59116508501b018452f7e37dae712dce01a74cde",
+    "src/skills/base.ts": "f51ab3ba4b440cc3759cca4951631804bd34cc62292b4f34e80dd685e83ec244",
+    "src/skills/develop-land.ts": "31d93c25b31e9b2b65c245601ab0adbfec0b23b0d1a125542ae7a2a8a4b12fbf"
+  },
+  "service": "ActiveState=active\nNRestarts=0\n",
+  "productiveSinceRestart": {
+    "fieldCellsPlanted": 72,
+    "fieldCellsTilled": 72,
+    "dirtPlacements": 11,
+    "logsRemoved": 6,
+    "fields": [
+      {
+        "level": 30,
+        "time": 1792371873380,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -40,
+          "dz": -48
+        },
+        "cleared": 0,
+        "planted": 25,
+        "tilled": 25,
+        "msg": "develop: field done"
+      },
+      {
+        "level": 30,
+        "time": 1792372054421,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -48,
+          "dz": -48
+        },
+        "cleared": 0,
+        "planted": 24,
+        "tilled": 24,
+        "msg": "develop: field done"
+      },
+      {
+        "level": 30,
+        "time": 1792372480699,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": 40,
+          "dz": 24
+        },
+        "cleared": 2,
+        "planted": 23,
+        "tilled": 23,
+        "msg": "develop: field done"
+      }
+    ],
+    "fills": [
+      {
+        "level": 30,
+        "time": 1792371785531,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": 40,
+          "dz": 24
+        },
+        "padY": 95,
+        "cut": 0,
+        "filled": 4,
+        "blocker": "fill approach timed_out at 104,95,76",
+        "complete": false,
+        "ground": 23,
+        "minGround": 94,
+        "maxGround": 95,
+        "msg": "develop: field levelled"
+      },
+      {
+        "level": 30,
+        "time": 1792371824010,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -40,
+          "dz": -48
+        },
+        "padY": 93,
+        "cut": 0,
+        "filled": 4,
+        "complete": true,
+        "ground": 25,
+        "minGround": 93,
+        "maxGround": 93,
+        "msg": "develop: field levelled"
+      },
+      {
+        "level": 30,
+        "time": 1792372039511,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -48,
+          "dz": -48
+        },
+        "padY": 94,
+        "cut": 0,
+        "filled": 2,
+        "complete": true,
+        "ground": 25,
+        "minGround": 94,
+        "maxGround": 94,
+        "msg": "develop: field levelled"
+      },
+      {
+        "level": 30,
+        "time": 1792372432879,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": 40,
+          "dz": 24
+        },
+        "padY": 95,
+        "cut": 0,
+        "filled": 1,
+        "blocker": "protected cobblestone at 103,94,77",
+        "complete": true,
+        "ground": 23,
+        "minGround": 95,
+        "maxGround": 95,
+        "msg": "develop: field levelled"
+      }
+    ],
+    "cleanup": [
+      {
+        "level": 30,
+        "time": 1792371933535,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -40,
+          "dz": -48
+        },
+        "cleared": 1,
+        "unreachable": 3,
+        "msg": "develop: tidy done"
+      },
+      {
+        "level": 30,
+        "time": 1792371996413,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -40,
+          "dz": -48
+        },
+        "cleared": 0,
+        "unreachable": 3,
+        "msg": "develop: tidy done"
+      },
+      {
+        "level": 30,
+        "time": 1792372109791,
+        "pid": 17642,
+        "hostname": "maia",
+        "plot": {
+          "dx": -48,
+          "dz": -48
+        },
+        "cleared": 5,
+        "unreachable": 1,
+        "msg": "develop: tidy done"
+      }
+    ]
+  },
+  "limitations": [
+    "Controlled daytime sleep test failed; clear weather is now persistent in the fixed-noon development world.",
+    "Some inaccessible canopy logs remain on bounded cooldowns.",
+    "One southeast-field gap was manually repaired; the subsequent native retry completed all three fields."
+  ]
+}

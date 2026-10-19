@@ -29,6 +29,7 @@ test("successful cobblestone collection stops at the requested inventory target"
   const collected: Vec3[] = [];
   const bot = {
     game: { dimension: "overworld" },
+    blockAt: (position: Vec3) => ({ name: "cobblestone", position }),
     collectBlock: {
       collect: async (block: { position: Vec3 }) => {
         collected.push(block.position);
@@ -37,7 +38,7 @@ test("successful cobblestone collection stops at the requested inventory target"
       cancelTask: async () => undefined,
     },
   } as any;
-  const blocks = [1, 2, 3].map((x) => ({ position: new Vec3(x, 63, 0) })) as any[];
+  const blocks = [1, 2, 3].map((x) => ({ name: "cobblestone", position: new Vec3(x, 63, 0) })) as any[];
   const signal = new AbortController().signal;
 
   const gained = await withWorldActionLease(
@@ -128,4 +129,104 @@ test("the dominant nearby log counts standing trees, not building frames or floa
     blockAt: (pos: Vec3) => { const name = blocks.get(`${pos.x},${pos.y},${pos.z}`) ?? "air"; return { name, position: pos, boundingBox: name === "air" || name.endsWith("_leaves") ? "empty" : "block" }; },
   } as unknown as Parameters<typeof dominantNearbyLog>[0];
   assert.equal(dominantNearbyLog(bot), "birch_log");
+});
+
+test("a floating log four blocks above a supported stance is within actual digging reach", async () => {
+  const { groundDigApproaches } = await import("./world.js");
+  const target = new Vec3(0, 69, 0);
+  const bot = flatWorld({ "0,69,0": "birch_log" });
+  const poses = groundDigApproaches(bot, target);
+  assert.ok(poses.length > 0);
+  assert.ok(poses.every(p => p.y === 65 && p.offset(0, 1.62, 0).distanceTo(target.offset(0.5, 0.5, 0.5)) <= 4.3));
+  assert.equal(isReachableFromGround(bot, target), true);
+  assert.equal(isReachableFromGround(flatWorld({ "0,71,0": "birch_log" }), new Vec3(0,71,0)), false);
+});
+
+test("a high log already within eye reach is dug without requesting an unreachable block-height route", async () => {
+  const position = new Vec3(0.5, 65, 0.5);
+  const target = { position: new Vec3(1,69,0), name: "birch_log" };
+  let digs = 0;
+  const bot = {
+    blockAt: (p: Vec3) => ({ position: p.floored(), name: p.equals(target.position) ? "birch_log" : p.y < 65 ? "dirt" : "air", boundingBox: p.y < 65 ? "block" : "empty" }),
+    entity: { position }, entities: {}, game: { dimension: "overworld" },
+    tool: { equipForBlock: async () => {} },
+    dig: async () => { digs++; },
+    pathfinder: { goto: async () => { assert.fail("a block within eye reach needs no path"); } },
+  } as any;
+  const signal = new AbortController().signal;
+  await withWorldActionLease({ owner: "high-log", signal, acknowledged: Promise.resolve() }, () => collectBlocks(bot,[target as any],()=>0,Infinity,()=>{},1000,undefined,signal));
+  assert.equal(digs,1);
+});
+
+
+test("fractional farmland stance uses actual body support and eye reach", async () => {
+  const { diggingStanceBlocker } = await import("./world.js");
+  const target = new Vec3(114,101,71);
+  const bot = {
+    entity: { position: new Vec3(112.5,96.9375,69.5483) },
+    blockAt: (p: Vec3) => {
+      const at = p.floored();
+      return { position: at, name: at.y <= 96 ? "farmland" : "air", boundingBox: at.y <= 96 ? "block" : "empty", shapes: at.y <= 96 ? [[0,0,0,1,.9375,1]] : [] };
+    },
+    canSeeBlock: () => true,
+  } as any;
+  assert.equal(diggingStanceBlocker(bot,target),null);
+  assert.equal(diggingStanceBlocker(bot,new Vec3(114,103,71)),"target outside actual eye reach");
+  bot.canSeeBlock = () => false;
+  assert.equal(diggingStanceBlocker(bot,target,true),"target has no clear access");
+  const floor = bot.blockAt;
+  bot.blockAt = (p: Vec3) => p.y < 97 ? { position: p.floored(), name: "lava", boundingBox: "empty" } : floor(p);
+  assert.match(diggingStanceBlocker(bot,target)!,/unsafe/);
+  bot.blockAt = (p: Vec3) => p.y >= 98 ? { position: p.floored(), name: "stone", boundingBox: "block" } : floor(p);
+  assert.match(diggingStanceBlocker(bot,target)!,/obstructed/);
+  bot.blockAt = (p: Vec3) => ({ position:p.floored(),name:"air",boundingBox:"empty" });
+  assert.match(diggingStanceBlocker(bot,target)!,/support/);
+});
+
+test("observed farmland cleanup digs from safe fractional pose without routing", async () => {
+  let digs = 0;
+  const bot = {
+    entity: { position: new Vec3(112.5,96.9375,69.5483) }, entities:{}, game:{dimension:"overworld"},
+    blockAt: (p:Vec3) => ({position:p.floored(),name:p.equals(new Vec3(114,101,71)) ? "birch_log" : p.y < 97 ? "farmland" : "air",boundingBox:p.y < 97 ? "block" : "empty",shapes:p.y < 97 ? [[0,0,0,1,.9375,1]] : []}),
+    tool:{equipForBlock:async()=>{}},dig:async()=>{digs++;},
+    pathfinder:{goto:async()=>assert.fail("already feasible action must not repeat an empty path")},
+  } as any;
+  const signal = new AbortController().signal;
+  await withWorldActionLease({owner:"farmland-log",signal,acknowledged:Promise.resolve()},()=>collectBlocks(bot,[{name:"birch_log",position:new Vec3(114,101,71)} as any],()=>0,Infinity,()=>{},1000,undefined,signal));
+  assert.equal(digs,1);
+});
+
+
+test("collection refuses a fixture or unloaded replacement observed after equipment yields", async () => {
+  for (const replacement of ["chest", "torch", null]) {
+    const at = new Vec3(1,64,0);
+    let name: string | null = "dirt";
+    let digs = 0;
+    const errors: string[] = [];
+    const bot = {
+      entity:{position:new Vec3(.5,64,.5)},game:{dimension:"overworld"},entities:{},
+      blockAt:()=>name === null ? null : {name,position:at,boundingBox:"block"},
+      tool:{equipForBlock:async()=>{await Promise.resolve();name=replacement;}},
+      dig:async()=>{digs++;},
+    } as any;
+    const signal = new AbortController().signal;
+    await withWorldActionLease({owner:"changed-cut",signal,acknowledged:Promise.resolve()},()=>collectBlocks(bot,[{name:"dirt",position:at} as any],()=>0,Infinity,()=>{},1000,(_block,error)=>errors.push(String(error)),signal));
+    assert.equal(digs,0);
+    assert.match(errors[0]!,/collection target changed/);
+    assert.match(errors[0]!,new RegExp(replacement ?? "unloaded"));
+  }
+});
+
+test("collector plugin is not invoked for a stale natural target", async () => {
+  let collections = 0;
+  const signal = new AbortController().signal;
+  const bot = {
+    game:{dimension:"overworld"},
+    blockAt:(position:Vec3)=>({position,name:"chest"}),
+    collectBlock:{collect:async()=>{collections++;},cancelTask:async()=>{}},
+  } as any;
+  const errors:string[]=[];
+  await withWorldActionLease({owner:"changed-plugin-target",signal,acknowledged:Promise.resolve()},()=>collectBlocks(bot,[{name:"dirt",position:new Vec3(1,64,0)} as any],()=>0,Infinity,()=>{},1000,(_block,error)=>errors.push(String(error)),signal));
+  assert.equal(collections,0);
+  assert.match(errors[0]!,/expected dirt, observed chest/);
 });

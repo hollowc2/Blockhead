@@ -72,3 +72,50 @@ test("a target that dies mid-fight reads as defeated before its corpse despawns"
   await run;
   assert.equal(combatOutcomeObserved(bot as never, sheep as never), true, "still listed in bot.entities, but dead");
 });
+
+test("combat cleanup drains a pending pathfinder stop before the retreat goal", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { PVP } = await import("mineflayer-pvp/lib/PVP.js");
+  const { pvpStop } = await import("../minecraft/primitives.js");
+  const bot = new EventEmitter() as any;
+  let pendingStop = false;
+  let goal: unknown = null;
+  bot.pathfinder = {
+    stop: () => { pendingStop = true; },
+    setGoal: (next: unknown) => {
+      goal = next;
+      if (pendingStop) {
+        pendingStop = false;
+        goal = null;
+        bot.emit("path_stop");
+      }
+    },
+  };
+  // Exercise the installed plugin's real stop implementation. Its target is
+  // cleared before path_stop arrives; another stop then returns immediately.
+  bot.pvp = Object.assign(Object.create(PVP.prototype), { bot, target: { id: 7 } });
+  const oldStop = bot.pvp.stop();
+  assert.equal(bot.pvp.target, undefined);
+  await new WorldActionExecutor().run("combat-cleanup", new AbortController().signal, async () => {
+    await pvpStop(bot);
+    bot.pathfinder.setGoal("retreat");
+    assert.equal(goal, "retreat", "a stale stop must not cancel the new goal");
+  });
+  await oldStop;
+  assert.equal(bot.listenerCount("path_stop"), 0);
+});
+
+
+test("equipment refreshes a stale material slot after navigation swaps inventory", async () => {
+  const { equipItem } = await import("../minecraft/primitives.js");
+  const requested = { name: "oak_planks", slot: 10 };
+  const table = { name: "crafting_table", slot: 10 };
+  const plank = { name: "oak_planks", slot: 20 };
+  const bot = { inventory: { items: () => [table, plank] }, heldItem: table,
+    equip: async (item: typeof plank) => { bot.heldItem = item; } };
+  const executor = new WorldActionExecutor();
+  await executor.run("stale-equipment", new AbortController().signal, lease => equipItem(bot as never, requested as never, lease.signal));
+  assert.equal(bot.heldItem, plank);
+  bot.inventory.items = () => [table];
+  await assert.rejects(executor.run("missing-equipment", new AbortController().signal, lease => equipItem(bot as never, requested as never, lease.signal)), /missing item/);
+});

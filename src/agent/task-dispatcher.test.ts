@@ -28,3 +28,30 @@ test("land development is never abandoned for being preempted", async () => {
   const result = await (d as unknown as { runSkill(t: Task): Promise<{ message?: string }> }).runSkill(task({ type: "develop_land", source: "background", priority: TaskPriority.BACKGROUND }));
   assert.doesNotMatch(result.message ?? "", /abandoned/);
 });
+
+test("development dispatch preserves planned identity and cancels stale plans without changing watchdog history", async () => {
+  let received: any;
+  const charges: string[] = [];
+  let cancellations = 0, settlements = 0;
+  const d = new TaskDispatcher({
+    bus: new EventBus(),
+    scheduler: { signalsFor: () => ({ checkpoint: () => true, signal: new AbortController().signal, cancelled: false }), requestCancel: () => { cancellations++; }, settleInterrupted: () => { settlements++; } },
+    developLand: { run: async (options: unknown) => { received = options; return { ok: false, status: "failed", errorCode: "DEVELOPMENT_PLAN_STALE", message: "plot unavailable" }; } },
+    watchdog: { record: (...args: unknown[]) => { charges.push(String(args)); } },
+  } as unknown as TaskDispatcherOptions);
+  const planned = { kind: "tidy", plot: "48,32" };
+  const t = task({ type: "develop_land", source: "background", parameters: planned });
+  const internals = d as any;
+  const result = await internals.runSkill(t);
+  assert.deepEqual(received.planned, planned);
+  internals.recordOutcome(t, result);
+  internals.settleResult(t, result);
+  assert.equal(charges.length, 0, "an obsolete plan neither succeeds nor fails a different action");
+  assert.equal(cancellations, 1);
+  assert.equal(settlements, 1);
+  received = undefined;
+  const legacy = await internals.runSkill(task({ type: "develop_land", source: "background", parameters: {} }));
+  assert.equal(legacy.errorCode, "DEVELOPMENT_PLAN_STALE");
+  assert.equal(received, undefined, "unidentified legacy task cannot mutate freshly selected work");
+  d.dispose();
+});

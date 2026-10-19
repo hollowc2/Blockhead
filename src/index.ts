@@ -568,7 +568,14 @@ const treeFarmStore = {
 };
 // A hoe needs carried wood; a spare hoe, or a log or two, from the chest.
 const HOE_WOOD = [["iron_hoe", "stone_hoe", "wooden_hoe"], ["oak_log", "birch_log", "spruce_log", "dark_oak_log", "acacia_log", "jungle_log", "cherry_log", "mangrove_log", "oak_planks", "birch_planks", "spruce_planks"], ["oak_log", "birch_log", "spruce_log", "oak_planks", "birch_planks", "spruce_planks"]] as const;
-const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => new Set([...buildProjectManager.reservedCells(), ...buildProjectManager.siteCells("village:", VILLAGE_SITE)]), builds: developmentBuilds, fetchDirt: async (count, signal) => { await withdrawFromHomeChest(bot, state, storage, "dirt", count, logger, signal); }, fetchWood: async (signal) => { await withdrawFirstOfEach(bot, state, storage, HOE_WOOD, logger, signal); }, treeFarm: treeFarmStore, failures: backgroundFailures });
+const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: () => new Set([...buildProjectManager.reservedCells(), ...buildProjectManager.siteCells("village:", VILLAGE_SITE)]), builds: developmentBuilds, fetchDirt: async (count, signal) => { await withdrawFromHomeChest(bot, state, storage, "dirt", count, logger, signal); }, fetchWood: async (signal) => { await withdrawFirstOfEach(bot, state, storage, HOE_WOOD, logger, signal); }, treeFarm: treeFarmStore, failures: backgroundFailures, materialsAvailable: () => {
+  const supplies: Record<string, number> = {};
+  for (const chest of storage.list(state.worldId ?? 0)) {
+    if (chest.dimension !== state.home?.dimension) continue;
+    for (const [name, count] of Object.entries(chest.lastContents ?? {})) supplies[name] = (supplies[name] ?? 0) + count;
+  }
+  return supplies;
+} });
   const maintenance = new StockpileManager({ bot, state, config, bus, storage, scheduler, collect, food, torches, logger });
 
   // Phase 11: storage organization (spec 14.4, 22). The runner measures every

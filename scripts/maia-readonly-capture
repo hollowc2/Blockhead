@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Run on Maia; emits bounded diagnostics to stdout. Never changes host state.
+# Redirect output to local disk (not /mnt/Repos) or collect over SSH.
+set -u
+export SYSTEMD_COLORS=0 SYSTEMD_PAGER=cat
+section() { printf '\n### %s\n' "$1"; }
+run() { timeout --kill-after=2s 12s "$@" 2>&1 || true; }
+section identity
+date -Is
+hostname
+run uptime
+run journalctl --list-boots --no-pager
+section resources
+run free -h
+run cat /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io
+run ps -eo pid,ppid,stat,wchan:24,pcpu,pmem,comm --sort=-pcpu
+run df -h / /var/log
+run findmnt -t nfs,nfs4
+run nvidia-smi --query-gpu=name,temperature.gpu,memory.used,memory.total,utilization.gpu --format=csv,noheader
+run sensors
+section services
+run systemctl --user show blockhead.service minecraft-server.service llama-server.service -p Id -p ActiveState -p SubState -p NRestarts -p ExecMainStartTimestamp
+run systemctl show cvtrack.service maia-metrics.timer prometheus-node-exporter.service -p Id -p ActiveState -p UnitFileState -p NRestarts
+section bot
+run curl --silent --show-error --max-time 8 http://127.0.0.1:8155/status
+for boot in 0 -1; do
+  section "boot $boot kernel warnings"
+  run journalctl -b "$boot" -k -p warning --no-pager -n 150
+  section "boot $boot fault and power events"
+  run journalctl -b "$boot" --no-pager -n 100 -g 'PM: suspend|hibernate|oom-kill|Out of memory|NVRM: Xid|BUG:|Oops:|lockup|hung task|blocked for more|I/O error|nfs:|Hardware Error|thermal|Shutting down|Power key'
+done
+section shutdown
+run last -x -n 12
+section crash_capture
+run coredumpctl list --no-pager -n 10
+run ls -la /sys/fs/pstore
+run systemctl show -p RuntimeWatchdogUSec -p RebootWatchdogUSec
+run cat /proc/sys/kernel/nmi_watchdog /proc/sys/kernel/hung_task_timeout_secs /proc/sys/kernel/panic

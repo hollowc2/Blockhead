@@ -1,0 +1,3559 @@
+{
+  "capturedAt": "2026-10-18T19:21:26.010038+00:00",
+  "regionMtime": "2026-10-18T19:21:20.705473+00:00",
+  "caveat": "Read-only saved disk chunks, not transactional loaded server state",
+  "plots": [
+    {
+      "center": {
+        "x": 105,
+        "z": 75
+      },
+      "columns": [
+        {
+          "x": 103,
+          "z": 73,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 103,
+          "z": 74,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 103,
+          "z": 75,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 103,
+          "z": 76,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 103,
+          "z": 77,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:cobblestone"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 104,
+          "z": 73,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 104,
+          "z": 74,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 104,
+          "z": 75,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 104,
+          "z": 76,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 104,
+          "z": 77,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:cobblestone"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 105,
+          "z": 73,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "5",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 105,
+          "z": 74,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 105,
+          "z": 75,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 105,
+          "z": 76,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:oak_log"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:oak_log"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 105,
+          "z": 77,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 106,
+          "z": 73,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "5",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 106,
+          "z": 74,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 106,
+          "z": 75,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 106,
+          "z": 76,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 106,
+          "z": 77,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 107,
+          "z": 73,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 107,
+          "z": 74,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 107,
+          "z": 75,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 107,
+          "z": 76,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 95,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        },
+        {
+          "x": 107,
+          "z": 77,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:oak_leaves"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "center": {
+        "x": 25,
+        "z": 3
+      },
+      "columns": [
+        {
+          "x": 23,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 23,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 23,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 23,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "5",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 23,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 24,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 24,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 24,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 24,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 24,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 25,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 25,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 25,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 25,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 25,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 26,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 26,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 26,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 26,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 26,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 27,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 27,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 27,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 27,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "4",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 27,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 96,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "center": {
+        "x": 17,
+        "z": 3
+      },
+      "columns": [
+        {
+          "x": 15,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 15,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 15,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 15,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "axis": "y"
+              },
+              "Name": "minecraft:birch_log"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 15,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 16,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 16,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 16,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 16,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 100,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "1",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 101,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 16,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:coal_ore"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 17,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 17,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 97,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 17,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 17,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "2",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 17,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            },
+            {
+              "y": 98,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            },
+            {
+              "y": 99,
+              "Properties": {
+                "waterlogged": "false",
+                "distance": "3",
+                "persistent": "false"
+              },
+              "Name": "minecraft:birch_leaves"
+            }
+          ]
+        },
+        {
+          "x": 18,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 18,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 18,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 18,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 18,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 19,
+          "z": 1,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 19,
+          "z": 2,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 19,
+          "z": 3,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 19,
+          "z": 4,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        },
+        {
+          "x": 19,
+          "z": 5,
+          "blocks": [
+            {
+              "y": 90,
+              "Name": "minecraft:stone"
+            },
+            {
+              "y": 91,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 92,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 93,
+              "Name": "minecraft:dirt"
+            },
+            {
+              "y": 94,
+              "Properties": {
+                "snowy": "false"
+              },
+              "Name": "minecraft:grass_block"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

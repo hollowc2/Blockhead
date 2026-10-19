@@ -40,8 +40,8 @@ export function shelterDecision(input: ShelterDecisionInput): { shelter: boolean
   if (!isShelterNight(input.timeOfDay) && input.thundering !== true) return { shelter: false, reason: "day" };
   if (!input.dimension.replace(/^minecraft:/, "").startsWith("overworld")) return { shelter: false, reason: "not the overworld" };
   if (input.isSleeping) return { shelter: false, reason: "asleep" };
-  // The sleep path covers nights only; a daytime storm still needs the shelter.
-  if (input.bedAvailable && isShelterNight(input.timeOfDay)) return { shelter: false, reason: "a bed is available" };
+  // Beds also work during daytime thunderstorms; the automatic sleep path owns both.
+  if (input.bedAvailable) return { shelter: false, reason: "a bed is available" };
   if (input.inWater) return { shelter: false, reason: "in water" };
   if (input.ownerWorkPending) return { shelter: false, reason: "owner work pending" };
   if (input.shelterLive) return { shelter: false, reason: "already sheltering" };

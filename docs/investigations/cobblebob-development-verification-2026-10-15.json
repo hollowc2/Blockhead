@@ -1,0 +1,247 @@
+{
+  "at": "2026-10-16T04:35:48.340523+00:00",
+  "files": {
+    "src/minecraft/primitives.ts": {
+      "expected": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f",
+      "actual": "da151a96cdf299a2bfe6079fe16d4a8d9715a7914e0f84dc4d7923002ec7a76f",
+      "matches": true
+    },
+    "src/skills/defense.ts": {
+      "expected": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca",
+      "actual": "4045b0d03887c43717177b9606faefe780ad159a913b4957914a699c60190fca",
+      "matches": true
+    },
+    "src/agent/self-defense.ts": {
+      "expected": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25",
+      "actual": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25",
+      "matches": true
+    },
+    "src/minecraft/movement.ts": {
+      "expected": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+      "actual": "46dba19b224b7332aa982e44ad23896886e5a986391b977a3cf776e244bec4c3",
+      "matches": true
+    },
+    "src/minecraft/world.ts": {
+      "expected": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+      "actual": "d6b4acf9d90837e4db9e11cef37ce6eca6c22a42aeb0f80ebbd032cf37834cb9",
+      "matches": true
+    },
+    "src/skills/develop-land.ts": {
+      "expected": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+      "actual": "6a5db88b4d4f3bae131906f83230424c238d5569517215dc33e3c8c5070e6dfa",
+      "matches": true
+    },
+    "src/skills/farm.ts": {
+      "expected": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+      "actual": "d269941800cf09f6bfadc659bfd0d20b8866268332591b90e3732bf3557d02f1",
+      "matches": true
+    }
+  },
+  "service": "ActiveState=active\nSubState=running\nNRestarts=0\n",
+  "persistedCleanupCooldowns": [
+    {
+      "action": "development:1:16,-8",
+      "failed_at": 1792125092477,
+      "retry_at": 1792126292477,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:16,16",
+      "failed_at": 1792125101294,
+      "retry_at": 1792126301294,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:0,-24",
+      "failed_at": 1792125107725,
+      "retry_at": 1792126307725,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:8,-24",
+      "failed_at": 1792125171229,
+      "retry_at": 1792126371229,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:16,24",
+      "failed_at": 1792125193993,
+      "retry_at": 1792126393993,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:-32,-8",
+      "failed_at": 1792125200254,
+      "retry_at": 1792126400254,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:8,-32",
+      "failed_at": 1792125204836,
+      "retry_at": 1792126404836,
+      "reason": "leftover logs unreachable from supported ground"
+    },
+    {
+      "action": "development:1:16,-32",
+      "failed_at": 1792125291417,
+      "retry_at": 1792126491417,
+      "reason": "leftover logs unreachable from supported ground"
+    }
+  ],
+  "state": {
+    "process": {
+      "startedAt": "2026-10-16T04:30:10.510Z",
+      "uptimeSeconds": 337.826
+    },
+    "connection": {
+      "connected": true,
+      "player": "CobbleBob",
+      "server": "127.0.0.1:25565"
+    },
+    "self": {
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 66.35745293740436,
+        "y": 99.53584062504456,
+        "z": 57.943608960330565
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "id": "55330454-060a-481f-98af-e2ab2209bc98",
+      "type": "develop_land",
+      "priority": 40,
+      "source": "background",
+      "objective": "Clear and plant the next field around home.",
+      "status": "active",
+      "createdAt": "2026-10-16T04:35:30.632Z",
+      "startedAt": "2026-10-16T04:35:30.658Z",
+      "completedAt": null,
+      "phase": null,
+      "attempts": 1,
+      "lastError": null
+    },
+    "inventory": {
+      "items": [
+        {
+          "name": "apple",
+          "count": 1
+        },
+        {
+          "name": "arrow",
+          "count": 3
+        },
+        {
+          "name": "birch_door",
+          "count": 2
+        },
+        {
+          "name": "birch_planks",
+          "count": 2
+        },
+        {
+          "name": "bone",
+          "count": 7
+        },
+        {
+          "name": "bow",
+          "count": 2
+        },
+        {
+          "name": "bread",
+          "count": 413
+        },
+        {
+          "name": "diorite",
+          "count": 1
+        },
+        {
+          "name": "iron_axe",
+          "count": 1
+        },
+        {
+          "name": "iron_pickaxe",
+          "count": 1
+        },
+        {
+          "name": "oak_door",
+          "count": 1
+        },
+        {
+          "name": "oak_log",
+          "count": 9
+        },
+        {
+          "name": "oak_planks",
+          "count": 5
+        },
+        {
+          "name": "oak_sapling",
+          "count": 3
+        },
+        {
+          "name": "phantom_membrane",
+          "count": 1
+        },
+        {
+          "name": "rotten_flesh",
+          "count": 1
+        },
+        {
+          "name": "stick",
+          "count": 8
+        },
+        {
+          "name": "stone_axe",
+          "count": 1
+        },
+        {
+          "name": "stone_pickaxe",
+          "count": 1
+        },
+        {
+          "name": "stone_sword",
+          "count": 1
+        },
+        {
+          "name": "string",
+          "count": 2
+        },
+        {
+          "name": "torch",
+          "count": 2
+        },
+        {
+          "name": "wheat",
+          "count": 21
+        },
+        {
+          "name": "wheat_seeds",
+          "count": 145
+        },
+        {
+          "name": "wooden_hoe",
+          "count": 1
+        }
+      ],
+      "totalItems": 635
+    },
+    "stockpiles": {
+      "levels": {
+        "wood": 100,
+        "food": 520,
+        "fuel": 82,
+        "torches": 134
+      },
+      "targets": {
+        "wood": 64,
+        "food": 64,
+        "fuel": 64,
+        "torches": 64
+      },
+      "deficits": []
+    }
+  }
+}
