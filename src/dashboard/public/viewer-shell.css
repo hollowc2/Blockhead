@@ -111,6 +111,7 @@ dd { font-size: .88rem; line-height: 1.35; overflow-wrap: anywhere; }
 dd.sub { margin-top: 2px; }
 .strong { font-weight: 600; font-size: .92rem; }
 #buildName { text-transform: capitalize; }
+#danger::first-letter { text-transform: uppercase; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grid2 dd { text-transform: capitalize; font-weight: 600; }
 

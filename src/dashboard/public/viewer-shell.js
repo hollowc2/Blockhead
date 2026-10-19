@@ -104,11 +104,12 @@
     const dangerEl = $("danger");
     if (!danger) { dangerEl.textContent = "No threat data"; dangerEl.className = "strong"; $("dangerDetail").textContent = ""; }
     else {
-      const level = danger.score >= 0.6 ? "high" : danger.score >= 0.25 ? "mid" : "low";
-      dangerEl.textContent = danger.hostileCount ? `${danger.hostileCount} hostile${danger.hostileCount === 1 ? "" : "s"} nearby` : "All clear";
-      dangerEl.className = `strong danger-${danger.hostileCount ? level : "low"}`;
+      // hostileCount covers every loaded mob, so lead with the nearest one.
       const near = danger.nearestHostile;
-      $("dangerDetail").textContent = near ? `Nearest: ${near.type.replace(/_/g, " ")} at ${near.distance.toFixed(1)} m` : "";
+      const level = !near || near.distance >= 24 ? "low" : near.distance >= 12 ? "mid" : "high";
+      dangerEl.textContent = near ? `${near.type.replace(/_/g, " ")} ${Math.round(near.distance)} m away` : "All clear";
+      dangerEl.className = `strong danger-${level}`;
+      $("dangerDetail").textContent = danger.hostileCount ? `${danger.hostileCount} hostile${danger.hostileCount === 1 ? "" : "s"} tracked · danger ${Math.round(danger.score * 100)}%` : "";
     }
     setText("uptime", duration(s.process?.uptimeSeconds));
   }
