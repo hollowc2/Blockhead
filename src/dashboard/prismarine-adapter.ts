@@ -1,3 +1,4 @@
+import type { PublicInteractions } from "./public-interactions.js";
 import { createServer } from "node:net";
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
@@ -11,9 +12,11 @@ export interface PrismarineAdapterOptions {
   host: string;
   /** Loopback-only listener that Tailscale Funnel exposes; null disables it. */
   publicViewer: { port: number; maxConnections: number } | null;
+  publicInteractions?: PublicInteractions;
   publicState: () => Promise<unknown>;
   /** Viewer Q&A for the private shell only; the public shell never gets it. */
   chat?: (question: unknown) => Promise<ViewerChatResult>;
+  command?: (command: unknown) => Promise<ViewerChatResult>;
   logger?: Pick<Logger, "info" | "warn">;
 }
 
@@ -40,7 +43,7 @@ export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterO
       });
       await viewer.start();
       const shells: ViewerShellServer[] = [
-        new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort, chat: adapterOptions.chat, logger: adapterOptions.logger }),
+        new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort, chat: adapterOptions.chat, command: adapterOptions.command, logger: adapterOptions.logger }),
       ];
       if (publicPort !== undefined) {
         shells.push(new ViewerShellServer({
@@ -50,6 +53,7 @@ export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterO
           statsPort: options.dashboardPort,
           mode: "public",
           publicState: adapterOptions.publicState,
+          publicInteractions: adapterOptions.publicInteractions,
           logger: adapterOptions.logger,
         }));
       }

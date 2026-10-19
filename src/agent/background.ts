@@ -124,6 +124,7 @@ interface RestoreBlock {
 export class BackgroundManager {
   private readonly opts: BackgroundManagerOptions;
   private readonly now: () => number;
+  get publicWorkPending(): boolean { return this.ticking || this.kickTimer !== null || this.recheckPending; }
   private ticking = false;
   private timer: NodeJS.Timeout | null = null;
   private settledListeners: Array<() => void> = [];

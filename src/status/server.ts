@@ -9,6 +9,7 @@ import type { StatusSnapshot } from "./snapshot.js";
 export interface StatusOperatorHooks {
   /** Deliver `text` exactly as if the configured owner typed it in chat. */
   command?: (text: string) => string;
+  publicInteractions?: { status: () => unknown; configure: (raw: unknown) => unknown };
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -42,6 +43,15 @@ export class StatusServer {
         response.end(JSON.stringify(body));
       };
       const operator = this.operatorEnabled() ? this.options.operator : undefined;
+      if (request.url === "/public-interactions" && operator?.publicInteractions) {
+        if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] === "cross-site") { send(403, { error: "forbidden" }); return; }
+        if (request.method === "GET") { send(200, operator.publicInteractions.status()); return; }
+        if (request.method !== "POST" || request.headers["content-type"] !== "application/json") { send(400, { error: "invalid" }); return; }
+        const control = operator.publicInteractions;
+        request.setTimeout(5000, () => request.destroy());
+        void readBody(request).then(body => { try { send(200, control.configure(JSON.parse(body))); } catch { send(400, { error: "invalid settings" }); } }, () => send(400, { error: "invalid settings" }));
+        return;
+      }
       if (request.method === "POST" && request.url === "/command") {
         const command = operator?.command;
         if (command === undefined) { send(404, { error: "not found" }); return; }

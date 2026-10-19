@@ -1,0 +1,62 @@
+{
+  "host": "maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "files": [
+    {
+      "path": "src/index.ts",
+      "baseline": "ca39fc4f0c008210248ebd3a0feb41aaf362fa9a29353a2b351c2e812ad63ed7",
+      "candidate": "66a1d88253d246cebcebe2dd421e1acc9dba8647e1e674dd2bb5f07106746ecd"
+    },
+    {
+      "path": "src/events/types.ts",
+      "baseline": "e77de89c4282b63edfab2c91f0d53d5705d7e4a13423da0d43e11f2869882891",
+      "candidate": "d58b82ff62eb2e0962df056d695c2e1a52c82a2c5713812534750d5035e7c3a7"
+    },
+    {
+      "path": "src/minecraft/events.ts",
+      "baseline": "d88ebe15fefb464d2b2c1b7179eb82b7151472a5d52eb292e4a3397aa2c801ed",
+      "candidate": "8749d4c56384a5de31eaf9639432bc1a2a32701fd5cb659f70df3c7645289b93"
+    },
+    {
+      "path": "src/dashboard/event-history.ts",
+      "baseline": "0a68f03c1ab233d3502d61366f13f1ab35ad8b4e656231a5ee34614ed25d29b4",
+      "candidate": "0d4f2ccd23b5985b84d5d644bcedf23705255a8f1cc2b72002354c7c04c39c34"
+    },
+    {
+      "path": "src/dashboard/prismarine-adapter.ts",
+      "baseline": "83ff435fb22374f43196c9d984f94f947d3057b4b05be641e7ec3e5508b82dd6",
+      "candidate": "4ea6d26509beec54e6e0de1be78bf6b1b21192042254def0b3906b6ee655be02"
+    },
+    {
+      "path": "src/dashboard/viewer-shell.ts",
+      "baseline": "4cccfe662fc5b73a01e75005fce5f7bd399a73e09a5247282598fd1f9e20ec25",
+      "candidate": "ae40d4e030093cc3d97839f361c5d817136900bf75eaa53356c5c585632de4e7"
+    },
+    {
+      "path": "src/dashboard/viewer-chat.ts",
+      "baseline": "e8955175800f2122e87b05cc5f64dae9df142b883f1598ab7cf590621b3486ee",
+      "candidate": "8a23732d9524638dfa0a723c612b25d918be6c1426db2f01b0e6a7f71ddddba7"
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.html",
+      "baseline": "955e17af919c5e0c81e0011420c98d89d8fad8a5f8a436a182d9e1a12f88e60c",
+      "candidate": "ed6cac61b28cafe71241467561a3aead63e24a8e4a66b19cd2cc472e49818111"
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.css",
+      "baseline": "3cbc76ac0716ff19d683105081b32365b2575652d64ea0400a942fb22649346b",
+      "candidate": "47a8fbc97aefe9ae0213801af29450c5f7ed77d3fdc1a9cd2ed8afb90259d0d3"
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.js",
+      "baseline": "62b75c7ff5cf5b7b10e168f932c82877ef399ecfa6c9c08303bd29a8dfb09a51",
+      "candidate": "980b00aab76f33346da675ebe6ff8bafeadd710f193c7c06a3c2ae20c509939b"
+    },
+    {
+      "path": "src/dashboard/viewer-command.ts",
+      "baseline": null,
+      "candidate": "729d86e5c9db87c9e85f22df55796f612aae495a762af5a7a8e0ded6a3da75e6"
+    }
+  ]
+}

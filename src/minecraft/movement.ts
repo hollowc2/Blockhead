@@ -198,7 +198,32 @@ export function stuckCellCost(position: { x: number; y: number; z: number }, now
  */
 export const SWIM_COST = 20;
 
+const doorwayPathBots = new WeakSet<Bot>();
+
+/** Pathfinder's postprocessor mistakes an open door panel for a platform. */
+function correctDoorwayPath(bot: Bot): void {
+  if (doorwayPathBots.has(bot) || typeof bot.on !== "function") return;
+  doorwayPathBots.add(bot);
+  bot.on("path_update", (result: { path: Array<{ x: number; y: number; z: number; toBreak: unknown[]; toPlace: unknown[] }> }) => {
+    for (const node of result.path) {
+      if (node.toBreak.length > 0 || node.toPlace.length > 0) continue;
+      const at = new Vec3(Math.floor(node.x), Math.floor(node.y), Math.floor(node.z));
+      const panel = bot.blockAt(at);
+      if (!panel?.name.endsWith("_door") || panel.getProperties().open !== true) continue;
+      const feet = panel.getProperties().half === "upper" ? at.offset(0, -1, 0) : at;
+      const lower = bot.blockAt(feet), upper = bot.blockAt(feet.offset(0, 1, 0));
+      if (lower?.name !== panel.name || upper?.name !== panel.name
+        || lower.getProperties().open !== true || upper.getProperties().open !== true
+        || bot.blockAt(feet.offset(0, -1, 0))?.boundingBox !== "block") continue;
+      node.x = feet.x + 0.5;
+      node.y = feet.y;
+      node.z = feet.z + 0.5;
+    }
+  });
+}
+
 export function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
+  correctDoorwayPath(bot);
   const registry = bot.registry;
   // Pathfinder treats every door shape as a full obstruction, even after
   // the server reports it open. An open door's panel leaves the cell centre

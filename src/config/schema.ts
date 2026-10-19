@@ -283,6 +283,13 @@ export const MinecraftConfigSchema = z.object({
         .object({
           enabled: z.boolean().default(false),
           port: z.number().int().positive().default(3003),
+          interactions: z.object({
+            questions_enabled: z.boolean().default(false),
+            actions_enabled: z.boolean().default(false),
+            allowed_origin: z.string().refine(value => {
+              try { const url = new URL(value); return url.protocol === "https:" && url.origin === value; } catch { return false; }
+            }, "must be an exact HTTPS origin").optional(),
+          }).default({}).refine(value => !(value.questions_enabled || value.actions_enabled) || !!value.allowed_origin, "allowed_origin is required"),
           max_connections: z.number().int().positive().max(32).default(6),
         })
         .default({}),

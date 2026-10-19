@@ -456,7 +456,10 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
 
   bot.on("chat", async (username, message) => {
     logger.info({ from: username, message }, "chat received");
-    if (username === bot.username) return;
+    if (username === bot.username) {
+      ctx.bus.emit("chat.reply", { message });
+      return;
+    }
 
     const trimmed = message.trim();
     if (HELLO_PATTERN.test(trimmed)) {

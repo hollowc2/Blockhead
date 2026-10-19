@@ -62,6 +62,7 @@ export class EventHistory {
     };
 
     on("chat.command", (p) => this.record("chat", "info", `Command from ${text(p.from, "unknown")}: ${text(p.command, "(empty)")}`, false, true));
+    on("chat.reply", (p) => this.record("reply", "info", text(p.message, "(empty)"), false, true));
     on("task.activated", (p) => this.task(p, "activated", "info"));
     on("task.paused", (p) => this.task(p, "paused", "warning"));
     on("task.completed", (p) => this.task(p, "completed", "success"));

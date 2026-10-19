@@ -153,6 +153,11 @@ dd.sub { margin-top: 2px; }
 .chat-form button { width: 38px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 0; background: var(--cyan); color: #0b1a1c; cursor: pointer; }
 .chat-form button:disabled { opacity: .45; cursor: default; }
 .chat-form button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.command-form button { width: auto; padding: 0 12px; font: inherit; font-size: .78rem; font-weight: 600; white-space: nowrap; background: var(--green); }
+.chat-quick .stop-command { color: var(--red); border-color: #ef5a5a55; }
+.chat-quick .stop-command:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+.commands .chat-log:empty { display: none; }
+.commands .chat-log { max-height: 150px; }
 
 .foot { margin-top: auto; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .72rem; padding: 0 4px; }
 .foot b { color: var(--text); font-weight: 500; text-transform: capitalize; }

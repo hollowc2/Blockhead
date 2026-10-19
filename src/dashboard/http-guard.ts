@@ -42,7 +42,7 @@ export const VIEWER_WORKER_SECURITY_HEADERS: Readonly<Record<string, string>> = 
 export function clientAddress(request: IncomingMessage, trustForwarded: boolean): string {
   const forwarded = request.headers["x-forwarded-for"];
   const header = Array.isArray(forwarded) ? forwarded.join(",") : forwarded;
-  if (trustForwarded && header !== undefined) {
+  if (trustForwarded && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "") && header !== undefined) {
     const last = header.split(",").map(part => part.trim()).filter(part => part.length > 0).pop();
     if (last !== undefined) return last;
   }

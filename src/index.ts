@@ -1,3 +1,6 @@
+import { safePublicPhysicalState } from "./agent/public-action-safety.js";
+import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
+import { PublicInteractions } from "./dashboard/public-interactions.js";
 import { homedir } from "node:os";
 import type { Bot } from "mineflayer";
 import { loadConfig } from "./config/load.js";
@@ -82,6 +85,7 @@ import { ViewerManager } from "./dashboard/viewer.js";
 import { createPrismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { cachedPublicState } from "./dashboard/public-state.js";
 import { createViewerChat } from "./dashboard/viewer-chat.js";
+import { createViewerCommand } from "./dashboard/viewer-command.js";
 import { StoryFeed } from "./dashboard/story.js";
 import { createWorldStatsReader } from "./dashboard/world-stats.js";
 import type { DashboardSnapshot } from "./dashboard/types.js";
@@ -235,6 +239,36 @@ bus.on("build_project.verified", ({ project }) => {
 const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
 let dashboardServer: ReturnType<typeof startDashboard> = null;
+const redactedViewerState = cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot());
+const publicGestures = new PublicActionController({
+  session: () => session?.bot ?? null,
+  safe: (candidate: GestureBot): boolean => {
+    const live = session;
+    if (!live || live.bot !== candidate || connectionState.state !== "READY") return false;
+    const bot = live.bot;
+    return safePublicPhysicalState(bot, config.policy?.health_retreat_threshold ?? 8)
+      && live.hostile.count === 0 && !deathManager.inDeathLoop
+      && scheduler.worldActionDiagnostics.pending === 0
+      && (scheduler.worldActionOwner === null || scheduler.worldActionOwner === "public-gesture")
+      && scheduler.active === null && scheduler.queued.length === 0 && !scheduler.interruptPending
+      && !live.background.publicWorkPending && !decider.activity.thinking && goals.active() === null
+      && currentBootstrap !== null && !currentBootstrap.isRunning && currentBootstrap.completedStage === BootstrapStage.NORMAL_OPERATION;
+  },
+  tryRun: (signal, action) => scheduler.tryPublicWorldAction(signal, action),
+});
+const publicInteractions: PublicInteractions = new PublicInteractions({
+  config: config.dashboard?.public_viewer.interactions ?? { questions_enabled: false, actions_enabled: false },
+  gestures: publicGestures,
+  facts: () => ({
+    connected: connectionState.state === "READY" && !!session?.bot.entity,
+    health: session?.bot.health ?? null, hunger: session?.bot.food ?? null, time: state.timePhase,
+    activity: publicGestures.available() ? "idle" : "working", actions: publicInteractions.availability().actions,
+  }),
+  log: record => logger.info(record, "public interaction"),
+});
+for (const event of ["chat.command", "damage.received", "hostile.detected", "task.created", "task.activated", "death.recorded"] as const) {
+  bus.on(event, () => publicInteractions.cancel());
+}
 const viewerManager = new ViewerManager({
   enabled: config.dashboard?.viewer_enabled ?? false,
   port: config.dashboard?.viewer_port ?? 3001,
@@ -246,9 +280,11 @@ const viewerManager = new ViewerManager({
       ? { port: config.dashboard.public_viewer.port, maxConnections: config.dashboard.public_viewer.max_connections }
       : null,
     // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
-    publicState: cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot()),
+    publicInteractions,
+    publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
     // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
     chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
+    command: createViewerCommand({ deliver: deliverOwnerCommand }),
     logger,
   }),
   logger,
@@ -348,16 +384,20 @@ statusServer = new StatusServer({
   operator: {
     // Local operator channel: identical to the owner typing in chat, so the
     // whole deterministic + LLM command path is exercised.
-    command: (text) => {
-      const bot = session?.bot;
-      if (bot === undefined || bot.entity === null || bot.entity === undefined) throw new Error("bot not connected");
-      if (text.length === 0) throw new Error("empty command");
-      (bot.emit as (event: string, ...args: unknown[]) => boolean)("chat", config.agent?.owner ?? "Corey", text, null, null, null);
-      return `delivered as ${config.agent?.owner ?? "Corey"}: ${text}`;
-    },
+    command: deliverOwnerCommand,
+    publicInteractions: { status: () => publicInteractions.diagnostics(), configure: raw => publicInteractions.configure(raw) },
   },
 });
 if (config.status?.enabled ?? true) statusServer.start();
+
+function deliverOwnerCommand(text: string): string {
+  publicInteractions.cancel();
+  const bot = session?.bot;
+  if (bot === undefined || bot.entity === null || bot.entity === undefined) throw new Error("bot not connected");
+  if (text.length === 0) throw new Error("empty command");
+  (bot.emit as (event: string, ...args: unknown[]) => boolean)("chat", config.agent?.owner ?? "Corey", text, null, null, null);
+  return `delivered as ${config.agent?.owner ?? "Corey"}: ${text}`;
+}
 
 dashboardServer = startDashboard({
   enabled: config.dashboard?.enabled ?? true,
@@ -660,6 +700,8 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   const breathWatch = new BreathWatch({ bot, logger });
   breathWatch.attach();
   bot.once("end", () => breathWatch.detach());
+  bot.on("end", () => publicInteractions.cancel());
+  bot.on("death", () => publicInteractions.cancel());
   session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter, workSafety };
   currentBootstrap = bootstrap;
 

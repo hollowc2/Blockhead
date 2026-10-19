@@ -1,3 +1,4 @@
+import type { PublicInteractions } from "./public-interactions.js";
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { connect as connectTcp } from "node:net";
 import type { Duplex } from "node:stream";
@@ -62,10 +63,13 @@ export interface ViewerShellOptions {
    */
   mode?: "private" | "public";
   /** Redacted state for public mode's `/api/state`. */
+  publicInteractions?: PublicInteractions;
   publicState?: () => Promise<unknown>;
   limits?: PublicShellLimits;
   /** Viewer Q&A behind `POST /api/chat`; private mode only, ignored when public. */
   chat?: (question: unknown) => Promise<ViewerChatResult>;
+  /** Owner commands; private listener only. */
+  command?: (command: unknown) => Promise<ViewerChatResult>;
   logger?: Pick<Logger, "warn">;
 }
 
@@ -121,6 +125,7 @@ export class ViewerShellServer {
   stop(): void {
     const server = this.server;
     this.server = null;
+    if (this.isPublic) this.options.publicInteractions?.cancel();
     server?.close();
     server?.closeAllConnections();
   }
@@ -136,6 +141,10 @@ export class ViewerShellServer {
     }
     if (pathname === "/api/chat" && this.options.chat !== undefined) {
       await this.handleChat(request, response, this.options.chat);
+      return;
+    }
+    if (pathname === "/api/command" && this.options.command !== undefined) {
+      await this.handleChat(request, response, this.options.command, "command");
       return;
     }
     if (request.method !== "GET") {
@@ -158,9 +167,14 @@ export class ViewerShellServer {
   /** Public allowlist: shell page, viewer bundle, viewer socket, redacted state. Anything else is 404. */
   private async handlePublic(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const ip = clientAddress(request, true);
-    if (!this.httpLimiter.take(ip)) { this.sendText(response, 429, "too many requests"); return; }
+    if (!this.httpLimiter.take(ip)) { response.setHeader("retry-after", "30"); this.sendText(response, 429, "too many requests"); return; }
     const url = new URL(request.url ?? "/", "http://localhost");
     const pathname = url.pathname;
+
+    if ((pathname === "/api/public/question" || pathname === "/api/public/action") && this.options.publicInteractions) {
+      await this.options.publicInteractions.handle(pathname.endsWith("question") ? "question" : "action", request, response);
+      return;
+    }
 
     if (isViewerSocketPath(pathname)) {
       if (!(request.method === "GET" || request.method === "POST") || url.searchParams.get("EIO") !== "4") {
@@ -201,13 +215,14 @@ export class ViewerShellServer {
     this.sendText(response, 404, "not found");
   }
 
-  private async handleChat(request: IncomingMessage, response: ServerResponse, chat: (question: unknown) => Promise<ViewerChatResult>): Promise<void> {
+  private async handleChat(request: IncomingMessage, response: ServerResponse, chat: (question: unknown) => Promise<ViewerChatResult>, field: "question" | "command" = "question"): Promise<void> {
     if (request.method !== "POST") { this.sendJson(response, 405, { error: "method not allowed" }); return; }
     // JSON-only plus a same-origin check: a cross-site page cannot make a
     // browser send this without a preflight we never answer.
     if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) { this.sendJson(response, 415, { error: "expected application/json" }); return; }
     const origin = request.headers.origin;
-    if (origin !== undefined && origin !== "null" && (() => { try { return new URL(origin).host !== request.headers.host; } catch { return true; } })()) {
+    if (request.headers[PUBLIC_VIEWER_HEADER] !== undefined || request.headers["sec-fetch-site"] === "cross-site"
+      || origin !== undefined && (() => { try { return new URL(origin).host !== request.headers.host; } catch { return true; } })()) {
       this.sendJson(response, 403, { error: "cross-origin request" });
       return;
     }
@@ -230,7 +245,7 @@ export class ViewerShellServer {
       return;
     }
     let question: unknown;
-    try { question = (JSON.parse(body) as { question?: unknown } | null)?.question; } catch { question = undefined; }
+    try { question = (JSON.parse(body) as Record<string, unknown> | null)?.[field]; } catch { question = undefined; }
     const result = await chat(question);
     if (result.ok) this.sendJson(response, 200, { answer: result.answer });
     else this.sendJson(response, result.status, { error: result.error });

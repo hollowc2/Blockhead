@@ -102,6 +102,19 @@ export class WorldActionExecutor {
   get pendingCount(): number { return this.waiters.length; }
   get diagnostics(): WorldActionDiagnostics { return { owner: this.owner, pending: this.waiters.length, cancelled: this.cancelled, startedAt: this.startedAt }; }
 
+  /** Immediate public admission; never queues or releases an unsettled primitive. */
+  tryRun<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>): Promise<T> | null {
+    if (!owner.trim() || signal.aborted || this.owner !== null || this.waiters.length > 0) return null;
+    this.owner = owner;
+    const acknowledged = Promise.withResolvers<void>();
+    const lease: WorldActionLease = { owner, signal, acknowledged: acknowledged.promise };
+    this.startedAt = Date.now();
+    return withWorldActionLease(lease, async () => {
+      try { throwIfAborted(signal); return await action(lease); }
+      finally { acknowledged.resolve(); this.release(lease); this.startedAt = null; }
+    });
+  }
+
   async run<T>(owner: string, signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>, options: WorldActionOptions = {}): Promise<T> {
     if (owner.trim() === "") return Promise.reject(new Error("world action owner must be non-empty"));
     const lease = await this.acquire(owner, signal);

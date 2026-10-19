@@ -1,0 +1,131 @@
+{
+  "host": "maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "source": "/mnt/Repos/Games/Blockhead",
+  "files": [
+    {
+      "path": "src/config/schema.ts",
+      "baseline": "58cdae723e87227bc460c4a321d66aaebe476d0d6ecee3bf53e56475f7552a99",
+      "candidate": "59c536ae707c75ea05330a64dad24d5c0cd11a612ae2e8ff1efad8aecc5e5ba2"
+    },
+    {
+      "path": "src/agent/background.ts",
+      "baseline": "3fd768b49ce5110c16f6c5f7bb969e90fa9fd0f77d3f48bfda200032116d0e1c",
+      "candidate": "6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886"
+    },
+    {
+      "path": "src/agent/scheduler.ts",
+      "baseline": "5e705d3f261c518968caa614212286843d7b10e94ea97aa9d82800452c26f5ad",
+      "candidate": "eab8d4becd0219be87787ab8753a5e47cecb880b48cc65d970b01c3b041d371f"
+    },
+    {
+      "path": "src/agent/world-actions.ts",
+      "baseline": "871028c3c8cc8e74b05c260fe988469fb8353f149db37ea505904edc1ff727c6",
+      "candidate": "b987eb6e6263f7c0955fbe388fa5c8790c09f0960b625dfac52ac51770c0c96b"
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "baseline": null,
+      "candidate": "c8002ec3484c0c47efca0a744443e204448cf8044bbba4dc541b51bef781546b"
+    },
+    {
+      "path": "src/agent/public-actions.ts",
+      "baseline": null,
+      "candidate": "308b1fcd4a6a83a3fbcc390a49264ba0f3ecabd4d34e88fa60fe3dca317a0a0a"
+    },
+    {
+      "path": "src/dashboard/public-chat.ts",
+      "baseline": null,
+      "candidate": "3f1b82d387d77cb6b0508671d743a4f3e1f62525f829b8bb9a24e0493c18fefe"
+    },
+    {
+      "path": "src/dashboard/public-interactions.ts",
+      "baseline": null,
+      "candidate": "55b172da9a8ac31040da034a5a91fd7a443832b24992e8cbbacb3f1557d370cb"
+    },
+    {
+      "path": "src/dashboard/public-state.ts",
+      "baseline": "2b1f499bd02a8e8e436efbf87c925bc8d8ecb8d00f7ac6ca5fcc5073626a270d",
+      "candidate": "dd0043d39ef1dc78ba773eeb4dcef619ad8f46a77dbb1ee2b083d09c7f6c4ac9"
+    },
+    {
+      "path": "src/dashboard/http-guard.ts",
+      "baseline": "0e45a7fd4ad9147ac412bfe49e1223c79d23a6127eb35207f151cd43a0ebdd11",
+      "candidate": "b018b1ad619938246e091859448fb38bf02845e98022a25d3ace18ce427d1fa2"
+    },
+    {
+      "path": "src/dashboard/viewer-shell.ts",
+      "baseline": "ae40d4e030093cc3d97839f361c5d817136900bf75eaa53356c5c585632de4e7",
+      "candidate": "3b84e82330ca843904f0954bbaab60a86bb0cf82ad58a123bb95fc1d0c4bf810"
+    },
+    {
+      "path": "src/dashboard/prismarine-adapter.ts",
+      "baseline": "4ea6d26509beec54e6e0de1be78bf6b1b21192042254def0b3906b6ee655be02",
+      "candidate": "a561f2e1f2edb236eca4eb3725cf8c8a84146ad5fa322de5f4f8b04f61004351"
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.html",
+      "baseline": "ed6cac61b28cafe71241467561a3aead63e24a8e4a66b19cd2cc472e49818111",
+      "candidate": "589b9e99ec79f242e2d5920a28370dbd7545781ba940ea565e17fb3b71f6397a"
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.js",
+      "baseline": "980b00aab76f33346da675ebe6ff8bafeadd710f193c7c06a3c2ae20c509939b",
+      "candidate": "d216e6be8394ae56403461c7e2b96f2814d6ee2f25fd080b8e5783282e5255bb"
+    },
+    {
+      "path": "src/index.ts",
+      "baseline": "66a1d88253d246cebcebe2dd421e1acc9dba8647e1e674dd2bb5f07106746ecd",
+      "candidate": "fb1c247724536ee94a4a0f00c298bf9bdf178ed3e5011bf5a52dffabc01bb625"
+    },
+    {
+      "path": "src/status/server.ts",
+      "baseline": "e491a21b01a4515e33ba52c0473fd2cb7578a0e15bc885c19332dc90a85e06d4",
+      "candidate": "1e4c276dfdf988e6a38dfc9eabc94dcef2b727fc4db5c03af02edf9808439653"
+    }
+  ],
+  "preserved_prerequisites": [
+    {
+      "path": "src/minecraft/movement.ts",
+      "matches": true
+    },
+    {
+      "path": "src/minecraft/events.ts",
+      "matches": true
+    },
+    {
+      "path": "src/events/types.ts",
+      "matches": true
+    },
+    {
+      "path": "src/dashboard/event-history.ts",
+      "matches": true
+    },
+    {
+      "path": "src/dashboard/viewer-chat.ts",
+      "matches": true
+    },
+    {
+      "path": "src/dashboard/viewer-command.ts",
+      "matches": true
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.css",
+      "matches": true
+    }
+  ],
+  "backup": "/home/corey/.local/share/blockhead-backups/public-interactions-20261019",
+  "validation": {
+    "typecheck": "passed",
+    "focused_tests": 40,
+    "full_tests": 831,
+    "browser": "desktop and mobile fake services passed",
+    "diff_check": "passed"
+  },
+  "features": {
+    "questions_enabled": false,
+    "actions_enabled": false,
+    "model_questions": "unavailable"
+  }
+}

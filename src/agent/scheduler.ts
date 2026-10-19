@@ -195,6 +195,10 @@ export class Scheduler {
     return this.worldExecutor.run(owner, signal, action, { timeoutMs: this.worldActionTimeoutMs, ...options });
   }
 
+  tryPublicWorldAction<T>(signal: AbortSignal, action: (lease: WorldActionLease) => Promise<T>): Promise<T> | null {
+    return this.worldExecutor.tryRun("public-gesture", signal, action);
+  }
+
   assertWorldActionAvailable(): void { this.worldExecutor.assertAvailable(); }
 
   /** True while the active task has been asked to stop but not yet settled. */

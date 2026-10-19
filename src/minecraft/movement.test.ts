@@ -909,3 +909,33 @@ test("a short trip that settles as arrived without moving is a failure", async (
   const result = await new WorldActionExecutor().run("sealed-in", signal, () => travelAndWait(bot, { x: 103, y: 95, z: 33 }, { signal, range: 4, timeoutMs: 3000 }));
   assert.equal(result.status, "failed");
 });
+
+test("postprocessed open-door waypoints stay on the floor, with real collision shapes preserved", () => {
+  const registry = minecraftData("1.21.4");
+  const Block = (prismarineBlock as unknown as (r: unknown) => { fromProperties: (n: string, p: object, b: number) => any })(registry);
+  let opened = true;
+  const bot: any = Object.assign(new EventEmitter(), {
+    registry, version: "1.21.4", game: { dimension: "overworld" }, entities: {},
+    entity: { position: new Vec3(65.5, 100, 55.5), height: 1.8 },
+    inventory: { items: () => [], slots: [] }, pathfinder: { setMovements: () => {} },
+    blockAt: (p: Vec3) => {
+      const at = p.floored();
+      const name = at.x === 65 && at.z === 54 && [100, 101].includes(at.y) ? "birch_door" : at.y === 99 ? "oak_planks" : "air";
+      const b = Block.fromProperties(name, name === "birch_door" ? { facing: "south", half: at.y === 100 ? "lower" : "upper", open: String(opened), hinge: "left", powered: "false" } : {}, 0);
+      b.position = at;
+      return b;
+    },
+  });
+  configureMovements(bot, new pathfinderPkg.Movements(bot));
+  configureMovements(bot, new pathfinderPkg.Movements(bot));
+  assert.equal(bot.listenerCount("path_update"), 1, "movement resets must not duplicate the hook");
+  const waypoint = () => ({ x: 65.703125, y: 101, z: 54.5, toBreak: [], toPlace: [] });
+  const node = waypoint();
+  bot.emit("path_update", { path: [node] });
+  assert.deepEqual([node.x, node.y, node.z], [65.5, 100, 54.5]);
+  assert.ok(bot.blockAt(new Vec3(65, 100, 54)).shapes.length > 0, "physics must retain the panel");
+  opened = false;
+  const closed = waypoint();
+  bot.emit("path_update", { path: [closed] });
+  assert.equal(closed.y, 101, "closed doors are still obstacles");
+});

@@ -10,6 +10,8 @@ import type { WorldStatsSummary } from "./world-stats.js";
  */
 export interface PublicViewerState {
   public: true;
+  /** Fresh server-derived flags may be attached by the public listener. */
+  interactions?: { questions: boolean; actions: boolean };
   connection: { connected: boolean };
   self: { health: number | null; hunger: number | null; dimension: string | null; timePhase: "day" | "night" | null };
   viewer: { status: DashboardSnapshot["viewer"]["status"] };

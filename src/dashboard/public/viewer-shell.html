@@ -89,6 +89,22 @@
         <p id="dangerDetail" class="sub"></p>
       </article>
 
+      <article class="card commands" data-tab="live" data-private hidden>
+        <h2>Give a task</h2>
+        <p class="sub">Tell Bob what to do, just like in Minecraft chat. For building while you're away, say “at home” or “at current”.</p>
+        <form id="commandForm" class="chat-form command-form" autocomplete="off">
+          <input id="commandInput" type="text" maxlength="500" placeholder="Gather 32 oak logs" aria-label="Task for CobbleBob" required>
+          <button id="commandSend" type="submit" disabled>Send task</button>
+        </form>
+        <div id="commandQuick" class="chat-quick">
+          <button type="button" data-command="go home" disabled>Go home</button>
+          <button type="button" data-command="continue building" disabled>Resume build</button>
+          <button type="button" data-command="stop" class="stop-command" disabled>Stop</button>
+        </div>
+        <p id="commandStatus" class="sub" role="status">Connecting to CobbleBob…</p>
+        <div id="commandReplies" class="chat-log" aria-live="polite" aria-label="CobbleBob's replies"></div>
+      </article>
+
       <article class="card chat" data-tab="live" data-private>
         <h2>Ask CobbleBob</h2>
         <div id="chatLog" class="chat-log" aria-live="polite">
@@ -107,6 +123,22 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
           </button>
         </form>
+      </article>
+
+      <article class="card" data-tab="live" data-public hidden>
+        <h2>Ask CobbleBob</h2>
+        <p class="sub">Read-only answers about Bob's public status. Simple actions work while Bob is idle. Shared cooldowns apply.</p>
+        <form id="publicQuestionForm" class="chat-form" autocomplete="off">
+          <input id="publicQuestion" type="text" maxlength="200" placeholder="What are you doing?" aria-label="Public question" required>
+          <button id="publicAsk" type="submit" disabled>Ask</button>
+        </form>
+        <div id="publicActions" class="chat-quick">
+          <button type="button" data-action="hello" disabled>Say hello</button>
+          <button type="button" data-action="wave" disabled>Wave</button>
+          <button type="button" data-action="look_left" disabled>Look left</button>
+          <button type="button" data-action="look_right" disabled>Look right</button>
+        </div>
+        <p id="publicReply" class="sub" role="status" aria-live="polite">Public interactions are unavailable.</p>
       </article>
 
       <article class="card world" data-tab="live" data-public hidden>

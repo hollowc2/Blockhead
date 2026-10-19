@@ -270,3 +270,42 @@ test("public shell never exposes /api/chat even when a chat handler is supplied"
     shell.stop();
   }
 });
+
+test("private task submission delivers owner instructions and rejects cross-site and public traffic", async () => {
+  const commands: unknown[] = [];
+  const port = await freePort();
+  const shell = new ViewerShellServer({ host: "127.0.0.1", port, viewerPort: 1, statsPort: 1,
+    command: async (command) => { commands.push(command); return { ok: true, answer: "Sent." }; },
+  });
+  await shell.start();
+  try {
+    const json = { "content-type": "application/json", origin: `https://127.0.0.1:${port}` };
+    const body = JSON.stringify({ command: "gather 32 oak logs" });
+    const accepted = await send(port, "POST", "/api/command", json, body);
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(JSON.parse(accepted.body), { answer: "Sent." });
+    const rejectedHeaders: Array<Record<string, string>> = [{ origin: "https://evil.example" }, { origin: "null" }, { "sec-fetch-site": "cross-site" }, { "x-blockhead-public": "1" }];
+    for (const headers of rejectedHeaders) {
+      assert.equal((await send(port, "POST", "/api/command", { ...json, ...headers }, body)).status, 403);
+    }
+    assert.equal((await send(port, "GET", "/api/command")).status, 405);
+    assert.equal((await send(port, "POST", "/api/command", { "content-type": "text/plain" }, body)).status, 415);
+    assert.equal((await send(port, "POST", "/api/command", json, JSON.stringify({ command: "x".repeat(3000) }))).status, 413);
+    assert.deepEqual(commands, ["gather 32 oak logs"]);
+  } finally { shell.stop(); }
+});
+
+test("public viewer never exposes task delivery even with a handler supplied", async () => {
+  let calls = 0;
+  const port = await freePort();
+  const shell = new ViewerShellServer({ host: "127.0.0.1", port, viewerPort: 1, statsPort: 1, mode: "public",
+    command: async () => { calls++; return { ok: true, answer: "Sent." }; },
+  });
+  await shell.start();
+  try {
+    for (const path of ["/api/command", "/api/command?x=1", "/command"]) {
+      assert.equal((await send(port, "POST", path, { "content-type": "application/json" }, '{"command":"stop"}')).status, 404);
+    }
+    assert.equal(calls, 0);
+  } finally { shell.stop(); }
+});

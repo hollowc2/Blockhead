@@ -111,3 +111,14 @@ test("event and projection limits are independently bounded", () => {
   ok(history.recentChat()[0]?.message.includes("two"));
   history.dispose();
 });
+
+test("bot replies appear in bounded private chat history", () => {
+  const bus = new EventBus();
+  const history = new EventHistory({ bus, maxRecentChat: 2, now });
+  bus.emit("chat.reply", { message: "Heading home." });
+  equal(history.recentChat()[0]?.category, "reply");
+  equal(history.recentChat()[0]?.message, "Heading home.");
+  history.dispose();
+  bus.emit("chat.reply", { message: "Unsubscribed" });
+  equal(history.recentChat().length, 1);
+});

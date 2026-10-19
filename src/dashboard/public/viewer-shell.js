@@ -128,10 +128,17 @@
 
   function render(s) {
     applyMode(Boolean(s.public));
+    publicAvailable = { questions: !!s.public && !!s.interactions?.questions, actions: !!s.public && !!s.interactions?.actions };
+    updatePublicButtons();
     renderStory(s.story || []);
     renderWorld(s.world);
     const self = s.self || {};
     const connected = s.connection?.connected === true;
+    const wasCommandConnected = commandConnected;
+    commandConnected = connected && !s.public;
+    if (commandConnected !== wasCommandConnected && !commandBusy) commandStatus.textContent = commandConnected ? "Ready for a task." : "CobbleBob is offline.";
+    updateCommandButtons();
+    if (!s.public) renderCommandReplies(s.recentChat || []);
     setConnection(connected ? "ok" : "down", connected ? "Online" : "Offline");
 
     icons("hearts", self.health); icons("food", self.hunger);
@@ -207,6 +214,10 @@
       render(await response.json());
     } catch {
       setConnection("wait", "Reconnecting…");
+      publicAvailable = { questions: false, actions: false };
+      updatePublicButtons();
+      commandConnected = false;
+      updateCommandButtons();
     }
   }
 
@@ -233,6 +244,41 @@
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.
+  let commandConnected = false, commandBusy = false;
+  const commandForm = $("commandForm"), commandInput = $("commandInput"), commandSend = $("commandSend"), commandStatus = $("commandStatus");
+  const commandButtons = [...document.querySelectorAll("#commandQuick button")];
+  function updateCommandButtons() {
+    commandSend.disabled = !commandConnected || commandBusy;
+    commandButtons.forEach((button) => { button.disabled = !commandConnected || (commandBusy && button.dataset.command !== "stop"); });
+  }
+  function renderCommandReplies(entries) {
+    const replies = entries.filter((entry) => entry.sender === "reply").slice(-4);
+    const key = JSON.stringify(replies);
+    const root = $("commandReplies");
+    if (root.dataset.replies === key) return;
+    root.dataset.replies = key;
+    root.replaceChildren(...replies.map((entry) => el("p", "msg msg-bob", entry.message)));
+  }
+  async function sendCommand(command) {
+    if (!command || !commandConnected || (commandBusy && command !== "stop")) return;
+    commandBusy = true;
+    updateCommandButtons();
+    commandStatus.textContent = "Sending task…";
+    try {
+      const response = await fetch("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command }) });
+      const body = await response.json().catch(() => ({}));
+      commandStatus.textContent = response.ok ? body.answer : body.error || "Couldn't send this task.";
+      if (response.ok && commandInput.value.trim() === command) commandInput.value = "";
+    } catch {
+      commandStatus.textContent = "Couldn't confirm delivery. Check Bob's task before retrying.";
+    } finally {
+      commandBusy = false;
+      updateCommandButtons();
+    }
+  }
+  commandForm.addEventListener("submit", (event) => { event.preventDefault(); void sendCommand(commandInput.value.trim()); });
+  commandButtons.forEach((button) => button.addEventListener("click", () => { void sendCommand(button.dataset.command); }));
+
   const chatLog = $("chatLog"), chatForm = $("chatForm"), chatInput = $("chatInput"), chatSend = $("chatSend");
   function addMessage(kind, value) {
     chatLog.querySelector(".chat-empty")?.remove();
@@ -275,6 +321,28 @@
       quickAsked = false;
     }
   });
+
+  let publicAvailable = { questions: false, actions: false }, publicBusy = false;
+  const publicButtons = [...document.querySelectorAll("#publicActions button")];
+  function updatePublicButtons() {
+    $("publicAsk").disabled = publicBusy || !publicAvailable.questions;
+    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions; });
+  }
+  async function publicSubmit(feature, body) {
+    if (publicBusy || !(feature === "question" ? publicAvailable.questions : publicAvailable.actions)) return;
+    publicBusy = true; updatePublicButtons();
+    $("publicReply").textContent = "Sending…";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8500);
+    try {
+      const response = await fetch(`/api/public/${feature}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+      const result = await response.json();
+      $("publicReply").textContent = result.text || "Public interaction unavailable.";
+    } catch { $("publicReply").textContent = feature === "action" ? "Delivery could not be confirmed." : "Couldn't reach Bob. Try again later."; }
+    finally { clearTimeout(timer); publicBusy = false; updatePublicButtons(); }
+  }
+  $("publicQuestionForm").addEventListener("submit", event => { event.preventDefault(); void publicSubmit("question", { question: $("publicQuestion").value }); });
+  publicButtons.forEach(button => button.addEventListener("click", () => { void publicSubmit("action", { action: button.dataset.action }); }));
 
   refresh(); setInterval(refresh, 1000);
 })();

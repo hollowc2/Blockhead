@@ -237,6 +237,7 @@ export interface ExpeditionLeftEvent {
 
 export interface EventMap {
   "chat.command": ChatCommandEvent;
+  "chat.reply": { message: string };
   "health.changed": HealthChangedEvent;
   "hunger.low": HungerLowEvent;
   "damage.received": DamageReceivedEvent;

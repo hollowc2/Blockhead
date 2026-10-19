@@ -1,0 +1,162 @@
+{
+  "kind": "local candidate only; not an install authorization",
+  "local_head": "297e260f447ec3cc9cee6ee894a577cb5ba46613",
+  "live_baseline": "not inspected",
+  "features_default": {
+    "questions_enabled": false,
+    "actions_enabled": false,
+    "model_questions": "unavailable"
+  },
+  "files": [
+    {
+      "path": "config/minecraft.yaml",
+      "head_sha256": "c0023fdd0f826d2d9400b10ee01798bbc2acb84e2183b3b84a99262bc7da331b",
+      "candidate_sha256": "8c12f9ca7d912285de1ac7dd14bc57901ed51b52ab84ef32d17a526b54fad4f6",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/config/schema.ts",
+      "head_sha256": "58cdae723e87227bc460c4a321d66aaebe476d0d6ecee3bf53e56475f7552a99",
+      "candidate_sha256": "59c536ae707c75ea05330a64dad24d5c0cd11a612ae2e8ff1efad8aecc5e5ba2",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/background.ts",
+      "head_sha256": "3fd768b49ce5110c16f6c5f7bb969e90fa9fd0f77d3f48bfda200032116d0e1c",
+      "candidate_sha256": "6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/scheduler.ts",
+      "head_sha256": "5e705d3f261c518968caa614212286843d7b10e94ea97aa9d82800452c26f5ad",
+      "candidate_sha256": "eab8d4becd0219be87787ab8753a5e47cecb880b48cc65d970b01c3b041d371f",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/world-actions.ts",
+      "head_sha256": "871028c3c8cc8e74b05c260fe988469fb8353f149db37ea505904edc1ff727c6",
+      "candidate_sha256": "b987eb6e6263f7c0955fbe388fa5c8790c09f0960b625dfac52ac51770c0c96b",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "head_sha256": null,
+      "candidate_sha256": "c8002ec3484c0c47efca0a744443e204448cf8044bbba4dc541b51bef781546b",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/public-actions.ts",
+      "head_sha256": null,
+      "candidate_sha256": "308b1fcd4a6a83a3fbcc390a49264ba0f3ecabd4d34e88fa60fe3dca317a0a0a",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/agent/public-actions.test.ts",
+      "head_sha256": null,
+      "candidate_sha256": "8b64671e40268a717ff5aade8e72178de3368508f9545a66dccb06eebf427da8",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/public-chat.ts",
+      "head_sha256": null,
+      "candidate_sha256": "3f1b82d387d77cb6b0508671d743a4f3e1f62525f829b8bb9a24e0493c18fefe",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/public-interactions.ts",
+      "head_sha256": null,
+      "candidate_sha256": "55b172da9a8ac31040da034a5a91fd7a443832b24992e8cbbacb3f1557d370cb",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/public-interactions.test.ts",
+      "head_sha256": null,
+      "candidate_sha256": "12752e39abe004a96b483c48e6f46ae0d1a404fa815b7ecf6de48f07c7376c69",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/public-state.ts",
+      "head_sha256": "2b1f499bd02a8e8e436efbf87c925bc8d8ecb8d00f7ac6ca5fcc5073626a270d",
+      "candidate_sha256": "dd0043d39ef1dc78ba773eeb4dcef619ad8f46a77dbb1ee2b083d09c7f6c4ac9",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/http-guard.ts",
+      "head_sha256": "0e45a7fd4ad9147ac412bfe49e1223c79d23a6127eb35207f151cd43a0ebdd11",
+      "candidate_sha256": "b018b1ad619938246e091859448fb38bf02845e98022a25d3ace18ce427d1fa2",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/viewer-shell.ts",
+      "head_sha256": "4cccfe662fc5b73a01e75005fce5f7bd399a73e09a5247282598fd1f9e20ec25",
+      "candidate_sha256": "3b84e82330ca843904f0954bbaab60a86bb0cf82ad58a123bb95fc1d0c4bf810",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/prismarine-adapter.ts",
+      "head_sha256": "83ff435fb22374f43196c9d984f94f947d3057b4b05be641e7ec3e5508b82dd6",
+      "candidate_sha256": "a561f2e1f2edb236eca4eb3725cf8c8a84146ad5fa322de5f4f8b04f61004351",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.html",
+      "head_sha256": "955e17af919c5e0c81e0011420c98d89d8fad8a5f8a436a182d9e1a12f88e60c",
+      "candidate_sha256": "589b9e99ec79f242e2d5920a28370dbd7545781ba940ea565e17fb3b71f6397a",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.js",
+      "head_sha256": "62b75c7ff5cf5b7b10e168f932c82877ef399ecfa6c9c08303bd29a8dfb09a51",
+      "candidate_sha256": "d216e6be8394ae56403461c7e2b96f2814d6ee2f25fd080b8e5783282e5255bb",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/index.ts",
+      "head_sha256": "ca39fc4f0c008210248ebd3a0feb41aaf362fa9a29353a2b351c2e812ad63ed7",
+      "candidate_sha256": "fb1c247724536ee94a4a0f00c298bf9bdf178ed3e5011bf5a52dffabc01bb625",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/status/server.ts",
+      "head_sha256": "e491a21b01a4515e33ba52c0473fd2cb7578a0e15bc885c19332dc90a85e06d4",
+      "candidate_sha256": "1e4c276dfdf988e6a38dfc9eabc94dcef2b727fc4db5c03af02edf9808439653",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/status/public-controls.test.ts",
+      "head_sha256": null,
+      "candidate_sha256": "843a00743c7e907e813f906b5bcf8790290c9aa1c6cc99736721b457cd7619a9",
+      "includes_preexisting_work": false
+    },
+    {
+      "path": "src/dashboard/viewer-command.ts",
+      "head_sha256": null,
+      "candidate_sha256": "729d86e5c9db87c9e85f22df55796f612aae495a762af5a7a8e0ded6a3da75e6",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/viewer-command.test.ts",
+      "head_sha256": null,
+      "candidate_sha256": "8672b4a57821af94ee5ecec166c6ff0f62afd1053d19da010501ae0ed075b654",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/public/viewer-shell.css",
+      "head_sha256": "3cbc76ac0716ff19d683105081b32365b2575652d64ea0400a942fb22649346b",
+      "candidate_sha256": "47a8fbc97aefe9ae0213801af29450c5f7ed77d3fdc1a9cd2ed8afb90259d0d3",
+      "includes_preexisting_work": true
+    },
+    {
+      "path": "src/dashboard/viewer-shell.test.ts",
+      "head_sha256": "7d241ae83dc6de674ad1c5d5ac04e6fe7433f9cbe0f1a7ccc6cba5ad17d4d579",
+      "candidate_sha256": "9b5cd8501bde6d6ec29b7e078bc1f505888c5ced800ab306e4fec07b26548b35",
+      "includes_preexisting_work": true
+    }
+  ],
+  "notes": [
+    "Source/config candidates and focused tests are enumerated; pre-existing movement/event changes are retained in the checkout and are not packaged by this list.",
+    "Overlapping viewer files include previously uncommitted private controls and styling; review and reconcile them against installed hashes before any deployment.",
+    "No live files, services or network settings were modified.",
+    "Before separately authorized installation, back up the exact reviewed application/config files; rollback those files only, never Minecraft world/database progress."
+  ]
+}
