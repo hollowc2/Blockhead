@@ -80,6 +80,7 @@ import { startDashboard } from "./dashboard/lifecycle.js";
 import { ViewerManager } from "./dashboard/viewer.js";
 import { createPrismarineViewerAdapter } from "./dashboard/prismarine-adapter.js";
 import { cachedPublicState } from "./dashboard/public-state.js";
+import { createViewerChat } from "./dashboard/viewer-chat.js";
 import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
@@ -242,6 +243,8 @@ const viewerManager = new ViewerManager({
       : null,
     // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
     publicState: cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot()),
+    // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
+    chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
     logger,
   }),
   logger,

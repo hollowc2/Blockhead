@@ -76,6 +76,19 @@
         <p id="dangerDetail" class="sub"></p>
       </article>
 
+      <article class="card chat" data-private>
+        <h2>Ask CobbleBob</h2>
+        <div id="chatLog" class="chat-log" aria-live="polite">
+          <p class="chat-empty">Ask what he's up to, why, or how it's going.</p>
+        </div>
+        <form id="chatForm" class="chat-form" autocomplete="off">
+          <input id="chatInput" type="text" maxlength="280" placeholder="What are you doing?" aria-label="Ask CobbleBob a question" required>
+          <button id="chatSend" type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+      </article>
+
       <article class="card world" data-public hidden>
         <h2>World</h2>
         <dl class="grid2">

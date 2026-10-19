@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
+import type { ViewerChatResult } from "./viewer-chat.js";
 import { clientAddress, PUBLIC_VIEWER_HEADER, RateLimiter, SHELL_SECURITY_HEADERS, VIEWER_SECURITY_HEADERS, VIEWER_WORKER_SECURITY_HEADERS } from "./http-guard.js";
 
 const SHELL_HTML = fileURLToPath(new URL("./public/viewer-shell.html", import.meta.url));
@@ -13,6 +14,7 @@ const SHELL_JS = fileURLToPath(new URL("./public/viewer-shell.js", import.meta.u
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
 const PUBLIC_VIEWER_ASSET = /^\/viewer\/(?:index\.js|worker\.js|(?:textures|blocksStates)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|json))$/;
 const MAX_PUBLIC_POST_BYTES = 8192;
+const MAX_CHAT_POST_BYTES = 2048;
 /** Request headers forwarded upstream from public clients; everything else is dropped. */
 const PUBLIC_FORWARD_HEADERS = ["accept", "content-type", "content-length", "if-none-match", "if-modified-since"] as const;
 const PUBLIC_UPGRADE_HEADERS = ["upgrade", "connection", "sec-websocket-key", "sec-websocket-version"] as const;
@@ -62,6 +64,8 @@ export interface ViewerShellOptions {
   /** Redacted state for public mode's `/api/state`. */
   publicState?: () => Promise<unknown>;
   limits?: PublicShellLimits;
+  /** Viewer Q&A behind `POST /api/chat`; private mode only, ignored when public. */
+  chat?: (question: unknown) => Promise<ViewerChatResult>;
   logger?: Pick<Logger, "warn">;
 }
 
@@ -130,6 +134,10 @@ export class ViewerShellServer {
       this.proxy(request, response, this.options.viewerPort, targetPath);
       return;
     }
+    if (pathname === "/api/chat" && this.options.chat !== undefined) {
+      await this.handleChat(request, response, this.options.chat);
+      return;
+    }
     if (request.method !== "GET") {
       response.writeHead(405, { allow: "GET" });
       response.end("method not allowed");
@@ -191,6 +199,47 @@ export class ViewerShellServer {
       return;
     }
     this.sendText(response, 404, "not found");
+  }
+
+  private async handleChat(request: IncomingMessage, response: ServerResponse, chat: (question: unknown) => Promise<ViewerChatResult>): Promise<void> {
+    if (request.method !== "POST") { this.sendJson(response, 405, { error: "method not allowed" }); return; }
+    // JSON-only plus a same-origin check: a cross-site page cannot make a
+    // browser send this without a preflight we never answer.
+    if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) { this.sendJson(response, 415, { error: "expected application/json" }); return; }
+    const origin = request.headers.origin;
+    if (origin !== undefined && origin !== "null" && (() => { try { return new URL(origin).host !== request.headers.host; } catch { return true; } })()) {
+      this.sendJson(response, 403, { error: "cross-origin request" });
+      return;
+    }
+    const declared = Number(request.headers["content-length"] ?? 0);
+    if (declared > MAX_CHAT_POST_BYTES) { this.sendJson(response, 413, { error: "payload too large" }); return; }
+    let body = "";
+    try {
+      body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk: string) => {
+          data += chunk;
+          if (data.length > MAX_CHAT_POST_BYTES) { reject(new Error("too large")); request.destroy(); }
+        });
+        request.on("end", () => resolve(data));
+        request.on("error", reject);
+      });
+    } catch {
+      this.sendJson(response, 413, { error: "payload too large" });
+      return;
+    }
+    let question: unknown;
+    try { question = (JSON.parse(body) as { question?: unknown } | null)?.question; } catch { question = undefined; }
+    const result = await chat(question);
+    if (result.ok) this.sendJson(response, 200, { answer: result.answer });
+    else this.sendJson(response, result.status, { error: result.error });
+  }
+
+  private sendJson(response: ServerResponse, status: number, body: unknown): void {
+    if (response.headersSent) { response.destroy(); return; }
+    response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify(body));
   }
 
   private async serveShellAsset(pathname: string, response: ServerResponse): Promise<boolean> {

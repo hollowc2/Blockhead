@@ -131,7 +131,41 @@
   }
   $("fullscreen").addEventListener("click", toggleFullscreen);
   document.addEventListener("keydown", (event) => {
+    if (event.target instanceof HTMLInputElement) return;
     if (event.key === "f" && !event.ctrlKey && !event.metaKey && !event.altKey) toggleFullscreen();
+  });
+
+  // Viewer Q&A (private page only): the server answers through the LLM.
+  const chatLog = $("chatLog"), chatForm = $("chatForm"), chatInput = $("chatInput"), chatSend = $("chatSend");
+  function addMessage(kind, value) {
+    chatLog.querySelector(".chat-empty")?.remove();
+    const row = document.createElement("p");
+    row.className = `msg msg-${kind}`;
+    row.textContent = value;
+    chatLog.append(row);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return row;
+  }
+  chatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const question = chatInput.value.trim();
+    if (!question || chatSend.disabled) return;
+    chatInput.value = "";
+    chatSend.disabled = true;
+    addMessage("you", question);
+    const pending = addMessage("bob", "Thinking");
+    pending.classList.add("msg-pending");
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok && body.answer) { pending.textContent = body.answer; pending.classList.remove("msg-pending"); }
+      else { pending.remove(); addMessage("error", body.error || "CobbleBob couldn't answer right now."); }
+    } catch {
+      pending.remove(); addMessage("error", "Couldn't reach CobbleBob.");
+    } finally {
+      chatSend.disabled = false;
+      chatInput.focus();
+    }
   });
 
   refresh(); setInterval(refresh, 1000);

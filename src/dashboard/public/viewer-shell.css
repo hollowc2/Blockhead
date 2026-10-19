@@ -133,6 +133,22 @@ dd.sub { margin-top: 2px; }
 .danger-mid { color: var(--amber); }
 .danger-high { color: var(--red); }
 
+.chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 2px; }
+.chat-empty { color: var(--muted); font-size: .8rem; }
+.msg { max-width: 88%; padding: 8px 11px; border-radius: 12px; font-size: .84rem; line-height: 1.4; overflow-wrap: anywhere; }
+.msg-you { align-self: flex-end; background: var(--surface-2); border-bottom-right-radius: 4px; }
+.msg-bob { align-self: flex-start; background: #2ee6f014; border: 1px solid #2ee6f033; border-bottom-left-radius: 4px; }
+.msg-error { align-self: flex-start; color: var(--amber); font-size: .78rem; padding: 2px 4px; }
+.msg-pending { color: var(--muted); }
+.msg-pending::after { content: "…"; animation: blink 1.2s steps(4, end) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
+@keyframes blink { from { width: 0; } to { width: 1.2em; } }
+.chat-form { display: flex; gap: 8px; }
+.chat-form input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--empty); color: var(--text); font: inherit; font-size: .85rem; }
+.chat-form input:focus { outline: none; border-color: var(--cyan); }
+.chat-form button { width: 38px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 0; background: var(--cyan); color: #0b1a1c; cursor: pointer; }
+.chat-form button:disabled { opacity: .45; cursor: default; }
+.chat-form button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
 .foot { margin-top: auto; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .72rem; padding: 0 4px; }
 .foot b { color: var(--text); font-weight: 500; text-transform: capitalize; }
 

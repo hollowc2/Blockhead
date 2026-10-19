@@ -207,3 +207,66 @@ test("public shell rate-limits HTTP and new socket sessions per client", async (
     await env.close();
   }
 });
+
+test("private /api/chat answers same-origin JSON questions and guards everything else", async () => {
+  const asked: unknown[] = [];
+  const port = await freePort();
+  const shell = new ViewerShellServer({
+    host: "127.0.0.1", port, viewerPort: 1, statsPort: 1,
+    chat: async (question) => { asked.push(question); return { ok: true, answer: "I'm mining." }; },
+  });
+  await shell.start();
+  try {
+    const json = { "content-type": "application/json" };
+    const ok = await send(port, "POST", "/api/chat", { ...json, origin: `http://127.0.0.1:${port}` }, JSON.stringify({ question: "what are you doing?" }));
+    assert.equal(ok.status, 200);
+    assert.deepEqual(JSON.parse(ok.body), { answer: "I'm mining." });
+    assert.equal(ok.headers["cache-control"], "no-store");
+
+    assert.equal((await send(port, "GET", "/api/chat")).status, 405);
+    assert.equal((await send(port, "POST", "/api/chat", { "content-type": "text/plain" }, "{\"question\":\"hi\"}")).status, 415);
+    assert.equal((await send(port, "POST", "/api/chat", { ...json, origin: "https://evil.example" }, "{\"question\":\"hi\"}")).status, 403);
+    assert.equal((await send(port, "POST", "/api/chat", json, JSON.stringify({ question: "x".repeat(4000) }))).status, 413);
+    assert.deepEqual(asked, ["what are you doing?"], "guarded requests never reach the LLM");
+
+    const malformed = await send(port, "POST", "/api/chat", json, "not json");
+    assert.equal(malformed.status, 200, "the chat handler validates the (missing) question itself");
+    assert.deepEqual(asked.at(-1), undefined);
+  } finally {
+    shell.stop();
+  }
+});
+
+test("chat errors keep their status and message", async () => {
+  const port = await freePort();
+  const shell = new ViewerShellServer({
+    host: "127.0.0.1", port, viewerPort: 1, statsPort: 1,
+    chat: async () => ({ ok: false, status: 429, error: "slow down" }),
+  });
+  await shell.start();
+  try {
+    const result = await send(port, "POST", "/api/chat", { "content-type": "application/json" }, "{\"question\":\"hi\"}");
+    assert.equal(result.status, 429);
+    assert.deepEqual(JSON.parse(result.body), { error: "slow down" });
+  } finally {
+    shell.stop();
+  }
+});
+
+test("public shell never exposes /api/chat even when a chat handler is supplied", async () => {
+  let called = false;
+  const port = await freePort();
+  const shell = new ViewerShellServer({
+    host: "127.0.0.1", port, viewerPort: 1, statsPort: 1, mode: "public",
+    publicState: async () => ({}),
+    chat: async () => { called = true; return { ok: true, answer: "leak" }; },
+  });
+  await shell.start();
+  try {
+    const result = await send(port, "POST", "/api/chat", { "content-type": "application/json" }, "{\"question\":\"hi\"}");
+    assert.equal(result.status, 404);
+    assert.equal(called, false);
+  } finally {
+    shell.stop();
+  }
+});
