@@ -76,15 +76,15 @@ export function patchViewerRecenterHotkey(source, path = "viewer client") {
  * Replace upstream's one-way first-person switch (any packet with a pitch
  * disposes the orbit camera for good) with a toggle: `bob-pov` events set it,
  * V asks the parent shell to flip it, and the camera eases toward CobbleBob's
- * eye position and look direction instead of snapping. Anchors on the
- * already-patched recenter hotkey, so it must run after that patch.
+ * eye position and look direction instead of snapping. It inserts after the
+ * recenter hotkey without touching it, so re-running every patch is a no-op.
  */
 export function patchViewerFirstPerson(source, path = "viewer client") {
   if (source.includes("bobPov")) return source;
   const replacements = [
     [
-      "c=null;window.addEventListener(\"keydown\",",
-      "c=null,bobPov={on:!1,yaw:0,pitch:0,mesh:null,move:null,turn:null,look:{yaw:0,pitch:0}," +
+      "});!function t(){window.requestAnimationFrame(t),h&&h.update(),u.update()",
+      "});let bobPov={on:!1,yaw:0,pitch:0,mesh:null,move:null,turn:null,look:{yaw:0,pitch:0}," +
         "go(t,y,p){if(!t)return;this.move&&this.move.stop();this.turn&&this.turn.stop();" +
         "this.move=new n.Tween(u.camera.position).to({x:t.x,y:t.y+u.playerHeight,z:t.z},120).start();" +
         "const d=((y-this.look.yaw)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI;" +
@@ -96,9 +96,8 @@ export function patchViewerFirstPerson(source, path = "viewer client") {
         "window.addEventListener(\"bob-pov\",e=>bobPov.set(!!e.detail));" +
         "window.addEventListener(\"keydown\",e=>{if(e.key===\"v\"||e.key===\"V\"){if(window.parent!==window)try{window.parent.dispatchEvent(new window.parent.KeyboardEvent(\"keydown\",{key:\"v\"}))}catch{}else bobPov.set(!bobPov.on)}" +
         "else if((e.key===\"r\"||e.key===\"R\")&&bobPov.on)bobPov.go(c,bobPov.yaw,bobPov.pitch)});" +
-        "window.addEventListener(\"keydown\",",
+        "!function t(){window.requestAnimationFrame(t),h&&!bobPov.on&&h.update(),u.update()",
     ],
-    ["h&&h.update(),u.update()", "h&&!bobPov.on&&h.update(),u.update()"],
     [
       "if(void 0!==r&&void 0!==o)return h&&(h.dispose(),h=null),void u.setFirstPersonCamera(t,r,o);",
       "void 0!==r&&(bobPov.yaw=r);void 0!==o&&(bobPov.pitch=o);if(bobPov.on)return void bobPov.go(t,bobPov.yaw,bobPov.pitch);",
