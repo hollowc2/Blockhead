@@ -1956,6 +1956,14 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
         const blocker = options.arrivalCheck();
         return blocker === null ? result : { status: "failed", error: `arrival precondition: ${blocker}` };
       }
+      // Trust the position, not the promise: sealed under the house floor,
+      // goto settled as "arrived" 40 blocks short and the windmill slice
+      // retried its first block thousands of times.
+      if (result.status === "arrived") {
+        const now = bot.entity?.position;
+        const left = now === undefined ? Infinity : Math.hypot(now.x - location.x, now.y - location.y, now.z - location.z);
+        if (left > range + 1) return { status: "failed", error: `pathfinder reported arrival ${left.toFixed(1)} blocks from the goal` };
+      }
       if (attempt >= 2 || !isNoPath(result) || !await openReachableDoor(bot, signal)) return result;
     }
   }

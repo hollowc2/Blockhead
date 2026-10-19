@@ -64,7 +64,24 @@ function progressMarker(task: Task): string {
   const state = (task.resumeState ?? {}) as Record<string, unknown>;
   const keys = ["currentOperationIndex", "nextIndex", "lastVerifiedSegment", "placed", "removed", "gathered", "delivered", "phase"];
   const picked = keys.filter((key) => key in state).map((key) => [key, state[key]]);
-  return picked.length > 0 ? JSON.stringify(picked) : task.progressFingerprint ?? "";
+  return picked.length > 0 ? JSON.stringify(picked) : withoutRetryCounters(task.progressFingerprint ?? "");
+}
+
+/**
+ * Retry counters change on every attempt, so a fingerprint made only of
+ * them never repeats: a windmill slice whose checkpoint was just
+ * `{"interruptions":N}` requeued 9,125 times without the stall guard firing.
+ */
+const RETRY_COUNTERS = ["interruptions", "interruptedCount", "attempts", "blockedRetries"];
+function withoutRetryCounters(fingerprint: string): string {
+  try {
+    const parsed: unknown = JSON.parse(fingerprint);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return fingerprint;
+    const rest = Object.fromEntries(Object.entries(parsed).filter(([key]) => !RETRY_COUNTERS.includes(key)));
+    return JSON.stringify(rest);
+  } catch {
+    return fingerprint;
+  }
 }
 
 /** Requeues without a progress change before a task is parked as blocked. */

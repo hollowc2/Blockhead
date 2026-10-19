@@ -167,6 +167,20 @@ test("a slice requeued repeatedly without progress is blocked instead of spinnin
   assert.equal(task.status, TaskStatus.BLOCKED);
 });
 
+test("a retry counter alone is not progress for the requeue stall guard", () => {
+  const { scheduler: s } = newHarness();
+  const task = s.enqueue({ ...userTask("Build a windmill."), type: "build_project_slice", executionPolicy: "resumable" });
+  s.claim();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    s.signalsFor(task).checkpoint({ interruptions: attempt });
+    s.requeueActive("design slice could not verify operation op-00000");
+    s.activate(task.id);
+  }
+  s.signalsFor(task).checkpoint({ interruptions: 4 });
+  s.requeueActive("design slice could not verify operation op-00000");
+  assert.equal(task.status, TaskStatus.BLOCKED);
+});
+
 test("blockActive retains blocked work as live persisted task", () => {
   const { scheduler: s, tasks } = newHarness();
   const task = s.enqueue(userTask("Build a design."));

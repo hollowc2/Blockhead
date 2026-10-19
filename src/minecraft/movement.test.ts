@@ -897,3 +897,15 @@ test("home arrival keeps the interior floor under a tall built roof", async () =
   assert.equal(result.status, "arrived");
   assert(heights.length > 0 && heights.every((y) => y === 97), `routed to ${heights.join(",")}, not the floor at 97`);
 });
+
+test("a short trip that settles as arrived without moving is a failure", async () => {
+  const bot = {
+    registry: minecraftData("1.21.4"), game: { dimension: "overworld" }, collectBlock: {},
+    entity: { position: new Vec3(66.5, 97, 49.5) },
+    blockAt: () => null,
+    pathfinder: { setMovements: () => undefined, stop: () => undefined, setGoal: () => undefined, goto: async () => undefined },
+  } as any;
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("sealed-in", signal, () => travelAndWait(bot, { x: 103, y: 95, z: 33 }, { signal, range: 4, timeoutMs: 3000 }));
+  assert.equal(result.status, "failed");
+});
