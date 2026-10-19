@@ -185,11 +185,11 @@ dd.sub { margin-top: 2px; }
 .stat span { font-size: .68rem; color: var(--muted); }
 .count { font-family: var(--mono); letter-spacing: 0; color: var(--green); }
 
-.milestones { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.milestone { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; padding: 8px; border-radius: 10px; background: var(--surface-2); min-width: 0; }
-.milestone .medal { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-size: .9rem; background: var(--empty); filter: grayscale(1); opacity: .5; }
+.milestones { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.milestone { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 7px; align-items: center; padding: 8px; border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.milestone .medal { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: .9rem; background: var(--empty); filter: grayscale(1); opacity: .5; }
 .milestone.unlocked .medal { background: radial-gradient(circle at 35% 30%, #ffe08a, #d9a21b); filter: none; opacity: 1; box-shadow: 0 0 10px #f2b84b55; }
-.milestone strong { display: block; font-size: .78rem; line-height: 1.25; overflow-wrap: anywhere; }
+.milestone strong { display: block; font-size: .78rem; line-height: 1.25; overflow-wrap: break-word; hyphens: auto; }
 .milestone small { display: block; font-size: .68rem; color: var(--muted); line-height: 1.3; }
 .milestone:not(.unlocked) strong { color: var(--muted); }
 .milestone .mini { height: 3px; margin-top: 4px; border-radius: 2px; background: var(--empty); overflow: hidden; }
