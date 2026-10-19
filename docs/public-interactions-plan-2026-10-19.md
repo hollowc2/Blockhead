@@ -1,6 +1,6 @@
 # Anonymous public Q&A and simple commands
 
-Status: implemented locally on 2026-10-19; both features disabled by default. No deployment, restart, network exposure change, push, or live runtime validation performed.
+Status: committed, pushed and deployed to Maia on 2026-10-19 after Corey’s subsequent authorization. Both public features remain disabled, with no allowed origin configured. Model-backed public Q&A is unavailable. Network exposure is unchanged.
 
 ## Goal
 
@@ -214,3 +214,14 @@ Before any later deployment: record the actual installed file hashes, reconcile 
 Corey subsequently requested “commit push and deploy,” authorizing this candidate on the existing Maia `blockhead.service`. Preflight verified the installed runtime hashes against the prior viewer-control manifest and confirmed the earlier movement/event changes already match the checkout. GitHub main is an ancestor of the local ten existing commits. Both public features remain disabled; no origin or network exposure changes are included.
 
 The exact 16-file runtime delta and rollback hashes are recorded in [deployment manifest](investigations/public-interactions-2026-10-19-deployment.json). Back up originals to `/home/corey/.local/share/blockhead-backups/public-interactions-20261019`, stop only the bot at a safe task boundary, take a consistent SQLite backup, install only those files with hash checks, and start the same user unit. Shared configuration already contains the disabled defaults. Rollback stops that unit, restores the archived original files and verifies hashes, then starts the unit; newly added unused modules can remain. Do not restore Minecraft/database progress or restart model/Minecraft services. The final deployment receipt follows after live validation.
+
+
+### Deployment receipt
+
+Implementation commit `4b1fab2847b35bf977d810b8ae49616b629e17bd` was pushed to `origin/main`, including the ten pre-existing local commits. The preserved earlier movement and viewer-control changes were committed with this reviewed candidate; their already-installed runtime files were retained. Exactly 16 changed runtime files were installed after before/after SHA256 checks. No dependencies, Minecraft files, database contents, model service or network settings were changed.
+
+Backup and rollback evidence: `/home/corey/.local/share/blockhead-backups/public-interactions-20261019` contains `runtime-before.tar.gz`, a consistent stopped-service SQLite backup, configuration, original/candidate manifest, release ID, before/after status, `rollback.txt`, `receipt.json` and `https-acceptance.json`. The bot was idle with no pending interrupt before stopping. Only `blockhead.service` was stopped and started; Minecraft and llama.cpp retained PIDs 980 and 952. The new bot process was PID 66961, active/running with `NRestarts=0`, connected at health/hunger 20/20. No rollback was needed.
+
+Live acceptance passed through the actual HTTPS endpoints: public and private pages 200; public redacted state 200 with both flags false and no private task/LLM/inventory/event fields; public owner and operator paths 404; both public POST routes 403 at the unconfigured-origin gate; empty private command and Q&A bodies 400 without executing commands or model calls. The private diagnostic endpoint confirms questions/actions false and modelQuestions false. No critical startup module, syntax, type, address-in-use, schema or unhandled-rejection errors were found. Public request IP attribution is still unverified because no feature was enabled and no proxy configuration was changed; validate it before a later supervised enablement.
+
+The public interaction rollout remains disabled. This deployment does not claim in-game gesture acceptance or runtime model cancellation verification.

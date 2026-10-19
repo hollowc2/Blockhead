@@ -127,5 +127,19 @@
     "questions_enabled": false,
     "actions_enabled": false,
     "model_questions": "unavailable"
+  },
+  "deployed_release": "4b1fab2847b35bf977d810b8ae49616b629e17bd",
+  "receipt": {
+    "installed_runtime_files": 16,
+    "service_active": true,
+    "bot_connected": true,
+    "health": 20,
+    "hunger": 20,
+    "automatic_restarts": 0,
+    "minecraft_and_model_restarted": false,
+    "network_changed": false,
+    "rollback": false,
+    "https_acceptance": "passed; features disabled and origin gate enforced",
+    "critical_startup_exceptions": 0
   }
 }
