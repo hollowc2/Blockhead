@@ -87,6 +87,7 @@ test("viewer socket is read-only: inbound events reach nothing and floods are dr
       bot.emit("move");
     });
     assert.notEqual(position.pos.x, 100, "public coordinates must be offset");
+    assert.equal((position as { pitch?: number }).pitch, 0, "pitch drives the first-person camera");
     assert.equal(position.pos.y, 64);
 
     for (const [event, payload] of [

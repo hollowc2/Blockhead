@@ -190,7 +190,7 @@ export class ReadOnlyViewerServer {
     void worldView.init(bot.entity.position).catch(() => undefined);
     const botPosition = (): void => {
       if (bot.entity === null || bot.entity === undefined) return;
-      emit("position", { pos: bot.entity.position, yaw: bot.entity.yaw, addMesh: true });
+      emit("position", { pos: bot.entity.position, yaw: bot.entity.yaw, pitch: bot.entity.pitch, addMesh: true });
       void worldView.updatePosition(bot.entity.position).catch(() => undefined);
     };
     bot.on("move", botPosition);

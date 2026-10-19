@@ -229,7 +229,23 @@
   // The viewer's recenter hotkey listens inside the iframe, so it only fired
   // after clicking the 3D view; forward R (and the button) into the frame.
   const viewerFrame = document.querySelector(".stage iframe");
+  // Eyes mode lives in the frame's camera; the shell owns the on/off state
+  // and pushes it in, including after the frame reloads.
+  let pov = false;
+  function sendPov() {
+    try {
+      const win = viewerFrame.contentWindow;
+      win.dispatchEvent(new win.CustomEvent("bob-pov", { detail: pov }));
+    } catch {}
+  }
+  function setPov(on) {
+    pov = on;
+    $("povToggle").setAttribute("aria-pressed", String(on));
+    sendPov();
+  }
+  viewerFrame.addEventListener("load", sendPov);
   function findBob() {
+    if (pov) { setPov(false); return; }
     try {
       const win = viewerFrame.contentWindow;
       win.dispatchEvent(new win.KeyboardEvent("keydown", { key: "r" }));
@@ -237,10 +253,12 @@
   }
   $("fullscreen").addEventListener("click", toggleFullscreen);
   $("findBob").addEventListener("click", findBob);
+  $("povToggle").addEventListener("click", () => setPov(!pov));
   document.addEventListener("keydown", (event) => {
     if (event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "f" || event.key === "F") toggleFullscreen();
     else if (event.key === "r" || event.key === "R") findBob();
+    else if (event.key === "v" || event.key === "V") setPov(!pov);
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.

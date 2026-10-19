@@ -73,6 +73,52 @@ export function patchViewerRecenterHotkey(source, path = "viewer client") {
 }
 
 /**
+ * Replace upstream's one-way first-person switch (any packet with a pitch
+ * disposes the orbit camera for good) with a toggle: `bob-pov` events set it,
+ * V asks the parent shell to flip it, and the camera eases toward CobbleBob's
+ * eye position and look direction instead of snapping. Anchors on the
+ * already-patched recenter hotkey, so it must run after that patch.
+ */
+export function patchViewerFirstPerson(source, path = "viewer client") {
+  if (source.includes("bobPov")) return source;
+  const replacements = [
+    [
+      "c=null;window.addEventListener(\"keydown\",",
+      "c=null,bobPov={on:!1,yaw:0,pitch:0,mesh:null,move:null,turn:null,look:{yaw:0,pitch:0}," +
+        "go(t,y,p){if(!t)return;this.move&&this.move.stop();this.turn&&this.turn.stop();" +
+        "this.move=new n.Tween(u.camera.position).to({x:t.x,y:t.y+u.playerHeight,z:t.z},120).start();" +
+        "const d=((y-this.look.yaw)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI;" +
+        "this.turn=new n.Tween(this.look).to({yaw:this.look.yaw+d,pitch:p},150)" +
+        ".onUpdate(()=>u.camera.rotation.set(this.look.pitch,this.look.yaw,0,\"ZYX\")).start()}," +
+        "set(on){if(on===this.on)return;this.on=on;h.enabled=!on;this.mesh&&(this.mesh.visible=!on);" +
+        "if(on){this.look.yaw=this.yaw;this.look.pitch=this.pitch;u.camera.rotation.set(this.pitch,this.yaw,0,\"ZYX\");this.go(c,this.yaw,this.pitch)}" +
+        "else if(c){this.move&&this.move.stop();this.turn&&this.turn.stop();h.target.set(c.x,c.y,c.z),u.camera.position.set(c.x+8,c.y+8,c.z+8),h.update()}}};" +
+        "window.addEventListener(\"bob-pov\",e=>bobPov.set(!!e.detail));" +
+        "window.addEventListener(\"keydown\",e=>{if(e.key===\"v\"||e.key===\"V\"){if(window.parent!==window)try{window.parent.dispatchEvent(new window.parent.KeyboardEvent(\"keydown\",{key:\"v\"}))}catch{}else bobPov.set(!bobPov.on)}" +
+        "else if((e.key===\"r\"||e.key===\"R\")&&bobPov.on)bobPov.go(c,bobPov.yaw,bobPov.pitch)});" +
+        "window.addEventListener(\"keydown\",",
+    ],
+    ["h&&h.update(),u.update()", "h&&!bobPov.on&&h.update(),u.update()"],
+    [
+      "if(void 0!==r&&void 0!==o)return h&&(h.dispose(),h=null),void u.setFirstPersonCamera(t,r,o);",
+      "void 0!==r&&(bobPov.yaw=r);void 0!==o&&(bobPov.pitch=o);if(bobPov.on)return void bobPov.go(t,bobPov.yaw,bobPov.pitch);",
+    ],
+    [
+      "e||(e=new a(\"1.16.4\",\"player\",u.scene).mesh,u.scene.add(e))",
+      "e||(e=new a(\"1.16.4\",\"player\",u.scene).mesh,u.scene.add(e),bobPov.mesh=e)",
+    ],
+  ];
+  let patched = source;
+  for (const [legacy, modern] of replacements) {
+    if (patched.split(legacy).length - 1 !== 1) {
+      throw new Error(`Unexpected prismarine-viewer first-person layout in ${path}; refusing to patch`);
+    }
+    patched = patched.replace(legacy, modern);
+  }
+  return patched;
+}
+
+/**
  * Modern servers can keep crafting result slot 0 visually unchanged when
  * another identical result remains. Mineflayer otherwise waits forever for a
  * slot-0-specific update even though the server accepted the craft.
@@ -110,8 +156,11 @@ export async function patchPrismarineViewer() {
     if (patched !== source) await writeFile(path, patched);
   }
   const clientSource = await readFile(viewerClient, "utf8");
-  const patchedClient = patchViewerRecenterHotkey(
-    patchViewerClient(clientSource, fileURLToPath(viewerClient)),
+  const patchedClient = patchViewerFirstPerson(
+    patchViewerRecenterHotkey(
+      patchViewerClient(clientSource, fileURLToPath(viewerClient)),
+      fileURLToPath(viewerClient),
+    ),
     fileURLToPath(viewerClient),
   );
   if (patchedClient !== clientSource) await writeFile(viewerClient, patchedClient);

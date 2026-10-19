@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { patchMineflayerCrafting, patchViewerClient, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
+import { patchMineflayerCrafting, patchViewerClient, patchViewerFirstPerson, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
 
 test("patches both modern world-height loops", () => {
   const legacy = "for (let y = 0; y < 256; y += 16) {";
@@ -39,6 +39,29 @@ test("viewer client adds an R shortcut to recenter on CobbleBob", () => {
   assert.match(patched, /e\.key===\\?\"r\\?\"/);
   assert.match(patched, /c=t/);
   assert.equal(patchViewerRecenterHotkey(patched), patched);
+});
+
+test("viewer client turns upstream's permanent first-person switch into a toggle", () => {
+  const source = [
+    "let h=new THREE.OrbitControls(u.camera,l.domElement),c=null;window.addEventListener(\"keydown\",e=>{});",
+    "!function t(){window.requestAnimationFrame(t),h&&h.update(),u.update(),l.render(u.scene,u.camera)}();",
+    "(({pos:t,addMesh:i,yaw:r,pitch:o})=>{c=t;if(void 0!==r&&void 0!==o)return h&&(h.dispose(),h=null),void u.setFirstPersonCamera(t,r,o);",
+    "e||(e=new a(\"1.16.4\",\"player\",u.scene).mesh,u.scene.add(e))",
+  ].join("");
+  const patched = patchViewerFirstPerson(source);
+  assert.doesNotMatch(patched, /h\.dispose\(\)/);
+  assert.match(patched, /h&&!bobPov\.on&&h\.update\(\)/);
+  assert.match(patched, /addEventListener\("bob-pov"/);
+  assert.match(patched, /bobPov\.mesh=e/);
+  assert.equal(patchViewerFirstPerson(patched), patched);
+  assert.throws(() => patchViewerFirstPerson("unrelated"), /refusing to patch/);
+});
+
+test("the installed viewer bundle carries the first-person toggle and still parses", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const bundle = await readFile(new URL("../../node_modules/prismarine-viewer/public/index.js", import.meta.url), "utf8");
+  assert.match(bundle, /bobPov/);
+  assert.doesNotThrow(() => new Function(bundle));
 });
 
 test("Mineflayer crafting patch accepts any authoritative slot update", () => {

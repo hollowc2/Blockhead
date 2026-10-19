@@ -76,6 +76,7 @@ h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -.01em; }
 .stage-tools { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
 .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #ffffff1f; background: #141b20cc; color: var(--text); cursor: pointer; backdrop-filter: blur(6px); }
 .icon-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.icon-btn[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); background: #2ee6f01f; }
 .icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .vitals { display: flex; flex-direction: column; gap: 6px; padding: 9px 11px; border-radius: 10px; background: #141b20cc; border: 1px solid #ffffff1f; backdrop-filter: blur(6px); }
