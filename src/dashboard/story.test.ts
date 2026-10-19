@@ -15,6 +15,7 @@ function feed(start = 1_000_000) {
 test("big moments are highlighted and phrased for viewers", () => {
   const { story, emit } = feed();
   emit("build_project.verified", { project: { structureType: "village:cottage", userGoal: "x" } });
+  emit("time.day", { time: "day" });
   emit("death", { killer: { name: "creeper", x: 1200, y: 64, z: -950 }, position: { x: 1200, y: 64, z: -950 }, dimension: "overworld", inventory: {} });
   emit("time.night", { time: "night" });
   const entries = story.recent();
@@ -36,10 +37,12 @@ test("goal text loses coordinates and owner requests stay private", () => {
 
 test("routine noise is filtered: repeats, hostile spam and unremarkable tasks", () => {
   const { story, emit, advance } = feed();
-  emit("hostile.detected", { type: "zombie" });
-  emit("hostile.detected", { type: "zombie" });
+  emit("hostile.detected", { type: "zombie", distance: 8 });
+  emit("hostile.detected", { type: "zombie", distance: 8 });
   advance(60_000);
-  emit("hostile.detected", { type: "zombie" });
+  emit("hostile.detected", { type: "zombie", distance: 8 });
+  emit("hostile.detected", { type: "creeper", distance: 60 });
+  emit("hostile.detected", { type: "skeleton", distance: null });
   emit("task.completed", { task: { type: "ensure_item", objective: "ensure 1 stick" } });
   emit("task.completed", { task: { type: "night_shelter", objective: "shelter" } });
   emit("task.completed", { task: { type: "night_shelter", objective: "shelter" } });
@@ -53,11 +56,20 @@ test("the feed is bounded and stops listening on dispose", () => {
   let clock = 0;
   const story = new StoryFeed({ bus, maxEntries: 3, now: () => (clock += 200_000) });
   const emit = bus.emit as (n: string, p: unknown) => void;
-  for (let i = 0; i < 5; i++) emit.call(bus, i % 2 ? "time.day" : "time.night", {});
+  for (let i = 0; i < 6; i++) emit.call(bus, i % 2 ? "time.day" : "time.night", {});
   assert.equal(story.recent().length, 3);
   story.dispose();
-  emit.call(bus, "time.day", {});
-  assert.equal(story.recent().at(-1)!.id, 5);
+  emit.call(bus, "time.night", {});
+  assert.equal(story.recent().at(-1)!.id, 5, "the first phase is a sync; five transitions follow");
+});
+
+test("the first day/night signal after connecting is not news", () => {
+  const { story, emit } = feed();
+  emit("time.day", { time: "day" });
+  emit("time.day", { time: "day" });
+  assert.equal(story.recent().length, 0);
+  emit("time.night", { time: "night" });
+  assert.deepEqual(story.recent().map((e) => e.text), ["Night falls"]);
 });
 
 test("helpers humanize ids and strip coordinate runs", () => {

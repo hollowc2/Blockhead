@@ -29,6 +29,8 @@ const DEFAULT_MAX_ENTRIES = 40;
 const REPEAT_WINDOW_MS = 120_000;
 /** Hostile sightings are frequent; one per mob type per window. */
 const HOSTILE_WINDOW_MS = 300_000;
+/** Mobs farther than this are loaded-chunk background, not a sighting. */
+const HOSTILE_SIGHTING_RANGE = 16;
 
 /** Task types worth a story line when they finish; the rest is routine. */
 const TASK_STORIES: Partial<Record<string, { icon: StoryIcon; text: string }>> = {
@@ -66,6 +68,7 @@ export class StoryFeed {
   private readonly unsubscribers: Array<() => void> = [];
   private readonly lastHostileAt = new Map<string, number>();
   private nextId = 1;
+  private phase: "day" | "night" | null = null;
 
   constructor(options: StoryFeedOptions) {
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
@@ -74,8 +77,8 @@ export class StoryFeed {
       this.unsubscribers.push(options.bus.on(name, handler));
     };
 
-    on("time.day", () => this.add("day", "A new day dawns"));
-    on("time.night", () => this.add("night", "Night falls"));
+    on("time.day", () => this.time("day"));
+    on("time.night", () => this.time("night"));
     on("goal.started", (p) => this.add("goal", p.goal.source === "owner" ? "Took on a request from the owner" : `New goal: ${this.describe(p.goal.description)}`));
     on("goal.completed", (p) => this.add("goal", p.goal.source === "owner" ? "Finished the owner's request" : `Goal complete: ${this.describe(p.goal.description)}`, true));
     on("build_project.created", (p) => this.add("build", `Started building ${article(humanize(p.project.structureType ?? p.project.userGoal, "structure"))}`));
@@ -88,6 +91,7 @@ export class StoryFeed {
     });
     on("tool.broken", (p) => this.add("tool", `His ${humanize(p.item, "tool")} broke`));
     on("hostile.detected", (p) => {
+      if (p.distance === null || p.distance > HOSTILE_SIGHTING_RANGE) return;
       const type = humanize(p.type, "monster");
       const last = this.lastHostileAt.get(type);
       if (last !== undefined && this.now() - last < HOSTILE_WINDOW_MS) return;
@@ -107,6 +111,14 @@ export class StoryFeed {
   dispose(): void {
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers.length = 0;
+  }
+
+  /** The first phase after connecting is a sync, not a sunrise. */
+  private time(phase: "day" | "night"): void {
+    const previous = this.phase;
+    this.phase = phase;
+    if (previous === null || previous === phase) return;
+    this.add(phase, phase === "day" ? "A new day dawns" : "Night falls");
   }
 
   private describe(description: string): string {
