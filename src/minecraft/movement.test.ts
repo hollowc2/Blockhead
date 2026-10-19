@@ -6,7 +6,13 @@ import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
 import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback, SWIM_COST } from "./movement.js";
-import { openReachableDoor } from "./movement.js";
+import { openReachableDoor, configureMovements } from "./movement.js";
+import prismarineBlock from "prismarine-block";
+import pathfinderPkg from "mineflayer-pathfinder";
+import { createRequire } from "node:module";
+const requireLib = createRequire(import.meta.url);
+const AStar = requireLib("mineflayer-pathfinder/lib/astar.js");
+const Move = requireLib("mineflayer-pathfinder/lib/move.js");
 
 function closedDoorBot() {
   const pos = new Vec3(2, 64, 0);
@@ -835,4 +841,33 @@ test("a transit leg landing inside distance range still requires action precondi
   const result = await new WorldActionExecutor().run("transit-action-boundary",signal,()=>travelAndWait(h.bot as never,{x:120,y:64,z:0},{signal,range:2,arrivalCheck:()=>"target access obstructed"}));
   assert.deepEqual(result,{status:"failed",error:"arrival precondition: target access obstructed"});
   assert.equal(trips,1);
+});
+
+test("a route out of the house walks straight through the open doorway before turning", () => {
+  // 18:13-18:37 2026-10-18: the plan left the doorway diagonally into the
+  // open panel on its east edge and the bot stalled inside every trip out.
+  const registry = minecraftData("1.21.4");
+  const Block = (prismarineBlock as unknown as (r: unknown) => { fromProperties: (n: string, p: object, b: number) => any })(registry);
+  const door = (half: string) => Block.fromProperties("birch_door", { facing: "south", half, open: "true", hinge: "left", powered: "false" }, 0);
+  const at = (p: Vec3): any => {
+    // Floor at y=0; a wall along z=1 with the doorway at x=0; the room is z<=0.
+    if (p.y === 0) return Block.fromProperties("oak_planks", {}, 0);
+    if (p.z === 1 && p.x === 0 && p.y <= 2) return door(p.y === 1 ? "lower" : "upper");
+    if (p.z === 1 && p.y <= 2) return Block.fromProperties("birch_planks", {}, 0);
+    return Block.fromProperties("air", {}, 0);
+  };
+  const bot: any = {
+    registry, version: "1.21.4", game: { dimension: "overworld" }, entity: { position: new Vec3(0.5, 1, 0.5), height: 1.8 }, entities: {},
+    inventory: { items: () => [], slots: [] }, pathfinder: { setMovements() {} },
+    blockAt: (pos: Vec3) => { const p = pos.floored(); const b = Object.create(at(p)); b.position = p; return b; },
+  };
+  const movements = new pathfinderPkg.Movements(bot);
+  configureMovements(bot, movements);
+  movements.canDig = false;
+  const result = new (AStar as any)(new (Move as any)(0, 1, 0, 0, 0), movements, new pathfinderPkg.goals.GoalBlock(3, 1, 4), 5_000, 5_000, -1).compute();
+  assert.equal(result.status, "success");
+  const path = [{ x: 0, z: 0 }, ...result.path as Array<{ x: number; z: number }>];
+  const doorway = path.findIndex(node => node.x === 0 && node.z === 1);
+  assert.ok(doorway > 0, "the route uses the doorway");
+  assert.deepEqual([path[doorway - 1], path[doorway + 1]].map(node => node!.x), [0, 0], `straight in and out: ${JSON.stringify(path)}`);
 });

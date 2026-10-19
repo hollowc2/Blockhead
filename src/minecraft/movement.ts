@@ -198,7 +198,7 @@ export function stuckCellCost(position: { x: number; y: number; z: number }, now
  */
 export const SWIM_COST = 20;
 
-function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
+export function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   const registry = bot.registry;
   // Pathfinder treats every door shape as a full obstruction, even after
   // the server reports it open. An open door's panel leaves the cell centre
@@ -213,6 +213,7 @@ function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
     }
     return block;
   };
+  restrictDoorwayMoves(movements);
   (movements as unknown as { exclusionAreasStep: Array<(block: { position: Vec3 }) => number> }).exclusionAreasStep.push((block) => stuckCellCost(block.position));
   for (const block of registry.blocksArray) {
     if (!isNaturalBlock(block.name) || !block.diggable) movements.blocksCantBreak.add(block.id);
@@ -225,6 +226,63 @@ function configureMovements(bot: Bot, movements: Pathfinder.Movements): void {
   // Swim only when the way round is much longer. Routes straight across the
   // drowned lake west of home cost five deaths on 2026-10-04.
   (movements as unknown as { liquidCost: number }).liquidCost = SWIM_COST;
+}
+
+type MoveGenerator = (node: Vec3, dir: { x: number; z: number }, neighbors: unknown[]) => void;
+
+/** Door shapes by cell (null: no door), dropped every second so opened and closed doors are re-read. */
+const doorCellCache = new WeakMap<Pathfinder.Movements, { at: number; cells: Map<string, number[][] | null> }>();
+const DOOR_CACHE_MS = 1_000;
+
+/** Doors in the given columns at feet or head height; every door within a step up or down has a half there. */
+function doorsOnMove(movements: Pathfinder.Movements, node: Vec3, cells: Array<[number, number]>): number[][][] {
+  const now = Date.now();
+  let cache = doorCellCache.get(movements);
+  if (cache === undefined || now - cache.at > DOOR_CACHE_MS) {
+    cache = { at: now, cells: new Map() };
+    doorCellCache.set(movements, cache);
+  }
+  const doors: number[][][] = [];
+  for (const [dx, dz] of cells) {
+    for (let dy = 0; dy <= 1; dy++) {
+      const key = `${node.x + dx},${node.y + dy},${node.z + dz}`;
+      let shapes = cache.cells.get(key);
+      if (shapes === undefined) {
+        const block = movements.getBlock(node, dx, dy, dz) as { name?: string; shapes?: number[][] };
+        shapes = block.name?.endsWith("_door") === true ? block.shapes ?? [] : null;
+        cache.cells.set(key, shapes);
+      }
+      if (shapes !== null) doors.push(shapes);
+    }
+  }
+  return doors;
+}
+
+/**
+ * The open-door override above makes the whole door cell look like air, but
+ * the panel still fills one edge of it. 18:13-18:37 2026-10-18 the bot
+ * stalled at 65,103,53 every trip out of the house: the plan went through
+ * the doorway and then diagonally to 66,103,55, straight into the open panel
+ * on the cell's east edge. Only straight moves along the doorway's open axis
+ * get through, so drop diagonals near doors and side-on crossings.
+ */
+function restrictDoorwayMoves(movements: Pathfinder.Movements): void {
+  const moves = movements as unknown as Record<string, MoveGenerator>;
+  const diagonal = moves.getMoveDiagonal!.bind(movements);
+  moves.getMoveDiagonal = (node, dir, neighbors) => {
+    if (doorsOnMove(movements, node, [[0, 0], [dir.x, 0], [0, dir.z], [dir.x, dir.z]]).length > 0) return;
+    diagonal(node, dir, neighbors);
+  };
+  for (const name of ["getMoveForward", "getMoveJumpUp", "getMoveDropDown", "getMoveParkourForward"]) {
+    const original = moves[name]?.bind(movements);
+    if (original === undefined) continue;
+    moves[name] = (node, dir, neighbors) => {
+      const blocked = doorsOnMove(movements, node, [[0, 0], [dir.x, dir.z]]).some(shapes => shapes.some(([x0, , z0, x1, , z1]) =>
+        // A panel thin along the travel axis lies across the path.
+        dir.x !== 0 ? x1! - x0! < 1 : z1! - z0! < 1));
+      if (!blocked) original(node, dir, neighbors);
+    };
+  }
 }
 
 /** Bots whose pathfinder must not place scaffolding (nesting depth). */
