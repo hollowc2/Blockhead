@@ -32,6 +32,7 @@ test("viewer chat prompt carries the bot's state and the question, but not chat 
   for (const expected of ["Mining iron ore", "Prepare for a mining expedition", "ensure 1 iron_pickaxe", "Need an iron pickaxe first.", "picked up iron ore", "what are you doing?"]) {
     assert(user.includes(expected), `prompt missing ${expected}`);
   }
+  assert(user.includes("hostilesInLoadedArea") && !user.includes("hostileCount"), "loaded-area mob count must not read as nearby");
   for (const secret of ["PRIVATE-CHAT-LINE", "10.0.0.5", "diamond"]) assert.equal(user.includes(secret), false, `prompt leaks ${secret}`);
 });
 

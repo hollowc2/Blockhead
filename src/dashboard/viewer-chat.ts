@@ -59,7 +59,8 @@ export function viewerChatContext(s: DashboardSnapshot): Record<string, unknown>
     },
     worldProject: !project && s.worldProject ? { kind: s.worldProject.kind, phase: s.worldProject.phase?.label ?? null, blocker: s.worldProject.blocker } : null,
     lastDecisionRationale: s.llmActivity.lastRationale,
-    danger: s.danger,
+    // hostileCount spans every loaded chunk; naming it "nearby" made the model overstate threats.
+    danger: s.danger && { score: s.danger.score, nearestHostile: s.danger.nearestHostile, hostilesInLoadedArea: s.danger.hostileCount },
     path: s.path,
     recentEvents: s.recentEvents.slice(-6).map((event) => event.message),
     recentFailures: s.recentFailures.slice(-3).map((failure) => failure.message),
