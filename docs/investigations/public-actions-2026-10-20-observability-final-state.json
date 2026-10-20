@@ -1,0 +1,333 @@
+{
+  "recorded_at": "2026-10-20T05:49:16.466335+00:00",
+  "status": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T05:46:24.106Z",
+      "uptimeSeconds": 172.358
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192529891839
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T05:48:28.712Z",
+      "lastSuccessAgeSeconds": 47.752,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T05:48:28.155Z",
+        "latencyMs": 557,
+        "tool": "wait",
+        "rationale": null,
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "flags": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0,
+    "admission": {
+      "safe": false,
+      "checks": {
+        "session": "pass",
+        "physical": "pass",
+        "freshness": "pass",
+        "threats": "blocked",
+        "death_loop": "pass",
+        "scheduler": "pass",
+        "projects": "pass",
+        "lease_waiters": "pass",
+        "lease_owner": "pass",
+        "active_task": "pass",
+        "queued_tasks": "pass",
+        "interrupt": "pass",
+        "background": "pass",
+        "decision": "pass",
+        "goal": "pass",
+        "bootstrap": "pass"
+      }
+    },
+    "physical": {
+      "safe": true,
+      "checks": {
+        "entity": "pass",
+        "grounded": "pass",
+        "dry": "pass",
+        "orientation": "pass",
+        "stationary": "pass",
+        "health": "pass",
+        "hunger": "pass",
+        "awake": "pass",
+        "unmounted": "pass",
+        "item_use": "pass",
+        "eating": "pass",
+        "digging": "pass",
+        "window": "pass",
+        "combat_target": "pass",
+        "controls": "pass",
+        "path_moving": "pass",
+        "path_mining": "pass",
+        "path_building": "pass",
+        "path_goal": "pass"
+      }
+    },
+    "threats": {
+      "safe": false,
+      "reason": "unreviewed_mob",
+      "mob": "enderman"
+    },
+    "freshness": {
+      "attached": true,
+      "serverAgeMs": 564.751248000015,
+      "physicsAgeMs": 29.70232599999872,
+      "fresh": true
+    },
+    "protocol": {
+      "attached": true,
+      "supported": true,
+      "epoch": 1,
+      "observationAgeMs": 171793.232304,
+      "incomplete": false,
+      "endermanCount": 12,
+      "truncated": false,
+      "endermen": [
+        {
+          "entityId": 3,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 8,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 18,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 19,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 20,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49053,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49054,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49059,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49091,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49107,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49108,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        },
+        {
+          "entityId": 49110,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        }
+      ],
+      "helloEchoes": 0,
+      "lastHelloEchoAgeMs": null,
+      "mainArmEchoes": 0,
+      "positionCorrections": 1,
+      "canProveCalm": false,
+      "persistentAngerTarget": "not_transmitted",
+      "pendingTarget": "not_transmitted",
+      "outgoingAttackOrUse": "not_observed",
+      "normalSelfPoseAcknowledgement": "not_available",
+      "effectAcceptance": "not_established"
+    }
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=80538\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "files": [
+    {
+      "path": "src/index.ts",
+      "before_sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab",
+      "candidate_sha256": "f7278e8fcad86ad0770aa63066af36fb92e88da4b7f5e5547e47e6f50949108e",
+      "operation": "replace",
+      "installed_sha256": "f7278e8fcad86ad0770aa63066af36fb92e88da4b7f5e5547e47e6f50949108e",
+      "backup_sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab"
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "before_sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541",
+      "candidate_sha256": "047c8aa77172276240d828b121e4dd6c0522b93f4a67ad4d9da5bd350c957ecb",
+      "operation": "replace",
+      "installed_sha256": "047c8aa77172276240d828b121e4dd6c0522b93f4a67ad4d9da5bd350c957ecb",
+      "backup_sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541"
+    },
+    {
+      "path": "src/agent/public-action-admission.ts",
+      "before_sha256": null,
+      "candidate_sha256": "5a2802f8e1fb60da2ed3ef163ebdf3f055ea4021a466c9d47cef406f6a4acc8a",
+      "operation": "create",
+      "installed_sha256": "5a2802f8e1fb60da2ed3ef163ebdf3f055ea4021a466c9d47cef406f6a4acc8a",
+      "backup_sha256": null
+    },
+    {
+      "path": "src/agent/public-protocol-observations.ts",
+      "before_sha256": null,
+      "candidate_sha256": "0c7102cc8717857c71531f1b0e122b1d722110df6c98d88ea958b30d9f6a9558",
+      "operation": "create",
+      "installed_sha256": "0c7102cc8717857c71531f1b0e122b1d722110df6c98d88ea958b30d9f6a9558",
+      "backup_sha256": null
+    }
+  ],
+  "full_runtime_inventory_unchanged_since_install": true,
+  "prior_task_rows_preserved": true,
+  "tasks_count": 12438,
+  "unfinished_tasks": [],
+  "startup_defaults": [
+    "questions_enabled: false",
+    "actions_enabled: false"
+  ],
+  "old_threat_backup_preserved": true,
+  "actions_enabled_this_rollout": false,
+  "gesture_trial_attempted": false,
+  "effects_verified": false,
+  "independent_observation_ready": false,
+  "rollback_needed": false
+}

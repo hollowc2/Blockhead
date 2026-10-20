@@ -31,7 +31,7 @@
     }
   ],
   "services": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
-  "status": "Prepared locally only. NOT deployed. Fresh explicit approval required before runtime installation, injection or blockhead stop/start.",
+  "status": "Deployed after explicit user approval on 2026-10-20; exact four-file candidate validated; deterministic Q&A restored privately; actions remain disabled.",
   "baseline_source_commit": "22f1c1e",
   "service": "blockhead.service",
   "startup_defaults": {
@@ -58,7 +58,7 @@
     "typecheck": "passed",
     "diff_check": "passed"
   },
-  "rollback": "After fresh explicit approval: stop only blockhead.service. Verify current runtime hashes match candidate. Restore two original files from verified backup. Move the two newly introduced, hash-verified modules out of runtime into backup/retired-candidate. Start only blockhead.service. Preserve source checkout, config, dependencies, SQLite and world progress. Never restart Minecraft or llama.cpp.",
+  "rollback": "For failure of this approved deployment: stop only blockhead.service; verify all four installed hashes against baseline/candidate and both backed-up originals; restore the two immediate previous originals and move the two newly introduced, hash-verified modules to backup/retired-candidate. Start only blockhead.service and validate. Preserve source checkout, config, dependencies, SQLite/world progress and earlier threat-gate backup. No rollback was needed. Future unrelated live stop/start or instrumentation requires separate approval.",
   "original_threat_backup": "/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020",
   "constraints": [
     "Do not use broad rsync or deploy tests/scripts/docs. Only the four listed runtime paths are approved candidates.",
@@ -70,5 +70,15 @@
   ],
   "candidate_source_commit": "83349e6aeacd8d776eb70f3e87c241fa2e7c3fc0",
   "latest_read_only_preflight": "public-actions-2026-10-20-observability-approval-preflight.json",
-  "independent_effect_observation": "public-actions-2026-10-20-independent-observation.md"
+  "independent_effect_observation": "public-actions-2026-10-20-independent-observation.md",
+  "approval": "User approve following exact four-file proposal; excludes additional instrumentation and action enabling",
+  "deployment_receipt": "public-actions-2026-10-20-observability-deployment-receipt.json",
+  "postdeploy_checks": "public-actions-2026-10-20-observability-postdeploy-checks.json",
+  "backup_created": true,
+  "deployed_at": "2026-10-20T05:46:26.203346+00:00",
+  "final_state": "public-actions-2026-10-20-observability-final-state.json",
+  "executed_admin_scripts": {
+    "deploy-cobblebob-observability-approved.py": "deeaa821412211542e01544d383529aa86d27120a2a5afc55811be997f014d58",
+    "cobblebob-observability-postdeploy.py": "ecede16f74b4b4d4ae98b443782078a9d2e64e7a25372e79ead764bff5575a42"
+  }
 }

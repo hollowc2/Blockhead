@@ -1,0 +1,1758 @@
+{
+  "recorded_at": "2026-10-20T05:47:32.662461+00:00",
+  "method": "private read-only GET samples and TLS-verified actual public edge GETs only; no public POST or owner instructions",
+  "samples": [
+    {
+      "at": "2026-10-20T05:47:15.067206+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 50.953
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192529891839
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T05:47:00.766Z",
+          "lastSuccessAgeSeconds": 14.293,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T05:46:58.298Z",
+            "latencyMs": 2470,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "pass",
+            "physical": "pass",
+            "freshness": "pass",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "pass",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "pass",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": true,
+          "checks": {
+            "entity": "pass",
+            "grounded": "pass",
+            "dry": "pass",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "pass",
+            "hunger": "pass",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 165.96733600000152,
+          "physicsAgeMs": 42.225791999997455,
+          "fresh": true
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 50396.930324,
+          "incomplete": false,
+          "endermanCount": 12,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 3,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 8,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 18,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 19,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 20,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49053,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49054,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49059,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49091,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49107,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49108,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49110,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    },
+    {
+      "at": "2026-10-20T05:47:20.075093+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 55.962
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192529891839
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T05:47:00.766Z",
+          "lastSuccessAgeSeconds": 19.302,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T05:46:58.298Z",
+            "latencyMs": 2470,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "pass",
+            "physical": "pass",
+            "freshness": "pass",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "pass",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "pass",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": true,
+          "checks": {
+            "entity": "pass",
+            "grounded": "pass",
+            "dry": "pass",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "pass",
+            "hunger": "pass",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 173.6119699999981,
+          "physicsAgeMs": 52.80258799999865,
+          "fresh": true
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 55404.714590999996,
+          "incomplete": false,
+          "endermanCount": 12,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 3,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 8,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 18,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 19,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 20,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49053,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49054,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49059,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49091,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49107,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49108,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49110,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    },
+    {
+      "at": "2026-10-20T05:47:25.207078+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 61.09
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192529891839
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T05:47:00.766Z",
+          "lastSuccessAgeSeconds": 24.43,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T05:46:58.298Z",
+            "latencyMs": 2470,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "pass",
+            "physical": "pass",
+            "freshness": "pass",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "blocked",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "blocked",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": true,
+          "checks": {
+            "entity": "pass",
+            "grounded": "pass",
+            "dry": "pass",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "pass",
+            "hunger": "pass",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 55.2053539999979,
+          "physicsAgeMs": 5.511539999999513,
+          "fresh": true
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 60536.778276,
+          "incomplete": false,
+          "endermanCount": 12,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 3,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 8,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 18,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 19,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 20,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49053,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49054,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49059,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49091,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49107,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49108,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49110,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    },
+    {
+      "at": "2026-10-20T05:47:30.214482+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 66.102
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192529891839
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T05:47:00.766Z",
+          "lastSuccessAgeSeconds": 29.442,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T05:46:58.298Z",
+            "latencyMs": 2470,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "pass",
+            "physical": "pass",
+            "freshness": "pass",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "pass",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "pass",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": true,
+          "checks": {
+            "entity": "pass",
+            "grounded": "pass",
+            "dry": "pass",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "pass",
+            "hunger": "pass",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 313.84030599999824,
+          "physicsAgeMs": 9.095040000000154,
+          "fresh": true
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 65544.356026,
+          "incomplete": false,
+          "endermanCount": 12,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 3,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 8,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 18,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 19,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 20,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49053,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49054,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49059,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49091,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49107,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49108,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            },
+            {
+              "entityId": 49110,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    }
+  ],
+  "edge": "208.111.34.11",
+  "tls_verified": true,
+  "public_get": {
+    "/": {
+      "status": 200,
+      "bytes": 10371
+    },
+    "/api/state": {
+      "status": 200,
+      "bytes": 3908,
+      "state": {
+        "public": true,
+        "connection": {
+          "connected": true
+        },
+        "self": {
+          "health": 20,
+          "hunger": 20,
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "viewer": {
+          "status": "running"
+        },
+        "story": [],
+        "world": {
+          "day": 889,
+          "blocksMined": 34346,
+          "itemsCrafted": 14397,
+          "mobsKilled": 543,
+          "deaths": 129,
+          "distanceKm": 546.8,
+          "buildsCompleted": 35,
+          "nemesis": "zombie",
+          "milestones": [
+            {
+              "id": "day-1",
+              "title": "First Night",
+              "description": "Survive the first night",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "day-7",
+              "title": "One Week In",
+              "description": "Reach day 7",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "day-30",
+              "title": "Old Timer",
+              "description": "Reach day 30",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "day-100",
+              "title": "Centurion",
+              "description": "Reach day 100",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "day-365",
+              "title": "Year One",
+              "description": "Reach day 365",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "day-1000",
+              "title": "Millennium",
+              "description": "Reach day 1,000",
+              "unlocked": false,
+              "progress": 0.889
+            },
+            {
+              "id": "logs-100",
+              "title": "Lumberjack",
+              "description": "Chop 100 logs",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "logs-1000",
+              "title": "Deforester",
+              "description": "Chop 1,000 logs",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "logs-10000",
+              "title": "Timber Baron",
+              "description": "Chop 10,000 logs",
+              "unlocked": false,
+              "progress": 0.2531
+            },
+            {
+              "id": "stone-1000",
+              "title": "Quarryman",
+              "description": "Mine 1,000 stone",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "stone-10000",
+              "title": "Mountain Mover",
+              "description": "Mine 10,000 stone",
+              "unlocked": false,
+              "progress": 0.6603
+            },
+            {
+              "id": "stone-50000",
+              "title": "Hollow Earth",
+              "description": "Mine 50,000 stone",
+              "unlocked": false,
+              "progress": 0.13206
+            },
+            {
+              "id": "iron-pickaxe",
+              "title": "Iron Age",
+              "description": "Craft an iron pickaxe",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "diamond",
+              "title": "Diamonds!",
+              "description": "Mine a diamond ore",
+              "unlocked": false,
+              "progress": 0
+            },
+            {
+              "id": "wheat-1000",
+              "title": "Farmer",
+              "description": "Harvest 1,000 wheat",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "wheat-50000",
+              "title": "Breadbasket",
+              "description": "Harvest 50,000 wheat",
+              "unlocked": false,
+              "progress": 0.32226
+            },
+            {
+              "id": "bread-1000",
+              "title": "Master Baker",
+              "description": "Bake 1,000 bread",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "bread-10000",
+              "title": "Bakery Empire",
+              "description": "Bake 10,000 bread",
+              "unlocked": false,
+              "progress": 0.5466
+            },
+            {
+              "id": "torches-100",
+              "title": "Torchbearer",
+              "description": "Craft 100 torches",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "torches-1000",
+              "title": "Lighthouse Keeper",
+              "description": "Craft 1,000 torches",
+              "unlocked": false,
+              "progress": 0.372
+            },
+            {
+              "id": "kills-10",
+              "title": "Monster Hunter",
+              "description": "Defeat 10 hostile mobs",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "kills-100",
+              "title": "Slayer",
+              "description": "Defeat 100 hostile mobs",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "kills-500",
+              "title": "Legend of the Night",
+              "description": "Defeat 500 hostile mobs",
+              "unlocked": false,
+              "progress": 0.43
+            },
+            {
+              "id": "kills-2000",
+              "title": "Mob Nightmare",
+              "description": "Defeat 2,000 hostile mobs",
+              "unlocked": false,
+              "progress": 0.1075
+            },
+            {
+              "id": "builds-1",
+              "title": "Architect",
+              "description": "Finish a building",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "builds-10",
+              "title": "Village Founder",
+              "description": "Finish 10 buildings",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "builds-50",
+              "title": "Town Planner",
+              "description": "Finish 50 buildings",
+              "unlocked": false,
+              "progress": 0.7
+            },
+            {
+              "id": "builds-100",
+              "title": "City Builder",
+              "description": "Finish 100 buildings",
+              "unlocked": false,
+              "progress": 0.35
+            },
+            {
+              "id": "km-10",
+              "title": "Wanderer",
+              "description": "Travel 10 km",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "km-100",
+              "title": "Explorer",
+              "description": "Travel 100 km",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "km-1000",
+              "title": "Globetrotter",
+              "description": "Travel 1,000 km",
+              "unlocked": false,
+              "progress": 0.54683258
+            },
+            {
+              "id": "deaths-9",
+              "title": "Nine Lives",
+              "description": "Die nine times and keep going",
+              "unlocked": true,
+              "progress": 1
+            },
+            {
+              "id": "deaths-100",
+              "title": "Unkillable Spirit",
+              "description": "Die 100 times and keep going",
+              "unlocked": true,
+              "progress": 1
+            }
+          ]
+        },
+        "interactions": {
+          "questions": true,
+          "actions": false
+        }
+      }
+    },
+    "/public-interactions": {
+      "status": 404,
+      "bytes": 9
+    },
+    "/command": {
+      "status": 404,
+      "bytes": 9
+    },
+    "/api/command": {
+      "status": 404,
+      "bytes": 9
+    }
+  },
+  "runtime_inventory_matches_installed_candidate": true,
+  "runtime_delta": [
+    "src/agent/public-action-admission.ts",
+    "src/agent/public-action-safety.ts",
+    "src/agent/public-protocol-observations.ts",
+    "src/index.ts"
+  ],
+  "prior_task_rows_preserved": true,
+  "tasks_count": 12438,
+  "unfinished_tasks": [],
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=80538\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "warning_or_error_records_since_start": [],
+  "startup_samples": [
+    {
+      "at": "2026-10-20T05:46:25.490322+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 0.94
+        },
+        "minecraft": {
+          "connected": false,
+          "player": null,
+          "health": 20,
+          "hunger": 20,
+          "position": null,
+          "dimension": null,
+          "timePhase": null
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "local-model",
+          "state": "unknown",
+          "reachable": null,
+          "lastSuccessAt": null,
+          "lastSuccessAgeSeconds": null,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": null
+        },
+        "autonomy": {
+          "paused": true,
+          "reasons": [
+            "disconnected"
+          ]
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": false,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "blocked",
+            "physical": "blocked",
+            "freshness": "blocked",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "pass",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "pass",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": false,
+          "checks": {
+            "entity": "pass",
+            "grounded": "blocked",
+            "dry": "blocked",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "blocked",
+            "hunger": "blocked",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 8.808006000000205,
+          "physicsAgeMs": null,
+          "fresh": false
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 820.0341200000003,
+          "incomplete": false,
+          "endermanCount": 1,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 3,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    },
+    {
+      "at": "2026-10-20T05:46:25.749884+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T05:46:24.106Z",
+          "uptimeSeconds": 1.635
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192529891839
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": []
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "local-model",
+          "state": "unknown",
+          "reachable": null,
+          "lastSuccessAt": null,
+          "lastSuccessAgeSeconds": null,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": null
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "flags": {
+        "questions": false,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0,
+        "admission": {
+          "safe": false,
+          "checks": {
+            "session": "pass",
+            "physical": "pass",
+            "freshness": "pass",
+            "threats": "blocked",
+            "death_loop": "pass",
+            "scheduler": "pass",
+            "projects": "pass",
+            "lease_waiters": "pass",
+            "lease_owner": "pass",
+            "active_task": "pass",
+            "queued_tasks": "pass",
+            "interrupt": "pass",
+            "background": "pass",
+            "decision": "pass",
+            "goal": "pass",
+            "bootstrap": "pass"
+          }
+        },
+        "physical": {
+          "safe": true,
+          "checks": {
+            "entity": "pass",
+            "grounded": "pass",
+            "dry": "pass",
+            "orientation": "pass",
+            "stationary": "pass",
+            "health": "pass",
+            "hunger": "pass",
+            "awake": "pass",
+            "unmounted": "pass",
+            "item_use": "pass",
+            "eating": "pass",
+            "digging": "pass",
+            "window": "pass",
+            "combat_target": "pass",
+            "controls": "pass",
+            "path_moving": "pass",
+            "path_mining": "pass",
+            "path_building": "pass",
+            "path_goal": "pass"
+          }
+        },
+        "threats": {
+          "safe": false,
+          "reason": "unreviewed_mob",
+          "mob": "enderman"
+        },
+        "freshness": {
+          "attached": true,
+          "serverAgeMs": 268.66653499999984,
+          "physicsAgeMs": 16.028704999999718,
+          "fresh": true
+        },
+        "protocol": {
+          "attached": true,
+          "supported": true,
+          "epoch": 1,
+          "observationAgeMs": 1079.8200980000001,
+          "incomplete": false,
+          "endermanCount": 1,
+          "truncated": false,
+          "endermen": [
+            {
+              "entityId": 8,
+              "creepy": {
+                "value": null,
+                "receivedAgeMs": null
+              },
+              "staredAt": {
+                "value": null,
+                "receivedAgeMs": null
+              }
+            }
+          ],
+          "helloEchoes": 0,
+          "lastHelloEchoAgeMs": null,
+          "mainArmEchoes": 0,
+          "positionCorrections": 1,
+          "canProveCalm": false,
+          "persistentAngerTarget": "not_transmitted",
+          "pendingTarget": "not_transmitted",
+          "outgoingAttackOrUse": "not_observed",
+          "normalSelfPoseAcknowledgement": "not_available",
+          "effectAcceptance": "not_established"
+        }
+      }
+    }
+  ],
+  "actions_enabled_during_checks": false,
+  "public_gesture_trial_attempted": false,
+  "effect_acceptance": "not_established",
+  "owner_boundary_checks": "public GET only; no private /command payload or owner instruction",
+  "lifecycle_validation": "fresh process/epoch 1 with initial physics age null; no forced respawn/disconnect; cleanup/reset unit tests remain the evidence for subsequent lifecycle transitions"
+}

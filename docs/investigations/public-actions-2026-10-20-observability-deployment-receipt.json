@@ -1,0 +1,387 @@
+{
+  "started_at": "2026-10-20T05:46:21.601629+00:00",
+  "backup": "/home/corey/.local/share/blockhead-backups/public-actions-observability-20261020",
+  "candidate_source_commit": "83349e6aeacd8d776eb70f3e87c241fa2e7c3fc0",
+  "rollback_performed": false,
+  "features_restored": true,
+  "stop_requested_at": "2026-10-20T05:46:21.932205+00:00",
+  "start_requested_at": "2026-10-20T05:46:22.620106+00:00",
+  "validated_at": "2026-10-20T05:46:26.203346+00:00",
+  "status_after": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T05:46:24.106Z",
+      "uptimeSeconds": 1.635
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192529891839
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "local-model",
+      "state": "unknown",
+      "reachable": null,
+      "lastSuccessAt": null,
+      "lastSuccessAgeSeconds": null,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": null
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "startup_flags": {
+    "questions": false,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0,
+    "admission": {
+      "safe": false,
+      "checks": {
+        "session": "pass",
+        "physical": "pass",
+        "freshness": "pass",
+        "threats": "blocked",
+        "death_loop": "pass",
+        "scheduler": "pass",
+        "projects": "pass",
+        "lease_waiters": "pass",
+        "lease_owner": "pass",
+        "active_task": "pass",
+        "queued_tasks": "pass",
+        "interrupt": "pass",
+        "background": "pass",
+        "decision": "pass",
+        "goal": "pass",
+        "bootstrap": "pass"
+      }
+    },
+    "physical": {
+      "safe": true,
+      "checks": {
+        "entity": "pass",
+        "grounded": "pass",
+        "dry": "pass",
+        "orientation": "pass",
+        "stationary": "pass",
+        "health": "pass",
+        "hunger": "pass",
+        "awake": "pass",
+        "unmounted": "pass",
+        "item_use": "pass",
+        "eating": "pass",
+        "digging": "pass",
+        "window": "pass",
+        "combat_target": "pass",
+        "controls": "pass",
+        "path_moving": "pass",
+        "path_mining": "pass",
+        "path_building": "pass",
+        "path_goal": "pass"
+      }
+    },
+    "threats": {
+      "safe": false,
+      "reason": "unreviewed_mob",
+      "mob": "enderman"
+    },
+    "freshness": {
+      "attached": true,
+      "serverAgeMs": 268.66653499999984,
+      "physicsAgeMs": 16.028704999999718,
+      "fresh": true
+    },
+    "protocol": {
+      "attached": true,
+      "supported": true,
+      "epoch": 1,
+      "observationAgeMs": 1079.8200980000001,
+      "incomplete": false,
+      "endermanCount": 1,
+      "truncated": false,
+      "endermen": [
+        {
+          "entityId": 8,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        }
+      ],
+      "helloEchoes": 0,
+      "lastHelloEchoAgeMs": null,
+      "mainArmEchoes": 0,
+      "positionCorrections": 1,
+      "canProveCalm": false,
+      "persistentAngerTarget": "not_transmitted",
+      "pendingTarget": "not_transmitted",
+      "outgoingAttackOrUse": "not_observed",
+      "normalSelfPoseAcknowledgement": "not_available",
+      "effectAcceptance": "not_established"
+    }
+  },
+  "services_before": {
+    "blockhead.service": {
+      "ActiveState": "active",
+      "MainPID": "77054",
+      "NRestarts": "0"
+    },
+    "minecraft-server.service": {
+      "ActiveState": "active",
+      "MainPID": "980",
+      "NRestarts": "0"
+    },
+    "llama-server.service": {
+      "ActiveState": "active",
+      "MainPID": "952",
+      "NRestarts": "0"
+    }
+  },
+  "services_after": {
+    "blockhead.service": {
+      "ActiveState": "active",
+      "MainPID": "80538",
+      "NRestarts": "0"
+    },
+    "minecraft-server.service": {
+      "ActiveState": "active",
+      "MainPID": "980",
+      "NRestarts": "0"
+    },
+    "llama-server.service": {
+      "ActiveState": "active",
+      "MainPID": "952",
+      "NRestarts": "0"
+    }
+  },
+  "runtime_delta": [
+    "src/agent/public-action-admission.ts",
+    "src/agent/public-action-safety.ts",
+    "src/agent/public-protocol-observations.ts",
+    "src/index.ts"
+  ],
+  "runtime_hashes": {
+    "src/agent/public-action-admission.ts": "5a2802f8e1fb60da2ed3ef163ebdf3f055ea4021a466c9d47cef406f6a4acc8a",
+    "src/agent/public-action-safety.ts": "047c8aa77172276240d828b121e4dd6c0522b93f4a67ad4d9da5bd350c957ecb",
+    "src/agent/public-protocol-observations.ts": "0c7102cc8717857c71531f1b0e122b1d722110df6c98d88ea958b30d9f6a9558",
+    "src/index.ts": "f7278e8fcad86ad0770aa63066af36fb92e88da4b7f5e5547e47e6f50949108e"
+  },
+  "prior_task_rows_preserved": true,
+  "tasks_before_count": 12438,
+  "tasks_after_count": 12438,
+  "unfinished_after": [],
+  "config_unchanged": true,
+  "finished_at": "2026-10-20T05:46:26.210416+00:00",
+  "flags_final": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0,
+    "admission": {
+      "safe": false,
+      "checks": {
+        "session": "pass",
+        "physical": "pass",
+        "freshness": "pass",
+        "threats": "blocked",
+        "death_loop": "pass",
+        "scheduler": "pass",
+        "projects": "pass",
+        "lease_waiters": "pass",
+        "lease_owner": "pass",
+        "active_task": "pass",
+        "queued_tasks": "pass",
+        "interrupt": "pass",
+        "background": "pass",
+        "decision": "pass",
+        "goal": "pass",
+        "bootstrap": "pass"
+      }
+    },
+    "physical": {
+      "safe": true,
+      "checks": {
+        "entity": "pass",
+        "grounded": "pass",
+        "dry": "pass",
+        "orientation": "pass",
+        "stationary": "pass",
+        "health": "pass",
+        "hunger": "pass",
+        "awake": "pass",
+        "unmounted": "pass",
+        "item_use": "pass",
+        "eating": "pass",
+        "digging": "pass",
+        "window": "pass",
+        "combat_target": "pass",
+        "controls": "pass",
+        "path_moving": "pass",
+        "path_mining": "pass",
+        "path_building": "pass",
+        "path_goal": "pass"
+      }
+    },
+    "threats": {
+      "safe": false,
+      "reason": "unreviewed_mob",
+      "mob": "enderman"
+    },
+    "freshness": {
+      "attached": true,
+      "serverAgeMs": 309.4712519999998,
+      "physicsAgeMs": 23.78935999999976,
+      "fresh": true
+    },
+    "protocol": {
+      "attached": true,
+      "supported": true,
+      "epoch": 1,
+      "observationAgeMs": 1540.6740140000002,
+      "incomplete": false,
+      "endermanCount": 1,
+      "truncated": false,
+      "endermen": [
+        {
+          "entityId": 8,
+          "creepy": {
+            "value": null,
+            "receivedAgeMs": null
+          },
+          "staredAt": {
+            "value": null,
+            "receivedAgeMs": null
+          }
+        }
+      ],
+      "helloEchoes": 0,
+      "lastHelloEchoAgeMs": null,
+      "mainArmEchoes": 0,
+      "positionCorrections": 1,
+      "canProveCalm": false,
+      "persistentAngerTarget": "not_transmitted",
+      "pendingTarget": "not_transmitted",
+      "outgoingAttackOrUse": "not_observed",
+      "normalSelfPoseAcknowledgement": "not_available",
+      "effectAcceptance": "not_established"
+    }
+  },
+  "status_final": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T05:46:24.106Z",
+      "uptimeSeconds": 2.107
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192529891839
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "local-model",
+      "state": "unknown",
+      "reachable": null,
+      "lastSuccessAt": null,
+      "lastSuccessAgeSeconds": null,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": null
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "services_final": {
+    "blockhead.service": {
+      "ActiveState": "active",
+      "MainPID": "80538",
+      "NRestarts": "0"
+    },
+    "minecraft-server.service": {
+      "ActiveState": "active",
+      "MainPID": "980",
+      "NRestarts": "0"
+    },
+    "llama-server.service": {
+      "ActiveState": "active",
+      "MainPID": "952",
+      "NRestarts": "0"
+    }
+  },
+  "checkout_commit_at_deploy": "beb3e27ba33a48fe8e342828bd5a4d3335bf4cc4",
+  "approval_record": "Explicit user approve after exact four-file installation, single-service stop/start and validation/rollback proposal"
+}

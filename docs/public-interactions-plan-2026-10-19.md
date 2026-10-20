@@ -3,9 +3,12 @@
 Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness and threat-admission repairs are deployed. Original re-arm tasks completed; subsequent autonomous work and recovery are preserved. Actions remain disabled: no eligible gesture window was established, and loaded endermen conservatively block public turns. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 Latest follow-up: the enderman gate remains in force for **all four actions**.
-A tested four-file private-observability candidate is prepared below and awaits
-fresh deployment approval. It is not installed. Fresh HTTPS/runtime evidence
-is linked in that section; no gesture effect has been verified.
+The four-file private-observability candidate from `83349e6` was explicitly
+approved, installed and validated at **2026-10-20 05:46 UTC**. Deterministic Q&A
+was restored privately after validation; actions remain disabled. Named live
+diagnostics confirm `unreviewed_mob: enderman` blocks admission. Deployment and
+HTTPS evidence are linked in the latest receipt section; no gesture effect has
+been verified and independent effect observation remains unready.
 
 ## Goal
 
@@ -1018,7 +1021,7 @@ Minecraft/llama.cpp. No rollback was needed.
 
 Final read-only recheck at **2026-10-20T03:46:49.259813+00:00**: connected 20/20, no active or queued task or unfinished task row. The iron-pickaxe watchdog cooldown has expired naturally and `blockedActions` is now empty. Feature flags, service PIDs and zero-restart counts remain unchanged. This does not establish that the hidden safety conjuncts pass; actions remain disabled. The snapshot is included as `last_read_only_recheck` in the final-state evidence.
 
-## Private observability candidate — October 20 UTC, approval pending
+## Private observability candidate — October 20 UTC (pre-approval record)
 
 This follow-up produced a tested local **four-file runtime candidate**, rather
 than another policy relaxation. It has **not** been installed or injected into
@@ -1395,3 +1398,122 @@ changes or action enabling. Prior approval remains limited to `ba6b444` until
 Corey explicitly approves this new scope.
 
 Final pre-approval read-only snapshot at **2026-10-20T05:29:49.675332+00:00**: connected 20/20, active task None, 0 queued and 0 unfinished rows. Autonomy enabled; deterministic Q&A true; actions/configuredActions/modelQuestions false. All three service PIDs and restart counts unchanged. No deployment, toggle or public gesture trial occurred. This snapshot does not reserve a future idle boundary.
+
+## Approved private-observability deployment — October 20, 05:46 UTC
+
+Corey explicitly approved the preceding exact four-file proposal. The
+[fresh approved preflight](investigations/public-actions-2026-10-20-observability-approved-preflight.json)
+confirmed connected 20/20, no unfinished tasks, model idle, repeated director
+standby, no recent application warnings/errors, all baseline/candidate hashes
+matching and both new modules absent. Source checkout was `beb3e27`; the four
+runtime file contents are pinned to `83349e6`. Approval did not include any
+additional observer, Minecraft/llama restart, action enabling or network change.
+
+The [deployment receipt](investigations/public-actions-2026-10-20-observability-deployment-receipt.json)
+records stop at **05:46:21.932Z**, start at **05:46:22.620Z** and successful
+validation at **05:46:26.203Z**. Only the user `blockhead.service` was stopped
+and started. Normal SIGTERM shutdown completed in about 126 ms, checkpointed and
+closed SQLite with busy=0, and logged `shutdown complete; exiting`. There was no
+forced exit, stale-primitive recovery or shutdown timeout. The new process
+rehydrated with queued=0/active=null, logged in with server version 1.21.4 and
+spawned at the existing position. No task was cancelled/reordered or world
+state manipulated by this rollout.
+
+New private backup:
+`/home/corey/.local/share/blockhead-backups/public-actions-observability-20261020`.
+It holds the two verified immediate previous originals, explicit
+`absent-before.json` for the two new modules, original manifest, source/approval
+record, before/stopped/after task row hashes and resumable rows, full before/after
+runtime inventories, shutdown/startup logs, startup diagnostic samples,
+rollback instructions, executed administrative scripts, receipts and follow-up
+checks. The earlier threat-gate backup remains intact and was not reused.
+Only the four approved runtime paths changed; every other runtime `src` file
+hash stayed equal. Shared config was unchanged. All **12,438 existing task
+rows** were byte-for-byte equal as canonical JSON hashes before stop, while
+stopped and after startup; no unfinished rows required resumption. This is task
+continuity evidence, not a database restore. No dependency, unit or config was
+installed or changed.
+
+Before any feature restoration, GET `/public-interactions` confirmed questions,
+actions, configuredActions and modelQuestions all false; counters and in-flight
+counts zero. Both configured startup defaults remain false. Only after
+validation, the private loopback POST restored
+`{"questions_enabled":true,"actions_enabled":false}`. There was no public
+POST, owner instruction or private `/command` request.
+
+### Named gates and unknown observations
+
+The [postdeploy checks](investigations/public-actions-2026-10-20-observability-postdeploy-checks.json)
+include four live private diagnostic samples and read-only public HTTPS checks.
+All 16 named admission gates and all 19 physical subchecks were returned. At
+startup validation and most follow-up samples, the physical gates and all
+non-threat admission checks passed; threats were authoritatively **blocked**
+with reason **`unreviewed_mob`**, canonical mob **`enderman`**. Thus this is no
+longer just a viewer inference about the admission blocker. Feature disable is
+an additional independent blocker; a diagnostics pass would not bypass it.
+
+At **05:47:25Z**, `lease_owner` and `background` also reported **blocked** while
+active/queued tasks were empty. They returned to pass at the next sample.
+Natural background work was preserved. This directly demonstrates why an empty
+task list cannot prove the complete admission predicate or permanent idleness.
+Do not treat the temporary lease as a stuck-task problem or cancel it.
+
+Server/physics freshness was true in all four follow-up samples, with server
+ages about 55–314 ms and physics ages about 6–53 ms. The first captured startup
+sample had a **null physics age** and freshness false, before the next real
+physics event; missing observation correctly failed closed. The private
+observer reported attached/supported for the installed 1.21.4 schema, epoch 1,
+no incomplete/truncated evidence and 12 loaded endermen during follow-up.
+Every reported creepy/staredAt value and field age was **null**: these are
+unknown, not false and not proof of calm. Persistent anger target/time and
+complete pending-target state remain unavailable. No narrower enderman rule
+was introduced.
+
+Incoming counters showed zero fixed hello/self-main-arm echoes and one position
+correction since the new lifecycle. These totals are not per-request effects,
+attack/use monitoring or server-accepted pose. The correction is not turn
+acceptance. No public gesture was requested; there is no negative-effect
+acceptance claim. Lifecycle startup/epoch/initial unknown state were observed;
+subsequent death/respawn/disconnect cleanup/reset remains locally tested rather
+than live exercised, because no lifecycle event was manufactured.
+
+### Public boundary, final features and rollback
+
+TLS-verified checks through the actual public edge **208.111.34.11** returned
+200 for `/` and redacted `/api/state`; GET-only `/public-interactions`,
+`/command` and `/api/command` returned 404. Redacted state contained no private
+protocol/gate diagnostics. No test payload was sent to owner routes. No
+application warning/error records appeared in the observed startup/follow-up
+journal. Mineflayer printed its existing `physicTick` deprecation notice; it did
+not prevent normal startup or the new `physicsTick` freshness observation.
+
+Runtime is active with bot PID **80538**, Minecraft PID **980**, llama.cpp PID
+**952**; all NRestarts zero. Minecraft and llama PIDs are unchanged. Bob was
+connected at health/hunger **20/20**, autonomy enabled, no active/queued task or
+unfinished task row at the final follow-up sample. Deterministic Q&A remains
+true; actions/configuredActions/modelQuestions remain false; no active or
+quarantined gesture, timeout or in-flight request. Both startup defaults remain
+false. All prior runtime validation (66 focused, typecheck and 855 full-suite
+passes) applies to the identical hash-pinned candidate; live validation adds
+startup, persistence, hash, diagnostics, service and HTTPS boundary evidence.
+
+No rollback was needed. The two-original restore/two-new-module retirement
+procedure above now applies to the actual new backup: verify baseline/candidate
+hashes before stopping only `blockhead.service`, restore the immediate previous
+originals, retire only hash-verified new modules, then start/validate that unit.
+Do not restore older threat-gate originals, database/world progress or any
+unreviewed drift. Future code changes or live stop/start outside this completed
+deployment/validation scope require explicit approval. Immediate feature disable
+continues to use only private `/public-interactions` (questions true/actions
+false, or both false to disable Q&A too).
+
+All four game effects and enabled-action acceptance remain **unverified**.
+The threat gate fails and the independently qualified server effect observer
+is still unavailable. Therefore the once-only public HTTPS gesture trial was
+**not eligible and not attempted**; actions were never enabled. The independent
+observation qualification contract remains the next preparation boundary. Any
+additional collector must be prepared/tested locally and approved separately
+before live installation/injection. No absent packets, HTTP success, viewer
+pose or false/missing metadata may substitute for that evidence.
+
+Final read-only snapshot at **2026-10-20T05:49:16.466335+00:00**, recorded in [final runtime state](investigations/public-actions-2026-10-20-observability-final-state.json): connected **20/20**, autonomy enabled, no active/queued/unfinished task; bot/Minecraft/llama PIDs **80538/980/952**, all NRestarts zero. All named gates except threats passed at that instant; threats remained **blocked — unreviewed_mob/enderman**. Q&A true; actions/configuredActions/modelQuestions false; both startup defaults false. Runtime inventory and all prior task rows remain unchanged since validation; the two original backup hashes still match. This is a timestamped observation, not a reservation of future idleness.
