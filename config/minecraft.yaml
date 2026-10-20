@@ -35,7 +35,7 @@ dashboard:
     interactions:
       questions_enabled: false
       actions_enabled: false
-      # allowed_origin: https://your-public-viewer.example
+      allowed_origin: https://maia.tailceb694.ts.net
 
 # All keys are Zod-validated against src/config/schema.ts at startup.
 

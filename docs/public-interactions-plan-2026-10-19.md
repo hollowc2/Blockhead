@@ -1,6 +1,6 @@
 # Anonymous public Q&A and simple commands
 
-Status: committed, pushed and deployed to Maia on 2026-10-19 after Corey’s subsequent authorization. Both public features remain disabled, with no allowed origin configured. Model-backed public Q&A is unavailable. Network exposure is unchanged.
+Status: deployed on Maia; supervised trial completed for deterministic Q&A, now enabled privately in memory. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 ## Goal
 
@@ -225,3 +225,18 @@ Backup and rollback evidence: `/home/corey/.local/share/blockhead-backups/public
 Live acceptance passed through the actual HTTPS endpoints: public and private pages 200; public redacted state 200 with both flags false and no private task/LLM/inventory/event fields; public owner and operator paths 404; both public POST routes 403 at the unconfigured-origin gate; empty private command and Q&A bodies 400 without executing commands or model calls. The private diagnostic endpoint confirms questions/actions false and modelQuestions false. No critical startup module, syntax, type, address-in-use, schema or unhandled-rejection errors were found. Public request IP attribution is still unverified because no feature was enabled and no proxy configuration was changed; validate it before a later supervised enablement.
 
 The public interaction rollout remains disabled. This deployment does not claim in-game gesture acceptance or runtime model cancellation verification.
+
+
+## Supervised public trial — 2026-10-19
+
+Corey authorized proceeding with the next rollout steps. The configured origin is now exactly `https://maia.tailceb694.ts.net`. The configuration retains `questions_enabled: false` and `actions_enabled: false`, so a service restart disables both features. Deterministic questions were enabled only through the private operator control after validation; actions were returned to disabled.
+
+Actual Funnel forwarding was verified by resolving the public DNS A record and sending HTTPS requests directly to that edge with normal TLS hostname verification. A temporary nonce-scoped runtime probe observed two requests, one with forged X-Forwarded-For. Both arrived from loopback with a single forwarding value matching the independently measured outbound client address; the forged value was replaced, not appended. Only salted hashes and booleans were recorded privately. Thus selecting the final forwarding value is safe for the observed proxy path, although the old source comment describing an append is inaccurate for this installed Funnel version. Temporary instrumentation was removed and the original runtime file hash restored. The bot alone was restarted to install/remove the probe and load the origin. Minecraft/model processes and Funnel/Serve configuration were unchanged.
+
+Live checks through the actual public edge passed: all four action IDs returned 503/unavailable while three maintenance tasks were queued; the gesture execution count remained zero. No task was cancelled, removed or reordered to force an idle window. Q&A returned deterministic allowed health facts for an instruction/privacy-canary question; the next question returned 429 and a question after the 30-second cooldown returned 200. Both private disable controls returned their feature's public route to 503/disabled, and independent re-enabling did not enable the other feature. The public owner command route remained 404. The canary was absent from private status and SQLite/WAL bytes. The model flag remained false, with zero timeouts or remaining in-flight requests.
+
+The actual live shell passed desktop (1365×1000) and mobile (390×844) form checks: question submission enabled, exactly four disabled action buttons, owner form hidden, no horizontal overflow. The unrelated 3D iframe was suppressed only in the headless form check. Focused action, interaction and private-control tests passed again (18 tests). No application source changes were needed; only the origin configuration and this receipt changed in the checkout. The newer camera commits and their deployed runtime files were preserved.
+
+Final observed state: connected, health 20, hunger 11; questions enabled in memory, actions disabled, modelQuestions false, no gesture quarantine. The remaining action acceptance work is to wait for the authoritative task queue and other safety conditions to clear, briefly enable actions privately, verify the four fixed effects and priority/disable behavior, then decide whether to keep actions enabled. This trial does not claim successful in-game gesture effects.
+
+Private backup/evidence: `/home/corey/.local/share/blockhead-backups/public-trial-20261019T234304Z`. Local structured receipt: [trial evidence](investigations/public-interactions-2026-10-19-trial.json). To disable Q&A immediately, POST `{"questions_enabled":false,"actions_enabled":false}` as application/json with no Origin to loopback `http://127.0.0.1:8155/public-interactions`. Restore the saved configuration and restart only the bot if origin rollback is required; never restore world/database progress.

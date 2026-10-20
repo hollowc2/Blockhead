@@ -1,0 +1,93 @@
+{
+  "recorded_at": "2026-10-19T23:44:53.962532+00:00",
+  "host": "maia",
+  "service": "blockhead.service",
+  "origin": "https://maia.tailceb694.ts.net",
+  "backup": "/home/corey/.local/share/blockhead-backups/public-trial-20261019T234304Z",
+  "forwarding": {
+    "probe_count": 2,
+    "actual_public_funnel_edge": true,
+    "all_peers_loopback": true,
+    "all_last_addresses_match_real_outbound": true,
+    "spoofed_last_used": false,
+    "forwarded_counts": [
+      1,
+      1
+    ]
+  },
+  "trial": {
+    "busy_hello": {
+      "status": 503,
+      "code": "unavailable"
+    },
+    "busy_wave": {
+      "status": 503,
+      "code": "unavailable"
+    },
+    "busy_look_left": {
+      "status": 503,
+      "code": "unavailable"
+    },
+    "busy_look_right": {
+      "status": 503,
+      "code": "unavailable"
+    },
+    "gestures_executed": 0,
+    "busy_tasks": 3,
+    "deterministic_question": {
+      "status": 200,
+      "safe_health_answer": true,
+      "private_canary_echoed": false
+    },
+    "question_cooldown": {
+      "status": 429,
+      "code": "limited"
+    },
+    "disabled_question": {
+      "status": 503,
+      "code": "disabled"
+    },
+    "disabled_action": {
+      "status": 503,
+      "code": "disabled"
+    },
+    "independent_private_controls": true,
+    "public_owner_path": 404,
+    "persistence_canary_absent": true,
+    "question_after_cooldown": 200,
+    "final_task_busy": true,
+    "final_diagnostics": {
+      "questions": true,
+      "actions": false,
+      "configuredActions": false,
+      "modelQuestions": false,
+      "gesture": {
+        "active": false,
+        "quarantined": false
+      },
+      "accepted": 2,
+      "rejected": 7,
+      "timeout": 0,
+      "inFlight": 0,
+      "questionsInFlight": 0,
+      "actionsInFlight": 0
+    },
+    "health": 20,
+    "hunger": 11,
+    "result": "deterministic Q&A enabled in memory; actions held disabled pending safe idle acceptance"
+  },
+  "startup_defaults": {
+    "questions_enabled": false,
+    "actions_enabled": false
+  },
+  "temporary_instrumentation_removed": true,
+  "network_configuration_changed": false,
+  "minecraft_or_model_restarted": false,
+  "live_shell_checks": {
+    "desktop": true,
+    "mobile": true,
+    "questions_enabled": true,
+    "four_actions_disabled": true,
+    "owner_form_hidden": true
+  }
+}
