@@ -1,0 +1,161 @@
+{
+  "recorded_at": "2026-10-20T04:00:48.812Z",
+  "method": "Standalone read-only installed dependency inspection; no bot creation, connection, injection or control events",
+  "versions": {
+    "minecraft-data": "3.116.0",
+    "minecraft-protocol": "1.68.0",
+    "mineflayer": "4.39.0"
+  },
+  "endermanMetadataKeys": [
+    "shared_flags",
+    "air_supply",
+    "custom_name",
+    "custom_name_visible",
+    "silent",
+    "no_gravity",
+    "pose",
+    "ticks_frozen",
+    "living_entity_flags",
+    "health",
+    "effect_particles",
+    "effect_ambience",
+    "arrow_count",
+    "stinger_count",
+    "sleeping_pos",
+    "mob_flags",
+    "carry_state",
+    "creepy",
+    "stared_at"
+  ],
+  "incomingAnimation": [
+    "container",
+    [
+      {
+        "name": "entityId",
+        "type": "varint"
+      },
+      {
+        "name": "animation",
+        "type": "u8"
+      }
+    ]
+  ],
+  "incomingPlayerChat": [
+    "container",
+    [
+      {
+        "name": "senderUuid",
+        "type": "UUID"
+      },
+      {
+        "name": "index",
+        "type": "varint"
+      },
+      {
+        "name": "signature",
+        "type": [
+          "option",
+          [
+            "buffer",
+            {
+              "count": 256
+            }
+          ]
+        ]
+      },
+      {
+        "name": "plainMessage",
+        "type": "string"
+      },
+      {
+        "name": "timestamp",
+        "type": "i64"
+      },
+      {
+        "name": "salt",
+        "type": "i64"
+      },
+      {
+        "name": "previousMessages",
+        "type": "previousMessages"
+      },
+      {
+        "name": "unsignedChatContent",
+        "type": [
+          "option",
+          "anonymousNbt"
+        ]
+      },
+      {
+        "name": "filterType",
+        "type": "varint"
+      },
+      {
+        "name": "filterTypeMask",
+        "type": [
+          "switch",
+          {
+            "compareTo": "filterType",
+            "fields": {
+              "2": [
+                "array",
+                {
+                  "countType": "varint",
+                  "type": "i64"
+                }
+              ]
+            },
+            "default": "void"
+          }
+        ]
+      },
+      {
+        "name": "type",
+        "type": "ChatTypesHolder"
+      },
+      {
+        "name": "networkName",
+        "type": "anonymousNbt"
+      },
+      {
+        "name": "networkTargetName",
+        "type": [
+          "option",
+          "anonymousNbt"
+        ]
+      }
+    ]
+  ],
+  "outgoingInteractionNames": [
+    "packet_chat_message",
+    "packet_use_entity",
+    "packet_position_look",
+    "packet_look",
+    "packet_arm_animation",
+    "packet_block_place",
+    "packet_use_item"
+  ],
+  "sources": [
+    "https://github.com/PrismarineJS/minecraft-data/blob/master/data/pc/1.21.4/entities.json",
+    "https://github.com/PrismarineJS/minecraft-data/blob/master/data/pc/1.21.4/protocol.json",
+    "https://github.com/PrismarineJS/node-minecraft-protocol/blob/master/src/client.js",
+    "https://piston-data.mojang.com/v1/objects/0b1e60cc509cfb0172573ae56b436c29febbc187/server.txt"
+  ],
+  "installed_server_nested_sha256": "de9538d2497c8f4174805f3fcedb8ade3060446aa203f351b820ea5bd04adbf4",
+  "reviewed_server_methods": [
+    "ServerGamePacketListenerImpl.handleAnimate -> ServerPlayer.swing -> LivingEntity.swing(hand,false)",
+    "ServerChunkCache.broadcast -> ChunkMap.broadcast (excludes self), distinct from broadcastAndSend",
+    "EnderMan.setTarget: updates creepy flag, clears stared_at on target clear; persistent anger fields remain separate",
+    "LivingEntity.isLookingAtMe and EndermanLookForPlayerGoal as recorded in previous version-specific review"
+  ],
+  "limits": {
+    "persistent_anger_target_uuid": "not in enderman entity metadata",
+    "remaining_persistent_anger_time": "not in enderman entity metadata",
+    "pending_player_target_uuid_and_aggro_time": "not in enderman entity metadata; stared_at is an alert, not full pending target state",
+    "normal_self_wave_echo": "normally excluded from broadcast to self; absence not proof of failure or no effect",
+    "normal_self_pose_acknowledgement": "not provided for each look; server corrections and viewer local pose are insufficient",
+    "outgoing_attack_use_absence": "incoming-only observer cannot establish this",
+    "host_capture_tool_check": "tcpdump and tshark did not resolve via PATH; no getcap output for /usr/bin/tcpdump or /usr/bin/dumpcap. No installation or permission changes performed."
+  },
+  "observation_strategy": "Use bounded incoming-only diagnostics after approved bot deployment to identify blockers and collect limited server echo evidence. All-action acceptance additionally needs an existing authorized independent observer/server observation and complete attack/use monitoring. Do not weaken enderman gate based on these flags."
+}

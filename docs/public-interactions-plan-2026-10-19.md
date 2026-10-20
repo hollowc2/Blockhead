@@ -2,10 +2,10 @@
 
 Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness and threat-admission repairs are deployed. Original re-arm tasks completed; subsequent autonomous work and recovery are preserved. Actions remain disabled: no eligible gesture window was established, and loaded endermen conservatively block public turns. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
-Latest follow-up: the version-specific enderman review below retains that gate
-for **all four actions**. No additional runtime delta or deployment is proposed.
-Fresh HTTPS/runtime evidence is linked in the final section; no gesture effect
-has been verified.
+Latest follow-up: the enderman gate remains in force for **all four actions**.
+A tested four-file private-observability candidate is prepared below and awaits
+fresh deployment approval. It is not installed. Fresh HTTPS/runtime evidence
+is linked in that section; no gesture effect has been verified.
 
 ## Goal
 
@@ -1017,3 +1017,271 @@ this documentation push. Never restore SQLite/world progress or restart
 Minecraft/llama.cpp. No rollback was needed.
 
 Final read-only recheck at **2026-10-20T03:46:49.259813+00:00**: connected 20/20, no active or queued task or unfinished task row. The iron-pickaxe watchdog cooldown has expired naturally and `blockedActions` is now empty. Feature flags, service PIDs and zero-restart counts remain unchanged. This does not establish that the hidden safety conjuncts pass; actions remain disabled. The snapshot is included as `last_read_only_recheck` in the final-state evidence.
+
+## Private observability candidate — October 20 UTC, approval pending
+
+This follow-up produced a tested local **four-file runtime candidate**, rather
+than another policy relaxation. It has **not** been installed or injected into
+the running bot, and no service was restarted. The enderman refusal, all
+survival/owner/task gates, leases, cancellation, gesture effects and production
+cooldowns remain in place. Both configured startup defaults remain false.
+
+### What the candidate adds
+
+`src/agent/public-action-admission.ts` evaluates named synchronous checks.
+`src/index.ts` supplies the same 16 existing checks for both admission and
+operator diagnostics. Normal admission still short-circuits; the private read
+collects all results, including independent blockers. `pass` means that check
+returned exactly true, `blocked` means a required condition returned false
+(including a missing required fact), and `unknown` means it threw or returned
+anything other than a boolean. Both blocked and unknown refuse. Exceptions and
+raw task text are excluded. A safety-only report is **not** permission to act:
+feature flags, controller active/quarantine state, immediate lease ownership,
+HTTP limits and the final same-session recheck still govern each submission.
+
+`src/agent/public-action-safety.ts` retains the same physical thresholds,
+reviewed-mob geometry and conservative unknown/enderman behavior. It now exposes
+the physical subchecks, the first threat refusal reason and canonical mob type,
+and monotonic server/physics observation ages. The normal boolean predicates
+use these same assessors, avoiding a second policy that could drift from actual
+admission. Diagnostic collection does not acquire a lease, schedule work,
+clear controls or run a gesture.
+
+`src/agent/public-protocol-observations.ts` attaches only **incoming** packet and
+lifecycle listeners to the existing bot session. It neither wraps `write()` nor
+sends packets, creates another Minecraft client or changes entity state. For
+1.21.4 only, it verifies the installed metadata schema before interpreting
+enderman `creepy` at index 17 and `stared_at` at index 18. Each received field
+gets its own monotonic observation age; an inherited registry boolean has a
+**null age**, and a missing/malformed value is unknown. Observation age is not
+an aggression safety TTL. It keeps at most 128 per-entity field records and
+reports at most 32 endermen, explicitly marking incomplete/truncated evidence.
+Death/respawn reset observations and counters; disconnect/shutdown/session
+cleanup remove listeners. It never treats false flags as proof of calm.
+
+The observer also counts exact `Hello, everyone!` **incoming player-chat echoes
+from Bob's UUID**, without retaining arbitrary chat or UUIDs in the output.
+It records matching self main-arm animation packets and position corrections
+if received, but labels full effect acceptance as not established. These are
+observations since an identified lifecycle epoch, not per-request acknowledgements.
+Baseline/after deltas and an unchanged epoch would be required even for a
+limited echo check; absence is not a reason to retry uncertain delivery.
+
+All additional data is available only from the existing private, loopback,
+Origin-rejecting **GET `/public-interactions`**. Existing top-level feature flags
+are preserved for operator scripts. POST configuration behavior is unchanged.
+No new endpoint, listener, exposure, public-state fields, Q&A facts, persistence,
+model access or outbound observer hook is added. Public responses cannot see
+the admission reasons, entity IDs or protocol observations.
+
+### What passive client observation can and cannot close
+
+Standalone read-only inspection of Maia's installed dependencies confirmed
+Mineflayer **4.39.0**, minecraft-protocol **1.68.0**, minecraft-data **3.116.0**,
+and the 1.21.4 registry indices above. No game connection or live injection was
+used for this inspection. See
+[installed capability evidence](investigations/public-actions-2026-10-20-observability-capabilities.json).
+Primary implementation references are the
+[1.21.4 metadata schema](https://github.com/PrismarineJS/minecraft-data/blob/master/data/pc/1.21.4/entities.json),
+[1.21.4 packet schema](https://github.com/PrismarineJS/minecraft-data/blob/master/data/pc/1.21.4/protocol.json),
+and [protocol client implementation](https://github.com/PrismarineJS/node-minecraft-protocol/blob/master/src/client.js).
+Installed files, rather than current upstream master, determine the candidate's
+actual supported schema.
+
+Further bytecode inspection of the previously fingerprinted installed 1.21.4
+server, using Mojang's mappings, traced `handleAnimate` through
+`ServerPlayer.swing`, `LivingEntity.swing(hand,false)` and the normal tracked
+entity broadcast. This broadcasts to other tracked clients and does **not**
+normally echo the swing back to Bob. The broadcast-and-send-to-self path is
+separate. No ordinary per-look acknowledgement returns Bob's accepted pose.
+Incoming self position packets are corrections, with relative flags; counting
+or reading one as a successful turn acknowledgement would be incorrect.
+
+Consequently, this candidate can close the **private blocker diagnosis** gap
+and collect limited server echo/metadata evidence after approved deployment.
+It cannot establish absence of outgoing attack/item-use packets, independently
+verify the normal wave, or confirm both turns' accepted pitch/position. The
+client protocol also does not transmit persistent anger target UUID, remaining
+anger time, or the complete pending player target/aggro countdown. Positive
+flags can warn, but fresh false flags cannot close those missing facts. No
+narrower enderman admission rule is justified. Installing more client listeners
+will not make that missing server state authoritative.
+
+Neither `tcpdump` nor `tshark` resolved through Maia's PATH, and the inspected
+capture-tool paths produced no capability output. No installation, privilege
+change, network change, JVM attachment, debug flag, console command, additional
+player login or live packet capture was performed. Packet capture alone would
+still need complete framing/compression/session coverage and cannot recover a
+server's unsent normal self-pose acknowledgement. Future full effect acceptance
+needs an already authorized independent game observer or separately approved
+server observation, plus complete attack/use monitoring. Do not enable actions
+merely to exercise this candidate.
+
+### Live observations and unresolved acceptance
+
+At the initial recheck Bob was 20 health/18 hunger, with no active/queued task,
+while recent autonomous home/development tasks and new watchdog cooldowns showed
+that work had continued naturally. Later food-restocking completed normally.
+No task or movement was directed by this rollout work.
+
+At **03:59:13–15Z**, actual public DNS again selected **208.111.35.209**.
+TLS-verified HTTPS Q&A through that edge returned 200 and “I'm working. Simple
+actions work while Bob is idle.” Public owner/operator route checks used GET
+only and returned 404. The correct private `/public-interactions` control
+reasserted questions true/actions false. No private `/command` payload or owner
+instruction was submitted; no public action was sent or retried.
+
+That snapshot showed connected **20/20**, no active/queued/paused/blocked task
+row, no pending interrupt or project/goal, and autonomy enabled. The last task
+was successful food restocking. Existing development cooldowns were preserved;
+they are not unfinished tasks. Runtime flags: questions true;
+actions/configuredActions false; modelQuestions false; no active/quarantined
+gesture, in-flight request or timeout; counters **5 accepted / 2 rejected**.
+PIDs remain bot **77054**, Minecraft **980**, llama.cpp **952**, all active with
+NRestarts 0. Approved runtime hashes still match `ba6b444`; the source/runtime
+difference is exactly the four proposed files. See
+[live state and HTTPS evidence](investigations/public-actions-2026-10-20-observability-live-state.json).
+
+A separate read-only viewer replay at **03:59:26Z** contained 88 canonical
+hostiles, including **15 endermen**, and zero ordinary reflex-geometry
+candidates. This remains diagnostic, not authoritative proof of validity,
+aggression, visibility or every physical gate. See
+[viewer observation](investigations/public-actions-2026-10-20-observability-observation.json).
+Actions stayed disabled throughout. Exact hello once, main-arm-only wave with
+no attack/use, both turns preserving pitch/position, enabled busy/concurrent
+refusal, immediate disable admission and enabled owner/survival authority remain
+unverified live. The local tests are not substitutes for those observations.
+
+### Validation, exact installation delta and rollback
+
+**66 focused tests passed**, including admission/safety, protocol observations,
+controller, HTTP interaction/privacy, self-defense and world leases.
+**Typecheck passed; all 855 full-suite tests passed**, with zero failures,
+skips or cancellations. New regression cases exercise all 16 gates across all
+four gestures, changes between reservation and execution, missing/throwing
+observations, health/hunger boundaries, enderman metadata that remains refused,
+malformed/schema-drifted/oversized observations, exact self-echo filtering,
+lifecycle/session cleanup, read-only private GET and no public proxy to private
+diagnostics even when configured with the operator server as stats upstream.
+`git diff --check` passed after completing the records.
+
+The [prepared release manifest](investigations/public-actions-2026-10-20-observability-deployment.json)
+records independently read installed hashes and exact candidate hashes for:
+
+- Replace `src/index.ts` and `src/agent/public-action-safety.ts`.
+- Add `src/agent/public-action-admission.ts` and
+  `src/agent/public-protocol-observations.ts` (both verified absent in runtime).
+
+Tests/docs are source-only. No dependencies, config, units or other runtime
+files change. Proposed new backup directory:
+`/home/corey/.local/share/blockhead-backups/public-actions-observability-20261020`.
+It was absent at the read-only preflight. The earlier threat-gate backup remains
+untouched and is not reused for this new release.
+
+**Fresh explicit approval is required for this exact installation and stopping/
+starting only `blockhead.service`.** Before executing, review the source commit
+containing the manifest, recheck the live session/work boundary and record
+services, flags and unfinished task/checkpoint rows. Wait for natural task and
+primitive settlement; do not cancel/reorder work or manipulate the world to
+create a boundary. Preserve resumable work through normal shutdown. The code
+below is prepared only and was **not executed**:
+
+```python
+# Run on Maia from the reviewed source checkout only AFTER explicit approval.
+import hashlib, json, pathlib, shutil, subprocess, urllib.request, sqlite3
+source = pathlib.Path('/mnt/Repos/Games/Blockhead')
+manifest_path = source / 'docs/investigations/public-actions-2026-10-20-observability-deployment.json'
+m = json.loads(manifest_path.read_text())
+runtime, backup = pathlib.Path(m['runtime']), pathlib.Path(m['backup_proposed'])
+expected = {'src/index.ts', 'src/agent/public-action-safety.ts',
+            'src/agent/public-action-admission.ts', 'src/agent/public-protocol-observations.ts'}
+assert {f['path'] for f in m['files']} == expected and not backup.exists()
+digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+for f in m['files']:
+    target = runtime / f['path']
+    assert (digest(target) if target.exists() else None) == f['before_sha256']
+    assert digest(source / f['path']) == f['candidate_sha256']
+def get(path):
+    with urllib.request.urlopen('http://127.0.0.1:8155'+path, timeout=10) as r:
+        return json.load(r)
+status, flags = get('/status'), get('/public-interactions')
+assert flags['configuredActions'] is False and flags['modelQuestions'] is False
+assert status['minecraft']['connected'] and status['task']['active'] is None
+assert not status['task']['queued'] and not status['task']['interrupt']['pending']
+assert status['goal'] is None and status['buildProject'] is None
+# These exposed facts alone do not prove primitive settlement: verify that
+# boundary from the existing dispatcher/settlement evidence before proceeding.
+backup.mkdir(mode=0o700, parents=True)
+shutil.copy2(manifest_path, backup/'manifest.json')
+(backup/'source-commit.txt').write_bytes(subprocess.check_output(['git','rev-parse','HEAD'], cwd=source))
+(backup/'status-before.json').write_text(json.dumps(status, indent=2))
+(backup/'flags-before.json').write_text(json.dumps(flags, indent=2))
+(backup/'services-before.txt').write_bytes(subprocess.check_output([
+    'systemctl','--user','show','blockhead.service','minecraft-server.service',
+    'llama-server.service','-p','Id','-p','MainPID','-p','NRestarts','-p','ActiveState']))
+db = sqlite3.connect('file:'+str(source/'data/blockhead.db')+'?mode=ro', uri=True)
+db.row_factory = sqlite3.Row
+rows = [dict(row) for row in db.execute("select * from tasks where status in ('active','queued','paused','blocked')")]
+db.close()
+(backup/'unfinished-tasks-before.json').write_text(json.dumps(rows, indent=2, default=str))
+assert not rows, 'Wait for a natural boundary; never clear these rows'
+for f in m['files']:
+    if f['before_sha256'] is not None:
+        saved = backup / f['path']; saved.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(runtime/f['path'], saved)
+        assert digest(saved) == f['before_sha256']
+subprocess.run(['systemctl','--user','stop','blockhead.service'], check=True)
+for f in m['files']:
+    shutil.copy2(source/f['path'], runtime/f['path'])
+    assert digest(runtime/f['path']) == f['candidate_sha256']
+subprocess.run(['systemctl','--user','start','blockhead.service'], check=True)
+```
+
+After an approved installation, verify normal shutdown/startup, connected
+session, task/checkpoint continuity, no new errors, both startup features false,
+modelQuestions false, identical Minecraft/llama PIDs, and the four candidate
+hashes with no other runtime changes. The private diagnostic GET should report
+all gates and observation ages without enabling actions; compare the reports
+with real physical/threat/work observations. Confirm new lifecycle observations
+start unknown. Only after validation restore deterministic Q&A through private
+`/public-interactions` with questions true/actions false. This candidate does
+not make a supervised gesture trial ready by itself.
+
+If approved deployment validation fails, restore the **two immediate previous
+originals** and retire the **two newly added** modules; do not roll all the way
+back to the older threat-gate originals. The following prepared rollback also
+handles an interrupted copy without overwriting unknown drift:
+
+```python
+# Only under the approved deployment/rollback scope; never run speculatively.
+import hashlib, json, pathlib, shutil, subprocess
+backup = pathlib.Path('/home/corey/.local/share/blockhead-backups/public-actions-observability-20261020')
+m = json.loads((backup/'manifest.json').read_text()); runtime = pathlib.Path(m['runtime'])
+digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+for f in m['files']:
+    target = runtime/f['path']
+    assert (digest(target) if target.exists() else None) in {f['before_sha256'], f['candidate_sha256']}
+    if f['before_sha256'] is not None:
+        assert digest(backup/f['path']) == f['before_sha256']
+subprocess.run(['systemctl','--user','stop','blockhead.service'], check=True)
+for f in m['files']:
+    target = runtime/f['path']
+    if f['before_sha256'] is not None:
+        shutil.copy2(backup/f['path'], target)
+        assert digest(target) == f['before_sha256']
+    elif target.exists():
+        retired = backup/'retired-candidate'/f['path']
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        assert not retired.exists()
+        shutil.move(str(target), str(retired))
+        assert digest(retired) == f['candidate_sha256']
+subprocess.run(['systemctl','--user','start','blockhead.service'], check=True)
+```
+
+Never restore SQLite/Minecraft progress, change exposure or restart Minecraft/
+llama.cpp. Immediate feature disable still uses only private loopback
+`/public-interactions`, with questions true/actions false (or both false to
+also disable Q&A). This turn required no rollback because the candidate is not
+deployed. Prior deployment approval does not authorize this new four-file change.
+
+Final read-only recheck at **2026-10-20T04:03:43.962858+00:00**: connected health/hunger **20/20**, active task **none**, 0 queued tasks and 0 unfinished task rows. Actions/configuredActions remain false; deterministic Q&A true; modelQuestions false. All three service PIDs and zero-restart counts remain unchanged. The snapshot is embedded as `last_read_only_recheck` in the live-state evidence; no future idle state is assumed.

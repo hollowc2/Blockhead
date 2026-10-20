@@ -1,0 +1,71 @@
+{
+  "recorded_at": "2026-10-20T04:00:30.615229+00:00",
+  "host": "corey@maia",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "backup_proposed": "/home/corey/.local/share/blockhead-backups/public-actions-observability-20261020",
+  "backup_already_exists": false,
+  "files": [
+    {
+      "path": "src/index.ts",
+      "before_sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab",
+      "candidate_sha256": "f7278e8fcad86ad0770aa63066af36fb92e88da4b7f5e5547e47e6f50949108e",
+      "operation": "replace"
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "before_sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541",
+      "candidate_sha256": "047c8aa77172276240d828b121e4dd6c0522b93f4a67ad4d9da5bd350c957ecb",
+      "operation": "replace"
+    },
+    {
+      "path": "src/agent/public-action-admission.ts",
+      "before_sha256": null,
+      "candidate_sha256": "5a2802f8e1fb60da2ed3ef163ebdf3f055ea4021a466c9d47cef406f6a4acc8a",
+      "operation": "create"
+    },
+    {
+      "path": "src/agent/public-protocol-observations.ts",
+      "before_sha256": null,
+      "candidate_sha256": "0c7102cc8717857c71531f1b0e122b1d722110df6c98d88ea958b30d9f6a9558",
+      "operation": "create"
+    }
+  ],
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "status": "Prepared locally only. NOT deployed. Fresh explicit approval required before runtime installation, injection or blockhead stop/start.",
+  "baseline_source_commit": "22f1c1e",
+  "service": "blockhead.service",
+  "startup_defaults": {
+    "questions_enabled": false,
+    "actions_enabled": false
+  },
+  "features_preserved": {
+    "questions": true,
+    "configuredActions": false,
+    "modelQuestions": false
+  },
+  "runtime_delta": [
+    "src/index.ts",
+    "src/agent/public-action-safety.ts",
+    "src/agent/public-action-admission.ts",
+    "src/agent/public-protocol-observations.ts"
+  ],
+  "validation": {
+    "focused_tests": 66,
+    "full_suite_tests": 855,
+    "failures": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "typecheck": "passed",
+    "diff_check": "passed"
+  },
+  "rollback": "After fresh explicit approval: stop only blockhead.service. Verify current runtime hashes match candidate. Restore two original files from verified backup. Move the two newly introduced, hash-verified modules out of runtime into backup/retired-candidate. Start only blockhead.service. Preserve source checkout, config, dependencies, SQLite and world progress. Never restart Minecraft or llama.cpp.",
+  "original_threat_backup": "/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020",
+  "constraints": [
+    "Do not use broad rsync or deploy tests/scripts/docs. Only the four listed runtime paths are approved candidates.",
+    "Recheck installed baseline and all source candidate hashes; reconcile drift rather than overwrite.",
+    "Wait for a natural deployment boundary; do not cancel/reorder work, manipulate mobs or move Bob. Preserve resumable work through shutdown.",
+    "Record the actual reviewed source commit, services, feature flags, unfinished tasks/checkpoints and baseline hashes before stopping. Require a new backup directory.",
+    "A diagnostic safety pass is not an admission token. Recheck the same session and full predicate under the immediate lease.",
+    "No action trial is ready: outgoing attack/use absence and independently server-observed wave/pose remain unresolved. Keep actions disabled after diagnostic deployment."
+  ]
+}
