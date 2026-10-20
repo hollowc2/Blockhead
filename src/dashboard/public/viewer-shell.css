@@ -164,12 +164,13 @@ dd.sub { margin-top: 2px; }
 .foot b { color: var(--text); font-weight: 500; text-transform: capitalize; }
 
 /* Panel tabs */
-.tabs { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.tabs { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
 .tabs button { position: relative; padding: 8px 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
 .unseen { position: absolute; top: 6px; margin-left: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
 .panel[data-active="live"] [data-tab]:not([data-tab="live"]),
+.panel[data-active="gear"] [data-tab]:not([data-tab="gear"]),
 .panel[data-active="story"] [data-tab]:not([data-tab="story"]),
 .panel[data-active="stats"] [data-tab]:not([data-tab="stats"]) { display: none; }
 
@@ -195,6 +196,13 @@ dd.sub { margin-top: 2px; }
 .stat b { font-size: 1.05rem; font-weight: 700; font-family: var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat span { font-size: .68rem; color: var(--muted); }
 .count { font-family: var(--mono); letter-spacing: 0; color: var(--green); }
+.equipment { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.equipment > div { padding: 10px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
+.inventory-items { list-style: none; margin: 0; padding: 0; }
+.inventory-items li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: .84rem; }
+.inventory-items li:last-child { border-bottom: 0; }
+.inventory-items span { overflow-wrap: anywhere; min-width: 0; }
+.inventory-items b { flex: none; color: var(--green); font-size: .78rem; }
 
 .milestones { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .milestone { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 7px; align-items: center; padding: 8px; border-radius: 10px; background: var(--surface-2); min-width: 0; }

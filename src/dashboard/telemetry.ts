@@ -27,6 +27,7 @@ import {
   projectLlmActivity,
 } from "./projections.js";
 import type { DashboardSnapshot } from "./types.js";
+import { EQUIPMENT_SLOTS, type EquipmentSummary } from "./types.js";
 import type { ViewerTelemetry } from "./viewer.js";
 
 /**
@@ -127,6 +128,7 @@ export class DashboardTelemetryCollector {
       },
       stockpiles: projectStockpiles(maintenance?.snapshot),
       inventory,
+      equipment: connected && bot !== null ? projectEquipment(bot) : null,
       danger,
       llmLastCall: projectLlmLastCall(lastCall),
       llmActivity: projectLlmActivity({
@@ -144,6 +146,16 @@ export class DashboardTelemetryCollector {
       world: this.source.worldStats?.() ?? null,
     };
   }
+}
+
+/** Read actual equipped slots, rather than inferring equipment from owned items. */
+function projectEquipment(bot: Bot): EquipmentSummary {
+  return Object.fromEntries(EQUIPMENT_SLOTS.map((slot) => {
+    const item = slot === "off-hand" && bot.supportFeature?.("doesntHaveOffHandSlot") ? null
+      : slot === "hand" ? bot.heldItem
+      : bot.inventory.slots?.[bot.getEquipmentDestSlot?.(slot)];
+    return [slot, item ? { name: item.name, count: item.count } : null];
+  })) as EquipmentSummary;
 }
 
 export function createDashboardTelemetry(source: DashboardTelemetrySource): DashboardTelemetryCollector {

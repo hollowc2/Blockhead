@@ -50,6 +50,8 @@ export interface StockpileLine { kind: StockpileKind; level: number | null; targ
 export interface StockpileSummary { levels: Record<StockpileKind, number>; targets: Record<StockpileKind, number>; deficits: readonly StockpileLine[] }
 export interface InventoryItemSummary { name: string; count: number }
 export interface InventorySummary { items: readonly InventoryItemSummary[]; totalItems: number }
+export const EQUIPMENT_SLOTS = ["hand", "off-hand", "head", "torso", "legs", "feet"] as const;
+export type EquipmentSummary = Record<typeof EQUIPMENT_SLOTS[number], InventoryItemSummary | null>;
 export interface LlmLastCallSummary { at: string | null; latencyMs: number | null; tool: string | null; rationale: string | null }
 export type LlmDecisionType = "owner_instruction" | "background_director" | "goal_decision";
 export type LlmActivityState = "thinking" | "working" | "idle" | "not_called" | "disconnected";
@@ -90,6 +92,7 @@ export interface DashboardSnapshot {
   background: BackgroundActivity;
   stockpiles: StockpileSummary | null;
   inventory: InventorySummary | null;
+  equipment?: EquipmentSummary | null;
   danger: DangerSummary | null;
   llmLastCall: LlmLastCallSummary;
   llmActivity: LlmActivity;

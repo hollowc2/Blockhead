@@ -33,6 +33,8 @@ test("public state is an allowlisted, redacted projection", () => {
     viewer: { status: "running" },
     story: [],
     world: null,
+    inventory: { items: [{ name: "diamond", count: 12 }], totalItems: 12 },
+    equipment: null,
   });
 });
 
@@ -50,9 +52,24 @@ test("public state passes story and world stats through, but only their allowlis
 
 test("public state leaks no coordinates, names, chat, LLM data or internals", () => {
   const body = JSON.stringify(toPublicViewerState(secretSnapshot()));
-  for (const secret of ["1234", "987", "1200", "-950", "OwnerSecretName", "CobbleBob", "secret", "SECRET", "diamond", "/home", "/mnt", "zombie", "position", "chat", "llm", "3001", "Walking", "goal", "task"]) {
+  for (const secret of ["1234", "987", "1200", "-950", "OwnerSecretName", "CobbleBob", "secret", "SECRET", "/home", "/mnt", "zombie", "position", "chat", "llm", "3001", "Walking", "goal", "task"]) {
     assert.equal(body.includes(secret), false, `public state contains ${secret}`);
   }
+});
+
+test("public gear exposes only item types and counts, with no custom names or metadata", () => {
+  const snapshot = secretSnapshot();
+  const sword = { name: "iron_sword", count: 1, displayName: "OwnerSecretName", nbt: { base: "1200 64 -950" } };
+  snapshot.equipment = { hand: sword, "off-hand": null, head: null, torso: null, legs: null, feet: null };
+  snapshot.inventory = { items: [sword], totalItems: 1 };
+  const state = toPublicViewerState(snapshot);
+  assert.deepEqual(state.equipment, { hand: { name: "iron_sword", count: 1 }, "off-hand": null, head: null, torso: null, legs: null, feet: null });
+  assert.deepEqual(state.inventory, { items: [{ name: "iron_sword", count: 1 }], totalItems: 1 });
+  assert.notEqual(state.equipment?.hand, sword);
+  assert.equal(JSON.stringify(state).includes("OwnerSecretName"), false);
+  snapshot.connection.connected = false;
+  assert.equal(toPublicViewerState(snapshot).equipment, null);
+  assert.equal(toPublicViewerState(snapshot).inventory, null);
 });
 
 test("public state is cached so polling does not drive snapshot cost", async () => {

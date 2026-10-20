@@ -22,7 +22,28 @@
     try { localStorage.setItem("cobblebob.tab", name); } catch {}
   }
   document.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.tabButton)));
-  try { const saved = localStorage.getItem("cobblebob.tab"); if (saved === "story" || saved === "stats") selectTab(saved); } catch {}
+  try { const saved = localStorage.getItem("cobblebob.tab"); if (["gear", "story", "stats"].includes(saved)) selectTab(saved); } catch {}
+
+  const itemName = (name) => name.replace(/^minecraft:/, "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  function renderGear(s) {
+    const connected = s.connection?.connected === true;
+    const equipment = connected ? s.equipment : null;
+    const labels = { hand: "Main hand", "off-hand": "Off hand", head: "Helmet", torso: "Chest armor", legs: "Leggings", feet: "Boots" };
+    $("equipment").replaceChildren(...Object.entries(labels).map(([slot, label]) => {
+      const row = el("div");
+      const item = equipment?.[slot];
+      row.append(el("dt", "", label), el("dd", item ? "" : "sub", !equipment ? "Unavailable" : item ? `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty"));
+      return row;
+    }));
+    const inventory = connected ? s.inventory : null;
+    setText("inventoryCount", inventory ? `${inventory.totalItems} items` : null);
+    const items = inventory?.items || [];
+    $("inventoryItems").replaceChildren(...(items.length ? items.map((item) => {
+      const row = el("li");
+      row.append(el("span", "", itemName(item.name)), el("b", "mono", `×${item.count}`));
+      return row;
+    }) : [el("li", "sub", inventory ? "Inventory is empty." : connected ? "Inventory data unavailable." : "Inventory unavailable while CobbleBob is offline.")]));
+  }
 
   function toast(icon, label, message, kind = "") {
     const root = $("toasts");
@@ -132,6 +153,7 @@
     updatePublicButtons();
     renderStory(s.story || []);
     renderWorld(s.world);
+    renderGear(s);
     const self = s.self || {};
     const connected = s.connection?.connected === true;
     const wasCommandConnected = commandConnected;
@@ -214,6 +236,7 @@
       render(await response.json());
     } catch {
       setConnection("wait", "Reconnecting…");
+      renderGear({});
       publicAvailable = { questions: false, actions: false };
       updatePublicButtons();
       commandConnected = false;

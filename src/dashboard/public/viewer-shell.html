@@ -64,6 +64,7 @@
     <aside class="panel" id="panel" data-active="live">
       <nav class="tabs" role="tablist">
         <button type="button" role="tab" data-tab-button="live" aria-selected="true">Live</button>
+        <button type="button" role="tab" data-tab-button="gear" aria-selected="false">Gear</button>
         <button type="button" role="tab" data-tab-button="story" aria-selected="false">Story <i id="storyUnseen" class="unseen" hidden></i></button>
         <button type="button" role="tab" data-tab-button="stats" aria-selected="false">Stats</button>
       </nav>
@@ -156,6 +157,18 @@
           <div><dt>Time</dt><dd id="timePublic">—</dd></div>
         </dl>
         <p class="sub">A read-only window into an autonomous Minecraft agent. CobbleBob is gathering, building and surviving on its own.</p>
+      </article>
+
+      <article class="card" data-tab="gear">
+        <h2>Equipped</h2>
+        <p class="sub">What CobbleBob is holding and wearing right now.</p>
+        <dl id="equipment" class="equipment"><div><dt>Gear</dt><dd>Waiting for gear data…</dd></div></dl>
+      </article>
+
+      <article class="card" data-tab="gear">
+        <h2>Inventory <span id="inventoryCount" class="count">—</span></h2>
+        <p class="sub">Carried items, grouped by type.</p>
+        <ul id="inventoryItems" class="inventory-items"><li class="sub">Waiting for inventory data…</li></ul>
       </article>
 
       <article class="card" data-tab="story">

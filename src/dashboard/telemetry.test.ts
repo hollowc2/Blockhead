@@ -36,6 +36,7 @@ test("collects a disconnected snapshot with explicit unavailable values", () => 
   const snapshot = new DashboardTelemetryCollector(source()).snapshot();
   equal(snapshot.connection.connected, false);
   equal(snapshot.inventory, null);
+  equal(snapshot.equipment, null);
   equal(snapshot.stockpiles, null);
   equal(snapshot.danger, null);
   equal(snapshot.goal, null);
@@ -66,6 +67,35 @@ test("reads the current bot from the getter after a reconnect", () => {
   equal(collector.snapshot().connection.player, "SecondBot");
   currentBot = null;
   equal(collector.snapshot().connection.connected, false);
+});
+
+test("tracks actual equipped gear, equipment changes and reconnects without retaining items", () => {
+  const sword = { name: "iron_sword", count: 1, nbt: { customName: "secret" } };
+  const slots: Record<number, unknown> = { 5: { name: "iron_helmet", count: 1 }, 6: { name: "iron_chestplate", count: 1 }, 7: { name: "iron_leggings", count: 1 }, 8: { name: "iron_boots", count: 1 }, 45: { name: "shield", count: 1 } };
+  const destinations: Record<string, number> = { head: 5, torso: 6, legs: 7, feet: 8, "off-hand": 45 };
+  let bot: Bot | null = { entity: {}, heldItem: sword, inventory: { items: () => [sword], slots }, getEquipmentDestSlot: (slot: string) => destinations[slot] } as unknown as Bot;
+  const collector = new DashboardTelemetryCollector(source({ bot: () => bot }));
+  const first = collector.snapshot();
+  deepStrictEqual(first.equipment, {
+    hand: { name: "iron_sword", count: 1 }, "off-hand": { name: "shield", count: 1 },
+    head: { name: "iron_helmet", count: 1 }, torso: { name: "iron_chestplate", count: 1 },
+    legs: { name: "iron_leggings", count: 1 }, feet: { name: "iron_boots", count: 1 },
+  });
+  notStrictEqual(first.equipment?.hand, sword);
+  sword.name = "iron_pickaxe";
+  slots[5] = null;
+  equal(collector.snapshot().equipment?.hand?.name, "iron_pickaxe");
+  equal(collector.snapshot().equipment?.head, null);
+  equal(first.equipment?.hand?.name, "iron_sword");
+  bot = null;
+  equal(collector.snapshot().equipment, null);
+});
+
+test("does not query an unsupported off-hand slot on older Minecraft versions", () => {
+  const bot = { entity: {}, inventory: { items: () => [], slots: [] }, supportFeature: () => true,
+    getEquipmentDestSlot: (slot: string) => { if (slot === "off-hand") throw new Error("unsupported slot"); return 5; },
+  } as unknown as Bot;
+  equal(new DashboardTelemetryCollector(source({ bot: () => bot })).snapshot().equipment?.["off-hand"], null);
 });
 
 test("projects an active goal and active task", () => {

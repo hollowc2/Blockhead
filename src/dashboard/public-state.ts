@@ -1,11 +1,13 @@
 import type { StoryEntry } from "./story.js";
 import type { DashboardSnapshot } from "./types.js";
+import { EQUIPMENT_SLOTS, type EquipmentSummary, type InventorySummary } from "./types.js";
 import type { WorldStatsSummary } from "./world-stats.js";
 
 /**
  * Everything the public viewer page may learn about the bot. Built by
  * allowlist, never by deleting fields, so new snapshot fields stay private.
- * No coordinates, names, chat, goals, tasks, inventory or LLM activity.
+ * No coordinates, player names, chat, goals, tasks or LLM activity.
+ * Inventory and gear expose only registry item names and counts, never item metadata.
  * The story feed and lifetime stats are built coordinate-free at the source.
  */
 export interface PublicViewerState {
@@ -17,6 +19,8 @@ export interface PublicViewerState {
   viewer: { status: DashboardSnapshot["viewer"]["status"] };
   story: readonly StoryEntry[];
   world: WorldStatsSummary | null;
+  inventory: InventorySummary | null;
+  equipment: EquipmentSummary | null;
 }
 
 export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerState {
@@ -33,6 +37,14 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
     viewer: { status: snapshot.viewer.status },
     story: (snapshot.story ?? []).map(({ id, at, icon, text, highlight }) => ({ id, at, icon, text, highlight })),
     world: snapshot.world ?? null,
+    inventory: snapshot.connection.connected && snapshot.inventory ? {
+      items: snapshot.inventory.items.map(({ name, count }) => ({ name, count })),
+      totalItems: snapshot.inventory.totalItems,
+    } : null,
+    equipment: snapshot.connection.connected && snapshot.equipment ? Object.fromEntries(EQUIPMENT_SLOTS.map((slot) => {
+      const item = snapshot.equipment?.[slot];
+      return [slot, item ? { name: item.name, count: item.count } : null];
+    })) as EquipmentSummary : null,
   };
 }
 
