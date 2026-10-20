@@ -27,6 +27,7 @@ import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
 import { actionFingerprint } from "./watchdog.js";
 import { workReadiness } from "./work-readiness.js";
+import { taskSafeToRun } from "./work-safety.js";
 
 /**
  * Phase 7/13: the background coordinator (spec section 4.3). This is
@@ -418,7 +419,11 @@ export class BackgroundManager {
     // work always owns the floor, and a running task is left alone — the
     // task-settled hook re-checks the moment a run ends.
     if (scheduler.active !== null) return;
-    if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND && isRunnable(task))) return;
+    // Safety-deferred autonomous work still owns its checkpoint, but cannot
+    // take the floor yet. Let the readiness path supply its prerequisites
+    // (notably carried food) instead of deadlocking behind queued re-arm work.
+    // Owner/system tasks remain authoritative through taskSafeToRun.
+    if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND && isRunnable(task) && taskSafeToRun(bot, task))) return;
 
     // Night without owner work: go home and stay there. Background errands
     // far from home at night are how the bot dies and loses its inventory.

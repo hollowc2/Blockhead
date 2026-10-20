@@ -1,0 +1,39 @@
+{
+  "status": "prepared; not deployed; explicit approval required",
+  "host": "maia",
+  "service": "user blockhead.service",
+  "source_baseline_commit": "03b9c5d",
+  "runtime_release_note": "runtime is a file-based deployment; source Git HEAD is not proof of installed files",
+  "baseline_observed_at": "2026-10-20T02:13:44Z",
+  "source_working_directory": "/mnt/Repos/Games/Blockhead",
+  "runtime_root": "/home/corey/.local/share/blockhead-runtime",
+  "files": [
+    {
+      "path": "src/agent/background.ts",
+      "before_sha256": "6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886",
+      "candidate_sha256": "10aa752a5f39f19a11d0349b55790e9d229da3cfc8e7f6cd7e8bcadca94b3614"
+    }
+  ],
+  "backup_directory": "/home/corey/.local/share/blockhead-backups/public-actions-food-readiness-20261020",
+  "startup_defaults": {
+    "questions_enabled": false,
+    "actions_enabled": false
+  },
+  "validation": {
+    "focused_passed": 56,
+    "typecheck": "passed",
+    "full_suite_passed": 838,
+    "diff_check": "passed"
+  },
+  "rollback": "After approval, stop only user blockhead.service; restore the backed-up src/agent/background.ts; verify before_sha256; start only blockhead.service. Never restore world or SQLite progress. Startup disables both public features; restore deterministic Q&A in memory only after validation.",
+  "post_deploy": "Confirm service connected; original task IDs/checkpoints retained; bread prerequisite either progresses or reports a legitimate bounded failure/cooldown; both features start disabled; modelQuestions false. Do not enable actions until every authoritative safety gate passes. No acceptance result is implied by deployment.",
+  "excluded": [
+    "all other application files",
+    "dependencies",
+    "configuration",
+    "SQLite restore/migration",
+    "Minecraft",
+    "llama.cpp",
+    "network exposure"
+  ]
+}

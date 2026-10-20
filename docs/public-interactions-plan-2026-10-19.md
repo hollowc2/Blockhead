@@ -1,6 +1,6 @@
 # Anonymous public Q&A and simple commands
 
-Status: deployed on Maia; supervised trial completed for deterministic Q&A, now enabled privately in memory. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
+Status: deployed on Maia; deterministic Q&A enabled privately in memory. Follow-up found a food-readiness dependency deadlock; a tested one-file repair awaits explicit deployment/restart approval. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 ## Goal
 
@@ -240,3 +240,130 @@ The actual live shell passed desktop (1365×1000) and mobile (390×844) form che
 Final observed state: connected, health 20, hunger 11; questions enabled in memory, actions disabled, modelQuestions false, no gesture quarantine. The remaining action acceptance work is to wait for the authoritative task queue and other safety conditions to clear, briefly enable actions privately, verify the four fixed effects and priority/disable behavior, then decide whether to keep actions enabled. This trial does not claim successful in-game gesture effects.
 
 Private backup/evidence: `/home/corey/.local/share/blockhead-backups/public-trial-20261019T234304Z`. Local structured receipt: [trial evidence](investigations/public-interactions-2026-10-19-trial.json). To disable Q&A immediately, POST `{"questions_enabled":false,"actions_enabled":false}` as application/json with no Origin to loopback `http://127.0.0.1:8155/public-interactions`. Restore the saved configuration and restart only the bot if origin rollback is required; never restore world/database progress.
+
+
+## Remaining-action follow-up — October 19 PDT / October 20 UTC
+
+**Rollout remains incomplete and actions remain disabled.** Fresh live checks at
+2026-10-20T02:21:46Z used the real public Funnel edge `208.111.34.11`, resolved
+through public DNS, with normal HTTPS hostname verification and curl `--resolve`.
+See [follow-up evidence](investigations/public-actions-2026-10-19-followup.json)
+and [exact repair delta](investigations/public-actions-2026-10-19-repair-deployment.json).
+No live code was installed and no service was restarted in this follow-up.
+
+### Why the maintenance queue does not drain
+
+The original three priority-80 maintenance `ensure_item` tasks for stone sword,
+pickaxe and axe are still queued, with no active task or pending interrupt.
+The live inventory contains dirt, rotten flesh, wheat and seeds. None count as
+carried food under `countFoodItems`; health is 20 and hunger 11. Home stockpiles
+report 357 food, above their target of 64, so stockpile crisis handling does not
+supply carried food. Runtime hashes of background, work-safety and work-readiness
+match the inspected source baseline.
+
+`WorkSafetyCoordinator` correctly defers re-arm work until food is carried.
+`BackgroundManager` incorrectly returns for any queued/paused task at foreground
+priority or above before reaching its existing `workReadiness` bread path. Thus
+the maintenance tasks block the very prerequisite that would let them run.
+The local repair applies the existing `taskSafeToRun` predicate to that pending
+work test. Safety-deferred autonomous work can reach readiness recovery; owner
+and system work still own the floor. The scheduler guard, durable task IDs,
+checkpoints, owner dispatch, and recovery cooldowns are unchanged. No tasks were
+cancelled, deleted, reordered or edited live; no idle state was manufactured.
+
+A separate current public-action blocker is the strict `hostile.count === 0`
+gate: private telemetry reports 81 loaded hostiles (nearest spider 27 metres).
+This count alone is not evidence of an immediate attack, but it does prevent
+public gestures under the reviewed policy. That gate remains unchanged. Queue
+recovery cannot be treated as proof of safe idle.
+
+### Fresh acceptance evidence and final runtime state
+
+- `blockhead.service` is active, MainPID 70576, NRestarts 0. Minecraft PID 980 and
+  llama.cpp PID 952 are unchanged, active, with NRestarts 0.
+- Private control reapplied questions true/actions false. Two simultaneous
+  actual public action requests each returned 503/disabled. This proves disabled
+  admission refusal, **not** live enabled-action concurrency or cancellation.
+- Deterministic public Q&A returned 200 with only health/hunger facts. Public
+  owner and operator routes returned 404; the private owner form returned its
+  expected 400 validation response to an empty payload. No owner task was sent.
+- Final runtime: questions true, actions false, configuredActions false,
+  modelQuestions false; no gesture active/quarantine; all in-flight counts zero,
+  timeouts zero. Both YAML startup defaults remain false and the exact origin is
+  unchanged. Accepted/rejected counters are now 3/9; the new acceptance was Q&A.
+- Say hello, arm animation, left/right orientation preservation, enabled-action
+  concurrency, busy-to-idle priority and disable-during-execution remain
+  **unverified in game**. Prior busy refusals and local concurrency/effect tests
+  remain useful evidence but do not replace live effect observation. No action
+  was enabled or attempted with uncertain delivery, and no action was retried.
+- Model-backed Q&A remains unavailable. Network configuration and exposure,
+  Minecraft, llama.cpp, world progress and database progress were not changed.
+
+Focused tests: **56 passed** across background, work-safety, public actions,
+public interactions and private controls. New regressions reproduce the deadlock
+using a real SQLite repository and scheduler, retain queued/paused checkpoints,
+run bread recovery before re-arm, resume original re-arm tasks after food arrives,
+retain owner precedence and respect the bread failure cooldown. Typecheck passed;
+full suite **838 passed, 0 failed/skipped/cancelled**; `git diff --check` passed.
+
+### Prepared deployment and rollback (not executed)
+
+Explicit approval is required before installing the repair or restarting the
+live bot, as requested for this follow-up. Only `src/agent/background.ts` is in
+the runtime delta; the tests and these records are source-only. Recheck service
+state, runtime hashes, source commit and defaults immediately before deployment.
+If the installed baseline differs, reconcile it rather than overwriting it.
+
+After approval, execute on Maia at a safe checkpoint boundary (no active task,
+interrupt or unsettled lease; queued/resumable work remains persisted). Save
+before-status and the runtime original before stopping the same user unit:
+
+```bash
+cd /mnt/Repos/Games/Blockhead
+repair_backup=/home/corey/.local/share/blockhead-backups/public-actions-food-readiness-20261020
+repair_runtime=/home/corey/.local/share/blockhead-runtime
+# Require this backup path to be new; never overwrite an earlier rollback copy.
+test ! -e "$repair_backup" || exit 1
+printf '%s  %s\n' 6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886 "$repair_runtime/src/agent/background.ts" | sha256sum -c - || exit 1
+printf '%s  %s\n' 10aa752a5f39f19a11d0349b55790e9d229da3cfc8e7f6cd7e8bcadca94b3614 src/agent/background.ts | sha256sum -c - || exit 1
+mkdir -p "$repair_backup/src/agent"
+cp "$repair_runtime/src/agent/background.ts" "$repair_backup/src/agent/background.ts"
+git rev-parse HEAD > "$repair_backup/source-commit.txt"
+curl -fsS http://127.0.0.1:8155/status > "$repair_backup/status-before.json"
+systemctl --user stop blockhead.service
+cp src/agent/background.ts "$repair_runtime/src/agent/background.ts"
+printf '%s  %s\n' 10aa752a5f39f19a11d0349b55790e9d229da3cfc8e7f6cd7e8bcadca94b3614 "$repair_runtime/src/agent/background.ts" | sha256sum -c - || exit 1
+systemctl --user start blockhead.service
+systemctl --user is-active blockhead.service
+```
+
+Validate connection, task/checkpoint continuity, prerequisite progress or bounded
+failure, logs and startup-disabled feature state. Restore deterministic Q&A
+privately only after validation. If validation fails, use the same approval's
+rollback before further live debugging:
+
+```bash
+repair_backup=/home/corey/.local/share/blockhead-backups/public-actions-food-readiness-20261020
+repair_runtime=/home/corey/.local/share/blockhead-runtime
+printf '%s  %s\n' 6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886 "$repair_backup/src/agent/background.ts" | sha256sum -c - || exit 1
+systemctl --user stop blockhead.service
+cp "$repair_backup/src/agent/background.ts" "$repair_runtime/src/agent/background.ts"
+printf '%s  %s\n' 6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886 "$repair_runtime/src/agent/background.ts" | sha256sum -c - || exit 1
+systemctl --user start blockhead.service
+```
+
+Never restore world/database progress or restart Minecraft/model services for
+this repair. Immediate feature rollback needs no restart: POST
+`{"questions_enabled":false,"actions_enabled":false}` as application/json without
+Origin to loopback `http://127.0.0.1:8155/public-interactions` on Maia. To retain
+current deterministic Q&A while blocking actions, use questions true/actions
+false. Any restart returns both features to false.
+
+After the approved repair, observe real recovery without deleting or cancelling
+work. If every authoritative gate eventually permits actions, temporarily enable
+privately and verify all four effects once through actual public HTTPS with
+production cooldowns (10 seconds per IP, global 5 seconds; hello 30 seconds).
+Observe chat and game/entity effects independently of the HTTP response. Never
+retry uncertain delivery. Exercise owner/busy/concurrent/disable authority and
+return actions to false on any failure or absence of a safe-idle window. The
+repair does not authorize weakening the hostile or other safety predicates.

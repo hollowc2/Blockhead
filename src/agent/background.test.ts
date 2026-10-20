@@ -13,13 +13,14 @@ import type { DecisionInput } from "../llm/context.js";
 import type { ToolContext } from "../tools/types.js";
 import type { NextTaskDecision } from "../llm/schemas.js";
 import type { StorageRepository } from "../memory/storage.js";
-import type { TasksRepository } from "../memory/tasks.js";
+import { TasksRepository } from "../memory/tasks.js";
 import { AppDatabase } from "../memory/database.js";
 import { MIGRATIONS } from "../memory/migrations.js";
 import { BackgroundFailuresRepository } from "../memory/background-failures.js";
 import type { AgentState } from "./state.js";
 import { prioritizeDeficit, type StockpileDeficit, type StockpileManager, type StockpileSnapshot } from "./maintenance.js";
-import type { Scheduler } from "./scheduler.js";
+import { Scheduler } from "./scheduler.js";
+import { WorkSafetyCoordinator } from "./work-safety.js";
 import { TaskPriority, TaskStatus, type NewTask, type Task } from "./task.js";
 import { BootstrapStage } from "./bootstrap.js";
 import { BackgroundManager, type BackgroundManagerOptions } from "./background.js";
@@ -1013,4 +1014,81 @@ test("automatic home sleep handles daytime thunderstorms and respects auto_sleep
   assert.equal(shouldSleep(), true);
   h.config.behavior = { auto_sleep: false } as never;
   assert.equal(shouldSleep(), false);
+});
+
+for (const status of [TaskStatus.QUEUED, TaskStatus.PAUSED]) {
+  test(`food prerequisite runs ahead of safety-deferred ${status} re-arm work without losing it`, async () => {
+    const h = newHarness(20, 11);
+    const db = new AppDatabase(":memory:"); db.runMigrations(MIGRATIONS);
+    const tasks = new TasksRepository(db);
+    const scheduler = new Scheduler({ bus: h.bus, tasks });
+    h.options.scheduler = scheduler;
+    h.crisis = null;
+    (h.options.state as any).timePhase = "day";
+    h.options.bot.entities = {};
+    const stock: Array<{ name: string; count: number }> = [{ name: "rotten_flesh", count: 2 }, { name: "wheat", count: 3 }];
+    h.options.bot.inventory = { items: () => stock } as never;
+    const safety = new WorkSafetyCoordinator({ bot: h.options.bot, scheduler, bus: h.bus, logger: h.options.logger });
+    const work = ["stone_sword", "stone_pickaxe", "stone_axe"].map(item => scheduler.enqueue({
+      type: "ensure_item", source: "maintenance", priority: TaskPriority.MAINTENANCE,
+      objective: `Re-arm after respawn: ${item}.`, parameters: { item, quantity: 1 },
+    }));
+    if (status === TaskStatus.PAUSED) {
+      scheduler.claim(); scheduler.checkpoint({ phase: "withdraw", gathered: 2 });
+      scheduler.requestPause(); scheduler.settleInterrupted();
+      scheduler.requestPause(); scheduler.settleInterrupted();
+      scheduler.requestPause(); scheduler.settleInterrupted();
+    }
+    safety.attach();
+    const before = tasks.loadUnfinished().filter(task => work.some(w => w.id === task.id));
+    h.options.maintenance.check = async () => ({ levels: { wood: 111, food: 357, fuel: 81, torches: 127 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] });
+    try {
+      assert.equal(scheduler.claim(), null);
+      await h.manager.tick();
+      assert.equal(scheduler.active?.type, "ensure_item");
+      assert.deepEqual(scheduler.active?.parameters, { item: "bread", quantity: 6 });
+      assert.deepEqual(tasks.loadUnfinished().filter(task => work.some(w => w.id === task.id)), before);
+      assert.equal(h.cancelled.length, 0);
+      assert.equal(h.decisionCount, 0);
+      await h.manager.tick();
+      assert.equal(tasks.loadUnfinished().filter(task => task.parameters.item === "bread").length, 1);
+      stock.push({ name: "bread", count: 6 });
+      scheduler.completeActive();
+      assert.ok(work.some(task => task.id === scheduler.active?.id), "original re-arm work resumes through the unchanged safety gate");
+    } finally { safety.detach(); h.manager.stop(); db.close(); }
+  });
+}
+
+test("pending owner work retains priority over background food prerequisites", async () => {
+  const h = newHarness(20, 11);
+  h.crisis = null;
+  h.options.bot.inventory = { items: () => [] } as never;
+  h.queued.push({ id: "owner", type: "travel_to", source: "user", priority: TaskPriority.FOREGROUND,
+    objective: "owner destination", parameters: {}, status: TaskStatus.PAUSED, createdAt: new Date().toISOString(), resumeState: { phase: "travel" } });
+  try {
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 0);
+    assert.equal(h.cancelled.length, 0);
+    assert.deepEqual(h.queued[0]?.resumeState, { phase: "travel" });
+  } finally { h.manager.stop(); }
+});
+
+test("deferred re-arm work does not bypass the bread recovery cooldown", async () => {
+  const h = newHarness(20, 11);
+  h.crisis = null;
+  h.options.bot.inventory = { items: () => [] } as never;
+  const rearm: Task = { id: "rearm", type: "ensure_item", source: "maintenance", priority: TaskPriority.MAINTENANCE,
+    objective: "restore pickaxe", parameters: { item: "stone_pickaxe" }, status: TaskStatus.QUEUED, createdAt: new Date().toISOString() };
+  h.queued.push(rearm);
+  h.bus.emit("task.failed", { task: { ...rearm, id: "bread", source: "background", status: TaskStatus.FAILED,
+    parameters: { item: "bread", quantity: 6 }, lastError: "storage unavailable" } });
+  try {
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 0);
+    assert.equal(h.cancelled.length, 0);
+    h.advance(60_001);
+    await h.manager.tick();
+    assert.deepEqual(h.enqueued.at(-1)?.parameters, { item: "bread", quantity: 6 });
+    assert.ok(h.queued.includes(rearm));
+  } finally { h.manager.stop(); }
 });
