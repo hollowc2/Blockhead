@@ -1,0 +1,368 @@
+{
+  "recorded_at": "2026-10-20T03:30:47.277622+00:00",
+  "host": "maia",
+  "origin": "https://maia.tailceb694.ts.net",
+  "public_edge": "208.111.34.11",
+  "tls_verified": true,
+  "flags_before": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 1,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "concurrent_disabled_refusals": [
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    },
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    }
+  ],
+  "deterministic_question": {
+    "status": 200,
+    "body": {
+      "code": "ok",
+      "text": "My health is 8/20 and hunger is 17/20."
+    }
+  },
+  "public_private_separation": {
+    "/api/command": 404,
+    "/public-interactions": 404
+  },
+  "flags_final": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 2,
+    "rejected": 4,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "status": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T02:42:24.256Z",
+      "uptimeSeconds": 2903.022
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 65.5,
+        "y": 103,
+        "z": 53.5
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": {
+        "id": "7f4917a7-80b9-495d-bdf2-c815f8ad4be5",
+        "type": "defend_self",
+        "source": "maintenance",
+        "priority": 110,
+        "objective": "Fight off attackers (zombie nearby).",
+        "status": "active",
+        "startedAt": "2026-10-20T03:30:46.651Z",
+        "lastError": null
+      },
+      "queued": [
+        {
+          "id": "01d6f5b5-485f-4597-8796-e25de2dd2b4c",
+          "type": "ensure_item",
+          "source": "goal",
+          "priority": 40,
+          "objective": "[goal] ensure 1 iron_pickaxe",
+          "status": "paused",
+          "startedAt": "2026-10-20T03:29:11.640Z",
+          "lastError": null
+        },
+        {
+          "id": "1fba50e9-5b43-42a7-bb21-18b6225c984c",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_sword.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        },
+        {
+          "id": "ff9028d0-5221-43c4-8825-b591c11e6eea",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_pickaxe.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        },
+        {
+          "id": "4b6af8f9-c8fa-4682-b1e8-7aa32032c3b1",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_axe.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        }
+      ],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": {
+      "description": "Prepare for a mining expedition.",
+      "source": "background",
+      "successCriteria": [
+        {
+          "kind": "stockpile",
+          "stockpile": "food",
+          "min": 32
+        },
+        {
+          "kind": "stockpile",
+          "stockpile": "torches",
+          "min": 64
+        },
+        {
+          "kind": "inventory",
+          "item": "iron_pickaxe",
+          "min": 1
+        }
+      ],
+      "id": "e993bc3f-9712-47c0-abcc-8cb0c8822f39",
+      "status": "active",
+      "createdAt": "2026-10-20T03:28:59.535Z",
+      "currentStep": "ensure 1 iron_pickaxe",
+      "recentResults": []
+    },
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T03:29:11.580Z",
+      "lastSuccessAgeSeconds": 95.698,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T03:29:05.441Z",
+        "latencyMs": 6140,
+        "tool": "ensure_item",
+        "rationale": "The goal requires a carried iron_pickaxe, which is currently missing from the inventory and equipment. The stockpiles already meet the criteria (food 355 >= 32, torches 127 >= 64), so obtaining the pickaxe is the only remaining step.",
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": {
+      "id": "42a1ebf1-05e2-4ee8-b08a-5393f6f6e2f9",
+      "type": "night_shelter",
+      "source": "maintenance",
+      "objective": "Shelter until health recovers before resuming work.",
+      "status": "failed",
+      "lastError": "no safe ground to dig a night shelter in nearby",
+      "at": "2026-10-20T03:30:46.557Z"
+    },
+    "consecutiveTaskFailures": 4,
+    "recentTaskResults": [
+      {
+        "id": "42a1ebf1-05e2-4ee8-b08a-5393f6f6e2f9",
+        "type": "night_shelter",
+        "source": "maintenance",
+        "objective": "Shelter until health recovers before resuming work.",
+        "status": "failed",
+        "lastError": "no safe ground to dig a night shelter in nearby",
+        "at": "2026-10-20T03:30:46.557Z"
+      },
+      {
+        "id": "3ebc87bd-1385-45e2-8d2d-9becc99322f3",
+        "type": "death_recovery",
+        "source": "system",
+        "objective": "Recover items from death site",
+        "status": "cancelled",
+        "lastError": null,
+        "at": "2026-10-20T03:30:46.236Z"
+      },
+      {
+        "id": "40e5575d-8f47-4d88-a0c1-808dba282c41",
+        "type": "defend_self",
+        "source": "maintenance",
+        "objective": "Fight off attackers (hurt with zombie in range).",
+        "status": "failed",
+        "lastError": "could not retreat: health 0 is at/below the retreat threshold",
+        "at": "2026-10-20T03:30:07.622Z"
+      },
+      {
+        "id": "561a563e-f2b0-4015-81b9-2de92a514aea",
+        "type": "night_shelter",
+        "source": "maintenance",
+        "objective": "Shelter until health recovers before resuming work.",
+        "status": "failed",
+        "lastError": "could not dig the shelter: Error: health 1.3333330154418945 is at/below the retreat threshold 4",
+        "at": "2026-10-20T03:29:56.944Z"
+      },
+      {
+        "id": "fa57ae2f-9494-4526-b029-0ffc70950952",
+        "type": "defend_self",
+        "source": "maintenance",
+        "objective": "Fight off attackers (zombie nearby).",
+        "status": "failed",
+        "lastError": "could not retreat: attacked in the water",
+        "at": "2026-10-20T03:29:56.819Z"
+      },
+      {
+        "id": "725ae84d-97ba-4740-b317-b7b2919eee69",
+        "type": "build_base",
+        "source": "background",
+        "objective": "Build the base structure at home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:31.336Z"
+      },
+      {
+        "id": "c6a2045d-ff84-4fb0-9d46-1e7bb83dceea",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:26.147Z"
+      },
+      {
+        "id": "aff1a0c7-8ce5-4608-b950-da0c0fc732b8",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:21.056Z"
+      },
+      {
+        "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_sword.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:12.916Z"
+      },
+      {
+        "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_pickaxe.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:44:31.650Z"
+      },
+      {
+        "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_axe.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:43:46.366Z"
+      },
+      {
+        "id": "acd94edf-e45c-4bf9-96dd-1e5a61dc1b74",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:43:00.561Z"
+      }
+    ]
+  },
+  "danger": {
+    "score": 0,
+    "nearestHostile": {
+      "type": "enderman",
+      "distance": 105
+    },
+    "hostileCount": 1
+  },
+  "inventory": {
+    "items": [],
+    "totalItems": 0
+  },
+  "buildProject": null,
+  "worldProject": null,
+  "runtime_baseline_sha256": {
+    "src/index.ts": "fb1c247724536ee94a4a0f00c298bf9bdf178ed3e5011bf5a52dffabc01bb625",
+    "src/agent/public-action-safety.ts": "c8002ec3484c0c47efca0a744443e204448cf8044bbba4dc541b51bef781546b",
+    "src/agent/self-defense.ts": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25"
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=75070\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "original_tasks": [
+    {
+      "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+      "status": "completed",
+      "attempts": 1,
+      "completed_at": "2026-10-20T02:45:12.916Z",
+      "resume_state_json": "{\"item\":\"stone_sword\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    },
+    {
+      "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+      "status": "completed",
+      "attempts": 1,
+      "completed_at": "2026-10-20T02:43:46.366Z",
+      "resume_state_json": "{\"item\":\"stone_axe\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    },
+    {
+      "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+      "status": "completed",
+      "attempts": 1,
+      "completed_at": "2026-10-20T02:44:31.650Z",
+      "resume_state_json": "{\"item\":\"stone_pickaxe\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    }
+  ],
+  "actions_enabled": false,
+  "effects_verified": false,
+  "deployment_or_restart_performed": false,
+  "private_owner_probe_incident": {
+    "request": "POST http://127.0.0.1:8155/command with JSON bytes {}",
+    "error": "Endpoint accepts plain text; the request was delivered as an owner instruction, not rejected as an empty viewer form. This was an operator error, not a passing validation.",
+    "downstream_task": "5732b99f-cce2-4fbe-9abf-07e03651dda3",
+    "effect": "model interpreted {} as defend_self and queued owner defense work",
+    "response": "{\"ok\":true,\"result\":\"delivered as Barnabyisbig: {}\"}\n200",
+    "remediation": "No task cancellation, movement, restoration, restart or further owner command. Preserve task and progress; use GET-only follow-up."
+  }
+}

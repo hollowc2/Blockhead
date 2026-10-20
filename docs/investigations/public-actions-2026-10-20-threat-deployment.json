@@ -1,0 +1,51 @@
+{
+  "status": "prepared locally; NOT deployed; explicit approval required for installation and bot stop/start",
+  "baseline_source_commit": "fe76184f17335c2dc7228bbb921dfe63638dbd07",
+  "host": "corey@maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "backup_proposed": "/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020",
+  "files": [
+    {
+      "path": "src/index.ts",
+      "before_sha256": "fb1c247724536ee94a4a0f00c298bf9bdf178ed3e5011bf5a52dffabc01bb625",
+      "candidate_sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab"
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "before_sha256": "c8002ec3484c0c47efca0a744443e204448cf8044bbba4dc541b51bef781546b",
+      "candidate_sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541"
+    },
+    {
+      "path": "src/agent/self-defense.ts",
+      "before_sha256": "86c8d4fbbbb50bc6de39dc399e52b1fbb605fadc060a50004f6bcf9f8292fb25",
+      "candidate_sha256": "ea155ed47ce257672195663f4a13a906f12e114bbcb16ebac0d4330d2ca49e7e"
+    }
+  ],
+  "unchanged_services": {
+    "minecraft-server.service": 980,
+    "llama-server.service": 952
+  },
+  "live_bot_main_pid": 75070,
+  "rollback": "After explicit approval, stop only blockhead.service, restore these three original files from a new verified backup, verify before_sha256 for all, start only blockhead.service. Never restore world/SQLite progress.",
+  "deployment_constraints": [
+    "Recheck active/paused/queued/owner/survival work and leases; current busy state is not deployable.",
+    "Actions must remain disabled, startup questions/actions false, model Q&A unavailable.",
+    "Compare installed runtime hashes against manifest; reconcile any drift.",
+    "Back up only these three originals and record status, hashes and commit; require new backup path.",
+    "Do not change dependencies, configuration, network exposure, Minecraft or llama.cpp.",
+    "Install all three candidate files while bot stopped, verify candidate hashes, start the same user unit.",
+    "Verify session connection, bootstrap/queue/checkpoint continuity, freshness refusal, defaults and logs before any separately supervised trial."
+  ],
+  "service_manager": "systemctl --user",
+  "validation": {
+    "focused_tests": 39,
+    "full_suite_tests": 843,
+    "failures": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "typecheck": "passed",
+    "git_diff_check": "passed",
+    "live_gesture_effects": "unverified"
+  }
+}

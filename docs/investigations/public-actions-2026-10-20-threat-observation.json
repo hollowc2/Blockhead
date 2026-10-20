@@ -1,0 +1,772 @@
+{
+  "recorded_at": "2026-10-20T03:29:32.295Z",
+  "method": "read-only private viewer socket initial entity replay plus status/dashboard HTTP; no control events emitted",
+  "status": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T02:42:24.256Z",
+      "uptimeSeconds": 2823.981
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 66.5,
+        "y": 100,
+        "z": 49.499938226842474
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": {
+        "id": "01d6f5b5-485f-4597-8796-e25de2dd2b4c",
+        "type": "ensure_item",
+        "source": "goal",
+        "priority": 40,
+        "objective": "[goal] ensure 1 iron_pickaxe",
+        "status": "active",
+        "startedAt": "2026-10-20T03:29:11.640Z",
+        "lastError": null
+      },
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": {
+      "description": "Prepare for a mining expedition.",
+      "source": "background",
+      "successCriteria": [
+        {
+          "kind": "stockpile",
+          "stockpile": "food",
+          "min": 32
+        },
+        {
+          "kind": "stockpile",
+          "stockpile": "torches",
+          "min": 64
+        },
+        {
+          "kind": "inventory",
+          "item": "iron_pickaxe",
+          "min": 1
+        }
+      ],
+      "id": "e993bc3f-9712-47c0-abcc-8cb0c8822f39",
+      "status": "active",
+      "createdAt": "2026-10-20T03:28:59.535Z",
+      "currentStep": "ensure 1 iron_pickaxe",
+      "recentResults": []
+    },
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T03:29:11.580Z",
+      "lastSuccessAgeSeconds": 16.657,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T03:29:05.441Z",
+        "latencyMs": 6140,
+        "tool": "ensure_item",
+        "rationale": "The goal requires a carried iron_pickaxe, which is currently missing from the inventory and equipment. The stockpiles already meet the criteria (food 355 >= 32, torches 127 >= 64), so obtaining the pickaxe is the only remaining step.",
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": {
+      "id": "725ae84d-97ba-4740-b317-b7b2919eee69",
+      "type": "build_base",
+      "source": "background",
+      "objective": "Build the base structure at home.",
+      "status": "completed",
+      "lastError": null,
+      "at": "2026-10-20T02:45:31.336Z"
+    },
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": [
+      {
+        "id": "725ae84d-97ba-4740-b317-b7b2919eee69",
+        "type": "build_base",
+        "source": "background",
+        "objective": "Build the base structure at home.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:31.336Z"
+      },
+      {
+        "id": "c6a2045d-ff84-4fb0-9d46-1e7bb83dceea",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:26.147Z"
+      },
+      {
+        "id": "aff1a0c7-8ce5-4608-b950-da0c0fc732b8",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:21.056Z"
+      },
+      {
+        "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_sword.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:45:12.916Z"
+      },
+      {
+        "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_pickaxe.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:44:31.650Z"
+      },
+      {
+        "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "objective": "Re-arm after respawn: stone_axe.",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:43:46.366Z"
+      },
+      {
+        "id": "acd94edf-e45c-4bf9-96dd-1e5a61dc1b74",
+        "type": "ensure_item",
+        "source": "background",
+        "objective": "stock carried food before discretionary work",
+        "status": "completed",
+        "lastError": null,
+        "at": "2026-10-20T02:43:00.561Z"
+      }
+    ]
+  },
+  "flags": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 1,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "inventory": {
+    "items": [
+      {
+        "name": "bread",
+        "count": 6
+      },
+      {
+        "name": "dirt",
+        "count": 2
+      },
+      {
+        "name": "oak_log",
+        "count": 3
+      },
+      {
+        "name": "oak_planks",
+        "count": 3
+      },
+      {
+        "name": "rotten_flesh",
+        "count": 2
+      },
+      {
+        "name": "stick",
+        "count": 1
+      },
+      {
+        "name": "stone_axe",
+        "count": 1
+      },
+      {
+        "name": "stone_pickaxe",
+        "count": 1
+      },
+      {
+        "name": "stone_sword",
+        "count": 1
+      },
+      {
+        "name": "wheat",
+        "count": 3
+      },
+      {
+        "name": "wheat_seeds",
+        "count": 9
+      },
+      {
+        "name": "wooden_pickaxe",
+        "count": 1
+      }
+    ],
+    "totalItems": 33
+  },
+  "danger": {
+    "score": 0.19166666666666665,
+    "nearestHostile": {
+      "type": "spider",
+      "distance": 25
+    },
+    "hostileCount": 82
+  },
+  "buildProject": null,
+  "worldProject": null,
+  "viewer": {
+    "connected": true,
+    "entity_count": 114,
+    "hostile_count": 74,
+    "hostiles": [
+      {
+        "name": "spider",
+        "horizontal": 25.650826808814095,
+        "vertical": -7.899999976158142,
+        "distance": 26.839800960496603,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 18.64612887424423,
+        "vertical": -20.700000047683716,
+        "distance": 27.85979404031965,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 18.384732630683544,
+        "vertical": -21,
+        "distance": 27.910542701669566,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 28.01778971844486,
+        "vertical": -9,
+        "distance": 29.427819163284838,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 2.000061773157526,
+        "vertical": -34,
+        "distance": 34.058776359353345,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 32.01511143135292,
+        "vertical": -42,
+        "distance": 52.81067467815522,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 60.03337758624114,
+        "vertical": -35,
+        "distance": 69.49105283712572,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 60.07371201627237,
+        "vertical": -48,
+        "distance": 76.89506405104314,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 65.2099794237473,
+        "vertical": -43,
+        "distance": 78.1110838258281,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 73.3553544774633,
+        "vertical": -35,
+        "distance": 81.27735250679794,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 74.24289968785304,
+        "vertical": -35,
+        "distance": 82.07927968775438,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 53.03296779167702,
+        "vertical": -71,
+        "distance": 88.61995076049779,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 53.08489943438259,
+        "vertical": -71,
+        "distance": 88.65103805347411,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 75.471816316763,
+        "vertical": -47,
+        "distance": 88.91003913029851,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 73.08128718636041,
+        "vertical": -52,
+        "distance": 89.69322458700705,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 73.40975980288685,
+        "vertical": -52.338134765625,
+        "distance": 90.15693642234227,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "spider",
+        "horizontal": 64.82124766851622,
+        "vertical": -63,
+        "distance": 90.39244520037678,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 87.33705878731841,
+        "vertical": -29.203291028738022,
+        "distance": 92.09014086496275,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 86.47120919775732,
+        "vertical": -32,
+        "distance": 92.20233196683428,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 89.91418130097881,
+        "vertical": -22,
+        "distance": 92.56651661926838,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 90.5538964046308,
+        "vertical": -20,
+        "distance": 92.73622891869503,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 14.866110300511242,
+        "vertical": -94,
+        "distance": 95.1682785147812,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 89.30985728247063,
+        "vertical": -36,
+        "distance": 96.29252623031175,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 71.79186027391475,
+        "vertical": -68,
+        "distance": 98.88413018067813,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 76.89609154787063,
+        "vertical": -64,
+        "distance": 100.04503433623529,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 37.57661475898084,
+        "vertical": -93,
+        "distance": 100.30454614196137,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 34.05881263377728,
+        "vertical": -95,
+        "distance": 100.92077446206379,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 34.82818855500164,
+        "vertical": -95,
+        "distance": 101.18301595634885,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "spider",
+        "horizontal": 100.12496947849759,
+        "vertical": -17,
+        "distance": 101.5579121145668,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 36.79678095515547,
+        "vertical": -95,
+        "distance": 101.87739243159737,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 83.0542014027151,
+        "vertical": -60,
+        "distance": 102.45975000283165,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 101.53707007223001,
+        "vertical": -17,
+        "distance": 102.95035987723863,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 91.1975917515463,
+        "vertical": -48.89013671875,
+        "distance": 103.47582427630027,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 70.80250568347553,
+        "vertical": -78,
+        "distance": 105.34227456751911,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 44.878919412212745,
+        "vertical": -98,
+        "distance": 107.78737128072048,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 45.96733539129083,
+        "vertical": -98,
+        "distance": 108.24507343512414,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 46.010822633692435,
+        "vertical": -98,
+        "distance": 108.26354787937214,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 39.14396225639539,
+        "vertical": -101,
+        "distance": 108.32012638992862,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 44.32071815598524,
+        "vertical": -100,
+        "distance": 109.38156178196708,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 75.13318707088834,
+        "vertical": -80,
+        "distance": 109.74969612454106,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 38.934257947621525,
+        "vertical": -103,
+        "distance": 110.11301667801102,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 109.65853114121637,
+        "vertical": -27,
+        "distance": 112.93357982482057,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 102.61584785543121,
+        "vertical": -48,
+        "distance": 113.28729951362159,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 103.16012907654296,
+        "vertical": -48,
+        "distance": 113.78054416766079,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 81.41250091505508,
+        "vertical": -80,
+        "distance": 114.14024402130848,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 103.5809459052934,
+        "vertical": -48,
+        "distance": 114.16221947139658,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "spider",
+        "horizontal": 108.66923879047205,
+        "vertical": -39,
+        "distance": 115.45563416005577,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 111.22056335788264,
+        "vertical": -35,
+        "distance": 116.59765741062205,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 106.16967901091961,
+        "vertical": -49.0048828125,
+        "distance": 116.93365332849463,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 107.70335579182563,
+        "vertical": -48,
+        "distance": 117.91527826715493,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 112.70758990230757,
+        "vertical": -36,
+        "distance": 118.31737328721739,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 100.60318761855054,
+        "vertical": -64.0048828125,
+        "distance": 119.23768860077395,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "spider",
+        "horizontal": 114.00444602577912,
+        "vertical": -36,
+        "distance": 119.55339273163595,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 84.7800428659537,
+        "vertical": -85,
+        "distance": 120.05272037048118,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 111.65190981667229,
+        "vertical": -45,
+        "distance": 120.37918825822975,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 119.81657796246445,
+        "vertical": -19,
+        "distance": 121.3136940111681,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 109.89541268702816,
+        "vertical": -52.0048828125,
+        "distance": 121.57923163926512,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 110.16806241713093,
+        "vertical": -53.0048828125,
+        "distance": 122.25595927688643,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 117.15380524884256,
+        "vertical": -37,
+        "distance": 122.8576985145161,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 117.42663435065604,
+        "vertical": -38,
+        "distance": 123.42209873001948,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 116.61909934215905,
+        "vertical": -44,
+        "distance": 124.6435490965191,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 119.10085781125322,
+        "vertical": -37,
+        "distance": 124.71573409709121,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "enderman",
+        "horizontal": 122.41327091185211,
+        "vertical": -24,
+        "distance": 124.74377297219489,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 112.04023311824686,
+        "vertical": -55,
+        "distance": 124.81191384315481,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 107.90236941754122,
+        "vertical": -63,
+        "distance": 124.9476743517843,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "drowned",
+        "horizontal": 109.2382841224758,
+        "vertical": -61.0048828125,
+        "distance": 125.11833776465225,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 113.26375154496957,
+        "vertical": -54,
+        "distance": 125.47779649818766,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "spider",
+        "horizontal": 120.07503676835861,
+        "vertical": -37,
+        "distance": 125.64638655736454,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 117.71157263148072,
+        "vertical": -45,
+        "distance": 126.0198965694559,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 119.82076073041478,
+        "vertical": -40,
+        "distance": 126.32107782161815,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 120.5031735082592,
+        "vertical": -40,
+        "distance": 126.96855841333957,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "zombie",
+        "horizontal": 120.70217407139617,
+        "vertical": -40,
+        "distance": 127.15744109395101,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "skeleton",
+        "horizontal": 120.41600734770117,
+        "vertical": -43,
+        "distance": 127.86326613051,
+        "in_reflex_geometry": false
+      },
+      {
+        "name": "creeper",
+        "horizontal": 141.9930180429362,
+        "vertical": -52,
+        "distance": 151.215135396367,
+        "in_reflex_geometry": false
+      }
+    ],
+    "geometry_candidates": 0
+  },
+  "limits": "Viewer does not expose entity validity, physical gates, server time freshness or authoritative line of sight. Geometry is diagnostic, not admission proof."
+}

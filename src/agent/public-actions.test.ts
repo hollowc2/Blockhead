@@ -53,7 +53,7 @@ function physical() {
 }
 test("physical admission fails closed for unsafe or missing observations", () => {
   assert.equal(safePublicPhysicalState(physical() as unknown as Bot, 8), true);
-  for (const patch of [{ entity: undefined }, { health: 8 }, { food: 8 }, { isSleeping: true }, { usingHeldItem: true }, { autoEat: undefined }, { autoEat: { isEating: true } }, { pathfinder: undefined }, { controlState: { forward: true } }, { targetDigBlock: {} }, { currentWindow: {} }, { pvp: { target: {} } }]) {
+  for (const patch of [{ entity: undefined }, { health: 8 }, { health: Infinity }, { food: 8 }, { food: 10 }, { food: Infinity }, { isSleeping: true }, { usingHeldItem: true }, { autoEat: undefined }, { autoEat: { isEating: true } }, { pathfinder: undefined }, { pathfinder: {} }, { controlState: { forward: true } }, { targetDigBlock: {} }, { currentWindow: {} }, { pvp: { target: {} } }]) {
     assert.equal(safePublicPhysicalState({ ...physical(), ...patch } as unknown as Bot, 8), false);
   }
   for (const patch of [{ onGround: false }, { isInWater: true }, { isInWater: undefined }, { isInLava: true }, { vehicle: {} }, { yaw: NaN }, { velocity: { x: 1, y: 0, z: 0 } }]) {

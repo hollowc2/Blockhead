@@ -1,4 +1,4 @@
-import { safePublicPhysicalState } from "./agent/public-action-safety.js";
+import { bindPublicSafetyInterrupts, PublicSafetyObservations, safePublicPhysicalState, safePublicThreatState } from "./agent/public-action-safety.js";
 import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
 import { PublicInteractions } from "./dashboard/public-interactions.js";
 import { homedir } from "node:os";
@@ -247,7 +247,8 @@ const publicGestures = new PublicActionController({
     if (!live || live.bot !== candidate || connectionState.state !== "READY") return false;
     const bot = live.bot;
     return safePublicPhysicalState(bot, config.policy?.health_retreat_threshold ?? 8)
-      && live.hostile.count === 0 && !deathManager.inDeathLoop
+      && live.publicSafety.fresh() && safePublicThreatState(bot) && !deathManager.inDeathLoop
+      && !scheduler.isHalted && buildProjectManager.currentProjectForBackground() === null
       && scheduler.worldActionDiagnostics.pending === 0
       && (scheduler.worldActionOwner === null || scheduler.worldActionOwner === "public-gesture")
       && scheduler.active === null && scheduler.queued.length === 0 && !scheduler.interruptPending
@@ -266,9 +267,7 @@ const publicInteractions: PublicInteractions = new PublicInteractions({
   }),
   log: record => logger.info(record, "public interaction"),
 });
-for (const event of ["chat.command", "damage.received", "hostile.detected", "task.created", "task.activated", "death.recorded"] as const) {
-  bus.on(event, () => publicInteractions.cancel());
-}
+bindPublicSafetyInterrupts(bus, () => publicInteractions.cancel());
 const viewerManager = new ViewerManager({
   enabled: config.dashboard?.viewer_enabled ?? false,
   port: config.dashboard?.viewer_port ?? 3001,
@@ -297,6 +296,7 @@ interface Session {
   background: BackgroundManager;
   /** Phase 12: session-scoped hostile sensor feeding the dashboard. */
   hostile: HostileTracker;
+  publicSafety: PublicSafetyObservations;
   /** Phase 12: session-scoped stockpile manager (dashboard readout). */
   maintenance: StockpileManager;
   dispatcher: TaskDispatcher;
@@ -458,6 +458,7 @@ const shutdownCoordinator = new ShutdownCoordinator({
             viewerManager.stopFor(active.bot);
             active.background.stop();
             active.hostile.detach();
+            active.publicSafety.detach();
             active.selfDefense.detach();
             active.workSafety.detach();
             active.nightShelter.detach();
@@ -688,6 +689,8 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   // the rest of the bot wiring; detached when the connection ends.
   const hostile = new HostileTracker(bot, bus);
   hostile.attach();
+  const publicSafety = new PublicSafetyObservations(bot);
+  publicSafety.attach();
   const selfDefense = new SelfDefenseReflex({ bot, bus, scheduler, logger });
   selfDefense.attach();
   // A bootstrap stage holds the world lease for minutes; the shelter must not
@@ -702,7 +705,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   bot.once("end", () => breathWatch.detach());
   bot.on("end", () => publicInteractions.cancel());
   bot.on("death", () => publicInteractions.cancel());
-  session = { bot, background, hostile, maintenance, dispatcher, selfDefense, nightShelter, workSafety };
+  session = { bot, background, hostile, publicSafety, maintenance, dispatcher, selfDefense, nightShelter, workSafety };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -776,6 +779,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   // sensor via the shutdown coordinator.
   background.stop();
   hostile.detach();
+  publicSafety.detach();
   selfDefense.detach();
   workSafety.detach();
   nightShelter.detach();

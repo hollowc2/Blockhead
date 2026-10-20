@@ -461,3 +461,235 @@ only the bot if a later explicitly approved rollback is necessary. Never restore
 SQLite/Minecraft progress. This follow-up adds records only; source validation
 remains 56 focused tests, typecheck, 838 full-suite tests, with final diff checks
 passing.
+
+## Hostile admission review — October 19 PDT / October 20 UTC
+
+**Local candidate only; rollout remains blocked and actions remain disabled.**
+No live code deployment, service restart, network change, model-backed public
+Q&A, Minecraft command, mob kill, task cancellation or progress restoration was
+performed by this follow-up. One mistaken private owner-command probe was
+issued; its effect is explicitly recorded below. It must not be counted as a
+successful boundary validation or as an authorized owner request.
+
+### What the sensor actually establishes
+
+`src/minecraft/entities.ts:HostileTracker` subscribes after spawn, inserts on
+`entitySpawn`, removes on `entityGone`, and holds references to the mutable
+Mineflayer entity positions. It does not seed itself from the initial entity
+registry, limit distance, check visibility, classify threat transitions, or
+record observation freshness. `count` is the map size, intended for diagnostics;
+`nearest()` prunes invalid entries as a side effect and rounds 3D distance.
+Consequently the count and nearest result can also reflect different pruning
+points. Its private mob-name set differs from the canonical combat list (for
+example, guardians, shulkers and piglins are absent). `hostile.detected` is a
+spawn signal, not a continuous assertion that a mob is attacking. An already
+loaded mob moving into range does not generate another spawn event.
+
+Thus `hostile.count === 0` is neither a precise current-threat check nor a
+complete fail-closed safety sensor. It overblocks distant/covered ordinary mobs
+and can underrepresent entities missed before attachment or omitted by its
+name list. The dashboard counter remains unchanged as diagnostic telemetry.
+
+The existing actionable-threat policy is `nearestThreat` in
+`src/agent/self-defense.ts`, also used by work safety/readiness. It scans the live
+entity registry; excludes invalid/dead mobs and unprovoked endermen/piglins;
+uses horizontal range 6 and vertical separation at most 3 for melee, or range
+16 and height 12 for skeleton/stray/pillager/drowned; and checks an eye-to-body
+ray for solid cover. Damage triggers defense independently, including during
+passive failure cooldowns. Work safety, shelter, food readiness and emergency
+survival tasks retain their existing authority. Merely reusing
+`nearestThreat(bot) === null` would not suffice for public admission: missing
+state or unloaded ray samples can yield no threat in that work-policy helper,
+and turns can provoke an enderman.
+
+At 03:29:32Z the existing private viewer's read-only initial entity replay
+contained 114 entities, including 74 canonical hostiles and **zero geometry
+candidates**. Nearby dashboard telemetry reported 82 tracked hostiles. These
+are separate asynchronous observations, not proof of exact counter drift.
+A skeleton was 2.0001 blocks away horizontally but 34 blocks below Bob; the
+nearest replayed spider was 26.84 blocks away with a 7.9-block height gap.
+An enderman was also loaded. No click/control events were emitted by this
+observer. The viewer lacks authoritative validity, physics, freshness and
+visibility facts, so this is diagnostic evidence only, never an admission
+substitute. See [entity geometry observation](investigations/public-actions-2026-10-20-threat-observation.json).
+
+### Candidate repair and remaining conservative limits
+
+The three-file runtime delta is `src/index.ts`,
+`src/agent/public-action-safety.ts`, and `src/agent/self-defense.ts`.
+The latter only extracts the unchanged reflex range/height values into a shared
+helper. Self-defense targeting, cooldowns, task scheduling and attack behavior
+are unchanged. Public admission now scans the live registry synchronously at
+both existing controller safety checks, using those shared bounds for ten
+reviewed ordinary mob types. Known solid cover separates a threat; missing or
+unknown ray samples refuse. Nonfinite/missing positions, missing registry or
+world lookup, and thrown observation errors refuse.
+
+Unreviewed hostile types, including exotic ranged/flying mobs and neutral mobs
+such as endermen/piglins, **still refuse at any loaded distance**. The existing
+combat policy has no adequate public-turn-safe profile for them. This is an
+intentional unresolved conservative limit, not evidence they are all currently
+attacking. The observed enderman would itself prevent candidate admission;
+this repair must not be expanded merely to get a passing trial.
+
+A session-scoped observer requires a real server `time` event within 2.5 seconds
+and local `physicsTick` within 250 ms, measured with a monotonic clock. The
+installed Mineflayer time plugin emits `time` from server `update_time` packets,
+not local physics. Both observations start unknown; death, respawn, disconnect,
+detach and a new session invalidate them. A local physics loop alone cannot
+prove a live server. Entity positions are the latest protocol-maintained state;
+stationary entities need not emit movement updates. This does not claim an
+individual timestamp for every entity or omniscience beyond loaded entities.
+
+Other admission gates were reviewed. The live session/READY identity, physical
+state, queue (including paused/blocked work), interrupt, pending/active lease,
+background pass/kick/recheck, active decision/goal, bootstrap and death-loop
+checks remain. New refusals cover halted scheduling and any unfinished
+build/terrain project, even when no child task is currently queued. Physical
+checks now reject nonfinite health/hunger and missing/throwing plugin methods.
+Hunger must exceed 10, conservatively covering the existing hunger-emergency
+threshold before its five-second watcher runs; the health retreat threshold is
+unchanged. Hunger-low and night signals join the existing synchronous owner,
+damage, spawn, task and death cancellation bindings. No task is removed to
+establish idle, no ownership is queued, and gesture settlement/quarantine,
+production cooldowns, fixed effects and private disable behavior are unchanged.
+
+Regression checks cover all ten melee/ranged profiles at inclusive horizontal
+and positive/negative vertical boundaries; 83 distant mobs; solid cover,
+unknown/unloaded visibility; missing/nonfinite state; canonical name fallback;
+unknown/exotic/neutral mobs; dead/invalid records; stale server vs local physics;
+lifecycle invalidation; and incoming nearby/ranged threats plus real owner,
+hunger and night bus interruptions between reservation and effect for all four
+gestures. Existing tests cover occupied leases, concurrent refusal, disabling,
+reconnects and unsettled-primitive quarantine. **39 focused tests passed;
+typecheck passed; 843 full-suite tests passed with no failures/skips/cancellations;
+`git diff --check` passed.** These are local checks, not game-effect acceptance.
+
+### Live changes during observation and operator-probe incident
+
+Bob initially remained at health/hunger 20/20 with an empty queue. By 03:29:11Z,
+autonomous work had activated an iron-pickaxe goal task. Combat, shelter/retreat
+failures and two deaths followed. These happened with public actions disabled;
+this follow-up did not direct movement or combat. The original three re-arm
+IDs remain completed; later deaths created **new** re-arm tasks.
+
+At 03:30:47.090Z the agent mistakenly POSTed the literal bytes `{}` to private
+`http://127.0.0.1:8155/command`, expecting empty JSON form validation. That
+endpoint accepts plain text and delivered `{}` as the configured owner. The
+model subsequently selected `defend_self`, enqueuing task
+`5732b99f-cce2-4fbe-9abf-07e03651dda3` at 03:31:00.045Z. This was an operator
+error and violated the intended read-only owner check. It is **not** a passed
+validation. The death recorded at 03:30:46.290Z preceded delivery of this
+instruction. No causal claim about earlier deaths is inferred from the probe.
+No cancellation, movement, stop, restoration or further owner instruction was
+used to undo it; subsequent follow-up used GETs and read-only process/journal
+queries. Preserve the resulting work/checkpoints. Future owner-boundary checks
+must use read-only route inspection; even a nominally empty test payload must
+not be sent to a live owner-command endpoint.
+
+At 03:30:43–44Z, through the actual public-DNS HTTPS edge `208.111.34.11` with
+normal TLS verification, simultaneous hello/wave requests both returned
+503/disabled; deterministic health/hunger Q&A returned 200. Public owner and
+operator paths returned 404. No gesture was delivered, enabled or retried.
+These disabled refusals do not establish enabled concurrency, busy-state
+acceptance or game effects. See [HTTPS evidence and probe incident](investigations/public-actions-2026-10-20-threat-final-state.json).
+
+Latest read-only state at **03:34:22Z**: connected, health **16.83/20**,
+hunger **16/20**, with the original paused iron-pickaxe goal task now active
+and no queued task at that observation. The new re-arm tasks completed normally;
+the accidentally requested owner-defense task completed at 03:33:51.398Z. Its
+world/combat effects were not independently characterized. The earlier 03:32:11Z
+busy/recovery snapshot is retained inside the latest evidence. Hostile telemetry
+now reports 82, nearest enderman 17 blocks. Runtime flags:
+questions true, actions/configuredActions false, modelQuestions false; no active
+or quarantined gesture, zero in-flight requests and timeouts, accepted/rejected
+counters 2/4. Both configured startup defaults remain false. All three user
+services remain active with NRestarts 0 and unchanged MainPIDs: bot 75070,
+Minecraft 980, llama.cpp 952. The three candidate target runtime hashes still
+match the original source baseline; no candidate was installed. See
+[latest state and incident timeline](investigations/public-actions-2026-10-20-threat-latest-state.json).
+
+The rollout remains incomplete. Exact once-only hello chat, main-arm wave
+without attack/use, both 45-degree turns with preserved pitch/position,
+enabled busy/concurrent refusal, immediate disable admission, and owner/survival
+priority during enabled actions still need a genuine eligible window and
+independent game-effect observation. Current task/recovery state and the
+undeployed repair preclude that trial. A future candidate window may also be
+blocked by an enderman or another unreviewed hostile. Do not move Bob, kill mobs,
+clear tasks, change exposure or weaken the policy to obtain a window.
+
+### Exact proposed deployment and rollback — approval pending
+
+[Prepared manifest](investigations/public-actions-2026-10-20-threat-deployment.json)
+records the installed before hashes and exact candidate hashes for all three
+files. Tests and evidence are source-only. Explicit approval is required before
+any live copy, deployment or bot restart; none has been granted in this turn.
+Do not deploy during this recovery/owner work. Recheck session, active/queued/
+paused work, interrupts, leases, feature defaults and installed hashes at a
+later safe boundary. If any baseline hash differs, reconcile rather than
+overwrite. Approval alone does not authorize cancelling work to make deployment
+possible.
+
+After approval and a verified safe boundary, run on Maia using the manifest
+from the approved source commit. The following is a prepared procedure, **not
+executed**. All three files already exist in the runtime; no dependencies or
+configuration change is required:
+
+```bash
+cd /mnt/Repos/Games/Blockhead
+python3 - <<'PY'
+import hashlib, json, pathlib, shutil, subprocess
+manifest = json.loads(pathlib.Path('docs/investigations/public-actions-2026-10-20-threat-deployment.json').read_text())
+runtime = pathlib.Path(manifest['runtime'])
+backup = pathlib.Path(manifest['backup_proposed'])
+assert not backup.exists(), 'Require a new rollback directory'
+for f in manifest['files']:
+    assert hashlib.sha256((runtime / f['path']).read_bytes()).hexdigest() == f['before_sha256']
+    assert hashlib.sha256(pathlib.Path(f['path']).read_bytes()).hexdigest() == f['candidate_sha256']
+backup.mkdir(parents=True)
+shutil.copy2('docs/investigations/public-actions-2026-10-20-threat-deployment.json', backup / 'manifest.json')
+(backup / 'source-commit.txt').write_bytes(subprocess.check_output(['git', 'rev-parse', 'HEAD']))
+(backup / 'status-before.json').write_bytes(subprocess.check_output(['curl', '-fsS', 'http://127.0.0.1:8155/status']))
+for f in manifest['files']:
+    saved = backup / f['path']
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(runtime / f['path'], saved)
+    assert hashlib.sha256(saved.read_bytes()).hexdigest() == f['before_sha256']
+subprocess.run(['systemctl', '--user', 'stop', 'blockhead.service'], check=True)
+for f in manifest['files']:
+    shutil.copy2(f['path'], runtime / f['path'])
+    assert hashlib.sha256((runtime / f['path']).read_bytes()).hexdigest() == f['candidate_sha256']
+subprocess.run(['systemctl', '--user', 'start', 'blockhead.service'], check=True)
+PY
+```
+
+Validate startup-disabled flags, session connection, queue/checkpoint continuity,
+freshness refusal before initial observations, logs and all unchanged services.
+Restore deterministic Q&A privately only after validation. A separately supervised
+action trial must satisfy every authoritative condition; do not infer admission
+from viewer geometry. If validation fails, use the approved rollback before
+further live debugging:
+
+```bash
+python3 - <<'PY'
+import hashlib, json, pathlib, shutil, subprocess
+backup = pathlib.Path('/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020')
+manifest = json.loads((backup / 'manifest.json').read_text())
+runtime = pathlib.Path(manifest['runtime'])
+for f in manifest['files']:
+    assert hashlib.sha256((backup / f['path']).read_bytes()).hexdigest() == f['before_sha256']
+subprocess.run(['systemctl', '--user', 'stop', 'blockhead.service'], check=True)
+for f in manifest['files']:
+    shutil.copy2(backup / f['path'], runtime / f['path'])
+    assert hashlib.sha256((runtime / f['path']).read_bytes()).hexdigest() == f['before_sha256']
+subprocess.run(['systemctl', '--user', 'start', 'blockhead.service'], check=True)
+PY
+```
+
+Never restore world/SQLite progress. No Minecraft/llama.cpp restart, dependency
+change, network change or model-backed public Q&A is authorized. Immediate
+feature rollback remains POSTing `{"questions_enabled":false,"actions_enabled":false}`
+as application/json without Origin to loopback **`/public-interactions`**, never
+`/command`. Questions true/actions false preserves deterministic Q&A. Any bot
+restart returns both configured public features to false. No rollback was
+performed because the local candidate has not been deployed.

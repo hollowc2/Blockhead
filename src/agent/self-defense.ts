@@ -11,6 +11,12 @@ import { TaskPriority, type Task } from "./task.js";
 export const REFLEX_TRIGGER_RADIUS = 6;
 /** Hostiles more than this many blocks above/below are behind a floor or wall. */
 const REFLEX_TRIGGER_HEIGHT = 3;
+/** Shared geometry only; public admission applies stricter observation rules. */
+export function reflexThreatRange(name: string): { radius: number; height: number } {
+  return /^(skeleton|stray|pillager|drowned)$/.test(name)
+    ? { radius: 16, height: 12 }
+    : { radius: REFLEX_TRIGGER_RADIUS, height: REFLEX_TRIGGER_HEIGHT };
+}
 /** How far the reflex's defense pass may range while clearing attackers. */
 export const REFLEX_DEFENSE_RADIUS = 24;
 const SCAN_INTERVAL_MS = 1_000;
@@ -141,10 +147,10 @@ export function nearestThreat(bot: Bot, damageRadius?: number): Entity | null {
     // A neutral mob nearby is not an attack; one that hits the bot still
     // triggers the reflex through entityHurt.
     if (PROVOKED_ONLY_MOB_NAMES.has(entity.name ?? "")) continue;
-    const ranged = /^(skeleton|stray|pillager|drowned)$/.test(entity.name ?? "");
-    if (Math.abs(entity.position.y - self.y) > (ranged ? 12 : REFLEX_TRIGGER_HEIGHT)) continue;
+    const range = reflexThreatRange(entity.name ?? "");
+    if (Math.abs(entity.position.y - self.y) > range.height) continue;
     const distance = Math.hypot(entity.position.x - self.x, entity.position.z - self.z);
-    const radius = damageRadius ?? (ranged ? 16 : REFLEX_TRIGGER_RADIUS);
+    const radius = damageRadius ?? range.radius;
     if (distance <= radius && distance < bestDistance && threatLineClear(bot, entity)) {
       best = entity;
       bestDistance = distance;
