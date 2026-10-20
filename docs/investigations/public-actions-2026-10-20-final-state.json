@@ -1,0 +1,147 @@
+{
+  "recorded_at": "2026-10-20T02:46:54.417173+00:00",
+  "flags": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 1,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "task": {
+    "active": null,
+    "queued": [],
+    "interrupt": {
+      "pending": false,
+      "reason": null
+    },
+    "blockedActions": []
+  },
+  "minecraft": {
+    "connected": true,
+    "player": "CobbleBob",
+    "health": 20,
+    "hunger": 20,
+    "position": {
+      "x": 66.5,
+      "y": 100,
+      "z": 49.499938226842474
+    },
+    "dimension": "overworld",
+    "timePhase": "day"
+  },
+  "inventory": {
+    "items": [
+      {
+        "name": "bread",
+        "count": 6
+      },
+      {
+        "name": "dirt",
+        "count": 2
+      },
+      {
+        "name": "oak_log",
+        "count": 2
+      },
+      {
+        "name": "oak_planks",
+        "count": 3
+      },
+      {
+        "name": "rotten_flesh",
+        "count": 2
+      },
+      {
+        "name": "stick",
+        "count": 1
+      },
+      {
+        "name": "stone_axe",
+        "count": 1
+      },
+      {
+        "name": "stone_pickaxe",
+        "count": 1
+      },
+      {
+        "name": "stone_sword",
+        "count": 1
+      },
+      {
+        "name": "wheat",
+        "count": 3
+      },
+      {
+        "name": "wheat_seeds",
+        "count": 9
+      },
+      {
+        "name": "wooden_pickaxe",
+        "count": 1
+      }
+    ],
+    "totalItems": 32
+  },
+  "danger": {
+    "score": 0.17500000000000002,
+    "nearestHostile": {
+      "type": "spider",
+      "distance": 27
+    },
+    "hostileCount": 81
+  },
+  "original_tasks": [
+    {
+      "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+      "type": "ensure_item",
+      "status": "completed",
+      "attempts": 1,
+      "last_error": null,
+      "completed_at": "2026-10-20T02:45:12.916Z",
+      "resume_state_json": "{\"item\":\"stone_sword\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    },
+    {
+      "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+      "type": "ensure_item",
+      "status": "completed",
+      "attempts": 1,
+      "last_error": null,
+      "completed_at": "2026-10-20T02:43:46.366Z",
+      "resume_state_json": "{\"item\":\"stone_axe\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    },
+    {
+      "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+      "type": "ensure_item",
+      "status": "completed",
+      "attempts": 1,
+      "last_error": null,
+      "completed_at": "2026-10-20T02:44:31.650Z",
+      "resume_state_json": "{\"item\":\"stone_pickaxe\",\"quantity\":1,\"mode\":\"ensure\",\"interruptions\":1,\"version\":1}"
+    }
+  ],
+  "observation": {
+    "samples": 16,
+    "first": "2026-10-20T02:42:48.655327+00:00",
+    "last": "2026-10-20T02:46:34.032010+00:00",
+    "minimum_hostiles": 79,
+    "maximum_hostiles": 83,
+    "zero_hostile_samples": 0,
+    "actions_enabled_samples": 0
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=75070\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "runtime_delta": [
+    "src/agent/background.ts"
+  ],
+  "critical_log_markers": [],
+  "result": "recovery repaired; no eligible public-action window; actions kept disabled; game gesture effects remain unverified",
+  "rollback_used": false
+}

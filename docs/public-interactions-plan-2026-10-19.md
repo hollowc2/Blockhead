@@ -1,6 +1,6 @@
 # Anonymous public Q&A and simple commands
 
-Status: deployed on Maia; deterministic Q&A enabled privately in memory. Follow-up found a food-readiness dependency deadlock; a tested one-file repair awaits explicit deployment/restart approval. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
+Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness repair is deployed; live bread recovery and original re-arm work now progress. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 ## Goal
 
@@ -367,3 +367,97 @@ Observe chat and game/entity effects independently of the HTTP response. Never
 retry uncertain delivery. Exercise owner/busy/concurrent/disable authority and
 return actions to false on any failure or absence of a safe-idle window. The
 repair does not authorize weakening the hostile or other safety predicates.
+
+
+## Approved repair deployment — October 19 PDT / October 20 UTC
+
+Corey approved the exact repair/restart proposal. At 2026-10-20T02:42:25Z,
+source commit `445ccb0149981da7fcbe46cc5a545eae0ea68ac2` was deployed on Maia.
+Only `src/agent/background.ts` changed in the runtime tree; before/after hashes
+match the prepared manifest. The backup directory recorded above contains the
+original file, full runtime hash list, before-status, original unfinished task
+rows/checkpoints, a stopped-state SQLite evidence backup, source commit,
+rollback commands and deployment receipt. The database backup is preservation
+evidence, **not** a rollback instruction. No database or world progress was
+restored. The unrelated Maia `.claude/` directory was left alone.
+
+Only user `blockhead.service` was stopped/started, after rechecking no active
+task or interrupt and disabled actions. Shutdown completed cleanly and the bot
+reconnected. MainPID changed from 70576 to 75070; NRestarts remains 0. Minecraft
+PID 980 and llama.cpp PID 952 were retained. No dependencies, configuration,
+network exposure, Minecraft or model service changed. Rollback was not needed.
+Both public features started false, including modelQuestions false; the three
+original re-arm IDs and resume checkpoints were verified intact after restart.
+
+The first normal 30-second background pass reached food readiness, created
+bread prerequisite `acd94edf-e45c-4bf9-96dd-1e5a61dc1b74`, withdrew six bread
+from home storage and completed at 02:43:00Z. Auto-eat consumed one, raising
+hunger from 11 to 16. The **original** stone-axe task activated and completed
+at 02:43:46Z, followed by the original pickaxe task. This confirms the dependency
+deadlock repair live, without cancelling or editing any task to obtain idle.
+Deterministic Q&A was restored through the private control only after recovery
+progress was observed. Actions remained disabled throughout.
+
+At 02:43:37Z, actual public HTTPS rechecks used the public-DNS Funnel edge with
+normal TLS hostname verification. Q&A returned 200 with health/hunger only;
+two simultaneous action requests returned 503/disabled; public owner/operator
+routes returned 404; the private owner form retained its 400 empty-body
+validation. This concurrent refusal is evidence only for the disabled state.
+No gesture effect or enabled-action concurrency acceptance is implied.
+
+Evidence: [deployment receipt](investigations/public-actions-2026-10-20-repair-receipt.json),
+[post-deployment HTTPS checks](investigations/public-actions-2026-10-20-post-deploy.json).
+The existing exact rollback procedure remains valid and restores only the one
+application file under a bot stop/start; it must never restore database/world
+progress. Immediate runtime rollback is still the private loopback feature
+control. A restart disables both configured startup features.
+
+The approved source repair was already verified by 56 focused tests, typecheck,
+838 full-suite tests and diff checks. This follow-up changes only rollout
+records; it does not introduce additional source repairs or authorize another
+application deployment.
+
+
+### Final supervised observation and remaining acceptance
+
+Final state at **2026-10-20T02:46:54Z**: connected, health/hunger **20/20**,
+six bread carried, no active/queued task or interrupt. All original re-arm tasks
+completed successfully on their first attempt: axe at 02:43:46Z, pickaxe at
+02:44:31Z, sword at 02:45:12Z. Their task IDs and terminal resume-state records
+remain in SQLite. The original queue drained by executing its work normally.
+
+Sixteen private observations from 02:42:48Z to 02:46:34Z (225 seconds) recorded
+79–83 loaded hostiles, never zero. Final hostile count is 81, nearest spider
+27 metres. Although the scheduler queue became empty, the reviewed public
+predicate requires `hostile.count === 0`, so no safe-idle acceptance window was
+observed. Actions were never enabled. No admission checks were bypassed, no
+mob/world/network state was changed to manufacture safety, and no uncertain
+action was retried. The hostile count is a conservative gate, not a finding
+that every loaded mob is attacking Bob. Changing that policy is outside this
+approved repair.
+
+Final runtime features: **questions true, actions false, configuredActions
+false, modelQuestions false**; no active/quarantined gesture, no in-flight
+requests or timeouts. Startup YAML defaults are still questions false/actions
+false. Both public-action requests in this follow-up were disabled refusals;
+one deterministic public question was accepted. All services are active with
+NRestarts 0 and the PIDs recorded above. Full runtime hash comparison again
+shows exactly the approved one-file delta. No critical startup/module/socket
+or background-tick error markers were found in the deployment journal.
+
+The action rollout is **still incomplete**: exact hello delivery, main-arm-only
+wave, approximately 45-degree left/right turns with preserved pitch/position,
+enabled-action concurrency/busy priority, and disabling active admissions still
+need a genuinely eligible live window and independent game-effect observation.
+Public/private separation, disabled concurrent refusal, private control
+availability and deterministic Q&A passed again. Local tests cover the remaining
+code paths, but are not recorded as live gesture acceptance.
+
+Structured evidence: [final runtime and task results](investigations/public-actions-2026-10-20-final-state.json).
+The private backup directory also holds the 16 observation records and deployment
+journal. No rollback was needed. For immediate disable, use the loopback control
+with both booleans false; restore the one backed-up application file and restart
+only the bot if a later explicitly approved rollback is necessary. Never restore
+SQLite/Minecraft progress. This follow-up adds records only; source validation
+remains 56 focused tests, typecheck, 838 full-suite tests, with final diff checks
+passing.

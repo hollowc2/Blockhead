@@ -1,0 +1,244 @@
+{
+  "recorded_at": "2026-10-20T02:43:37.898205+00:00",
+  "host": "maia",
+  "origin": "https://maia.tailceb694.ts.net",
+  "edge": "208.111.34.11",
+  "actual_public_edge": true,
+  "before": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "task_before": {
+    "active": {
+      "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+      "type": "ensure_item",
+      "source": "maintenance",
+      "priority": 80,
+      "objective": "Re-arm after respawn: stone_axe.",
+      "status": "active",
+      "startedAt": "2026-10-20T02:43:00.587Z",
+      "lastError": null
+    },
+    "queued": [
+      {
+        "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "priority": 80,
+        "objective": "Re-arm after respawn: stone_sword.",
+        "status": "queued",
+        "startedAt": null,
+        "lastError": null
+      },
+      {
+        "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "priority": 80,
+        "objective": "Re-arm after respawn: stone_pickaxe.",
+        "status": "queued",
+        "startedAt": null,
+        "lastError": null
+      }
+    ],
+    "interrupt": {
+      "pending": false,
+      "reason": null
+    },
+    "blockedActions": []
+  },
+  "disable_control": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "concurrent_while_disabled": [
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    },
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    }
+  ],
+  "question": {
+    "status": 200,
+    "body": {
+      "code": "ok",
+      "text": "My health is 20/20 and hunger is 16/20."
+    }
+  },
+  "public_owner_route": 404,
+  "public_operator_route": 404,
+  "private_owner_validation": "{\"error\":\"Enter a task for CobbleBob.\"}\n400",
+  "after": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 1,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "task_after": {
+    "active": {
+      "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+      "type": "ensure_item",
+      "source": "maintenance",
+      "priority": 80,
+      "objective": "Re-arm after respawn: stone_axe.",
+      "status": "active",
+      "startedAt": "2026-10-20T02:43:00.587Z",
+      "lastError": null
+    },
+    "queued": [
+      {
+        "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "priority": 80,
+        "objective": "Re-arm after respawn: stone_sword.",
+        "status": "queued",
+        "startedAt": null,
+        "lastError": null
+      },
+      {
+        "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+        "type": "ensure_item",
+        "source": "maintenance",
+        "priority": 80,
+        "objective": "Re-arm after respawn: stone_pickaxe.",
+        "status": "queued",
+        "startedAt": null,
+        "lastError": null
+      }
+    ],
+    "interrupt": {
+      "pending": false,
+      "reason": null
+    },
+    "blockedActions": []
+  },
+  "private_summary": {
+    "self": {
+      "health": 20,
+      "hunger": 16,
+      "position": {
+        "x": 64.27363345391102,
+        "y": 101,
+        "z": 58.3
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "inventory": {
+      "items": [
+        {
+          "name": "bread",
+          "count": 5
+        },
+        {
+          "name": "cobblestone",
+          "count": 4
+        },
+        {
+          "name": "dirt",
+          "count": 2
+        },
+        {
+          "name": "oak_log",
+          "count": 3
+        },
+        {
+          "name": "oak_planks",
+          "count": 3
+        },
+        {
+          "name": "rotten_flesh",
+          "count": 2
+        },
+        {
+          "name": "stick",
+          "count": 2
+        },
+        {
+          "name": "wheat",
+          "count": 3
+        },
+        {
+          "name": "wheat_seeds",
+          "count": 9
+        },
+        {
+          "name": "wooden_pickaxe",
+          "count": 1
+        }
+      ],
+      "totalItems": 34
+    },
+    "danger": {
+      "score": 0.17500000000000002,
+      "nearestHostile": {
+        "type": "spider",
+        "distance": 27
+      },
+      "hostileCount": 81
+    },
+    "stockpiles": {
+      "levels": {
+        "wood": 111,
+        "food": 357,
+        "fuel": 81,
+        "torches": 127
+      },
+      "targets": {
+        "wood": 64,
+        "food": 64,
+        "fuel": 64,
+        "torches": 64
+      },
+      "deficits": []
+    }
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=75070\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "effects_verified": false,
+  "actions_enabled_during_recheck": false,
+  "deployment_or_restart_performed": true
+}

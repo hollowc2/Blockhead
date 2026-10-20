@@ -1,5 +1,5 @@
 {
-  "status": "prepared; not deployed; explicit approval required",
+  "status": "approved and deployed 2026-10-20T02:42:25Z; rollback not needed",
   "host": "maia",
   "service": "user blockhead.service",
   "source_baseline_commit": "03b9c5d",
@@ -35,5 +35,7 @@
     "Minecraft",
     "llama.cpp",
     "network exposure"
-  ]
+  ],
+  "deployed_source_commit": "445ccb0149981da7fcbe46cc5a545eae0ea68ac2",
+  "receipt": "public-actions-2026-10-20-repair-receipt.json"
 }

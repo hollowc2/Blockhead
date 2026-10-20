@@ -1,0 +1,113 @@
+{
+  "recorded_at": "2026-10-20T02:42:25.195135+00:00",
+  "approval": "user approve after 445ccb0 proposal",
+  "source_commit": "445ccb0149981da7fcbe46cc5a545eae0ea68ac2",
+  "files_installed": [
+    "src/agent/background.ts"
+  ],
+  "before_sha256": "6090d1ff1c7567a19625cdcdd03d4562c89ed6a7b3c4d21d93ee06ce89f19886",
+  "after_sha256": "10aa752a5f39f19a11d0349b55790e9d229da3cfc8e7f6cd7e8bcadca94b3614",
+  "backup": "/home/corey/.local/share/blockhead-backups/public-actions-food-readiness-20261020",
+  "startup_features": {
+    "questions": false,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "status_after": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T02:42:24.256Z",
+      "uptimeSeconds": 0.91
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 11,
+      "position": {
+        "x": 65.50485783066803,
+        "y": 100,
+        "z": 53.5
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [
+        {
+          "id": "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_sword.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        },
+        {
+          "id": "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_pickaxe.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        },
+        {
+          "id": "d5819b79-b01c-40b4-8e38-b9afee29c772",
+          "type": "ensure_item",
+          "source": "maintenance",
+          "priority": 80,
+          "objective": "Re-arm after respawn: stone_axe.",
+          "status": "queued",
+          "startedAt": null,
+          "lastError": null
+        }
+      ],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": []
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "local-model",
+      "state": "unknown",
+      "reachable": null,
+      "lastSuccessAt": null,
+      "lastSuccessAgeSeconds": null,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": null
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "original_task_ids_retained": [
+    "a0a2cde3-d02c-4e50-b9a7-1b57cf4f0bf9",
+    "eea87a54-bd3d-4a00-a1a4-539412ae810a",
+    "d5819b79-b01c-40b4-8e38-b9afee29c772"
+  ],
+  "rollback_used": false
+}
