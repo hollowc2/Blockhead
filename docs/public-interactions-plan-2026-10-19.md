@@ -1206,11 +1206,17 @@ def get(path):
         return json.load(r)
 status, flags = get('/status'), get('/public-interactions')
 assert flags['configuredActions'] is False and flags['modelQuestions'] is False
+assert flags['actions'] is False and flags['inFlight'] == 0
 assert status['minecraft']['connected'] and status['task']['active'] is None
 assert not status['task']['queued'] and not status['task']['interrupt']['pending']
 assert status['goal'] is None and status['buildProject'] is None
 # These exposed facts alone do not prove primitive settlement: verify that
 # boundary from the existing dispatcher/settlement evidence before proceeding.
+db = sqlite3.connect('file:'+str(source/'data/blockhead.db')+'?mode=ro', uri=True)
+db.row_factory = sqlite3.Row
+rows = [dict(row) for row in db.execute("select * from tasks where status not in ('completed','failed','cancelled')")]
+db.close()
+assert not rows, 'Wait for a natural boundary; never clear these rows'
 backup.mkdir(mode=0o700, parents=True)
 shutil.copy2(manifest_path, backup/'manifest.json')
 (backup/'source-commit.txt').write_bytes(subprocess.check_output(['git','rev-parse','HEAD'], cwd=source))
@@ -1219,18 +1225,35 @@ shutil.copy2(manifest_path, backup/'manifest.json')
 (backup/'services-before.txt').write_bytes(subprocess.check_output([
     'systemctl','--user','show','blockhead.service','minecraft-server.service',
     'llama-server.service','-p','Id','-p','MainPID','-p','NRestarts','-p','ActiveState']))
-db = sqlite3.connect('file:'+str(source/'data/blockhead.db')+'?mode=ro', uri=True)
-db.row_factory = sqlite3.Row
-rows = [dict(row) for row in db.execute("select * from tasks where status in ('active','queued','paused','blocked')")]
-db.close()
 (backup/'unfinished-tasks-before.json').write_text(json.dumps(rows, indent=2, default=str))
-assert not rows, 'Wait for a natural boundary; never clear these rows'
+(backup/'absent-before.json').write_text(json.dumps([
+    f['path'] for f in m['files'] if f['before_sha256'] is None], indent=2))
 for f in m['files']:
     if f['before_sha256'] is not None:
         saved = backup / f['path']; saved.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(runtime/f['path'], saved)
         assert digest(saved) == f['before_sha256']
 subprocess.run(['systemctl','--user','stop','blockhead.service'], check=True)
+# Preserve stopped-service task/checkpoint rows and the complete runtime hash
+# inventory before copying. Reconcile any new work or hash drift; do not clear it.
+# Check shutdown completion/settlement logs before proceeding with installation.
+db = sqlite3.connect('file:'+str(source/'data/blockhead.db')+'?mode=ro', uri=True)
+db.row_factory = sqlite3.Row
+stopped_rows = [dict(row) for row in db.execute("select * from tasks where status not in ('completed','failed','cancelled')")]
+db.close()
+(backup/'unfinished-tasks-stopped.json').write_text(json.dumps(stopped_rows, indent=2, default=str))
+before_inventory = {str(p.relative_to(runtime)): digest(p)
+                    for p in (runtime/'src').rglob('*') if p.is_file()}
+(backup/'runtime-src-before.json').write_text(json.dumps(before_inventory, indent=2))
+# If work raced the pre-stop check, preserve it and restart the unchanged
+# baseline, validate continuity, then wait for another natural boundary.
+if stopped_rows:
+    subprocess.run(['systemctl','--user','start','blockhead.service'], check=True)
+    raise RuntimeError('Work appeared before stop; unchanged baseline restarted; validate continuity')
+for f in m['files']:
+    target = runtime/f['path']
+    assert (digest(target) if target.exists() else None) == f['before_sha256']
+    assert digest(source/f['path']) == f['candidate_sha256']
 for f in m['files']:
     shutil.copy2(source/f['path'], runtime/f['path'])
     assert digest(runtime/f['path']) == f['candidate_sha256']
@@ -1285,3 +1308,90 @@ also disable Q&A). This turn required no rollback because the candidate is not
 deployed. Prior deployment approval does not authorize this new four-file change.
 
 Final read-only recheck at **2026-10-20T04:03:43.962858+00:00**: connected health/hunger **20/20**, active task **none**, 0 queued tasks and 0 unfinished task rows. Actions/configuredActions remain false; deterministic Q&A true; modelQuestions false. All three service PIDs and zero-restart counts remain unchanged. The snapshot is embedded as `last_read_only_recheck` in the live-state evidence; no future idle state is assumed.
+
+## Approval preparation recheck — October 20, 05:28 UTC
+
+Read-only [preflight evidence](investigations/public-actions-2026-10-20-observability-approval-preflight.json)
+rechecks the actual Maia process, rather than carrying forward the earlier idle
+snapshot. Bob is connected at **20/20**, autonomy enabled, no active/queued task,
+interrupt, project or goal, and **zero unfinished SQLite task rows**. The model
+was idle at the dashboard observation. Seven parsed application journal records
+in the bounded ten-minute sample all reported director standby; none was a
+warning/error. This corroborates natural settlement; it is not a direct sample
+of dispatcher executions, every primitive or a safety admission token. Recheck
+again immediately before any approved stop. If settlement is uncertain, wait;
+do not inject instrumentation or send owner commands to resolve it.
+
+All services are active with unchanged PIDs **77054 / 980 / 952** and NRestarts
+zero. Runtime Q&A is true; actions/configuredActions/modelQuestions are false;
+no active/quarantined gesture, timeout or in-flight request. Counters remain
+**5 accepted / 2 rejected**. Both startup defaults are false. No public POST,
+feature toggle, instrumentation injection, deployment or restart was performed.
+Private dashboard danger still reports an enderman at rounded distance 27;
+this is a diagnostic warning, not authoritative registry/anger state. Physical,
+freshness, lease and individual admission gates are **unknown through the
+currently deployed operator API**; configuredActions=false is a confirmed
+blocker. Do not report a safety pass or fresh calm metadata.
+
+The candidate remains exactly commit `83349e6`'s four runtime files. All four
+candidate hashes and installed baseline/absence checks match the existing
+manifest. A full non-test source/runtime comparison also differs at exactly
+those four paths; the captured complete runtime `src` inventory supports a
+post-install check for unrelated changes. The new backup path remains absent;
+the original threat-gate backup exists and was not changed.
+
+A reusable source-only preflight is now available:
+
+```bash
+ssh -F /dev/null -o BatchMode=yes corey@maia python3 - \
+  < scripts/public-actions-observability-preflight.py
+```
+
+It reads only: GET endpoints, file hashes, query-only SQLite and systemd/journal
+state. It makes no eligibility decision and never installs, toggles, checkpoints
+SQLite or controls Bob. Its syntax and real read-only execution were checked.
+Runtime source and candidate hashes are unchanged, so the previous 66 focused,
+855 full-suite and typecheck results remain applicable; no new runtime tests
+were needed for these preparation records.
+
+The prepared procedure above now explicitly records the two modules' absence,
+checks unfinished rows before creating the new backup, records stopped-service
+checkpoint rows and the full runtime inventory, and rechecks all source/baseline
+hashes before the first copy. If a task races the final check, restart the
+unchanged baseline and validate continuity, then wait for a new boundary. Never
+clear the new task or restore progress. Before installation, inspect normal
+shutdown completion and absence of timeout/recovery errors. Hash drift means
+stop and reconcile; it never authorizes overwriting unreviewed content.
+
+After installation, compare the full runtime inventory: exactly two replacements
+and two additions, with every unrelated entry unchanged. Verify both flags false
+before restoring deterministic Q&A with private POST only. Compare saved task IDs,
+resume state, phases/progress and paused/active rows through startup; natural new
+work is preserved and recorded. Inspect all named admission and physical gates,
+threat refusal reason, monotonic server/physics ages, protocol version support,
+epoch/reset behavior and incomplete/truncated observations. Missing ages remain
+unknown; a received false enderman flag never proves calm. Preserve service logs
+and receipts alongside the new backup. Any failed validation uses the two-file
+restore/two-module retirement rollback above, with verified hashes; preserve the
+earlier threat-gate backup and all database/world progress.
+
+Independent effect observation preparation is expanded in the
+[qualification contract](investigations/public-actions-2026-10-20-independent-observation.md).
+It specifies complete server packet and applied-effect evidence, lifecycle and
+correlation bounds, negative coverage and future local failure tests. It is
+**design only**, not a tested or ready independent observer. The diagnostic
+candidate cannot close these gaps. No additional instrumentation is proposed
+for installation under this approval. All game effects and enabled-action
+acceptance remain unverified; actions remain disabled and the once-only HTTPS
+gesture trial remains ineligible.
+
+**Approval request scope:** install only the four hash-pinned runtime files from
+`83349e6`, using the proposed new backup directory; stop/start only the user
+`blockhead.service` at a freshly verified natural boundary; validate and, if
+needed, apply the exact file rollback; restore deterministic Q&A only after
+validation through private `/public-interactions`, questions true/actions false.
+This does not approve extra observation hooks, Minecraft/llama restarts, network
+changes or action enabling. Prior approval remains limited to `ba6b444` until
+Corey explicitly approves this new scope.
+
+Final pre-approval read-only snapshot at **2026-10-20T05:29:49.675332+00:00**: connected 20/20, active task None, 0 queued and 0 unfinished rows. Autonomy enabled; deterministic Q&A true; actions/configuredActions/modelQuestions false. All three service PIDs and restart counts unchanged. No deployment, toggle or public gesture trial occurred. This snapshot does not reserve a future idle boundary.

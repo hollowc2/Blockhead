@@ -67,5 +67,8 @@
     "Record the actual reviewed source commit, services, feature flags, unfinished tasks/checkpoints and baseline hashes before stopping. Require a new backup directory.",
     "A diagnostic safety pass is not an admission token. Recheck the same session and full predicate under the immediate lease.",
     "No action trial is ready: outgoing attack/use absence and independently server-observed wave/pose remain unresolved. Keep actions disabled after diagnostic deployment."
-  ]
+  ],
+  "candidate_source_commit": "83349e6aeacd8d776eb70f3e87c241fa2e7c3fc0",
+  "latest_read_only_preflight": "public-actions-2026-10-20-observability-approval-preflight.json",
+  "independent_effect_observation": "public-actions-2026-10-20-independent-observation.md"
 }
