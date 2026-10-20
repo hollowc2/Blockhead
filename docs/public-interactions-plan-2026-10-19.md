@@ -2,6 +2,11 @@
 
 Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness and threat-admission repairs are deployed. Original re-arm tasks completed; subsequent autonomous work and recovery are preserved. Actions remain disabled: no eligible gesture window was established, and loaded endermen conservatively block public turns. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
+Latest follow-up: the version-specific enderman review below retains that gate
+for **all four actions**. No additional runtime delta or deployment is proposed.
+Fresh HTTPS/runtime evidence is linked in the final section; no gesture effect
+has been verified.
+
 ## Goal
 
 Let visitors ask CobbleBob questions and click four simple action buttons on the existing public viewer. No accounts, arbitrary task instructions, movement commands, persistent visitor tasks, or new public ports.
@@ -799,3 +804,216 @@ limit remains in force; do not relax it merely for acceptance.
 is also saved privately as `postdeploy-checks.json` in the actual rollback
 backup directory. The exact rollback and immediate-disable procedures above
 remain valid; no rollback was needed. This receipt changes records only.
+
+## Enderman and remaining-gate review — October 20 UTC
+
+Decision: **retain the deployed conservative enderman refusal for all four
+public actions**. No code/configuration change, live deployment or restart was
+performed or proposed in this follow-up. The exact new runtime delta is empty.
+The prior approval remains limited to the already installed `ba6b444` repair.
+
+### Version-specific mechanics and the limits of a narrower rule
+
+The installed `~/mc-server/server.jar` reports **Java 1.21.4**, protocol **769**,
+world version **4189**. Its bundled versions list identifies the nested
+`versions/1.21.4/server-1.21.4.jar`, whose read-only copied bytes have SHA-256
+`de9538d2497c8f4174805f3fcedb8ade3060446aa203f351b820ea5bd04adbf4`,
+matching that list. The running Minecraft process uses `~/mc-server` and has
+not restarted. The launcher comment saying “26.2” is stale; the old repository
+layout rule naming Eros also conflicts with the deployment reference and actual
+Maia service. Neither comment was used as runtime evidence.
+
+Inspection used `javap -c -p` on that copied nested JAR and Mojang's official
+1.21.4 server mappings, rather than Bedrock behavior or a newer Java release.
+Sources: [official version metadata](https://piston-meta.mojang.com/v1/packages/a1cebdbaa1a44b7d8214a81be1d94316a8404d87/1.21.4.json)
+and [official server mappings](https://piston-data.mojang.com/v1/objects/0b1e60cc509cfb0172573ae56b436c29febbc187/server.txt).
+The [structured mechanics review](investigations/public-actions-2026-10-20-enderman-review.json)
+records source download hashes, mapped methods and the installed fingerprint.
+It contains findings, not a copy of Mojang's implementation.
+
+- New gaze provocation uses the player's view direction and the eye-to-eye
+  vector. The normalized dot product must exceed `1 - 0.025 / eyeDistance`,
+  with visibility and the player's gaze-disguise equipment predicate checked.
+  The default follow-range attribute is 64 blocks for acquisition. This is
+  neither an all-distance provocation rule nor an ordinary melee radius.
+  Vertical separation changes the eye vector; a three-block height exclusion
+  borrowed from melee policy cannot establish safety for endermen. A level
+  pitch and a large height gap can avoid the gaze cone at one observation,
+  but do not prove absence of existing aggression.
+- `EndermanLookForPlayerGoal` recognizes **being stared at OR existing anger**.
+  Persistent anger includes server-side time and target UUID, with a universal
+  anger case. Its existing-target continuation uses conditions that ignore
+  line of sight. Cover preventing new gaze is therefore insufficient to prove
+  an already angry enderman harmless. The ordinary eye-to-body sampled cover
+  ray is also not a reproduction of the server's gaze visibility check.
+- There is an adjusted five-tick pending-aggression delay. A close, stared-at
+  target can cause teleport away; a non-staring target more than 16 blocks
+  away (squared distance greater than 256) can cause teleport toward the target
+  after an adjusted 30-tick timer. Turning away may release a stare freeze;
+  turning toward may provoke. Distance, vertical separation and cover are not
+  durable protection against an existing teleporting attacker. The one-second
+  gesture budget does not limit the lifetime of provoked aggression.
+- Hello sends constant chat; wave sends `arm_animation` with hand 0. Neither
+  changes gaze or issues attack/item-use interaction. Their refusal is more
+  conservative than necessary solely for *new gaze provocation*, but the
+  shared policy also requires safe idle without a current threat. Unobserved
+  existing aggression prevents safely exempting either action. Both turns
+  change yaw by approximately 45 degrees and retain pitch, so both current
+  and resulting orientation matter. A successful Mineflayer forced-look
+  promise records local orientation before the normal physics packet flow;
+  it is not independent confirmation of the server's resulting pose.
+
+A narrower rule would need version-bound, fresh and trustworthy observations
+of aggression/target/pending provocation and appropriate visibility/orientation
+facts, including fail-closed handling when any is missing. No such proof was
+established. A missing anger field is not “not angry”; false visual metadata
+alone would not establish the server's pending target or persistent target
+UUID. Server `time` freshness and local physics freshness do not supply these
+per-entity facts. Stationary protocol-maintained positions need not have recent
+movement events. No arbitrary individual-position expiry, guessed safe radius,
+pumpkin equipment exemption, viewer-only ray or shortened window was introduced.
+
+At **03:42:18Z**, a read-only initial viewer replay contained 128 entities,
+86 canonical hostiles and **17 endermen**. The nearest replayed enderman was
+26.65 blocks in 3D, 16.40 horizontally and 21 below Bob. There were zero
+ordinary reflex-geometry candidates. Dashboard telemetry independently reported
+84 hostiles, nearest enderman 27 blocks. These asynchronous diagnostic counts
+are not an exact synchronized registry audit. The viewer omits entity validity,
+aggression, physical gates and authoritative visibility, and emitted no game
+control/click events. See [observation](investigations/public-actions-2026-10-20-enderman-observation.json).
+
+### Which conditions actually govern admission
+
+The definitive exposed admission blocker is **`configuredActions: false`**.
+The HTTPS Q&A answer “I'm working” additionally evaluates the live synchronous
+controller predicate independently of the feature flag; it shows safety
+availability was false at that instant, without identifying its first failing
+conjunct. The status/viewer APIs do not expose all those individual facts. We
+cannot truthfully claim every physical/lease/freshness gate passed or identify
+the exact first failed safety check from them. Endermen in the replay match a
+sufficient refusal branch **if still valid live registry entries**, regardless
+of range; the replay does not prove they are angry.
+
+The authoritative implementation in `src/index.ts` and the controller still
+requires all of these, at admission and again under the immediate lease:
+
+- Same READY session and connected entity; finite health above retreat 8 and
+  hunger above emergency 10; grounded, stationary finite velocity, known dry
+  physics, finite yaw/pitch, no riding, sleeping, held-item use, auto-eating,
+  digging, open window, PvP target, pressed control or pathfinder movement,
+  mining, building or goal. Missing/throwing plugin observations refuse.
+- A real server time event within 2.5 seconds and local physics within 250 ms;
+  lifecycle invalidation on death/respawn/disconnect/detach and a new session
+  starting unknown. No death-loop or halted scheduler.
+- Live threat registry scan, finite relevant positions and available world
+  lookup. The ten reviewed ordinary mobs use existing reflex horizontal/height
+  envelopes (6/3 for melee, 16/12 for the four ranged types); an uncovered
+  candidate or unknown ray sample refuses. Dead/invalid entries are excluded;
+  unreviewed hostiles, including endermen, refuse at any loaded distance.
+  These are the existing work-policy envelopes, not a claim that every possible
+  future attack is bounded by those distances.
+- No unfinished build/terrain project, active goal, active or queued task,
+  pending interrupt, background pass/kick/recheck, model decision or bootstrap
+  work; bootstrap must have completed normal operation. The scheduler queue
+  includes paused/blocked/resumable tasks. No active/waiting world-action lease;
+  immediate `tryRun` never queues a visitor behind work. A held public lease is
+  allowed only for the controller's execution recheck.
+- No active or quarantined gesture; same cancellation epoch/session immediately
+  before the fixed effect. Owner input, damage, hunger-low, night, hostile and
+  task/death events invalidate public work. Deadline/quarantine and lease
+  settlement continue to fail closed. Private disabling invalidates admissions
+  and aborts pending public action requests. It cannot undo an effect already
+  sent. No visitor cleanup clears controls or cancels owner tasks.
+
+The raw hostile count, dashboard danger score, inventory bread count and label
+“working” are not independent policy thresholds. Night is a cancellation event
+and can trigger shelter work; it is not a separate explicit night boolean in
+the synchronous predicate. Likewise a completed task's watchdog cooldown is
+not by itself a queued/paused task or a public-action veto. At 03:44:15Z the
+read-only SQLite query had **no active/queued/paused/blocked task rows**, while
+the prior iron-pickaxe cooldown was still present until 03:46:25Z. That does not
+promise future idle: autonomy remains enabled and may schedule work at any time.
+No task was cancelled, reordered, moved or restored to obtain these observations.
+
+HTTP admission also requires the exact HTTPS Origin, valid bounded JSON, request
+capacity, attempt budgets and production action cooldowns (10 seconds per IP,
+five globally and 30 for hello). These limits remain independent of safety and
+must not be reset by restarting to obtain an acceptance window.
+
+### Independent effect observation required before any future admission
+
+Do not enable merely because a future queue is empty. First establish all live
+safety facts and an observer capable of recording **server/game effects**. The
+current viewer forwards entity movement and camera pose but does not forward
+chat or arm animations; it is insufficient by itself for hello/wave acceptance.
+No additional observer player was logged in and no instrumentation was injected
+into the live process in this follow-up.
+
+For a future trial, arrange an already authorized passive game-client recording
+or separately approved observation instrumentation before enabling. It must
+capture Bob's identity, timestamped chat and animation, and server-observed yaw,
+pitch and position. To prove absence of attack/item use, include suitable passive
+protocol/server observation of interaction/use packets alongside the animation;
+a picture of an arm alone cannot establish that negative. If those observations
+cannot be collected without new live changes, prepare the exact instrumentation
+delta and obtain approval first. Do not admit gestures while designing the
+observer or log in/move another player just to manufacture eligibility.
+
+Record a baseline, enable only via private loopback `/public-interactions`, and
+send each public HTTPS action once with production cooldowns. Require exactly
+one constant hello message; one main-arm animation and no attack/use; each turn
+approximately plus/minus 45 degrees with unchanged pitch and position. Observe
+actual game/server results before the next submission. Any uncertain response
+or effect means disable immediately and do not automatically retry. A naturally
+busy state must refuse without effects; arrange concurrent submissions only in
+an eligible window and distinguish limiter refusal from actual lease contention.
+Private disable must block subsequent admissions. Owner-boundary checks remain
+read-only; never send an owner instruction or `/command` payload for testing.
+Do not provoke danger to test survival priority. If natural owner/survival
+preemption cannot be observed, retain that live acceptance item as unresolved.
+Leave actions disabled at completion, failure or loss of eligibility.
+
+### Latest runtime, validation and rollback
+
+At **03:44:15Z**, the actual HTTPS edge resolved independently to
+**208.111.35.209** (not the previously recorded address). `curl --resolve` used
+that public address with normal TLS hostname verification for
+`https://maia.tailceb694.ts.net`. One deterministic Q&A request returned 200 and
+“I'm working. Simple actions work while Bob is idle.” Production cooldowns were
+respected; no action was submitted or retried. Public GETs for `/command`,
+`/api/command` and `/public-interactions` returned 404. Source-only route review
+confirms public handlers cannot call `deliverOwnerCommand`; deterministic Q&A
+has no model client, tools or persistence. These are read-only boundary checks,
+not live enabled-owner-preemption acceptance.
+
+The correct private `/public-interactions` endpoint reasserted questions true
+and actions false. Final snapshot: connected, health/hunger **20/20**, unchanged
+observed position, no active/queued task, interrupt, goal or project. Autonomy
+remains enabled. Questions true; actions/configuredActions false; modelQuestions
+false; no active/quarantined gesture, zero in-flight requests/timeouts, counters
+**4 accepted / 2 rejected**. Both YAML startup defaults remain false. Service
+PIDs remain bot **77054**, Minecraft **980**, llama.cpp **952**, all active with
+NRestarts 0. All three approved runtime hashes match the manifest and every
+non-test source TypeScript file matches the runtime copy. No network, world,
+progress/database or live code change was made. See
+[final HTTPS/runtime evidence](investigations/public-actions-2026-10-20-enderman-final-state.json).
+
+Local verification of the unchanged implementation: **21 focused tests passed**
+(public safety, gesture controller and HTTP interactions), **typecheck passed**,
+**843 full-suite tests passed**, with zero failures/skips/cancellations.
+`git diff --check` also passed for the completed records. This is regression
+validation, not independent game-effect acceptance. All six requested live
+acceptance groups remain unresolved beyond prior disabled/boundary evidence.
+
+No new repair needs approval or rollback. Immediate feature rollback remains
+POSTing `{"questions_enabled":true,"actions_enabled":false}` as application/json,
+without Origin, to loopback **`http://127.0.0.1:8155/public-interactions`**. Both
+booleans false disables deterministic Q&A too. Never use `/command`. The existing
+backup `/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020`
+and the three-file restore procedure above remain the code rollback record.
+A code restore/stop/start requires fresh explicit approval, verified installed
+hashes and preserved resumable task state; approval must not be inferred from
+this documentation push. Never restore SQLite/world progress or restart
+Minecraft/llama.cpp. No rollback was needed.
+
+Final read-only recheck at **2026-10-20T03:46:49.259813+00:00**: connected 20/20, no active or queued task or unfinished task row. The iron-pickaxe watchdog cooldown has expired naturally and `blockedActions` is now empty. Feature flags, service PIDs and zero-restart counts remain unchanged. This does not establish that the hidden safety conjuncts pass; actions remain disabled. The snapshot is included as `last_read_only_recheck` in the final-state evidence.

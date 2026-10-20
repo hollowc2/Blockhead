@@ -1,0 +1,63 @@
+{
+  "decision": "Retain the deployed all-loaded-endermen refusal for all four public actions; no narrower admission rule justified by available authoritative observations.",
+  "runtime_delta": [],
+  "new_deployment_proposed": false,
+  "restart_performed": false,
+  "installed_version": {
+    "id": "1.21.4",
+    "protocol": 769,
+    "world_version": 4189,
+    "nested_server_sha256": "de9538d2497c8f4174805f3fcedb8ade3060446aa203f351b820ea5bd04adbf4",
+    "method": "Read installed server.jar version.json and META-INF/versions.list; copy nested server JAR read-only, verify SHA256 against bundle list, inspect with javap. Launcher comment says 26.2 and is not authoritative."
+  },
+  "official_sources": {
+    "metadata": "https://piston-meta.mojang.com/v1/packages/a1cebdbaa1a44b7d8214a81be1d94316a8404d87/1.21.4.json",
+    "server": {
+      "sha1": "4707d00eb834b446575d89a61a11b5d548d8c001",
+      "size": 56880250,
+      "url": "https://piston-data.mojang.com/v1/objects/4707d00eb834b446575d89a61a11b5d548d8c001/server.jar"
+    },
+    "server_mappings": {
+      "sha1": "0b1e60cc509cfb0172573ae56b436c29febbc187",
+      "size": 7753825,
+      "url": "https://piston-data.mojang.com/v1/objects/0b1e60cc509cfb0172573ae56b436c29febbc187/server.txt"
+    }
+  },
+  "mapped_methods_reviewed": {
+    "EnderMan": "clp: createAttributes, isBeingStaredBy, teleport, teleportTowards, setTarget",
+    "EnderMan.EndermanLookForPlayerGoal": "clp$c: constructor, canUse, canContinueToUse, tick, isAngerInducing lambda",
+    "LivingEntity": "bvi: isLookingAtMe(LivingEntity,double,boolean,boolean,double[])",
+    "NeutralMob": "bvn: isAngryAt, isAngryAtAllPlayers, isAngry",
+    "TargetingConditions": "cfz: test, ignoreLineOfSight"
+  },
+  "findings": [
+    "Default FOLLOW_RANGE is 64, a target-acquisition range, not proof an existing angry target is harmless beyond it.",
+    "Gaze-disguise predicate is checked. Eye-to-eye normalized look dot product must exceed 1 - 0.025 / eye distance, with visibility checked. Vertical separation affects the eye vector; the ordinary melee height cutoff is not an enderman provocation rule.",
+    "Player acquisition accepts being stared at OR existing anger, and an existing target can continue through ignoreLineOfSight conditions. Persistent target UUID and anger time are server state; neutral-looking metadata or no recent damage does not prove absence.",
+    "Target goal has an adjusted five-tick pending aggression delay. Close staring targets can trigger teleport away; non-staring targets farther than squared distance 256 can trigger teleportTowards after an adjusted 30-tick timer. Do not treat a one-second gesture budget as a hazard lifetime bound.",
+    "Hello sends fixed chat and wave sends arm_animation hand 0, with no entity interaction, item use or look. Neither directly provokes gaze, but existing aggression remains relevant to the shared safe-idle policy.",
+    "Turns change yaw by +/- pi/4, preserve pitch, and can enter the gaze cone or end a freeze. Mineflayer force look resolves after local orientation update; HTTP success alone cannot prove server-observed orientation.",
+    "Registry and ray samples must be current/known. Server time and local physics freshness do not establish individual per-entity anger timestamps. Viewer replay omits validity, aggression target, physics facts and authoritative visibility."
+  ],
+  "live_observation_limits": "No code was injected into the running bot. Private status lacks individual admission-reason diagnostics. Only configuredActions=false is an independently exposed definitive admission blocker; working Q&A proves a safety predicate failed but not which conjunct. Replayed endermen match a sufficient refusal branch if valid live registry entries, not a proof of current aggression.",
+  "validation": {
+    "focused": {
+      "tests": 21,
+      "passed": 21
+    },
+    "typecheck": "passed",
+    "full_suite": {
+      "tests": 843,
+      "passed": 843,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "diff_check": "passed"
+  },
+  "rollback": {
+    "feature_control": "POST loopback http://127.0.0.1:8155/public-interactions application/json without Origin, questions_enabled true/actions_enabled false; both false disables Q&A too. Never /command.",
+    "existing_backup": "/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020",
+    "code": "No new code rollback. Existing three-original-file restore requires explicit fresh live stop/start approval; never restore database/world progress."
+  }
+}

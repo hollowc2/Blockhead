@@ -1,0 +1,305 @@
+{
+  "recorded_at": "2026-10-20T03:44:14.856066+00:00",
+  "status_before": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T03:36:57.210Z",
+      "uptimeSeconds": 437.656
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192519386413
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": [
+        {
+          "action": "ensure_item:iron_pickaxe:1",
+          "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+          "retryInSeconds": 131
+        }
+      ]
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T03:43:34.242Z",
+      "lastSuccessAgeSeconds": 40.624,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T03:43:31.003Z",
+        "latencyMs": 3239,
+        "tool": "wait",
+        "rationale": null,
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "flags_before": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 3,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "public_edge": "208.111.35.209",
+  "tls_verified": true,
+  "question": {
+    "status": 200,
+    "body": {
+      "code": "ok",
+      "text": "I'm working. Simple actions work while Bob is idle."
+    }
+  },
+  "public_private_routes_get_only": {
+    "/command": 404,
+    "/api/command": 404,
+    "/public-interactions": 404
+  },
+  "private_disable": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 4,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "status_final": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T03:36:57.210Z",
+      "uptimeSeconds": 438.968
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192519386413
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": [
+        {
+          "action": "ensure_item:iron_pickaxe:1",
+          "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+          "retryInSeconds": 129
+        }
+      ]
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T03:43:34.242Z",
+      "lastSuccessAgeSeconds": 41.936,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T03:43:31.003Z",
+        "latencyMs": 3239,
+        "tool": "wait",
+        "rationale": null,
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "flags_final": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 4,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "dashboard_diagnostic": {
+    "danger": {
+      "score": 0.17500000000000002,
+      "nearestHostile": {
+        "type": "enderman",
+        "distance": 27
+      },
+      "hostileCount": 84
+    },
+    "buildProject": null,
+    "worldProject": null
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "approved_runtime_hashes": [
+    {
+      "path": "src/index.ts",
+      "sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab",
+      "approved_sha256": "ac6f81d5aacd2d0c5f8a83b3738a722ffc103a53342673ed8ea51029920e8aab"
+    },
+    {
+      "path": "src/agent/public-action-safety.ts",
+      "sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541",
+      "approved_sha256": "8c3355b74befafc175c831267a9aead0bc7dd4b8a7a74b78917639c406d1c541"
+    },
+    {
+      "path": "src/agent/self-defense.ts",
+      "sha256": "ea155ed47ce257672195663f4a13a906f12e114bbcb16ebac0d4330d2ca49e7e",
+      "approved_sha256": "ea155ed47ce257672195663f4a13a906f12e114bbcb16ebac0d4330d2ca49e7e"
+    }
+  ],
+  "runtime_source_mismatches": [],
+  "startup_flags": [
+    "questions_enabled: false",
+    "actions_enabled: false"
+  ],
+  "unfinished_tasks": [],
+  "actions_enabled_this_turn": false,
+  "game_effects_verified": false,
+  "admission_result": "Feature disabled authoritatively. No safety pass established; endermen remain unreviewed and conservatively refused. Viewer cannot identify every internal failing predicate.",
+  "last_read_only_recheck": {
+    "at": "2026-10-20T03:46:49.259813+00:00",
+    "status": {
+      "schema": 1,
+      "process": {
+        "startedAt": "2026-10-20T03:36:57.210Z",
+        "uptimeSeconds": 592.06
+      },
+      "minecraft": {
+        "connected": true,
+        "player": "CobbleBob",
+        "health": 20,
+        "hunger": 20,
+        "position": {
+          "x": 63.5,
+          "y": 100,
+          "z": 49.50192519386413
+        },
+        "dimension": "overworld",
+        "timePhase": "day"
+      },
+      "task": {
+        "active": null,
+        "queued": [],
+        "interrupt": {
+          "pending": false,
+          "reason": null
+        },
+        "blockedActions": []
+      },
+      "buildProject": null,
+      "goal": null,
+      "llm": {
+        "endpoint": "http://127.0.0.1:8080",
+        "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+        "state": "ok",
+        "reachable": true,
+        "lastSuccessAt": "2026-10-20T03:46:33.463Z",
+        "lastSuccessAgeSeconds": 15.807,
+        "consecutiveFailures": 0,
+        "lastFailure": null,
+        "lastDecision": {
+          "at": "2026-10-20T03:46:30.766Z",
+          "latencyMs": 2697,
+          "tool": "wait",
+          "rationale": null,
+          "success": true,
+          "error": null
+        }
+      },
+      "autonomy": {
+        "paused": false,
+        "reasons": []
+      },
+      "lastTaskResult": null,
+      "consecutiveTaskFailures": 0,
+      "recentTaskResults": []
+    },
+    "flags": {
+      "questions": true,
+      "actions": false,
+      "configuredActions": false,
+      "modelQuestions": false,
+      "gesture": {
+        "active": false,
+        "quarantined": false
+      },
+      "accepted": 4,
+      "rejected": 2,
+      "timeout": 0,
+      "inFlight": 0,
+      "questionsInFlight": 0,
+      "actionsInFlight": 0
+    },
+    "unfinished_tasks": [],
+    "services": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n"
+  }
+}
