@@ -1,6 +1,6 @@
 # Anonymous public Q&A and simple commands
 
-Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness repair is deployed; live bread recovery and original re-arm work now progress. Actions remain disabled pending a genuine safe-idle window. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
+Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness and threat-admission repairs are deployed. Original re-arm tasks completed; subsequent autonomous work and recovery are preserved. Actions remain disabled: no eligible gesture window was established, and loaded endermen conservatively block public turns. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 ## Goal
 
@@ -693,3 +693,109 @@ as application/json without Origin to loopback **`/public-interactions`**, never
 `/command`. Questions true/actions false preserves deterministic Q&A. Any bot
 restart returns both configured public features to false. No rollback was
 performed because the local candidate has not been deployed.
+
+## Approved threat-gate deployment — October 19 PDT / October 20 UTC
+
+Corey's subsequent **“approve”** authorized the exact three-file Maia deployment
+and bot restart prepared above. Source commit
+`ba6b4449fd2175d0de97175fc544f20b75fbfc2f` was installed at
+**2026-10-20T03:36:57Z**. The runtime delta is exactly
+`src/index.ts`, `src/agent/public-action-safety.ts`, and
+`src/agent/self-defense.ts`, with all before/candidate hashes matching the
+approved manifest. No additional application edits were introduced.
+
+The iron-pickaxe task was still active at first preflight. Deployment waited
+until it settled normally with a failure and watchdog cooldown at 03:36:25Z;
+no task was cancelled or paused to create that boundary. Three one-second-spaced
+preflight snapshots then showed connected health/hunger 20/20, no active/queued
+work or interrupt, no active goal/project, no thinking/model decision, no path,
+no changing position and no active/quarantined gesture or in-flight request.
+Dispatcher source confirms task settlement follows primitive cleanup, providing
+the evidence for completed task-lease settlement at this boundary. A final
+fresh check immediately preceded shutdown. This is deployment-boundary evidence,
+not proof that the public physical/threat predicate passed.
+
+Backup `/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020`
+was required to be new. It contains the three verified originals, approved
+manifest, source commit, all runtime-source hashes, preflight snapshots,
+services, unfinished task/checkpoint rows, rollback record and deployment receipt.
+The unfinished task query returned no active/queued/paused/blocked rows; the
+iron-pickaxe watchdog action cooldown remains visible after restart with the
+same expiry. No database/world progress was restored or edited. The unrelated
+Maia `.claude/` directory was preserved.
+
+Only user `blockhead.service` was stopped and started. Shutdown logged
+`shutdown requested`, a successful SQLite checkpoint/close and
+`shutdown complete; exiting`, without forced termination. The new service
+MainPID is **77054**, NRestarts 0; Minecraft **980** and llama.cpp **952** stayed
+active with their original PIDs and NRestarts 0. Bob reconnected at 20/20.
+Both public features started false, modelQuestions false, with no gesture
+quarantine or in-flight work. Startup logs show no new module, syntax, socket,
+schema or unhandled rejection failures; the pre-existing Mineflayer deprecated
+`physicTick` warning remains unrelated. No dependencies, configuration, exposure,
+Minecraft or model service were changed. No rollback was needed.
+
+Deterministic Q&A was restored only through the correct private loopback
+`/public-interactions` feature control, with questions true/actions false.
+No private owner-command request was made during this approved deployment
+follow-up. Source validation remains the candidate's 39 focused tests,
+typecheck and 843 passing full-suite tests; application source is unchanged.
+Final record-only diff checks passed.
+
+Evidence: [deployment receipt](investigations/public-actions-2026-10-20-threat-deployment-receipt.json),
+[post-deployment read-only entity replay](investigations/public-actions-2026-10-20-threat-postdeploy-observation.json).
+The replay at 03:37:23Z included 84 canonical hostiles, including endermen;
+private dashboard telemetry reported 83, nearest enderman 27 blocks. The
+candidate intentionally refuses loaded endermen at any distance until a
+turn-safe profile is reviewed; no inference that they were attacking is made.
+The exact three-file rollback procedure above is now applicable to the actual
+backup directory. Restore only those originals under an approved bot stop/start;
+never restore SQLite/Minecraft progress or restart Minecraft/llama.cpp.
+Immediate feature disable remains the private loopback `/public-interactions`
+control with both booleans false. Both YAML startup defaults remain false.
+
+### Final HTTPS observation and acceptance status after deployment
+
+At **03:38:02Z, 03:38:33Z and 03:39:06Z**, actual public HTTPS requests through
+public-DNS edge `208.111.34.11` with normal TLS hostname verification returned
+200 for deterministic “What are you doing?” Q&A. All three answered
+`I'm working. Simple actions work while Bob is idle.` The activity value is
+derived from the synchronous authoritative gesture predicate, not copied from
+the dashboard task label. Thus an empty scheduler queue was not mistaken for
+gesture eligibility. Production question cooldowns were respected (31-second
+waits, no uncertain-delivery retries). Dashboard observations reported 83–84
+hostiles, nearest enderman 27 blocks. No eligible window was established;
+public actions were **never enabled**.
+
+The correct private feature control reasserted questions true/actions false.
+Two simultaneous actual public hello/wave submissions then each returned
+503/disabled; public `/api/command`, `/command` and `/public-interactions`
+returned 404. No owner instructions or model-backed public questions were
+submitted. These checks establish disabled refusals and public/private
+separation, not enabled concurrency or immediate disable of an admitted gesture.
+
+Final state at **2026-10-20T03:39:09Z**: connected, health/hunger **20/20**,
+position unchanged throughout the post-deployment observations, no active or
+queued task, no interrupt/goal/project. The prior iron-pickaxe failure cooldown
+is preserved until 03:46:25Z. Questions true; actions/configuredActions false;
+modelQuestions false; no active/quarantined gesture, zero in-flight requests,
+zero timeouts, accepted/rejected counters **3/2**. Services remain active with
+NRestarts 0 and PIDs bot **77054**, Minecraft **980**, llama.cpp **952**.
+A second full runtime-source hash comparison still shows exactly the approved
+three-file delta and matching candidate hashes. Both configured startup flags
+are false. Network exposure and world/database progress were not restored or
+manually changed.
+
+Live acceptance remains **incomplete**: exact once-only hello chat, main-arm-only
+wave without attack/use, 45-degree left/right turns preserving pitch/position,
+enabled busy/concurrent refusal, immediate disable of admissions and enabled
+owner/survival priority require a genuinely eligible future window with
+independent game-effect observation. HTTP success for Q&A and disabled-action
+refusals do not prove any gesture. No checks were weakened and no mobs/tasks/
+movement were manipulated to obtain idle. The approved conservative enderman
+limit remains in force; do not relax it merely for acceptance.
+
+[Structured final HTTPS/runtime evidence](investigations/public-actions-2026-10-20-threat-postdeploy-checks.json)
+is also saved privately as `postdeploy-checks.json` in the actual rollback
+backup directory. The exact rollback and immediate-disable procedures above
+remain valid; no rollback was needed. This receipt changes records only.

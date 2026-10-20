@@ -1,0 +1,85 @@
+{
+  "recorded_at": "2026-10-20T03:36:57.934170+00:00",
+  "approval": "user approve after ba6b444 proposal",
+  "source_commit": "ba6b4449fd2175d0de97175fc544f20b75fbfc2f",
+  "backup": "/home/corey/.local/share/blockhead-backups/public-actions-threat-gate-20261020",
+  "runtime_delta": [
+    "src/agent/public-action-safety.ts",
+    "src/agent/self-defense.ts",
+    "src/index.ts"
+  ],
+  "startup_features": {
+    "questions": false,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 0,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "status_after": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T03:36:57.210Z",
+      "uptimeSeconds": 0.687
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192519386413
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": [
+        {
+          "action": "ensure_item:iron_pickaxe:1",
+          "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+          "retryInSeconds": 568
+        }
+      ]
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "local-model",
+      "state": "unknown",
+      "reachable": null,
+      "lastSuccessAt": null,
+      "lastSuccessAgeSeconds": null,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": null
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "services_before": "Id=blockhead.service\nActiveState=active\nMainPID=75070\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0",
+  "services_after": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0",
+  "rollback_used": false
+}

@@ -1,0 +1,421 @@
+{
+  "recorded_at": "2026-10-20T03:39:09.694488+00:00",
+  "origin": "https://maia.tailceb694.ts.net",
+  "public_edge": "208.111.34.11",
+  "actual_public_edge": true,
+  "tls_verified": true,
+  "observations": [
+    {
+      "at": "2026-10-20T03:38:02.250304+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T03:36:57.210Z",
+          "uptimeSeconds": 63.172
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192519386413
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": [
+            {
+              "action": "ensure_item:iron_pickaxe:1",
+              "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+              "retryInSeconds": 505
+            }
+          ]
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T03:37:34.256Z",
+          "lastSuccessAgeSeconds": 26.126,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T03:37:31.009Z",
+            "latencyMs": 3247,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "danger": {
+        "score": 0.17500000000000002,
+        "nearestHostile": {
+          "type": "enderman",
+          "distance": 27
+        },
+        "hostileCount": 83
+      },
+      "question": {
+        "status": 200,
+        "body": {
+          "code": "ok",
+          "text": "I'm working. Simple actions work while Bob is idle."
+        }
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 1,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0
+      }
+    },
+    {
+      "at": "2026-10-20T03:38:33.726831+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T03:36:57.210Z",
+          "uptimeSeconds": 96.044
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192519386413
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": [
+            {
+              "action": "ensure_item:iron_pickaxe:1",
+              "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+              "retryInSeconds": 472
+            }
+          ]
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T03:37:34.256Z",
+          "lastSuccessAgeSeconds": 58.998,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T03:37:31.009Z",
+            "latencyMs": 3247,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "danger": {
+        "score": 0.17500000000000002,
+        "nearestHostile": {
+          "type": "enderman",
+          "distance": 27
+        },
+        "hostileCount": 84
+      },
+      "question": {
+        "status": 200,
+        "body": {
+          "code": "ok",
+          "text": "I'm working. Simple actions work while Bob is idle."
+        }
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 2,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0
+      }
+    },
+    {
+      "at": "2026-10-20T03:39:06.283134+00:00",
+      "status": {
+        "schema": 1,
+        "process": {
+          "startedAt": "2026-10-20T03:36:57.210Z",
+          "uptimeSeconds": 127.52
+        },
+        "minecraft": {
+          "connected": true,
+          "player": "CobbleBob",
+          "health": 20,
+          "hunger": 20,
+          "position": {
+            "x": 63.5,
+            "y": 100,
+            "z": 49.50192519386413
+          },
+          "dimension": "overworld",
+          "timePhase": "day"
+        },
+        "task": {
+          "active": null,
+          "queued": [],
+          "interrupt": {
+            "pending": false,
+            "reason": null
+          },
+          "blockedActions": [
+            {
+              "action": "ensure_item:iron_pickaxe:1",
+              "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+              "retryInSeconds": 441
+            }
+          ]
+        },
+        "buildProject": null,
+        "goal": null,
+        "llm": {
+          "endpoint": "http://127.0.0.1:8080",
+          "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+          "state": "ok",
+          "reachable": true,
+          "lastSuccessAt": "2026-10-20T03:39:04.593Z",
+          "lastSuccessAgeSeconds": 0.137,
+          "consecutiveFailures": 0,
+          "lastFailure": null,
+          "lastDecision": {
+            "at": "2026-10-20T03:39:01.318Z",
+            "latencyMs": 3275,
+            "tool": "wait",
+            "rationale": null,
+            "success": true,
+            "error": null
+          }
+        },
+        "autonomy": {
+          "paused": false,
+          "reasons": []
+        },
+        "lastTaskResult": null,
+        "consecutiveTaskFailures": 0,
+        "recentTaskResults": []
+      },
+      "danger": {
+        "score": 0.17500000000000002,
+        "nearestHostile": {
+          "type": "enderman",
+          "distance": 27
+        },
+        "hostileCount": 84
+      },
+      "question": {
+        "status": 200,
+        "body": {
+          "code": "ok",
+          "text": "I'm working. Simple actions work while Bob is idle."
+        }
+      },
+      "flags": {
+        "questions": true,
+        "actions": false,
+        "configuredActions": false,
+        "modelQuestions": false,
+        "gesture": {
+          "active": false,
+          "quarantined": false
+        },
+        "accepted": 3,
+        "rejected": 0,
+        "timeout": 0,
+        "inFlight": 0,
+        "questionsInFlight": 0,
+        "actionsInFlight": 0
+      }
+    }
+  ],
+  "private_disable": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 3,
+    "rejected": 0,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "concurrent_disabled_refusals": [
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    },
+    {
+      "status": 503,
+      "body": {
+        "code": "disabled",
+        "text": "Public interaction unavailable."
+      }
+    }
+  ],
+  "public_private_separation": {
+    "/api/command": 404,
+    "/public-interactions": 404,
+    "/command": 404
+  },
+  "flags_final": {
+    "questions": true,
+    "actions": false,
+    "configuredActions": false,
+    "modelQuestions": false,
+    "gesture": {
+      "active": false,
+      "quarantined": false
+    },
+    "accepted": 3,
+    "rejected": 2,
+    "timeout": 0,
+    "inFlight": 0,
+    "questionsInFlight": 0,
+    "actionsInFlight": 0
+  },
+  "status_final": {
+    "schema": 1,
+    "process": {
+      "startedAt": "2026-10-20T03:36:57.210Z",
+      "uptimeSeconds": 132.485
+    },
+    "minecraft": {
+      "connected": true,
+      "player": "CobbleBob",
+      "health": 20,
+      "hunger": 20,
+      "position": {
+        "x": 63.5,
+        "y": 100,
+        "z": 49.50192519386413
+      },
+      "dimension": "overworld",
+      "timePhase": "day"
+    },
+    "task": {
+      "active": null,
+      "queued": [],
+      "interrupt": {
+        "pending": false,
+        "reason": null
+      },
+      "blockedActions": [
+        {
+          "action": "ensure_item:iron_pickaxe:1",
+          "reason": "15 failed attempts (could not return home: failed); temporarily blocked until 2026-10-20T03:46:25.073Z",
+          "retryInSeconds": 436
+        }
+      ]
+    },
+    "buildProject": null,
+    "goal": null,
+    "llm": {
+      "endpoint": "http://127.0.0.1:8080",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "state": "ok",
+      "reachable": true,
+      "lastSuccessAt": "2026-10-20T03:39:04.593Z",
+      "lastSuccessAgeSeconds": 5.102,
+      "consecutiveFailures": 0,
+      "lastFailure": null,
+      "lastDecision": {
+        "at": "2026-10-20T03:39:01.318Z",
+        "latencyMs": 3275,
+        "tool": "wait",
+        "rationale": null,
+        "success": true,
+        "error": null
+      }
+    },
+    "autonomy": {
+      "paused": false,
+      "reasons": []
+    },
+    "lastTaskResult": null,
+    "consecutiveTaskFailures": 0,
+    "recentTaskResults": []
+  },
+  "services": "Id=blockhead.service\nActiveState=active\nMainPID=77054\nNRestarts=0\n\nId=minecraft-server.service\nActiveState=active\nMainPID=980\nNRestarts=0\n\nId=llama-server.service\nActiveState=active\nMainPID=952\nNRestarts=0\n",
+  "runtime_delta": [
+    "src/agent/public-action-safety.ts",
+    "src/agent/self-defense.ts",
+    "src/index.ts"
+  ],
+  "actions_enabled_during_trial": false,
+  "effects_verified": false,
+  "trial_result": "No eligible gesture window established; authoritative Q&A activity checked with actions disabled. All gesture effects and enabled-action concurrency/disable remain unverified."
+}
