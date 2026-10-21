@@ -733,3 +733,23 @@ test("a home-Y shift does not start a second base shell", () => {
   assert.equal(displacedBaseOffset(bot, { dimension: "overworld", x: 65, y: 103, z: 51 }), -3);
   assert.equal(displacedBaseOffset(bot, { dimension: "overworld", x: 65, y: 97, z: 51 }), 3, "the crawlspace below is not a building site");
 });
+
+test("an upstairs slice approaches its pending storey instead of the home floor, including after resuming", async () => {
+  const blueprint: Blueprint = {
+    origin: { x: 0, y: 64, z: 0, dimension: "overworld" },
+    operations: [6, 9].map((y, x) => ({ id: `op-${x}`, x, y, z: 0, material: "stone", phase: "structural_shell" as const, replaceExisting: false, structural: true })),
+    estimates: { blocks: 2, materials: { stone: 2 } },
+    footprint: { width: 2, depth: 1, height: 10 },
+  };
+  const runner = designTestRunner({ "0,70,0": "stone", "1,73,0": "stone" });
+  const approaches: Vec3[] = [];
+  (runner as unknown as { travelToSimpleAnchor: (at: Vec3) => Promise<{ status: "already_there" }> }).travelToSimpleAnchor = async (at) => {
+    approaches.push(at);
+    return { status: "already_there" };
+  };
+  const first = await runner.runDesignSlice(blueprint, { phaseId: "upper", operationStart: 0, operationEnd: 2, maxOperations: 1 });
+  assert.equal(first.data?.currentOperationIndex, 1);
+  const last = await runner.runDesignSlice(blueprint, { phaseId: "upper", operationStart: 0, operationEnd: 2, resumeState: { ...first.data, operationStart: 0, operationEnd: 2 } });
+  assert.equal(last.status, "completed");
+  assert.deepEqual(approaches, [new Vec3(-2, 70, -2), new Vec3(-2, 73, -2)]);
+});

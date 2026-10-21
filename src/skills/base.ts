@@ -1085,7 +1085,12 @@ export class BaseBuilderRunner {
     this.interruptions = resume?.interruptions ?? 0;
     try {
       if (this.opts.bot.entity === null) return { ok: false, status: "failed", errorCode: "NOT_READY", message: "bot is not spawned", data };
-      const travel = await this.travelToSimpleAnchor(new Vec3(blueprint.origin.x - 2, blueprint.origin.y, blueprint.origin.z - 2), blueprint.origin.dimension);
+      // A composed design may start above its anchor (an upstairs extension),
+      // and later slices may be higher still. Approach the pending work's
+      // elevation rather than returning to the ground-floor anchor each time.
+      const pending = blueprint.operations[resumeCursor];
+      const approachY = pending?.absolute?.y ?? blueprint.origin.y + (pending?.y ?? 0);
+      const travel = await this.travelToSimpleAnchor(new Vec3(blueprint.origin.x - 2, approachY, blueprint.origin.z - 2), blueprint.origin.dimension);
       // Each placement walks into reach itself; the anchor only brings the
       // bot to the site. Standing on the windmill site 3.8 blocks from an
       // anchor it could not step to blocked the build (17:41, 2026-10-05).

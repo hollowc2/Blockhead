@@ -20,6 +20,7 @@ import type { StorageRepository } from "../memory/storage.js";
 import type { GoalManager } from "../agent/goals.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
 import type { TerrainToolName } from "../tools/terrain.js";
+import { loadSavedBuildPlan } from "../building/saved-plan.js";
 
 /** Shared wiring handed to mineflayer event registration. */
 export interface AgentContext {
@@ -499,6 +500,20 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     // deterministic soft/movement matchers (spec 15); bare "stop" stays
     // universal as a safety interrupt.
     if (username !== ctx.owner) return;
+
+    const savedPlan = instruction.match(/^(?:please )?build plan (.+)$/);
+    if (savedPlan) {
+      try {
+        const args = await loadSavedBuildPlan(savedPlan[1]!, ctx.state.home, (at) => bot.blockAt(at));
+        ctx.bus.emit("chat.command", { from: username, command: instruction });
+        const reply = runTool(bot, config, ctx, "build_design", args);
+        bot.chat(reply || "I couldn't start that saved plan.");
+      } catch (error) {
+        logger.warn({ plan: savedPlan[1], err: String(error) }, "saved build plan refused");
+        bot.chat("I couldn't use that saved plan: its file, home, or surveyed blocks do not match. Inspect the plan before retrying.");
+      }
+      return;
+    }
 
     // Phase 8 soft interrupts (spec 6.1): pause the current task, run the
     // movement action at INTERRUPT priority, then the paused task resumes.

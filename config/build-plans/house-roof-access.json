@@ -1,0 +1,156 @@
+{
+  "home": {
+    "x": 65,
+    "y": 100,
+    "z": 51,
+    "dimension": "overworld"
+  },
+  "design": {
+    "name": "Main house roof access",
+    "description": "Five supported solid oak steps on the existing south platform; no demolition.",
+    "anchor": "home",
+    "orientation": "north",
+    "scale": "small",
+    "palette": {
+      "foundation": "oak_planks",
+      "primary": "oak_planks",
+      "secondary": "oak_planks",
+      "frame": "oak_planks",
+      "glass": "glass",
+      "roof": "oak_planks",
+      "floor": "oak_planks",
+      "accent": "oak_planks",
+      "lighting": "torch",
+      "furniture": "oak_planks"
+    },
+    "decoration": {
+      "interior": false,
+      "colorful": false,
+      "lighting": false
+    },
+    "components": [
+      {
+        "type": "cuboid",
+        "id": "step-1",
+        "width": 1,
+        "depth": 1,
+        "height": 1,
+        "mode": "solid",
+        "material": "oak_planks",
+        "transform": {
+          "offset": {
+            "x": 2,
+            "y": 1,
+            "z": 8
+          }
+        }
+      },
+      {
+        "type": "cuboid",
+        "id": "step-2",
+        "width": 1,
+        "depth": 1,
+        "height": 2,
+        "mode": "solid",
+        "material": "oak_planks",
+        "transform": {
+          "offset": {
+            "x": 2,
+            "y": 1,
+            "z": 7
+          }
+        }
+      },
+      {
+        "type": "cuboid",
+        "id": "step-3",
+        "width": 1,
+        "depth": 1,
+        "height": 3,
+        "mode": "solid",
+        "material": "oak_planks",
+        "transform": {
+          "offset": {
+            "x": 2,
+            "y": 1,
+            "z": 6
+          }
+        }
+      },
+      {
+        "type": "cuboid",
+        "id": "step-4",
+        "width": 1,
+        "depth": 1,
+        "height": 4,
+        "mode": "solid",
+        "material": "oak_planks",
+        "transform": {
+          "offset": {
+            "x": 2,
+            "y": 1,
+            "z": 5
+          }
+        }
+      },
+      {
+        "type": "cuboid",
+        "id": "step-5",
+        "width": 1,
+        "depth": 1,
+        "height": 5,
+        "mode": "solid",
+        "material": "oak_planks",
+        "transform": {
+          "offset": {
+            "x": 2,
+            "y": 1,
+            "z": 4
+          }
+        }
+      }
+    ]
+  },
+  "preconditions": [
+    {
+      "x": 2,
+      "y": 0,
+      "z": 8,
+      "names": [
+        "oak_planks"
+      ]
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "z": 7,
+      "names": [
+        "oak_planks"
+      ]
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "z": 6,
+      "names": [
+        "oak_planks"
+      ]
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "z": 5,
+      "names": [
+        "oak_planks"
+      ]
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "z": 4,
+      "names": [
+        "oak_planks"
+      ]
+    }
+  ]
+}
