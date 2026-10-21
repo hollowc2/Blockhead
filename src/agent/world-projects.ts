@@ -100,7 +100,8 @@ export class WorldProjectManager extends BuildProjectManager {
   getWorldProject(projectId: string): WorldProject | null { return this.worldProjects.get(projectId); }
 
   currentWorldProject(): WorldProjectStatusView | null {
-    const project = this.worldProjects.loadUnfinished().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const project = this.worldProjects.loadUnfinished().sort((a, b) => Number(b.id === this.worldScheduler.active?.projectId) - Number(a.id === this.worldScheduler.active?.projectId)
+      || b.updatedAt.localeCompare(a.updatedAt))[0];
     if (project === undefined) return null;
     const phase = project.currentPhaseId === undefined ? null : this.worldProjects.getPhases(project.id).find((candidate) => candidate.id === project.currentPhaseId) ?? null;
     return { project, phase };

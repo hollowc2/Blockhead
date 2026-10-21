@@ -1,0 +1,23 @@
+{
+  "host": "maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "files": {
+    "src/agent/build-projects.ts": "066f2e6d959ebe93ed7184425c371788cc6a6db543b1d5bb98af75a3c2b3a46f",
+    "src/agent/world-projects.ts": "0e1c1d65701f706266bfd20e8b3f7eb037e6a4cca381e591c6689579c1ca1a6d",
+    "src/dashboard/types.ts": "0be15e35fef2a82bdce71b2c8b8f59c1e5fffa83665f6794839c348ecf419634",
+    "src/dashboard/projections.ts": "5956de6b92e371f294617a1e039c4aa5cf1a76086b32e0b175bd007555a0321f",
+    "src/dashboard/viewer-chat.ts": "1a682dd857254f19bc99f26c1791e7b09e1ea4d4d48fbe75da7b7ac9ed839507"
+  },
+  "validation": "869 tests passed; typecheck passed",
+  "procedure": "Verify baseline hashes, back up these five runtime files and SQLite, install only these five files, restart only blockhead.service, verify connection and viewer Q&A. Roll back by stopping blockhead.service, restoring the five backed-up runtime files, and starting blockhead.service; do not restore world/database.",
+  "deployment": {
+    "approved": true,
+    "backup": "/home/corey/.local/share/blockhead-backups/reference-20261021-095338",
+    "service": "active, connected, NRestarts=0",
+    "health": 20,
+    "hunger": 20,
+    "queuedTasks": 0,
+    "buildProject": null
+  }
+}

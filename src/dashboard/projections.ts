@@ -15,7 +15,7 @@ export function projectPosition(position: PositionInput | null | undefined): Das
 
 export function projectTask(task: Task | null | undefined): TaskSummary | null {
   if (task === null || task === undefined) return null;
-  return { id: task.id, type: task.type, priority: task.priority, source: task.source, objective: task.objective, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt ?? null, completedAt: task.completedAt ?? null, phase: task.phase ?? null, attempts: task.attempts ?? null, lastError: task.lastError ?? null };
+  return { ...(task.projectId === undefined ? {} : { projectId: task.projectId }), id: task.id, type: task.type, priority: task.priority, source: task.source, objective: task.objective, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt ?? null, completedAt: task.completedAt ?? null, phase: task.phase ?? null, attempts: task.attempts ?? null, lastError: task.lastError ?? null };
 }
 
 export function projectBuildProject(view: BuildProjectStatusView | null | undefined): BuildProjectSummary | null {

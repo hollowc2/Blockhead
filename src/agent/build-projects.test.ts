@@ -473,3 +473,21 @@ test("a development build that blocks on every retry is given up", async () => {
     h.db.close();
   }
 });
+
+test("telemetry prefers the executing build over a newer blocked project", () => {
+  const h = harness();
+  try {
+    const manager = new BuildProjectManager(h.projects, h.scheduler, h.bus);
+    const input = { userGoal: "Build a castle", structureType: "castle", source: "user" as const, design: landmarkTemplate("castle", "small"), origin };
+    const first = manager.createOrResume(input);
+    h.scheduler.activateNext();
+    assert.equal(h.scheduler.active?.projectId, first.project.id);
+    const second = manager.createOrResume({ ...input, origin: { ...origin, x: 110 } });
+    const blocked = h.projects.get(second.project.id)!;
+    blocked.status = "blocked";
+    blocked.updatedAt = "2099-01-01T00:00:00.000Z";
+    h.projects.update(blocked);
+    assert.equal(manager.currentProject()?.project.id, first.project.id);
+    assert.equal(manager.hasUnfinished(p => p.id === second.project.id), true);
+  } finally { h.db.close(); }
+});

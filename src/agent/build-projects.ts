@@ -348,10 +348,11 @@ export class BuildProjectManager {
     return this.projects.get(projectId);
   }
 
-  /** Return the most recently updated unfinished project for telemetry and gates. */
+  /** Prefer the project actually executing; retain unfinished backlog for gates. */
   currentProject(): BuildProjectStatusView | null {
     const project = this.projects.loadUnfinished()
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+      .sort((left, right) => Number(right.id === this.scheduler.active?.projectId) - Number(left.id === this.scheduler.active?.projectId)
+        || right.updatedAt.localeCompare(left.updatedAt))[0];
     if (project === undefined) return null;
     const phase = project.currentPhaseId === undefined
       ? null

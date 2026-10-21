@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { TaskStatus } from "../agent/task.js";
 import type { LlmMessage } from "../llm/client.js";
 import type { DashboardSnapshot } from "./types.js";
-import { buildViewerChatMessages, cleanAnswer, cleanQuestion, createViewerChat, MAX_QUESTION_CHARS } from "./viewer-chat.js";
+import { buildViewerChatMessages, cleanAnswer, cleanQuestion, createViewerChat, MAX_QUESTION_CHARS, viewerChatContext } from "./viewer-chat.js";
 
 const snapshot = (): DashboardSnapshot => ({
   schema: 1, process: { startedAt: "2026-01-01T00:00:00.000Z", uptimeSeconds: 42 },
@@ -84,4 +85,32 @@ test("one question at a time, with a cooldown between questions", async () => {
 test("LLM failures become a 503, not a thrown error", async () => {
   const ask = createViewerChat({ complete: async () => { throw new Error("connection refused"); }, snapshot });
   assert.deepEqual(await ask("hello?"), { ok: false, status: 503, error: "CobbleBob's brain is unavailable right now." });
+});
+
+test("an idle bot's blocked room is backlog, never current construction", () => {
+  const s = snapshot();
+  s.task = null;
+  s.action = { label: "Idle", taskId: null };
+  s.buildProject = { id: "old-room", structureType: "simple_room", userGoal: "Build a 7x4x7 room", status: "blocked", phase: null, verifiedOperations: 0, totalOperations: 145, currentShortage: null, lastBlockingReason: "no authoritative support block", blueprintHash: "old" };
+  const context = viewerChatContext(s);
+  assert.equal(context.currentAction, "Idle");
+  assert.equal(context.task, null);
+  assert.equal(context.construction, null);
+  assert.equal((context.unfinishedConstruction as { status: string }).status, "blocked");
+  assert.match(buildViewerChatMessages(s, "status")[0]!.content, /backlog, not current activity/);
+});
+
+test("construction must match the active task's project, including during unrelated work", () => {
+  const s = snapshot();
+  s.buildProject = { id: "room", structureType: "room", status: "active", phase: null, verifiedOperations: 10, totalOperations: 20, currentShortage: null, lastBlockingReason: null, blueprintHash: "hash" };
+  const context = () => viewerChatContext(s);
+  const task = { ...s.task!, status: TaskStatus.ACTIVE, projectId: "different-project" };
+  s.task = task;
+  assert.equal(context().construction, null);
+  task.projectId = "room";
+  assert.equal((context().construction as { blocksPlaced: number }).blocksPlaced, 10);
+  assert.equal((context().construction as { status: string }).status, "active");
+  assert.equal(context().unfinishedConstruction, null);
+  task.status = TaskStatus.PAUSED;
+  assert.equal(context().construction, null);
 });
