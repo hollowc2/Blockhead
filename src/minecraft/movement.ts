@@ -828,7 +828,9 @@ function closeDoorBehind(bot: Bot, at: Vec3, lease: WorldActionLease): void {
     if (eye.distanceTo(centre) > 4.5) { logger.info({ at }, "left door open: walked out of reach"); stop(); return; }
     // Wait until clear of the doorway so the panel cannot swing into the bot.
     if (Math.max(Math.abs(feet.x - centre.x), Math.abs(feet.z - centre.z)) < 1.8 && Math.abs(feet.y - at.y) < 2) return;
-    if (typeof bot.canSeeBlock === "function" && !bot.canSeeBlock(lower)) return;
+    // No line-of-sight check: an open panel hugs the cell edge, so a ray at
+    // the cell centre misses it and canSeeBlock stays false all the way down
+    // the stairs (13:40 2026-10-21).
     stop();
     try { lease.beforeMutation?.({ action: "interact", point: at, blockName: lower.name }); }
     catch { return; }
