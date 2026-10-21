@@ -25,14 +25,54 @@
   try { const saved = localStorage.getItem("cobblebob.tab"); if (["gear", "story", "stats"].includes(saved)) selectTab(saved); } catch {}
 
   const itemName = (name) => name.replace(/^minecraft:/, "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  // Reuse the viewer's bundled Minecraft artwork, including the texture aliases
+  // for blocks such as stairs and slabs. Keep a visible fallback for newer items.
+  const textureRoot = "/viewer/textures/1.21.4/";
+  const itemTextures = new Map();
+  const slotTextures = { hand: "sword", "off-hand": "shield", head: "helmet", torso: "chestplate", legs: "leggings", feet: "boots" };
+  let lastGearState = {};
+  function itemIcon(name, slot) {
+    const key = name?.replace(/^minecraft:/, "");
+    const icon = el("span", `item-icon${key ? "" : " item-icon-empty"}`);
+    icon.setAttribute("aria-hidden", "true");
+    // These items use entity models rather than a flat inventory texture.
+    const symbol = key === "shield" ? "🛡️" : key?.endsWith("_bed") ? "🛏️" : ["chest", "trapped_chest", "ender_chest", "barrel"].includes(key) ? "📦" : null;
+    icon.append(el("span", "item-icon-fallback", symbol || (key ? "◇" : "")));
+    const texture = key ? symbol ? null : itemTextures.get(key) : `gui/sprites/container/slot/${slotTextures[slot]}.png`;
+    if (texture) {
+      const img = el("img");
+      img.alt = "";
+      img.width = 32;
+      img.height = 32;
+      img.addEventListener("load", () => icon.classList.add("item-icon-loaded"), { once: true });
+      img.addEventListener("error", () => img.remove(), { once: true });
+      img.src = textureRoot + texture;
+      icon.append(img);
+    }
+    return icon;
+  }
+  fetch(textureRoot + "items_textures.json").then((response) => {
+    if (!response.ok) throw new Error("Item artwork unavailable");
+    return response.json();
+  }).then((items) => {
+    for (const item of items) {
+      const texture = item.texture.replace(/^minecraft:/, "").replace(/^block\//, "blocks/").replace(/^item\//, "items/");
+      if (/^(?:items|blocks)\/[a-z0-9_]+$/.test(texture)) itemTextures.set(item.name, `${texture}.png`);
+    }
+    renderGear(lastGearState);
+  }).catch(() => {}); // Labels and fallback icons remain useful if artwork fails.
+
   function renderGear(s) {
+    lastGearState = s;
     const connected = s.connection?.connected === true;
     const equipment = connected ? s.equipment : null;
     const labels = { hand: "Main hand", "off-hand": "Off hand", head: "Helmet", torso: "Chest armor", legs: "Leggings", feet: "Boots" };
     $("equipment").replaceChildren(...Object.entries(labels).map(([slot, label]) => {
       const row = el("div");
       const item = equipment?.[slot];
-      row.append(el("dt", "", label), el("dd", item ? "" : "sub", !equipment ? "Unavailable" : item ? `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty"));
+      const value = el("dd", `equipment-item${item ? "" : " sub"}`);
+      value.append(itemIcon(item?.name, slot), el("span", "item-label", !equipment ? "Unavailable" : item ? `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty"));
+      row.append(el("dt", "", label), value);
       return row;
     }));
     const inventory = connected ? s.inventory : null;
@@ -40,7 +80,9 @@
     const items = inventory?.items || [];
     $("inventoryItems").replaceChildren(...(items.length ? items.map((item) => {
       const row = el("li");
-      row.append(el("span", "", itemName(item.name)), el("b", "mono", `×${item.count}`));
+      const identity = el("span", "inventory-item");
+      identity.append(itemIcon(item.name), el("span", "item-label", itemName(item.name)));
+      row.append(identity, el("b", "mono", `×${item.count}`));
       return row;
     }) : [el("li", "sub", inventory ? "Inventory is empty." : connected ? "Inventory data unavailable." : "Inventory unavailable while CobbleBob is offline.")]));
   }
