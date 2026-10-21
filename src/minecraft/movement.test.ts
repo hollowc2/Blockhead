@@ -80,6 +80,28 @@ test("a closed door just out of reach is walked to before opening", async () => 
   assert.equal(h.activations, 1);
 });
 
+test("a door opened for a route is closed behind the bot once it is through", async () => {
+  const h = closedDoorBot();
+  const ticks = new EventEmitter();
+  let clicks = 0;
+  Object.assign(h.bot, { on: ticks.on.bind(ticks), removeListener: ticks.removeListener.bind(ticks) });
+  h.bot.activateBlock = async () => { clicks++; const open = !h.opened[0]; h.opened[0] = open; h.opened[1] = open; };
+  const signal = new AbortController().signal;
+  await new WorldActionExecutor().run("door-etiquette", signal, async () => {
+    assert.equal(await openReachableDoor(h.bot as never, signal), true);
+    h.bot.entity.position.set(2.5, 64, 0.5);
+    ticks.emit("physicsTick");
+    assert.equal(clicks, 1, "still in the doorway");
+    h.bot.entity.position.set(4.5, 64, 0.5);
+    ticks.emit("physicsTick");
+    ticks.emit("physicsTick");
+    await new Promise<void>(resolve => setImmediate(resolve));
+  });
+  assert.equal(clicks, 2);
+  assert.deepEqual(h.opened, [false, false]);
+  assert.equal(ticks.listenerCount("physicsTick"), 0);
+});
+
 test("a door click without both server-observed open halves does not release the route", async () => {
   const h = closedDoorBot();
   h.bot.activateBlock = async () => { h.opened[0] = true; };

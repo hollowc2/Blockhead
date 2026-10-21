@@ -5,6 +5,7 @@ import type * as Pathfinder from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { logger } from "../logger.js";
 import { digBudgetMs, raceAbort, registerWorldActionTeardown, requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
+import type { WorldActionLease } from "../agent/world-actions.js";
 import { enableCreativeFlight, isCreativeMode } from "./mode.js";
 import { isNaturalBlock } from "./natural-blocks.js";
 
@@ -805,6 +806,41 @@ async function rescueStranded(bot: Bot, toward: { x: number; z: number }, signal
   return stepOffPerch(bot, toward, signal);
 }
 
+/**
+ * Close a door this bot opened once it has walked through, as a player
+ * would, so mobs cannot wander into the house. It only happens while the
+ * task that opened it still holds its world lease; a door already out of
+ * reach or left behind by a finished task stays open.
+ */
+function closeDoorBehind(bot: Bot, at: Vec3, lease: WorldActionLease): void {
+  if (typeof bot.on !== "function" || typeof bot.removeListener !== "function") return;
+  let done = false;
+  const stop = (): void => { done = true; bot.removeListener("physicsTick", tick); };
+  const tick = (): void => {
+    if (done) return;
+    const self = bot.entity;
+    const lower = bot.blockAt(at);
+    if (lease.signal.aborted || self === null || self === undefined
+      || !lower?.name.endsWith("_door") || lower.getProperties().open !== true) { stop(); return; }
+    const feet = self.position;
+    const eye = feet.offset(0, 1.62, 0);
+    const centre = at.offset(0.5, 0.5, 0.5);
+    if (eye.distanceTo(centre) > 4.5) { logger.info({ at }, "left door open: walked out of reach"); stop(); return; }
+    // Wait until clear of the doorway so the panel cannot swing into the bot.
+    if (Math.max(Math.abs(feet.x - centre.x), Math.abs(feet.z - centre.z)) < 1.8 && Math.abs(feet.y - at.y) < 2) return;
+    if (typeof bot.canSeeBlock === "function" && !bot.canSeeBlock(lower)) return;
+    stop();
+    try { lease.beforeMutation?.({ action: "interact", point: at, blockName: lower.name }); }
+    catch { return; }
+    void bot.activateBlock(lower).then(
+      () => logger.info({ at, name: lower.name }, "closed door behind"),
+      (err: unknown) => logger.warn({ at, err: String(err) }, "could not close door behind"),
+    );
+  };
+  bot.on("physicsTick", tick);
+  void lease.acknowledged.then(stop, stop);
+}
+
 /** Closed doors farther than this are not walked to; the room's own door is well inside it. */
 const DOOR_APPROACH_DISTANCE = 12;
 
@@ -856,6 +892,7 @@ export async function openReachableDoor(bot: Bot, signal?: AbortSignal): Promise
     if (lower?.name === door.name && upper?.name === door.name
       && lower.getProperties().open === true && upper.getProperties().open === true) {
       logger.info({ at: door.position, name: door.name }, "opened door for navigation");
+      closeDoorBehind(bot, door.position, lease);
       return true;
     }
     await new Promise<void>(resolve => setTimeout(resolve, 50));
