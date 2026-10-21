@@ -65,6 +65,21 @@ test("door interactions require visibility and reach", async () => {
   assert.equal(h.activations, 0);
 });
 
+test("a closed door just out of reach is walked to before opening", async () => {
+  const h = closedDoorBot();
+  h.bot.entity.position.set(-3.5, 64, 4.5);
+  const goals: Array<{ x: number; y: number; z: number }> = [];
+  (h.bot.pathfinder as { goto: unknown }).goto = async (goal: { x: number; y: number; z: number }) => {
+    goals.push({ x: goal.x, y: goal.y, z: goal.z });
+    h.bot.entity.position.set(1.5, 64, 0.5);
+  };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("far-door", signal, () => openReachableDoor(h.bot as never, signal));
+  assert.equal(result, true);
+  assert.deepEqual(goals, [{ x: 2, y: 64, z: 0 }]);
+  assert.equal(h.activations, 1);
+});
+
 test("a door click without both server-observed open halves does not release the route", async () => {
   const h = closedDoorBot();
   h.bot.activateBlock = async () => { h.opened[0] = true; };

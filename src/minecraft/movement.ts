@@ -805,21 +805,47 @@ async function rescueStranded(bot: Bot, toward: { x: number; z: number }, signal
   return stepOffPerch(bot, toward, signal);
 }
 
-/** Open one visible wooden door within interaction reach, then verify both halves. */
+/** Closed doors farther than this are not walked to; the room's own door is well inside it. */
+const DOOR_APPROACH_DISTANCE = 12;
+
+/**
+ * Open one visible wooden door, walking up to the nearest closed one first
+ * when none is within interaction reach, then verify both halves. 2026-10-21
+ * the bot sat in the new 7x7 upstairs room for hours: its only door, at
+ * 67,106,54, was five blocks from the bot's eye at 64,106,50, just past
+ * reach, so every trip home ended NoPath inside the sealed room.
+ */
 export async function openReachableDoor(bot: Bot, signal?: AbortSignal): Promise<boolean> {
   const lease = requireWorldActionLease(signal); signal ??= lease.signal;
   throwIfAborted(signal);
   const self = bot.entity;
   if (self === null || typeof bot.findBlocks !== "function" || typeof bot.canSeeBlock !== "function") return false;
   const ids = bot.registry.blocksArray.filter(block => block.name.endsWith("_door") && block.name !== "iron_door").map(block => block.id);
-  const eye = self.position.offset(0, 1.62, 0);
-  const doors = bot.findBlocks({ matching: ids, maxDistance: 6, count: 16 }).map(pos => bot.blockAt(pos))
+  const closedDoors = (maxDistance: number) => bot.findBlocks({ matching: ids, maxDistance, count: 16 }).map(pos => bot.blockAt(pos))
     .filter((block): block is NonNullable<typeof block> => block !== null)
-    .filter(block => block.getProperties().half === "lower" && block.getProperties().open === false
-      && eye.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <= 4.5 && bot.canSeeBlock(block))
-    .sort((a, b) => eye.distanceTo(a.position) - eye.distanceTo(b.position));
-  const door = doors[0];
-  if (door === undefined) return false;
+    .filter(block => block.getProperties().half === "lower" && block.getProperties().open === false);
+  const inReach = () => {
+    const eye = self.position.offset(0, 1.62, 0);
+    return closedDoors(6)
+      .filter(block => eye.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <= 4.5 && bot.canSeeBlock(block))
+      .sort((a, b) => eye.distanceTo(a.position) - eye.distanceTo(b.position));
+  };
+  let door = inReach()[0];
+  if (door === undefined) {
+    const feet = self.position;
+    const target = closedDoors(DOOR_APPROACH_DISTANCE)
+      .filter(block => Math.abs(block.position.y - Math.floor(feet.y)) <= 2
+        && feet.distanceTo(block.position.offset(0.5, 0, 0.5)) <= DOOR_APPROACH_DISTANCE)
+      .sort((a, b) => feet.distanceTo(a.position) - feet.distanceTo(b.position))[0];
+    if (target === undefined) return false;
+    logger.info({ at: target.position, from: feet }, "walking to closed door for navigation");
+    const trip = bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2))
+      .then(() => ({ status: "arrived" } as const), (err: unknown) => ({ status: "failed" as const, error: String(err) }));
+    await raceTrip(bot, trip, { timeoutMs: 15_000, signal });
+    throwIfAborted(signal);
+    door = inReach()[0];
+    if (door === undefined) return false;
+  }
   lease.beforeMutation?.({ action: "interact", point: door.position, blockName: door.name });
   await raceAbort(bot.activateBlock(door), signal, { timeoutMs: 2_000, label: "open door" });
   const deadline = Date.now() + 1_000;
