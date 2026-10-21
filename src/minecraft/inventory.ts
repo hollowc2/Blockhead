@@ -94,6 +94,19 @@ export function itemsSummary(bot: Bot): Record<string, number> {
   }
   return summary;
 }
+/**
+ * Everything a death drops: the carried items plus worn armor (slots 5-8)
+ * and the off hand (45), which `items()` leaves out. 14:50 2026-10-21 the
+ * equipped shield was missing from the death record.
+ */
+export function droppableItemsSummary(bot: Bot): Record<string, number> {
+  const summary = itemsSummary(bot);
+  for (const slot of [5, 6, 7, 8, 45]) {
+    const item = bot.inventory.slots[slot];
+    if (item) summary[item.name] = (summary[item.name] ?? 0) + item.count;
+  }
+  return summary;
+}
 /** Free slots below which gathering first sheds junk to make room. */
 export const MIN_FREE_SLOTS_FOR_GATHER = 4;
 
