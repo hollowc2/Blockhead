@@ -84,7 +84,7 @@ export function adoptHomeChests(bot: Bot, state: AgentState, storage: StorageRep
   if (Math.hypot(bot.entity.position.x - home.x, bot.entity.position.z - home.z) > CHEST_SCAN_RADIUS) return 0;
   const known = new Set(storage.list(worldId).map((location) => `${location.x},${location.y},${location.z}`));
   let adopted = 0;
-  for (const position of findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 16)) {
+  for (const position of findBlocksNear(bot, isChestBlock, CHEST_SCAN_RADIUS, 128)) {
     if (Math.hypot(position.x - home.x, position.z - home.z) > CHEST_SCAN_RADIUS) continue;
     if (known.has(`${position.x},${position.y},${position.z}`)) continue;
     if (!chestOpenableAt(bot, position)) continue;
@@ -573,7 +573,8 @@ export async function measureStorage(
   for (const location of storage.list(worldId)) {
     throwIfAborted(signal);
     const block = bot.blockAt(new Vec3(location.x, location.y, location.z));
-    if (block === null || !isChestBlock(block)) {
+    if (block === null) continue; // Unloaded is unknown, never confirmed missing.
+    if (!isChestBlock(block)) {
       missingChests += 1;
       continue;
     }

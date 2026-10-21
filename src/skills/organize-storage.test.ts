@@ -120,14 +120,13 @@ test("registered chests exist but are busy -> no work, re-check later", () => {
   assert.equal(decideStorageWork(measurement, registered).expand, false);
 });
 
-test("one chest busy and one gone -> create a fresh general chest", () => {
+test("one chest busy and one gone -> defer expansion until capacity is known", () => {
   const registered = [location("general", 1), location("misc", 2)];
-  // Neither could be opened (reachable = false), but one registered position
-  // is confirmed missing: capacity is genuinely gone, so expand.
+  // The surviving busy chest may have spare capacity.
   const measurement = empty([], /* missingChests */ 1);
   const decision = decideStorageWork(measurement, registered);
-  assert.equal(decision.expand, true);
-  assert.equal(decision.createCategory, "general");
+  assert.equal(decision.expand, false);
+  assert.equal(decision.createCategory, null);
 });
 
 test("a full chest -> create another chest of that category", () => {
@@ -148,12 +147,12 @@ test("a full ores chest -> create another ores chest", () => {
   assert.equal(decision.createCategory, "ores");
 });
 
-test("a category without a chest holding enough items -> create its first chest", () => {
+test("category items with ample general capacity do not justify building", () => {
   const generalChest = chest("general", 12, 27, { iron_ingot: CATEGORY_CHEST_MIN_ITEMS });
   const registered = [location("general", 1)];
   const decision = decideStorageWork(empty([generalChest]), registered);
-  assert.equal(decision.expand, true);
-  assert.equal(decision.createCategory, "ores");
+  assert.equal(decision.expand, false);
+  assert.equal(decision.createCategory, null);
 });
 
 test("a category below the item threshold stays without a chest", () => {
@@ -177,7 +176,7 @@ test("overall utilization at the full ratio -> create a general chest", () => {
   assert.equal(decision.reason, "storage is nearly full");
 });
 
-test("organization need beats generic expansion: full chest wins over overall ratio", () => {
+test("missing category takes priority when overall capacity is tight", () => {
   // General 22/27 (overall >= 0.8 -> general) but an ores chest is full:
   // the specific full chest is expanded first.
   const registered = [location("general", 1), location("ores", 2)];
@@ -187,7 +186,7 @@ test("organization need beats generic expansion: full chest wins over overall ra
   ]);
   const decision = decideStorageWork(measurement, registered);
   assert.equal(decision.expand, true);
-  assert.equal(decision.createCategory, "ores");
+  assert.equal(decision.createCategory, "misc");
 });
 
 test("STOCKPILE_RATIOS are sane: full threshold sits above the general threshold", () => {
@@ -224,4 +223,54 @@ test("logs for a new chest come out of the home chest before any chopping", asyn
     (runner as unknown as { gatherLogs: (n: number) => Promise<{ ok: boolean }> }).gatherLogs(2));
   assert.equal(result.ok, true);
   assert.equal(scans, 0, "no tree search");
+});
+
+
+test("a full chest with ten empty home chests never triggers construction", () => {
+  const chests = [chest("general", 27, 27, { oak_log: 64 }),
+    ...Array.from({ length: 10 }, (_, i) => chest("general", 0, 27, {}, i + 2))];
+  const decision = decideStorageWork(empty(chests), chests.map((c) => c.location));
+  assert.equal(decision.expand, false);
+  assert.equal(decision.reuseChestId, 2);
+  assert.equal(decision.createCategory, "wood");
+});
+
+test("a newly added empty category chest stops repeat expansion of the old full one", () => {
+  const chests = [chest("ores", 27, 27, { iron_ingot: 64 }), chest("ores", 0, 27, {}, 2)];
+  assert.equal(decideStorageWork(empty(chests), chests.map((c) => c.location)).expand, false);
+});
+
+test("unread chests prevent expansion based on a partially measured full chest", () => {
+  const full = chest("general", 27, 27, { torch: 64 });
+  assert.equal(decideStorageWork(empty([full]), [full.location, location("general", 2)]).expand, false);
+});
+
+test("a full category chest uses existing general overflow capacity", () => {
+  const chests = [chest("ores", 27, 27, { iron_ingot: 64 }), chest("general", 1, 27, { torch: 1 }, 2)];
+  const decision = decideStorageWork(empty(chests), chests.map((c) => c.location));
+  assert.equal(decision.expand, false);
+  assert.match(decision.reason!, /redistribute/);
+});
+
+test("background storage checks discover nearby chests before deciding to build", async () => {
+  const { OrganizeStorageRunner } = await import("./organize-storage.js");
+  const { withWorldActionLease } = await import("../agent/world-actions.js");
+  const { Vec3 } = await import("vec3");
+  const registered: StorageLocation[] = [];
+  const at = new Vec3(1, 64, 0);
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    findBlocks: () => [at],
+    blockAt: (p: { y: number }) => p.y === 64 ? { name: "chest", position: at } : { name: "air", boundingBox: "empty" },
+    openContainer: async () => ({ inventoryStart: 27, slots: [], close() {} }),
+  };
+  const storage = {
+    list: () => registered,
+    register: (_world: number, input: object) => registered.push({ ...location("general", 1), ...input }),
+  };
+  const runner = new OrganizeStorageRunner({ bot, state: { worldId: 1, home: { x: 0, y: 64, z: 0, dimension: "overworld" } },
+    storage, config: {}, bus: { emit() {} }, logger: { info() {}, warn() {} } } as unknown as ConstructorParameters<typeof OrganizeStorageRunner>[0]);
+  const result = await withWorldActionLease({ owner: "storage-discovery-test", signal: new AbortController().signal, acknowledged: Promise.resolve() }, () => runner.needsAttention());
+  assert.equal(registered.length, 1);
+  assert.equal(result.needsWork, false);
 });

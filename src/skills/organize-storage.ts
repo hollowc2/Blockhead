@@ -23,6 +23,7 @@ import {
 } from "../minecraft/inventory.js";
 import { craftItem, craftPlanks } from "../minecraft/crafting.js";
 import {
+  adoptHomeChests,
   countStoredItems,
   isChestBlock,
   measureStorage,
@@ -45,25 +46,9 @@ import { ChatThrottle, gameChatBudgetAllows, type SkillErrorCode, type SkillResu
 import { freeChestSlotSpot } from "./base.js";
 
 /**
- * Phase 11: storage organization (spec sections 14.4, 22, 23).
- *
- * `organize_storage()` deterministically measures every registered home
- * chest, creates new chests when storage is full or a category is
- * disorganized, and moves items into the chest of their category. The
- * `create_storage(category)` registration path creates exactly one chest for
- * a category. All Minecraft mechanics — measuring slots, crafting planks and
- * chests, placing blocks, transferring items — are deterministic code; the
- * LLM only chooses `organize_storage` / `create_storage` / `register_storage`
- * tool calls (spec 14.4).
- *
- * Categories start simple (spec 22): one general chest is enough until the
- * organizer creates per-category chests as capacity and organization demand:
- *
- *  - A registered chest at >= CHEST_FULL_RATIO of its slots -> a new chest
- *    for that category.
- *  - A category with no chest holding >= CATEGORY_CHEST_MIN_ITEMS -> a new
- *    chest for that category ("better organization is required").
- *  - Overall utilization at >= STORAGE_FULL_RATIO -> a new general chest.
+ * Discover home storage, reuse empty general chests for categories, balance
+ * full chests into existing capacity, and expand only when measured storage
+ * is nearly full. All Minecraft mechanics run in deterministic code.
  */
 
 // --- deterministic policy constants ---
@@ -224,79 +209,60 @@ export function normalizeCategory(category: string): StorageCategory {
 /** What the organize run should do next, if anything. */
 export interface StorageDecision {
   expand: boolean;
+  /** Reassign an existing empty general chest instead of building one. */
+  reuseChestId?: number;
   /** Category for the chest to create, or null when nothing is needed. */
   createCategory: StorageCategory | null;
   reason: string | null;
 }
 
-/**
- * Decide whether storage needs a new chest. Deterministic rules (Phase 11):
- *
- *  1. No registered storage at all -> create a general chest (spec 22).
- *  2. Registered storage exists but nothing could be read and at least one
- *     registered position is not a chest anymore -> create general (the old
- *     chests are gone; busy chests are skipped and return no work).
- *  3. A registered chest is at/over CHEST_FULL_RATIO -> create another chest
- *     of that chest's category.
- *  4. A category without a chest holds >= CATEGORY_CHEST_MIN_ITEMS ->
- *     create that category's first chest ("better organization is
- *     required").
- *  5. Overall utilization at/over STORAGE_FULL_RATIO -> create general.
- *  6. Otherwise nothing is needed.
- */
+/** Reuse measured capacity before expanding; unknown capacity is never proof of fullness. */
 export function decideStorageWork(
   measurement: StorageMeasurement,
   registered: readonly StorageLocation[],
 ): StorageDecision {
+  const idle: StorageDecision = { expand: false, createCategory: null, reason: null };
   if (registered.length === 0) {
     return { expand: true, createCategory: "general", reason: "no storage at home" };
   }
+  const complete = measurement.chests.length + measurement.missingChests === registered.length;
+  if (!complete) return idle; // Busy or unloaded chests may still have room.
   if (!measurement.reachable) {
-    if (measurement.missingChests > 0) {
-      return { expand: true, createCategory: "general", reason: "registered storage is gone" };
-    }
-    // Every registered chest is busy; re-check on a later pass.
-    return { expand: false, createCategory: null, reason: null };
+    return measurement.missingChests === registered.length
+      ? { expand: true, createCategory: "general", reason: "registered storage is gone" }
+      : idle;
   }
 
-  // 3. Full chest: expand the fullest one's category.
-  let fullest: ChestMeasurement | null = null;
-  for (const chest of measurement.chests) {
-    if (chest.usedSlots < chest.capacitySlots * CHEST_FULL_RATIO) continue;
-    if (fullest === null || chest.usedSlots / chest.capacitySlots > fullest.usedSlots / fullest.capacitySlots) {
-      fullest = chest;
-    }
-  }
-  if (fullest !== null) {
-    return {
-      expand: true,
-      createCategory: normalizeCategory(fullest.location.category),
-      reason: `the ${fullest.location.category} chest is full`,
-    };
-  }
-
-  // 4. A category with no chest yet accumulated enough items to deserve one.
-  const registeredCategories = new Set(registered.map((location) => location.category));
+  const categories = new Set(measurement.chests.map((chest) => chest.location.category));
+  const spare = measurement.chests.find((chest) => chest.location.category === "general" && chest.usedSlots === 0);
+  const nearlyFull = measurement.slotsTotal > 0 && measurement.slotsUsed >= measurement.slotsTotal * STORAGE_FULL_RATIO;
   for (const category of STORAGE_CATEGORIES) {
-    if (category === "general") continue;
-    if (registeredCategories.has(category)) continue;
-    let held = 0;
-    for (const chest of measurement.chests) {
-      for (const [name, count] of Object.entries(chest.items)) {
-        if (storageCategoryFor(name) === category) held += count;
-      }
+    if (category === "general" || categories.has(category)) continue;
+    const held = Object.entries(measurement.items).reduce(
+      (total, [name, count]) => total + (storageCategoryFor(name) === category ? count : 0), 0,
+    );
+    if (held < CATEGORY_CHEST_MIN_ITEMS) continue;
+    if (spare !== undefined) {
+      return { expand: false, reuseChestId: spare.location.id, createCategory: category, reason: `reuse an empty chest for ${category}` };
     }
-    if (held >= CATEGORY_CHEST_MIN_ITEMS) {
+    if (nearlyFull) {
       return { expand: true, createCategory: category, reason: `${held} ${category} items need a chest` };
     }
   }
 
-  // 5. Overall utilization is high; add general capacity.
-  if (measurement.slotsTotal > 0 && measurement.slotsUsed >= measurement.slotsTotal * STORAGE_FULL_RATIO) {
-    return { expand: true, createCategory: "general", reason: "storage is nearly full" };
+  // A full chest alone is not a reason to build: other chests can take overflow.
+  if (nearlyFull) {
+    const fullest = [...measurement.chests].sort((a, b) => b.usedSlots / b.capacitySlots - a.usedSlots / a.capacitySlots)[0];
+    const category = fullest !== undefined && fullest.usedSlots >= fullest.capacitySlots * CHEST_FULL_RATIO
+      ? normalizeCategory(fullest.location.category) : "general";
+    return { expand: true, createCategory: category, reason: "storage is nearly full" };
   }
-
-  return { expand: false, createCategory: null, reason: null };
+  const canBalance = measurement.chests.some((source) =>
+    source.usedSlots >= source.capacitySlots * CHEST_FULL_RATIO && measurement.chests.some((target) =>
+      target.location.id !== source.location.id && target.usedSlots < target.capacitySlots * CHEST_FULL_RATIO &&
+      (target.location.category === source.location.category || target.location.category === "general")),
+  );
+  return canBalance ? { ...idle, reason: "redistribute full chests into existing capacity" } : idle;
 }
 
 // --- runner ---
@@ -394,10 +360,11 @@ export class OrganizeStorageRunner {
   /**
    * Lightweight background probe (Phase 11 integration): measures home
    * storage and reports whether an organize/expand pass is needed, emitting
-   * `storage.checked` for observability. Never modifies anything.
+   * `storage.checked` for observability. Discovers registrations but never moves items or places blocks.
    */
   async needsAttention(signal?: AbortSignal): Promise<{ needsWork: boolean; reason: string | null }> {
     const worldId = this.opts.state.worldId;
+    adoptHomeChests(this.opts.bot, this.opts.state, this.opts.storage);
     const registered = worldId === null ? [] : this.opts.storage.list(worldId);
     const measurement = await measureStorage(this.opts.bot, this.opts.state, this.opts.storage, signal);
     const decision = decideStorageWork(measurement, registered);
@@ -405,9 +372,9 @@ export class OrganizeStorageRunner {
       chests: measurement.chests.length,
       slotsUsed: measurement.slotsUsed,
       slotsTotal: measurement.slotsTotal,
-      needsWork: decision.expand,
+      needsWork: decision.reason !== null,
     });
-    return { needsWork: decision.expand, reason: decision.reason };
+    return { needsWork: decision.reason !== null, reason: decision.reason };
   }
 
   private async execute(category: StorageCategory | null): Promise<SkillResult<OrganizeStorageData>> {
@@ -441,6 +408,8 @@ export class OrganizeStorageRunner {
       return this.fail(data, "PATH_UNREACHABLE", `could not reach home: ${travel.status}`);
     }
 
+    adoptHomeChests(bot, this.opts.state, this.opts.storage);
+
     // create_storage mode: exactly one chest for the category.
     if (category !== null) return this.createOnly(category, data, startedAt, baseline);
 
@@ -449,8 +418,8 @@ export class OrganizeStorageRunner {
       return this.fail(data, "STORAGE_NOT_FOUND", "no world");
     }
 
-    // Expand while the decision demands it, re-measuring after each creation
-    // so a fresh chest (empty, newly registered) is never re-expanded for.
+    // Reuse or expand, re-measuring each time so existing free capacity
+    // prevents repeated construction for the same full source chest.
     let registered = this.opts.storage.list(worldId);
     let measurement = await measureStorage(bot, this.opts.state, this.opts.storage, this.signals?.signal);
     data.slotsUsed = measurement.slotsUsed;
@@ -458,6 +427,15 @@ export class OrganizeStorageRunner {
     for (let pass = 0; pass < MAX_CHESTS_PER_RUN; pass++) {
       if (this.stopRequested) return this.interrupted(data);
       const decision = decideStorageWork(measurement, registered);
+      if (decision.reuseChestId !== undefined) {
+        const existing = registered.find((chest) => chest.id === decision.reuseChestId)!;
+        this.opts.storage.register(worldId, { ...existing, label: `${decision.createCategory}_chest`, category: decision.createCategory! });
+        registered = this.opts.storage.list(worldId);
+        measurement = await measureStorage(bot, this.opts.state, this.opts.storage, this.signals?.signal);
+        data.slotsUsed = measurement.slotsUsed;
+        data.slotsTotal = measurement.slotsTotal;
+        continue;
+      }
       if (!decision.expand) break;
       const created = await this.createChest(decision.createCategory ?? "general");
       if (this.stopRequested) return this.interrupted(data);
@@ -700,11 +678,11 @@ export class OrganizeStorageRunner {
         if (this.stopRequested) return moved;
 
         const targetCategory = storageCategoryFor(name);
-        if (sourceCategory !== "general" && sourceCategory === targetCategory) continue;
+        if (sourceCategory === targetCategory && chest.usedSlots < chest.capacitySlots * CHEST_FULL_RATIO) continue;
         if (sourceCategory === "general") {
-          if (targetCategory === "general" || !registeredCategories.has(targetCategory)) continue;
+          if (!registeredCategories.has(targetCategory) && chest.usedSlots < chest.capacitySlots * CHEST_FULL_RATIO) continue;
         }
-        const target = this.pickTarget(byCategory, targetCategory);
+        const target = this.pickTarget(byCategory, targetCategory, chest);
         if (target === null) continue;
 
         const sourceBlock = bot.blockAt(new Vec3(chest.location.x, chest.location.y, chest.location.z));
@@ -715,6 +693,15 @@ export class OrganizeStorageRunner {
 
         const transferred = await transferItem(bot, this.opts.state, sourceBlock, targetBlock, name, count, this.opts.logger, this.signals?.signal);
         moved += transferred.moved;
+        if (transferred.moved > 0) {
+          const fresh = await measureStorage(bot, this.opts.state, this.opts.storage, this.signals?.signal);
+          byCategory.clear();
+          for (const current of fresh.chests) {
+            const list = byCategory.get(current.location.category) ?? [];
+            list.push(current);
+            byCategory.set(current.location.category, list);
+          }
+        }
         if (this.stopRequested) return moved;
       }
     }
@@ -722,10 +709,10 @@ export class OrganizeStorageRunner {
   }
 
   /** A measured chest of `targetCategory` with room, else a general one. */
-  private pickTarget(byCategory: Map<string, ChestMeasurement[]>, targetCategory: string): ChestMeasurement | null {
+  private pickTarget(byCategory: Map<string, ChestMeasurement[]>, targetCategory: string, source: ChestMeasurement): ChestMeasurement | null {
     const withRoom = (category: string): ChestMeasurement | null => {
       for (const chest of byCategory.get(category) ?? []) {
-        if (chest.usedSlots < chest.capacitySlots * CHEST_FULL_RATIO) return chest;
+        if (chest.location.id !== source.location.id && chest.usedSlots < chest.capacitySlots * CHEST_FULL_RATIO) return chest;
       }
       return null;
     };

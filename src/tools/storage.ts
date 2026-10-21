@@ -56,7 +56,7 @@ export function registerStorageTools(
     {
       name: "organize_storage",
       description:
-        "Sort the items in every home chest into the chest of their category, create a chest for a category that accumulated enough items, and create a new chest when storage is full. Everything runs by itself at home; nothing is ever thrown away.",
+        "Discover nearby home chests, reuse empty chests for categories, and sort items into existing storage. Create a new chest only when measured home storage is nearly full. Everything runs by itself at home; nothing is ever thrown away.",
       args: {},
       handler: (_args, _ctx): ToolResult => {
         if (storageTaskActive()) return "Already organizing storage.";
