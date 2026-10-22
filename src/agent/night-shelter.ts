@@ -114,7 +114,7 @@ export class NightShelterWatch {
     const scheduler = this.opts.scheduler;
     const decision = shelterDecision({
       timeOfDay: bot.time?.timeOfDay ?? 0,
-      thundering: isThundering(bot as { thunderState?: number }),
+      thundering: isThundering(bot as { thunderState?: number; isRaining?: boolean }),
       dimension: String(bot.game?.dimension ?? "overworld"),
       isSleeping: bot.isSleeping === true,
       inWater: (bot.entity as { isInWater?: boolean }).isInWater === true,

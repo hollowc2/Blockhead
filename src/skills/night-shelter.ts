@@ -74,8 +74,11 @@ export function isShelterNight(timeOfDay: number): boolean {
  * spawn at noon: at frozen noon a storm brought phantoms and zombies down on
  * home and killed the bot twice (2026-10-05 13:09 fall, 13:17 creeper).
  */
-export function isThundering(bot: { thunderState?: number }): boolean {
-  return (bot.thunderState ?? 0) > 0;
+export function isThundering(bot: { thunderState?: number; isRaining?: boolean }): boolean {
+  // A storm needs rain too (the server's bed rule, mirrored by mineflayer):
+  // a thunder level left over after the rain stopped had the bot trying to
+  // sleep at frozen noon every few seconds (2026-10-21).
+  return bot.isRaining === true && (bot.thunderState ?? 0) > 0;
 }
 
 /**

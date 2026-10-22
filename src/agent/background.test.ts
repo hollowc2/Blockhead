@@ -1011,6 +1011,8 @@ test("automatic home sleep handles daytime thunderstorms and respects auto_sleep
   h.options.bot.thunderState = 0;
   assert.equal(shouldSleep(), false);
   h.options.bot.thunderState = 1;
+  assert.equal(shouldSleep(), false, "thunder level without rain is no storm");
+  h.options.bot.isRaining = true;
   assert.equal(shouldSleep(), true);
   h.config.behavior = { auto_sleep: false } as never;
   assert.equal(shouldSleep(), false);

@@ -12,6 +12,7 @@ import type { ToolContext } from "../tools/types.js";
 import { STOCKPILE_PRIORITY_ORDER, type StockpileManager, type StockpileSnapshot } from "./maintenance.js";
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { BaseBuilderRunner } from "../skills/base.js";
+import { isThundering } from "../skills/night-shelter.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
@@ -427,7 +428,7 @@ export class BackgroundManager {
 
     // Night without owner work: go home and stay there. Background errands
     // far from home at night are how the bot dies and loses its inventory.
-    if (this.opts.state.timePhase === "night" || (this.opts.bot.thunderState ?? 0) > 0) {
+    if (this.opts.state.timePhase === "night" || isThundering(this.opts.bot)) {
       const home = this.opts.state.home;
       const self = this.opts.bot.entity?.position;
       if (home !== null && self !== undefined && self !== null && Math.hypot(self.x - home.x, self.z - home.z) > NIGHT_HOME_RADIUS) {
@@ -553,7 +554,7 @@ export class BackgroundManager {
     // with wood short and no oak left near home (development had cleared it)
     // the bot stood idle in daylight for 15 minutes (2026-10-06 00:32).
     if (develop === undefined || snapshot.deficits.some((deficit) => !this.kindBlocked(deficit.kind))) return false;
-    if (this.opts.state.timePhase === "night" || ((this.opts.bot as { thunderState?: number }).thunderState ?? 0) > 0) return false;
+    if (this.opts.state.timePhase === "night" || isThundering(this.opts.bot)) return false;
     const scheduler = this.opts.scheduler;
     if (scheduler.active !== null || scheduler.queued.some((task) => task.status === TaskStatus.QUEUED)) return false;
     if (!this.kindBlocked("build")) {
@@ -588,7 +589,7 @@ export class BackgroundManager {
   }
 
   private shouldSleepAtHome(): boolean {
-    if (this.opts.config.behavior?.auto_sleep === false || (this.opts.state.timePhase !== "night" && (this.opts.bot.thunderState ?? 0) <= 0)) return false;
+    if (this.opts.config.behavior?.auto_sleep === false || (this.opts.state.timePhase !== "night" && !isThundering(this.opts.bot))) return false;
     const home = this.opts.state.home;
     const self = this.opts.bot.entity?.position;
     return home !== null && self != null && Math.hypot(self.x - home.x, self.z - home.z) <= AUTO_SLEEP_HOME_RADIUS;

@@ -142,7 +142,7 @@ test("a thunderstorm at noon is shelter time, like night", () => {
   assert.equal(shelterDecision(noon).shelter, false);
   assert.deepEqual(shelterDecision({ ...noon, thundering: true }), { shelter: true, reason: "thunderstorm" });
   assert.equal(shelterDecision({ ...noon, thundering: true, bedAvailable: true }).shelter, false, "a bed handles daytime thunderstorms through the sleep path");
-  assert.equal(isThundering({ thunderState: 1 }), true);
+  assert.equal(isThundering({ thunderState: 1, isRaining: true }), true);
   assert.equal(isThundering({ thunderState: 0 }), false);
   assert.equal(isThundering({}), false);
 });
@@ -154,4 +154,10 @@ test("a blocked owner task does not hold off the shelter", () => {
   const queued = { source: "user", status: "queued" } as never;
   assert.equal(ownerWorkPending({ active: null, queued: [blocked] }), false);
   assert.equal(ownerWorkPending({ active: null, queued: [blocked, queued] }), true);
+});
+
+test("a leftover thunder level without rain is not a storm", () => {
+  assert.equal(isThundering({ thunderState: 0.4, isRaining: false }), false);
+  assert.equal(isThundering({ thunderState: 0.4, isRaining: true }), true);
+  assert.equal(isThundering({ thunderState: 0, isRaining: true }), false);
 });
