@@ -418,21 +418,34 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     pruneAttackers();
   });
 
+  // The server can empty the client inventory before the death event lands
+  // (2026-10-21: stone tools, wool and a bed recorded as "{}", so no recovery
+  // trip). Keep a recent snapshot from while the bot was alive to fall back on.
+  let aliveInventory: { at: number; items: Record<string, number> } | null = null;
+  const snapshotTimer = setInterval(() => {
+    if (bot.health > 0 && bot.inventory !== undefined) aliveInventory = { at: Date.now(), items: droppableItemsSummary(bot) };
+  }, 1_000);
+  snapshotTimer.unref?.();
+  bot.once("end", () => clearInterval(snapshotTimer));
+
   bot.on("death", () => {
     // The player entity still exists during the death animation, so its
     // position is the death site; fall back to the last observed self
-    // position when it is already gone. The client inventory cache is still
-    // pre-death here (the server drops items as world entities; the empty
-    // inventory arrives only with the respawn), so this summary is the
+    // position when it is already gone. The inventory summary is the
     // death-site corpse contents the recovery gate decides on.
     const pos = bot.entity?.position ?? ctx.state.self.position;
+    const carried = droppableItemsSummary(bot);
+    const inventory = Object.keys(carried).length === 0 && aliveInventory !== null && Date.now() - aliveInventory.at <= 5_000
+      ? aliveInventory.items
+      : carried;
+    aliveInventory = null;
     pruneAttackers();
     const killer = recentAttackers.length > 0 ? recentAttackers[0]! : null;
     ctx.bus.emit("death", {
       dimension: bot.game.dimension,
       position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
       killer: killer === null ? null : { name: killer.name, x: killer.x, y: killer.y, z: killer.z },
-      inventory: droppableItemsSummary(bot),
+      inventory,
     });
     recentAttackers.length = 0;
   });
