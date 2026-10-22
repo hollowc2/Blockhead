@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BootstrapRunner, groundLevelAt, isNearAnySite, isNearSurfaceElevation, isUsableStoneRelocation, maxWoolColorCount, stoneExplorationSites } from "./bootstrap-survival.js";
+import { BootstrapRunner, groundLevelAt, isNearAnySite, isNearSurfaceElevation, isUsableStoneRelocation, logsForSticks, maxWoolColorCount, stoneExplorationSites } from "./bootstrap-survival.js";
 import { BootstrapStage, nextBootstrapStage } from "../agent/bootstrap.js";
 import { Vec3 } from "vec3";
 
@@ -108,4 +108,13 @@ test("home ground level ignores a roof built over the home column", () => {
 test("home ground level still lands on natural overhangs and plank floors", () => {
   assert.equal(groundLevelAt(columnBot({ 95: "dirt", 101: "stone" }), 0, 0), 102);
   assert.equal(groundLevelAt(columnBot({ 95: "dirt", 96: "oak_planks" }), 0, 0), 97);
+});
+
+test("an odd plank cannot make sticks, so a log is gathered", () => {
+  // 2026-10-21: 6/7 sticks, one plank, no logs: stone tools stalled for hours.
+  assert.equal(logsForSticks(1, [["oak_planks", 1]]), 1);
+  assert.equal(logsForSticks(1, [["oak_planks", 1], ["birch_planks", 1]]), 1, "mixed species do not pair");
+  assert.equal(logsForSticks(4, [["oak_planks", 2]]), 0);
+  assert.equal(logsForSticks(5, [["oak_planks", 2]]), 1);
+  assert.equal(logsForSticks(0, []), 0);
 });

@@ -21,6 +21,7 @@ import {
   countItem,
   countLogs,
   countPlanks,
+  isPlanksItemName,
   countSticks,
   findItem,
   hasItem,
@@ -192,6 +193,19 @@ const IRON_TOOL_UPGRADES: readonly [name: string, cost: number][] = [
   ["iron_shovel", 1],
   ["iron_sword", 2],
 ];
+/**
+ * Logs to gather before `short` more sticks can be crafted. A stick recipe
+ * takes a same-species pair of planks for four sticks, so an odd plank left
+ * over is worth nothing (1 plank held, 1 stick short stalled stone tools for
+ * hours on 2026-10-21); a log makes four planks, eight sticks.
+ */
+export function logsForSticks(short: number, planks: readonly (readonly [name: string, count: number])[]): number {
+  const bySpecies = new Map<string, number>();
+  for (const [name, count] of planks) bySpecies.set(name, (bySpecies.get(name) ?? 0) + count);
+  let pairs = 0;
+  for (const count of bySpecies.values()) pairs += Math.floor(count / 2);
+  return Math.ceil(Math.max(0, short - pairs * 4) / 8);
+}
 /** Sticks each tool recipe takes: swords take one, every other tool two. */
 function sticksForTools(tools: readonly string[]): number {
   return tools.reduce((sum, name) => sum + (name.endsWith("_sword") ? 1 : 2), 0);
@@ -1916,7 +1930,8 @@ export class BootstrapRunner {
     const bot = this.opts.bot;
     const short = total - countSticks(bot);
     if (short <= 0) return { ok: true };
-    const logsNeeded = Math.ceil(Math.max(0, short - countPlanks(bot) * 2) / 8);
+    const planks = bot.inventory.items().filter((item) => isPlanksItemName(item.name)).map((item) => [item.name, item.count] as const);
+    const logsNeeded = logsForSticks(short, planks);
     if (logsNeeded > 0) {
       const logs = await this.ensureLogs(logsNeeded);
       if (!logs.ok) return { ok: false, reason: logs.reason };
