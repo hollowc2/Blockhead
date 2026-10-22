@@ -628,7 +628,7 @@ export function digToolKind(block: { name: string; material?: string | null }): 
  * above or beside it. A staircase dug into an aquifer's side at y=13 flooded
  * and drowned the bot (2026-10-22 12:53); water below cannot flow up.
  */
-function cellTouchesLiquid(bot: Bot, cell: Vec3): boolean {
+export function cellTouchesLiquid(bot: Bot, cell: Vec3): boolean {
   const offsets = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]] as const;
   for (const [ox, oy, oz] of offsets) {
     const name = bot.blockAt(cell.offset(ox, oy, oz))?.name ?? "";

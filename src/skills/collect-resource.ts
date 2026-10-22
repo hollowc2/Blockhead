@@ -16,6 +16,7 @@ import { countStoredItems, deliverCarried, describeDeliveryFailure, withdrawFrom
 import { shedJunk } from "../minecraft/primitives.js";
 import { craftPickaxeInField } from "./field-craft.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
+import { branchMine, BRANCH_MINE_DEPTH } from "./branch-mine.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, digsNearHome, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
@@ -92,6 +93,9 @@ const TRAVEL_TIMEOUT_MS = 120_000;
 const COLLECT_TIMEOUT_MS = 240_000;
 /** Blocks scanned around the bot when working one site. */
 const GATHER_RADIUS = 48;
+/** Tunnel length and time budget for one branch-mining run. */
+const BRANCH_TUNNEL_LENGTH = 48;
+const BRANCH_MINE_BUDGET_MS = 5 * 60_000;
 /** Nearest blocks handed to collectBlock in one pass. */
 const GATHER_BLOCKS_PER_PASS = 12;
 /** Max passes worked from one position before declaring the site exhausted. */
@@ -441,6 +445,25 @@ export class CollectResourceRunner {
       abort = await this.gatherFromSearch(anchor, carriedName, bare, quantity, attempted, data);
     }
     if (this.stopped()) return this.interrupted(data);
+    // Still short of an ore: dig for it rather than hunt more caves.
+    const depth = BRANCH_MINE_DEPTH[bare];
+    if (depth !== undefined && abort === null && countItem(bot, carriedName) < quantity) {
+      this.announce(`No more exposed ${stem} nearby; branch mining for it.`);
+      const branch = await branchMine({
+        bot,
+        logger: this.opts.logger,
+        isOre: (block) => blockMatchesResource(block, bare),
+        drop: carriedName,
+        target: quantity,
+        targetY: Math.min(depth, Math.floor(bot.entity?.position.y ?? depth) - 8),
+        tunnelLength: BRANCH_TUNNEL_LENGTH,
+        deadline: Date.now() + BRANCH_MINE_BUDGET_MS,
+        signal: this.signals?.signal,
+        shouldStop: () => this.stopped(),
+      });
+      data.gathered += branch.mined;
+      if (this.stopped()) return this.interrupted(data);
+    }
 
     carried = countItem(bot, carriedName);
     data.carried = carried;
