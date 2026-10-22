@@ -468,6 +468,30 @@ test("the staircase never opens a cell next to lava", async () => {
   assert.deepEqual(dug, []);
 });
 
+test("the staircase never opens a cell with water beside it", async () => {
+  // 2026-10-22 12:53: stairs dug into an aquifer's side at y=13 flooded and
+  // drowned the bot. Water rings the shaft two blocks out, so every stair cell
+  // touches it; only the straight-up shaft may be dug.
+  const water: Record<string, string> = {};
+  for (let y = 58; y <= 72; y++) for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) {
+    if (Math.max(Math.abs(x), Math.abs(z)) === 2) water[new Vec3(x, y, z).toString()] = "water";
+  }
+  const world = stoneWorld([new Vec3(0, 60, 0), new Vec3(0, 61, 0)], water);
+  const dug: string[] = [];
+  const bot = {
+    entity: { position: new Vec3(0.5, 60, 0.5) },
+    blockAt: world.blockAt,
+    inventory: { items: () => [] },
+    lookAt: async () => {},
+    dig: async (block: { position: Vec3 }) => { dug.push(block.position.toString()); world.open.add(block.position.toString()); },
+    stopDigging: () => {},
+    setControlState: () => {},
+    pathfinder: { setGoal: () => {}, goto: async () => { throw new Error("blocked"); } },
+  } as unknown as Parameters<typeof climbToward>[0];
+  await climbToward(bot, { x: 20, y: 70, z: 0 }, (block) => block !== null && block.boundingBox === "block", () => {}, { deadline: Date.now() + 2_000 });
+  assert.deepEqual(dug.filter((cell) => !cell.startsWith("(0, ") || !cell.endsWith(", 0)")), []);
+});
+
 test("dig tools follow the block's material, not its name", () => {
   assert.equal(digToolKind({ name: "andesite", material: "mineable/pickaxe" }), "pickaxe");
   assert.equal(digToolKind({ name: "coal_ore", material: "mineable/pickaxe" }), "pickaxe");

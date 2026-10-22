@@ -623,15 +623,27 @@ export function digToolKind(block: { name: string; material?: string | null }): 
   return "pickaxe";
 }
 
-/** True when digging `cell` would let lava in from any side or water from above. */
+/**
+ * True when digging `cell` would let lava in from any side or water from
+ * above or beside it. A staircase dug into an aquifer's side at y=13 flooded
+ * and drowned the bot (2026-10-22 12:53); water below cannot flow up.
+ */
 function cellTouchesLiquid(bot: Bot, cell: Vec3): boolean {
   const offsets = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]] as const;
   for (const [ox, oy, oz] of offsets) {
     const name = bot.blockAt(cell.offset(ox, oy, oz))?.name ?? "";
     if (/lava/.test(name)) return true;
-    if (oy === 1 && /water/.test(name)) return true;
+    if (oy !== -1 && /water/.test(name)) return true;
   }
   return false;
+}
+
+/** Head underwater with the air bar at or below half: leave the controls to the breath watch. */
+function drowningRisk(bot: Bot): boolean {
+  const self = bot.entity;
+  if (self === null || self === undefined) return false;
+  const head = bot.blockAt(self.position.offset(0, 1.62, 0).floored());
+  return head !== null && /water|bubble_column/.test(head.name) && (bot.oxygenLevel ?? 20) <= 10;
 }
 
 /** True when at least 3 of the 4 cells beside the bot's feet are solid (a shaft or pit). */
@@ -1101,6 +1113,7 @@ export async function walkToward(
     if (options.allowDig !== false && destinationVec.y - self.position.y >= 3 && hasRoof(bot, self.position)) {
       await climbToward(bot, destinationVec, isDiggable, equipBestForDig, { deadline, signal: options.signal });
     }
+    let yieldedToBreath = false;
     while (Date.now() < deadline) {
       if (options.signal?.aborted) break;
       const current = bot.entity;
@@ -1108,6 +1121,17 @@ export async function walkToward(
 
       const distance = current.position.distanceTo(destinationVec);
       if (distance <= range) { arrived = true; break; }
+
+      // Out of air underwater: stop digging and steering, and let the breath
+      // watch swim for air. The walk kept digging stairs while the bot drowned.
+      if (drowningRisk(bot)) {
+        if (!yieldedToBreath) bot.clearControlStates();
+        yieldedToBreath = true;
+        await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        lastDistance = distance;
+        continue;
+      }
+      yieldedToBreath = false;
 
       // If we are not making progress, try to clear obstacles.
       if (distance >= lastDistance - 0.5) {
@@ -1163,7 +1187,7 @@ export async function walkToward(
               if (options.signal?.aborted) break;
               const pos = new Vec3(feet.x + dx, y, feet.z + dz);
               const block = bot.blockAt(pos);
-              if (block === null || !isDiggable(block)) continue;
+              if (block === null || !isDiggable(block) || cellTouchesLiquid(bot, pos)) continue;
               try {
                 const now = Date.now();
                 if (now - lastDigAt < 300) continue;
