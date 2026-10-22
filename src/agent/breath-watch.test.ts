@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LOW_OXYGEN, nearestAir, shouldSurface } from "./breath-watch.js";
+import { CRITICAL_OXYGEN, LOW_OXYGEN, nearestAir, shouldSurface } from "./breath-watch.js";
 
 const base = { alive: true, oxygen: 20, headUnderwater: true, pathfinderMoving: false, surfacing: false };
 
@@ -12,8 +12,10 @@ test("an idle bot low on air with its head underwater swims up until the bar ref
   assert.equal(shouldSurface({ ...base, oxygen: 19, surfacing: true }), false);
 });
 
-test("the breath watch leaves the controls alone while moving, on land or dead", () => {
-  assert.equal(shouldSurface({ ...base, oxygen: 5, pathfinderMoving: true }), false);
+test("the breath watch leaves the controls alone while moving with air to spare, on land or dead", () => {
+  assert.equal(shouldSurface({ ...base, oxygen: 10, pathfinderMoving: true }), false);
+  // Nearly out of air, it takes over from a route stalled underwater.
+  assert.equal(shouldSurface({ ...base, oxygen: CRITICAL_OXYGEN, pathfinderMoving: true }), true);
   assert.equal(shouldSurface({ ...base, oxygen: 5, headUnderwater: false }), false);
   assert.equal(shouldSurface({ ...base, oxygen: 5, alive: false }), false);
 });

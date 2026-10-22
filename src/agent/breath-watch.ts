@@ -5,6 +5,8 @@ import { Vec3 } from "vec3";
 const CHECK_INTERVAL_MS = 500;
 /** Out of 20: at or below this with the head underwater, swim up. */
 export const LOW_OXYGEN = 14;
+/** Out of 20: at or below this the watch overrides a moving pathfinder. */
+export const CRITICAL_OXYGEN = 6;
 /** Keep swimming up until the air bar is this full again. */
 const RECOVERED_OXYGEN = 19;
 
@@ -23,7 +25,11 @@ export interface BreathInput {
  * A moving pathfinder owns the controls, so the watch only acts when idle.
  */
 export function shouldSurface(input: BreathInput): boolean {
-  if (!input.alive || input.pathfinderMoving || !input.headUnderwater) return false;
+  if (!input.alive || !input.headUnderwater) return false;
+  // Nearly out of air, breathing beats any route: a pathfinder stalled
+  // underwater for 15 s with the watch standing aside, and the bot drowned
+  // in the same flooded cave three times in 13 minutes (2026-10-22 14:03-14:16).
+  if (input.pathfinderMoving && input.oxygen > CRITICAL_OXYGEN) return false;
   return input.surfacing ? input.oxygen < RECOVERED_OXYGEN : input.oxygen <= LOW_OXYGEN;
 }
 
@@ -91,13 +97,18 @@ export class BreathWatch {
     const entity = bot.entity;
     const eyes = entity?.position?.offset(0, 1.62, 0);
     const head = eyes === undefined ? null : bot.blockAt?.(eyes.floored()) ?? null;
+    const pathfinderMoving = (bot as { pathfinder?: { isMoving?: () => boolean } }).pathfinder?.isMoving?.() === true;
     const want = shouldSurface({
       alive: entity !== null && entity !== undefined && bot.health > 0,
       oxygen: bot.oxygenLevel ?? 20,
       headUnderwater: head !== null && /water|bubble_column/.test(head.name),
-      pathfinderMoving: (bot as { pathfinder?: { isMoving?: () => boolean } }).pathfinder?.isMoving?.() === true,
+      pathfinderMoving,
       surfacing: this.surfacing,
     });
+    if (want && pathfinderMoving) {
+      (bot as { pathfinder?: { setGoal?: (goal: null) => void } }).pathfinder?.setGoal?.(null);
+      this.opts.logger.warn({ oxygen: bot.oxygenLevel }, "breath: out of air mid-route; dropping the route to surface");
+    }
     if (want && eyes !== undefined) this.steerToAir(eyes.floored());
     else if (!want && this.escaping) this.stopEscape();
     if (want === this.surfacing) return;

@@ -81,6 +81,14 @@ export function nearRecentDeath(position: { x: number; y: number; z: number }, d
   return deaths.some((death) => death.at >= now - DEATH_AVOID_TTL_MS && Math.hypot(position.x - death.x, position.y - death.y, position.z - death.z) <= DEATH_AVOID_RADIUS);
 }
 
+/** True when water touches any face of the block: reaching it means swimming. */
+export function touchesWater(bot: Bot, position: Vec3): boolean {
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const) {
+    if (/water/.test(bot.blockAt(position.offset(dx, dy, dz))?.name ?? "")) return true;
+  }
+  return false;
+}
+
 export function isUsefulSite(position: { x: number; y: number; z: number }, resource: string, attempted: ReadonlySet<string>, home: { x: number; z: number } | null): boolean {
   return !attempted.has(`${position.x},${position.y},${position.z}`) && !digsNearHome(position, home, resource);
 }
@@ -96,6 +104,8 @@ const GATHER_RADIUS = 48;
 /** Tunnel length and time budget for one branch-mining run. */
 const BRANCH_TUNNEL_LENGTH = 48;
 const BRANCH_MINE_BUDGET_MS = 5 * 60_000;
+/** Cave search radius for a branch-minable ore before digging for it instead. */
+const BRANCH_FIRST_RADIUS = 32;
 /** Nearest blocks handed to collectBlock in one pass. */
 const GATHER_BLOCKS_PER_PASS = 12;
 /** Max passes worked from one position before declaring the site exhausted. */
@@ -641,6 +651,7 @@ export class CollectResourceRunner {
       const key = `${site.x},${site.y},${site.z}`;
       if (attempted.has(key)) continue;
       if (!withinRadiusOfHome(site, this.opts.state.home, this.maxRadius)) continue;
+      if (touchesWater(this.opts.bot, new Vec3(site.x, site.y, site.z))) continue;
       attempted.add(key);
 
       // Spec 8.2: structural blocks inside the protected home region need an
@@ -701,8 +712,12 @@ export class CollectResourceRunner {
     let carried = countItem(bot, carriedName);
     const threshold = expeditionThreshold(this.opts.config);
     const family = toolFamilyFor(bare);
+    // An ore the branch miner can dig for is not chased through far caves:
+    // a 64-block cave search led into the flooded cave that drowned the bot
+    // three times in 13 minutes (2026-10-22). Past this, it digs instead.
+    const searchLimit = BRANCH_MINE_DEPTH[bare] !== undefined ? Math.min(this.maxRadius, BRANCH_FIRST_RADIUS) : this.maxRadius;
     for (const radius of SEARCH_RADIUS_SEQUENCE) {
-      if (radius > this.maxRadius) break;
+      if (radius > searchLimit) break;
       this.checkInterrupt();
       if (this.stopRequested) return null;
       if (carried >= quantity) return null;
@@ -737,6 +752,7 @@ export class CollectResourceRunner {
         (block) => blockMatchesResource(block, bare),
         (position) => isUsefulSite(position, bare, attempted, this.opts.state.home)
           && !nearRecentDeath(position, deaths)
+          && !touchesWater(bot, position)
           && withinRadiusOfHome(position, this.opts.state.home, this.maxRadius)
           && (/_log$/.test(bare) ? isTrunkBase(bot, position) : hasAirNeighbor(bot, position)),
         radius,
