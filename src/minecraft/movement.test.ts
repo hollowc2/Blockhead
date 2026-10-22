@@ -534,9 +534,10 @@ test("an enclosed bot without a pickaxe uses one overhead dig per pillar level",
   } as never;
   const signal = new AbortController().signal;
   const gained = await new WorldActionExecutor().run("barehand-shaft", signal, () => climbToward(bot, { x: 20, y: 68, z: 0 }, block => block?.name === "stone", () => {}, { signal, deadline: Date.now() + 3000 }));
-  assert.equal(gained, 6);
-  assert.equal(digs, 6);
-  assert.equal(placed, 6);
+  // Solid stone all the way up: still buried, so it climbs to the target height.
+  assert.equal(gained, 8);
+  assert.equal(digs, 8);
+  assert.equal(placed, 8);
   assert.equal(position.x, 0.5);
 });
 
