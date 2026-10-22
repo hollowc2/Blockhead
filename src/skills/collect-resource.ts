@@ -972,6 +972,12 @@ export class CollectResourceRunner {
       const result = await withdrawFromHomeChest(bot, state, this.opts.storage, name, take, this.opts.logger, this.signals?.signal);
       if (result.withdrawn > 0) this.opts.logger.info({ name, count: result.withdrawn }, "stocked wood for field tool repairs");
     }
+    // Logs come by hand. After a death with an empty chest (2026-10-21) the
+    // re-arm looped for 20+ minutes on this check without ever chopping a tree.
+    if (wood() < 12) {
+      const gathered = await this.gatherLogsForTool(countLogs(bot) + Math.ceil((12 - wood()) / 4));
+      if (!gathered.ok) this.opts.logger.warn({ reason: gathered.reason }, "could not gather wood for field tool repairs");
+    }
     return wood() >= 12 ? { ok: true } : { ok: false, reason: "not enough carried wood for a field crafting table and replacement tools" };
   }
 
