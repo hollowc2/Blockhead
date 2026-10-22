@@ -235,11 +235,14 @@ test("charcoal fuels its own run: 76 logs net 64, no separate fuel step", () => 
   assert.equal(plan.plan.needsFurnace, true);
 });
 
-test("a smelt's fuel step asks for one coal per 8 items, not one per item", () => {
+test("a smelt's fuel step asks for one coal per 7 items (the smelter's budget), not one per item", () => {
+  // 2026-10-22: withdrawing at 8 per coal while the smelter trusts 7 stopped
+  // an 8-ingot chestplate smelt at 7/8 "no coal to burn".
   assert.equal(fuelFor(3), 1);
-  assert.equal(fuelFor(16), 2);
-  assert.equal(fuelFor(17), 3);
-  const plan = resolvePlan("iron_ingot", 16, catalog);
+  assert.equal(fuelFor(7), 1);
+  assert.equal(fuelFor(8), 2);
+  assert.equal(fuelFor(15), 3);
+  const plan = resolvePlan("iron_ingot", 14, catalog);
   assert.equal(plan.ok, true);
   assert.deepEqual(plan.plan.steps.find((step) => step.kind === "fuel"), { kind: "fuel", quantity: 2 });
 });

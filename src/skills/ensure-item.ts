@@ -11,7 +11,7 @@ import type { ResourceSitesRepository } from "../memory/resource-sites.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { bareName, countItem, countPlanks, findItem, hasItem, isPlanksItemName, isRawLogItemName, itemsSummary, planksForLog } from "../minecraft/inventory.js";
 import { craftItem, itemId } from "../minecraft/crafting.js";
-import { smeltItems } from "../minecraft/smelting.js";
+import { itemsPerFuel, smeltItems } from "../minecraft/smelting.js";
 import { countStoredItems, deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.js";
 import { dominantNearbyLog } from "../minecraft/world.js";
 import { isNaturalBlock } from "../minecraft/natural-blocks.js";
@@ -108,9 +108,9 @@ export function charcoalLogsFor(charcoal: number): number {
   return Math.ceil((charcoal * (ITEMS_PER_FUEL - 1)) / (ITEMS_PER_FUEL - 2)) + 1;
 }
 
-/** Coal/charcoal pieces needed to smelt `items` items. */
+/** Coal/charcoal pieces needed to smelt `items` items, at the smelter's own per-piece budget. */
 export function fuelFor(items: number): number {
-  return Math.ceil(Math.max(0, items) / ITEMS_PER_FUEL);
+  return Math.ceil(Math.max(0, items) / itemsPerFuel("coal"));
 }
 
 /** Fuel the smelt steps burn (coal or charcoal). */

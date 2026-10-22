@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import { Vec3 } from "vec3";
 import type { TaskSignals } from "../agent/scheduler.js";
-import { throwIfAborted } from "../agent/world-actions.js";
+import { asEscapeMove, throwIfAborted } from "../agent/world-actions.js";
 import { bareName } from "../minecraft/inventory.js";
 import { travelAndWait } from "../minecraft/movement.js";
 import { digBlock, equipItem, equipToolForBlock, placeBlock } from "../minecraft/primitives.js";
@@ -259,7 +259,7 @@ export class NightShelterRunner {
 
     if (!isSealedPocket(cell, this.feet())) {
       if (bot.health >= healUntilHealth && !isShelterNight(bot.time.timeOfDay) && !isThundering(bot)) return { ok: true, status: "completed", data, message: "It is day; no shelter needed." };
-      const dug = await this.digIn(data, cell);
+      const dug = await asEscapeMove(() => this.digIn(data, cell));
       if (dug !== null) return dug;
     } else {
       this.opts.logger.info({ at: this.feet() }, "night shelter: already sealed in; waiting for day");

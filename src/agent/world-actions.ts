@@ -24,6 +24,21 @@ export interface WorldMutation {
 }
 
 const worldActionContext = new AsyncLocalStorage<WorldActionLease>();
+const escapeContext = new AsyncLocalStorage<true>();
+
+/**
+ * Run `fn` as an escape move (towering out of reach, digging into a
+ * shelter): its digs and placements skip the critical-health gate, which
+ * exists to make the bot heal before working, not to stop it getting away.
+ */
+export function asEscapeMove<T>(fn: () => Promise<T>): Promise<T> {
+  return escapeContext.run(true, fn);
+}
+
+/** True inside `asEscapeMove`. */
+export function isEscapeMove(): boolean {
+  return escapeContext.getStore() === true;
+}
 const teardownHooks = new WeakMap<object, Set<() => void>>();
 const teardownChains = new WeakMap<object, Promise<void>>();
 

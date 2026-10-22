@@ -34,7 +34,7 @@ import type { UtilityRunner } from "../skills/utility.js";
 import type { NightShelterRunner } from "../skills/night-shelter.js";
 import type { SkillResult } from "../skills/skill-library.js";
 import { ActionWatchdog, actionFingerprint } from "./watchdog.js";
-import { stopWorldPrimitives } from "./world-actions.js";
+import { isEscapeMove, stopWorldPrimitives } from "./world-actions.js";
 import type { WorldMutation } from "./world-actions.js";
 import { revalidateAction } from "../policy/action-boundary.js";
 import { heartbeat } from "./heartbeat.js";
@@ -198,6 +198,7 @@ export class TaskDispatcher {
           if (!point) throw new Error("mutation policy revalidation requires a live bot position");
           const verdict = revalidateAction(this.opts.bot, mutation.action as Parameters<typeof revalidateAction>[1], point, this.opts.config, this.opts.state.protectedRegion, {
             blockName: mutation.blockName,
+            escape: isEscapeMove(),
             ownBuildReplacement: mutation.ownBuildReplacement === true && (task.type === "build_project_slice" || task.type === "build_structure" || task.type === "build_design"),
             authorization: authorization ?? undefined,
             taskId: task.id,

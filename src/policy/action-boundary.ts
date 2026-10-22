@@ -21,7 +21,7 @@ export function revalidateAction(
   point: { x: number; y: number; z: number },
   config: MinecraftConfig,
   region: ProtectedRegion | null,
-  options: { blockName?: string; userRequested?: boolean; dimension?: string; authorization?: MutationAuthorizationContext; taskId?: string; projectId?: string; worldId?: string | number; now?: Date; ownBuildReplacement?: boolean } = {},
+  options: { blockName?: string; userRequested?: boolean; escape?: boolean; dimension?: string; authorization?: MutationAuthorizationContext; taskId?: string; projectId?: string; worldId?: string | number; now?: Date; ownBuildReplacement?: boolean } = {},
 ): SafetyVerdict {
   if (bot.entity === null) return { allowed: false, violation: { code: "DANGER_TOO_HIGH", reason: "bot is not spawned" } };
   if (action === "dimension") {
@@ -43,7 +43,9 @@ export function revalidateAction(
     // Waiting only helps a bot that can regenerate (hunger 18+). Starving, the
     // gate froze it in place: at 1 HP it could not even dig into its night
     // shelter, the one move that keeps it alive.
-    if (action === "dig" && (Number.isFinite(bot.food) ? bot.food : 20) >= REGEN_HUNGER) {
+    // An escape move (a combat perch, a shelter dig-in) digs at any health:
+    // the perch failed at 3.9 HP with a zombie on it (2026-10-22 11:50).
+    if (action === "dig" && options.escape !== true && (Number.isFinite(bot.food) ? bot.food : 20) >= REGEN_HUNGER) {
       const critical = checkHealthRetreat(bot.health, Math.min(threshold, DIG_CRITICAL_HEALTH));
       if (!critical.allowed) return critical;
     }

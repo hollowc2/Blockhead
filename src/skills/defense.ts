@@ -9,6 +9,7 @@ import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
 import { pillarBlockCount, swimToShore, towerUp, travelAndWait } from "../minecraft/movement.js";
+import { asEscapeMove } from "../agent/world-actions.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import { belowHealthRetreat, checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
@@ -533,7 +534,7 @@ export class DefenseRunner {
     if (tower === undefined || bot.entity === null || bot.entity.onGround !== true || this.swimming()) return null;
     const threats = this.hostilesNear(PERCH_THREAT_RADIUS);
     if (!perchHolds(threats.map((entity) => entity.name ?? ""), pillarBlockCount(bot))) return null;
-    const climbed = await tower(bot, PERCH_HEIGHT, this.signals?.signal).catch(() => 0);
+    const climbed = await asEscapeMove(() => tower(bot, PERCH_HEIGHT, this.signals?.signal)).catch(() => 0);
     if (this.stopRequested) return this.interrupted(data);
     if (climbed < PERCH_HEIGHT) {
       this.opts.logger.warn({ climbed, reason }, "defense: could not build a perch; running instead");
