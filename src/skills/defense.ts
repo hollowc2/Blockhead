@@ -1,13 +1,14 @@
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type { Logger } from "pino";
+import { Vec3 } from "vec3";
 import type { AgentState } from "../agent/state.js";
 import type { TaskSignals } from "../agent/scheduler.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import { findItem, itemsSummary } from "../minecraft/inventory.js";
-import { swimToShore, travelAndWait } from "../minecraft/movement.js";
+import { pillarBlockCount, swimToShore, towerUp, travelAndWait } from "../minecraft/movement.js";
 import { equipItem, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { attackTargetAllowed, combatOutcomeObserved, isHumanTarget, isMobEntity, HOSTILE_MOB_NAMES, PROVOKED_ONLY_MOB_NAMES } from "../policy/combat.js";
 import { belowHealthRetreat, checkHealthRetreat, HEALTH_RETREAT_THRESHOLD } from "../policy/safety.js";
@@ -78,6 +79,26 @@ const TOTAL_TIMEOUT_MS = 180_000;
 const MAX_KILLS_PER_PASS = 3;
 /** Distance the defended player may be for the bot to still fight for them. */
 const DEFEND_PLAYER_RANGE = 48;
+/** Blocks up a combat perch stands: out of a zombie's reach. */
+const PERCH_HEIGHT = 2;
+/** Hostiles this close decide whether a perch holds. */
+const PERCH_THREAT_RADIUS = 16;
+/** Swing reach from the perch, eyes to the mob's body. */
+const PERCH_REACH = 3.5;
+/** A stone/iron sword recharges in ~0.63 s; swing at that rate. */
+const PERCH_SWING_MS = 650;
+const PERCH_FIGHT_MS = 120_000;
+/**
+ * Mobs that cannot reach a bot two blocks up: no climbing, no ranged
+ * attack, no explosion. Spiders climb, skeletons and drowned shoot, a
+ * creeper blows the pillar out.
+ */
+const PERCH_SAFE_MOBS: ReadonlySet<string> = new Set(["zombie", "husk", "zombie_villager"]);
+
+/** A perch holds when every threat is a non-climbing melee mob and blocks are carried. */
+export function perchHolds(threats: readonly string[], blocks: number): boolean {
+  return threats.length > 0 && blocks >= PERCH_HEIGHT && threats.every((name) => PERCH_SAFE_MOBS.has(name));
+}
 
 /** World actions the runner drives; injectable so the fight logic is testable. */
 export interface DefenseActions {
@@ -88,9 +109,11 @@ export interface DefenseActions {
   shore?: typeof swimToShore;
   /** One swing at `target` (a creeper is hit once, then backed away from). */
   hit?: (bot: Bot, target: Entity) => void;
+  /** Tower straight up; returns the blocks climbed. */
+  tower?: (bot: Bot, steps: number, signal?: AbortSignal) => Promise<number>;
 }
 
-const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore, hit: (bot, target) => bot.attack(target) };
+const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore, hit: (bot, target) => bot.attack(target), tower: towerUp };
 
 export interface DefenseOptions {
   bot: Bot;
@@ -487,7 +510,68 @@ export class DefenseRunner {
     return travel.status === "arrived" || travel.status === "already_there";
   }
 
+  /** Live hostile mobs within `radius`, nearest first. */
+  private hostilesNear(radius: number): Entity[] {
+    const self = this.opts.bot.entity?.position;
+    if (self === undefined || self === null) return [];
+    return Object.values(this.opts.bot.entities)
+      .filter((entity) => entity.type !== "player" && isMobEntity(entity) && HOSTILE_MOB_NAMES.has(entity.name ?? "") && isLiveEntity(entity)
+        && distanceBetween(entity.position, self) <= radius)
+      .sort((a, b) => distanceBetween(a.position, self) - distanceBetween(b.position, self));
+  }
+
+  /**
+   * Against a zombie crowd, tower two blocks up and fight from there instead
+   * of running: fleeing three cave zombies took the bot from 20 to 0 health
+   * in 11 seconds (2026-10-22), every hit landing on its back. Null when a
+   * perch would not hold (a climber, archer or creeper near, no blocks, in
+   * water) or the tower failed, so the caller runs as before.
+   */
+  private async perchFight(data: DefenseData, reason: string): Promise<SkillResult<DefenseData> | null> {
+    const bot = this.opts.bot;
+    const tower = this.actions.tower;
+    if (tower === undefined || bot.entity === null || bot.entity.onGround !== true || this.swimming()) return null;
+    const threats = this.hostilesNear(PERCH_THREAT_RADIUS);
+    if (!perchHolds(threats.map((entity) => entity.name ?? ""), pillarBlockCount(bot))) return null;
+    const climbed = await tower(bot, PERCH_HEIGHT, this.signals?.signal).catch(() => 0);
+    if (this.stopRequested) return this.interrupted(data);
+    if (climbed < PERCH_HEIGHT) {
+      this.opts.logger.warn({ climbed, reason }, "defense: could not build a perch; running instead");
+      return null;
+    }
+    this.opts.logger.warn({ reason, threats: threats.map((entity) => entity.name), health: bot.health }, "defense: perched out of reach; fighting from above");
+    const weapon = findItem(bot, "iron_sword") ?? findItem(bot, "stone_sword") ?? findItem(bot, "wooden_sword");
+    if (weapon !== null) await this.actions.equip(bot, weapon, this.signals?.signal).catch(() => undefined);
+
+    const struck = new Set<number>();
+    const deadline = Date.now() + PERCH_FIGHT_MS;
+    while (Date.now() < deadline) {
+      this.checkInterrupt();
+      if (this.stopRequested) return this.interrupted(data);
+      const around = this.hostilesNear(PERCH_THREAT_RADIUS);
+      if (around.length === 0 || !perchHolds(around.map((entity) => entity.name ?? ""), PERCH_HEIGHT)) break;
+      const self = bot.entity?.position;
+      const eyes = self === undefined || self === null ? undefined : { x: self.x, y: self.y + 1.62, z: self.z };
+      const body = (entity: Entity) => new Vec3(entity.position.x, entity.position.y + (entity.height ?? 1.8) * 0.6, entity.position.z);
+      const target = eyes === undefined ? undefined : around.find((entity) => distanceBetween(body(entity), eyes) <= PERCH_REACH);
+      if (target !== undefined && this.actions.hit !== undefined) {
+        await bot.lookAt?.(body(target), true)?.catch(() => undefined);
+        this.actions.hit(bot, target);
+        struck.add(target.id);
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, PERCH_SWING_MS));
+    }
+    data.kills += [...struck].filter((id) => { const entity = bot.entities[id]; return entity === undefined || !isLiveEntity(entity); }).length;
+    data.retreated = true;
+    this.announce(data);
+    return { ok: true, status: "completed", data, message: `perched and fought: ${data.kills} cleared` };
+  }
+
   private async retreatResult(data: DefenseData, reason: string): Promise<SkillResult<DefenseData>> {
+    if (data.kind === "self") {
+      const perched = await this.perchFight(data, reason);
+      if (perched !== null) return perched;
+    }
     const escaped = await this.retreat(reason);
     if (this.stopRequested) return this.interrupted(data);
     if (!escaped) return this.fail(data, "PATH_UNREACHABLE", `could not retreat: ${reason}`, true);

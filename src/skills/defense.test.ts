@@ -9,7 +9,7 @@ import { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { TravelWaitOptions, TravelWaitResult } from "../minecraft/movement.js";
 import { deathSiteDanger } from "./death-recovery.js";
-import { DefenseRunner, retreatTarget, type DefenseActions } from "./defense.js";
+import { DefenseRunner, perchHolds, retreatTarget, type DefenseActions } from "./defense.js";
 
 type Point = { x: number; y: number; z: number };
 type Mob = { id: number; type: string; name: string; position: Point; health?: number };
@@ -370,4 +370,40 @@ test("observed target damage extends the combat progress budget", async (t) => {
   t.mock.timers.tick(1_000);
   const result = await run;
   assert.equal(result.data?.retreated, true);
+});
+
+test("a zombie crowd is fought from a two-block perch instead of fled", async () => {
+  const h = harness();
+  (h.self as unknown as { onGround: boolean }).onGround = true;
+  (h.bot as unknown as { inventory: object }).inventory = { items: () => [{ name: "cobblestone", count: 20 }] };
+  const towered: number[] = [];
+  const hits: string[] = [];
+  const runner = new DefenseRunner({
+    ...(h.runner as unknown as { opts: ConstructorParameters<typeof DefenseRunner>[0] }).opts,
+    actions: {
+      ...(h.runner as unknown as { actions: DefenseActions }).actions,
+      tower: async (_bot, steps) => { towered.push(steps); h.self.position.y += steps; return steps; },
+      hit: (_bot, target) => { hits.push(target.name ?? "?"); (target as unknown as Mob).health = 0; delete h.entities[target.id]; },
+    },
+  });
+  h.add(mob(7, "zombie", { x: 21, y: 64, z: 0 }));
+  h.add(mob(8, "zombie", { x: 20, y: 64, z: 1 }));
+  h.add(mob(9, "husk", { x: 19, y: 64, z: 0 }));
+
+  const result = await runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(towered, [2]);
+  assert.equal(h.travels.length, 0, "did not run");
+  assert.equal(hits.length, 3);
+  assert.equal(result.ok, true);
+  assert.equal(result.data?.kills, 3);
+});
+
+test("a perch is only trusted against mobs that cannot climb, shoot, or explode", () => {
+  assert.equal(perchHolds(["zombie", "zombie", "husk"], 10), true);
+  assert.equal(perchHolds(["zombie", "spider"], 10), false);
+  assert.equal(perchHolds(["zombie", "skeleton"], 10), false);
+  assert.equal(perchHolds(["zombie", "creeper"], 10), false);
+  assert.equal(perchHolds(["zombie"], 1), false, "needs two blocks");
+  assert.equal(perchHolds([], 10), false);
 });

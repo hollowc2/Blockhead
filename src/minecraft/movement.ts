@@ -1011,6 +1011,33 @@ async function pillarStep(
   }
 }
 
+/**
+ * Tower straight up `steps` blocks on throwaway blocks, digging natural
+ * headroom as needed. Returns the steps taken. Used as a combat perch: a
+ * zombie crowd cannot reach a bot two blocks up (2026-10-22: three cave
+ * zombies took it from 20 to 0 in 11 seconds while it tried to run).
+ */
+export async function towerUp(bot: Bot, steps: number, signal?: AbortSignal): Promise<number> {
+  const isDiggable = (block: import("prismarine-block").Block | null): boolean => {
+    if (block === null || block.boundingBox !== "block") return false;
+    const name = block.name.replace(/^minecraft:/, "");
+    return isNaturalBlock(name) && name !== "bedrock" && block.hardness !== undefined && block.hardness >= 0;
+  };
+  const equip = (block: import("prismarine-block").Block): Promise<void> => equipDigTool(bot, block, signal);
+  let taken = 0;
+  for (; taken < steps; taken++) {
+    const feet = bot.entity?.position.floored();
+    if (feet === undefined || signal?.aborted) break;
+    if (!await pillarStep(bot, feet, isDiggable, equip, signal)) break;
+  }
+  return taken;
+}
+
+/** Throwaway blocks carried for pillaring. */
+export function pillarBlockCount(bot: Bot): number {
+  return bot.inventory.items().filter((item) => PILLAR_ITEMS.includes(item.name.replace(/^minecraft:/, ""))).reduce((sum, item) => sum + item.count, 0);
+}
+
 /** The deepest fall a blind fallback walk may take (the pathfinder's own limit). */
 const MAX_SAFE_DROP = 3;
 

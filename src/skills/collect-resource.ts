@@ -636,6 +636,10 @@ export class CollectResourceRunner {
       carried = countItem(this.opts.bot, carriedName);
       if (visit.gained > 0) {
         this.recordSite(site.x, site.y, site.z, bare, dimension);
+      } else if (this.stopRequested) {
+        // An interrupted visit (a restart, a preemption) proves nothing about
+        // the site: a deploy mid-dig marked a live iron site depleted.
+        return null;
       } else {
         this.opts.sites.markDepleted(worldId, site.id);
         this.opts.logger.info({ site: site.id, resource: bare }, "known site yielded nothing; marked depleted");

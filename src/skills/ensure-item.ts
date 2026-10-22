@@ -1203,14 +1203,13 @@ export async function runEquipmentUpgrade(
   // Then the shield and iron armor kit, one piece at a time in priority
   // order; the first piece that cannot be made ends the pass (it is the
   // cheapest left, so the rest would fail on the same shortage).
-  let armored = false;
+  // Each piece goes on as soon as it is made: a shield crafted but still
+  // in the pack when the upgrade was interrupted did not block a single hit
+  // in the cave fight that killed the bot (2026-10-22 10:56).
   for (const piece of missingIronKitFor(bot)) {
     const result = await runner.run(piece.item, 1, { mode: "ensure", signals: options.signals });
     if (!result.ok) break;
     upgraded.push(piece.item);
-    armored = true;
-  }
-  if (armored) {
     await equipAllArmor(bot, options.signals?.signal).catch((err) => {
       if (options.signals?.signal.aborted === true) throw err;
     });
