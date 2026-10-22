@@ -54,11 +54,12 @@ async function smelt(h: ReturnType<typeof furnaceHarness>, times: number) {
 }
 
 test("charcoal refuels from fresh output in the open window", async () => {
-  const h = furnaceHarness(3, 1);
-  const result = await smelt(h, 3);
-  assert.deepEqual(result, { ok: true, smelted: 3 });
-  assert.deepEqual(h.burned, ["coal", "charcoal", "charcoal"]);
-  assert.equal(h.inputs, 3);
+  // One coal covers seven items; the eighth burns charcoal this run made.
+  const h = furnaceHarness(10, 1);
+  const result = await smelt(h, 10);
+  assert.deepEqual(result, { ok: true, smelted: 10 });
+  assert.deepEqual(h.burned, ["coal", "charcoal"]);
+  assert.equal(h.inputs, 10);
 });
 
 test("the final log used as fuel returns a failure instead of a missing-slot exception", async () => {

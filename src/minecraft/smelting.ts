@@ -89,16 +89,20 @@ export async function smeltItems(bot: Bot, furnaceBlock: Block, options: SmeltOp
   return settle(failure ?? "smelting made no output change");
 
   async function runPasses(window: Furnace): Promise<string | null> {
+    // Items the fuel this run added can still smelt.
+    let burnLeft = 0;
     for (let pass = 0; pass < options.times; pass++) {
       throwIfAborted(signal);
       let input = window.items().find((item) => bareName(item.name) === bareName(options.inputName)) ?? null;
       if (input === null) return `no ${options.inputName} to smelt`;
-      if (needsFuel(window as FuelGauge)) {
+      if (needsFuel(window as FuelGauge, burnLeft)) {
         const fuel = fuelNames.map((name) => window.items().find((item) => bareName(item.name) === bareName(name)) ?? null).find((item) => item !== null) ?? null;
         if (fuel === null) return `no ${fuelNames.join("/")} to burn`;
         await putFuel(window, fuel.type, null, 1, signal);
+        burnLeft += itemsPerFuel(fuel.name);
         if (fuel.name === options.outputName) outputBurned += 1;
       }
+      burnLeft = Math.max(0, burnLeft - 1);
       // Refuelling may consume the last log when input and fuel are the
       // same item. The open window owns the current inventory slots.
       input = window.items().find((item) => bareName(item.name) === bareName(options.inputName)) ?? null;
@@ -159,10 +163,26 @@ export interface FuelGauge {
   fuelSeconds?: number | null;
 }
 
-/** True when the fuel slot is empty and the current burn cannot finish another item. */
-export function needsFuel(window: FuelGauge): boolean {
+/**
+ * Items one unit of `fuel` is trusted to smelt here: coal and charcoal burn
+ * for 8, wood for 1.5, but the burn keeps running in the gaps between passes
+ * that feed one item at a time, so leave a margin.
+ */
+export function itemsPerFuel(fuel: string): number {
+  const bare = bareName(fuel);
+  return bare === "coal" || bare === "charcoal" ? 7 : 1;
+}
+
+/**
+ * True when the fuel slot is empty and the current burn cannot finish another
+ * item. `burnLeft` is what fuel added this run can still smelt: the furnace's
+ * burn gauge read 0 on 1.21.4, so one coal was spent per iron ingot and a
+ * three-ingot smelt stopped at 1/3 "no coal to burn" (2026-10-22).
+ */
+export function needsFuel(window: FuelGauge, burnLeft = 0): boolean {
   const slot = window.fuelItem();
   if (slot !== null && slot !== undefined) return false;
+  if (burnLeft >= 1) return false;
   return (window.fuelSeconds ?? 0) < SMELT_SECONDS;
 }
 

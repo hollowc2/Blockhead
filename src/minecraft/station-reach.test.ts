@@ -4,7 +4,7 @@ import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
 import { walkIntoReach } from "./movement.js";
-import { needsFuel, smeltItems } from "./smelting.js";
+import { itemsPerFuel, needsFuel, smeltItems } from "./smelting.js";
 
 function leased<T>(action: () => Promise<T>): Promise<T> {
   const controller = new AbortController();
@@ -29,6 +29,10 @@ test("the furnace is refueled only when its burn cannot finish another item", ()
   assert.equal(needsFuel(gauge(null, 4)), true, "burn ends mid-item");
   assert.equal(needsFuel(gauge(null, 60)), false, "charcoal still burning");
   assert.equal(needsFuel(gauge({ name: "charcoal", count: 1 }, 0)), false, "fuel already queued");
+  // 1.21.4 left the burn gauge at 0: one coal added this run still covers the next items.
+  assert.equal(needsFuel(gauge(null, 0), itemsPerFuel("coal") - 1), false, "coal from this run still burning");
+  assert.equal(needsFuel(gauge(null, 0), 0), true, "this run's fuel is spent");
+  assert.equal(itemsPerFuel("oak_log"), 1);
 });
 
 test("smelted output is counted after the furnace closes, when the inventory syncs", async () => {
