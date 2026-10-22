@@ -104,6 +104,8 @@ export function missingIronKit(owned: readonly string[], worn: ReadonlyMap<numbe
 
 /** The kit pieces this bot still lacks. */
 export function missingIronKitFor(bot: Bot): typeof IRON_KIT[number][] {
+  // Telemetry/test adapters without a full inventory cannot be judged.
+  if (bot.inventory?.items === undefined || bot.inventory.slots === undefined) return [];
   const worn = new Map<number, string>();
   for (const slot of [5, 6, 7, 8, 45]) {
     const item = bot.inventory.slots[slot];

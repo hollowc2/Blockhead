@@ -13,6 +13,7 @@ import { STOCKPILE_PRIORITY_ORDER, type StockpileManager, type StockpileSnapshot
 import type { OrganizeStorageRunner } from "../skills/organize-storage.js";
 import type { BaseBuilderRunner } from "../skills/base.js";
 import { isThundering } from "../skills/night-shelter.js";
+import { missingIronKitFor } from "../skills/armor.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
@@ -500,6 +501,23 @@ export class BackgroundManager {
         scheduler.claim();
         return;
       }
+    }
+
+    // The shield and iron armor kit (owner request 2026-10-21) comes before
+    // goals and land development: as the last rung of the deterministic
+    // ladder the upgrade never ran in 12 hours and four deaths (2026-10-22).
+    if (this.opts.config.behavior?.auto_upgrade_tools !== false && !this.kindBlocked("upgrade")
+      && this.opts.state.timePhase !== "night" && !isThundering(bot) && missingIronKitFor(bot).length > 0) {
+      logger.info({ missing: missingIronKitFor(bot).map((piece) => piece.item) }, "shield or iron armor missing; upgrading equipment");
+      scheduler.enqueue({
+        type: "upgrade_equipment",
+        priority: TaskPriority.BACKGROUND,
+        source: "background",
+        objective: "Make and put on a shield and iron armor.",
+        parameters: {},
+      });
+      scheduler.claim();
+      return;
     }
 
     // The goal layer (when wired): an active autonomous goal owns the idle
