@@ -927,8 +927,11 @@ export async function climbToward(
     if (options.signal?.aborted) break;
     const self = bot.entity;
     if (self === null || self === undefined) break;
-    if (destination.y - self.position.y < 3) break;
     const feet = self.position.floored();
+    // Near the target height, stop only once out in the open: a climb that
+    // ended at y=61 still buried in its own shaft (surface y=62) then
+    // tunnelled sideways toward home and timed out (2026-10-22 11:11).
+    if (destination.y - self.position.y < 3 && (destination.y - self.position.y < 1 || !enclosedAtFeet(bot, feet))) break;
     const towardX = destination.x - self.position.x;
     const towardZ = destination.z - self.position.z;
     const directions = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][])
