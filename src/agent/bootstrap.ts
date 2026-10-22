@@ -21,6 +21,7 @@ export enum BootstrapStage {
   TORCHES = "torches",
   IRON = "iron",
   IRON_TOOLS = "iron_tools",
+  IRON_ARMOR = "iron_armor",
   NORMAL_OPERATION = "normal_operation",
   BLOCKED = "blocked",
 }
@@ -41,13 +42,14 @@ export const BOOTSTRAP_STAGE_ORDER: readonly BootstrapStage[] = [
   BootstrapStage.BED,
   BootstrapStage.IRON,
   BootstrapStage.IRON_TOOLS,
+  BootstrapStage.IRON_ARMOR,
   BootstrapStage.NORMAL_OPERATION,
 ];
 
 /**
  * Stages implemented by this build (Phase 5.6: HOME -> WOOD -> CRAFTING ->
  * STONE_TOOLS -> FOOD -> STORAGE -> FURNACE -> FUEL -> TORCHES -> WOOL ->
- * BED -> IRON -> IRON_TOOLS). NORMAL_OPERATION is the terminal marker,
+ * BED -> IRON -> IRON_TOOLS -> IRON_ARMOR). NORMAL_OPERATION is the terminal marker,
  * not an executable stage; persisting it signals bootstrap is done.
  */
 export const BOOTSTRAP_STAGES: readonly BootstrapStage[] = [
@@ -64,6 +66,7 @@ export const BOOTSTRAP_STAGES: readonly BootstrapStage[] = [
   BootstrapStage.BED,
   BootstrapStage.IRON,
   BootstrapStage.IRON_TOOLS,
+  BootstrapStage.IRON_ARMOR,
 ];
 
 /** The stage to execute after `completed`, or null when bootstrap is finished. */

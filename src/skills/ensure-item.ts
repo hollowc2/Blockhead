@@ -25,6 +25,8 @@ import { carriedItemName } from "./collect-resource.js";
 import type { GatherFoodRunner } from "./gather-food.js";
 import { FOOD_ITEM_NAMES } from "./gather-food.js";
 import { TOOL_FAMILIES } from "./expedition.js";
+import { missingIronKitFor } from "./armor.js";
+import { equipAllArmor } from "../minecraft/primitives.js";
 
 /**
  * Phase 13 (spec 14.3 / 20.2): the `ensure_item` family of skills.
@@ -1171,6 +1173,7 @@ export class EnsureItemRunner {
 
 /**
  * Deterministic equipment upgrade ladder (spec 10.2): wood -> stone -> iron
+ * tools, then a shield and iron helmet, chestplate and boots, put on as made,
  * when the resources are available, no user permission needed. Runs entirely
  * through the ensure machinery so every prerequisite is satisfied
  * deterministically. Returns the items upgraded this pass (empty when the
@@ -1197,9 +1200,24 @@ export async function runEquipmentUpgrade(
     const result = await runner.run(next, 1, { mode: "ensure", signals: options.signals });
     if (result.ok) upgraded.push(next);
   }
+  // Then the shield and iron armor kit, one piece at a time in priority
+  // order; the first piece that cannot be made ends the pass (it is the
+  // cheapest left, so the rest would fail on the same shortage).
+  let armored = false;
+  for (const piece of missingIronKitFor(bot)) {
+    const result = await runner.run(piece.item, 1, { mode: "ensure", signals: options.signals });
+    if (!result.ok) break;
+    upgraded.push(piece.item);
+    armored = true;
+  }
+  if (armored) {
+    await equipAllArmor(bot, options.signals?.signal).catch((err) => {
+      if (options.signals?.signal.aborted === true) throw err;
+    });
+  }
   return upgraded.length > 0
     ? { ok: true, status: "completed", data: { upgraded } }
-    : { ok: false, status: "failed", errorCode: "NOT_READY", message: "no affordable tool upgrade right now", retryable: false, data: { upgraded: [] } };
+    : { ok: false, status: "failed", errorCode: "NOT_READY", message: "no affordable tool or armor upgrade right now", retryable: false, data: { upgraded: [] } };
 }
 
 /** One step toward carrying enough planks. */

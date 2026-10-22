@@ -148,7 +148,7 @@ export interface BootstrapStageEvent {
   note: string;
 }
 
-/** The implemented bootstrap scope finished (Phase 5.6: through IRON_TOOLS). */
+/** The implemented bootstrap scope finished (Phase 5.6: through IRON_ARMOR). */
 export interface BootstrapCompleteEvent {
   completedStages: BootstrapStage[];
 }

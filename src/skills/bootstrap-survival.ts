@@ -66,6 +66,7 @@ import {
 } from "../minecraft/world.js";
 import { huntOutcomeMessage, watchEaten } from "./gather-food.js";
 import { regionContains } from "../minecraft/protection.js";
+import { equipCarriedArmor, ironKitPlan, missingIronKitFor } from "./armor.js";
 import { cancelCollection, collectBlockOperation, digBlock, equipItem, equipToolForBlock, pvpAttack, pvpStop } from "../minecraft/primitives.js";
 import { gameChatBudgetAllows, HUNT_MIN_HEALTH, recoverLowHealth } from "./skill-library.js";
 import { freeChestSlotSpot, stationSlotSpot } from "./base.js";
@@ -177,6 +178,8 @@ const FURNACE_COBBLE_TARGET = 8;
 const FUEL_ITEM_TARGET = 4;
 /** Torches the TORCHES stage aims to stock (config overridable). */
 const TORCH_TARGET = 16;
+/** Planks in the shield recipe (with one iron ingot). */
+const SHIELD_PLANK_COST = 6;
 /** Raw iron the IRON stage aims to gather when exposed ore is reachable. */
 const IRON_ORE_TARGET = 6;
 /**
@@ -229,7 +232,7 @@ export interface BootstrapRunnerOptions {
 /** Stages that search far from home; they only start in daylight. */
 const NIGHT_PAUSED_STAGES: ReadonlySet<BootstrapStage> = new Set([
   BootstrapStage.WOOD, BootstrapStage.STONE_TOOLS, BootstrapStage.FOOD, BootstrapStage.WOOL,
-  BootstrapStage.FUEL, BootstrapStage.IRON,
+  BootstrapStage.FUEL, BootstrapStage.IRON, BootstrapStage.IRON_ARMOR,
 ]);
 
 /**
@@ -452,7 +455,7 @@ export class BootstrapRunner {
           return;
         }
         if (!started && !this.startupAnnounced) {
-          this.announce("Starting up: home, wood, crafting table, wooden and stone tools, food, sheep wool, bed, storage, furnace, fuel, torches — then iron when available.");
+          this.announce("Starting up: home, wood, crafting table, wooden and stone tools, food, sheep wool, bed, storage, furnace, fuel, torches — then iron tools, a shield and iron armor when available.");
           this.startupAnnounced = true;
         }
         // A resumed run may already have announced startup in an earlier
@@ -566,6 +569,8 @@ export class BootstrapRunner {
         return this.stageIron();
       case BootstrapStage.IRON_TOOLS:
         return this.stageIronTools();
+      case BootstrapStage.IRON_ARMOR:
+        return this.stageIronArmor();
       default:
         return { ok: false, reason: `stage not implemented: ${stage}` };
     }
@@ -1658,6 +1663,74 @@ export class BootstrapRunner {
       made.push(name.replace(/^iron_/, ""));
     }
     return { ok: true, message: `Smelted ${ingots} iron ingots; iron ${made.join(" and ")} ready.` };
+  }
+
+  /**
+   * IRON_ARMOR: a shield plus iron helmet, chestplate and boots, all put on
+   * (owner request 2026-10-21). Mines the exposed iron the missing pieces
+   * need, smelts it, and crafts what the ingots pay for, shield first. Like
+   * IRON, a shortage never blocks bootstrap: the background equipment
+   * upgrade keeps working toward the rest (and digs for buried ore).
+   */
+  private async stageIronArmor(): Promise<StageOutcome> {
+    const bot = this.opts.bot;
+    let missing = missingIronKitFor(bot);
+    if (missing.length === 0) {
+      await equipCarriedArmor(bot, this.opts.logger, this.signal ?? undefined);
+      return { ok: true, message: "Shield and iron armor already on." };
+    }
+
+    const ironNeeded = missing.reduce((sum, piece) => sum + piece.iron, 0);
+    const carried = countItem(bot, "iron_ingot") + countItem(bot, "raw_iron");
+    if (carried < ironNeeded) {
+      const mined = await this.mineIronOre(countItem(bot, "raw_iron") + ironNeeded - carried);
+      if (!mined.ok) this.opts.logger.info({ reason: mined.reason }, "iron_armor: short of iron; crafting what it pays for");
+    }
+
+    let home = this.opts.state.home;
+    if (home === null) return { ok: false, reason: "no home coordinate configured" };
+    const travel = await travelHomeAndWait(bot, home, { dimension: home.dimension, timeoutMs: TRAVEL_TIMEOUT_MS });
+    if (travel.status !== "arrived" && travel.status !== "already_there") {
+      if (!await this.ensureReachableHome("iron_armor")) return { ok: false, reason: "home unreachable; keeping persisted home" };
+      home = this.opts.state.home;
+      if (home === null) return { ok: false, reason: "no home coordinate configured" };
+    }
+
+    const raw = countItem(bot, "raw_iron");
+    if (raw > 0) {
+      const smelted = await this.smeltIronOre(raw);
+      if (!smelted.ok) return { ok: false, reason: smelted.reason };
+    }
+    missing = missingIronKitFor(bot);
+    const plan = ironKitPlan(countItem(bot, "iron_ingot"), missing);
+    if (plan.length === 0) {
+      await equipCarriedArmor(bot, this.opts.logger, this.signal ?? undefined);
+      return { ok: true, message: "Not enough iron for a shield or armor yet; I'll keep looking." };
+    }
+
+    const table = await this.ensureTableAtHome();
+    if (table === null) return { ok: false, reason: "could not find a crafting table at home" };
+    if (plan.includes("shield") && countPlanks(bot) < SHIELD_PLANK_COST) {
+      const logs = await this.ensureLogs(Math.ceil((SHIELD_PLANK_COST - countPlanks(bot)) / 4));
+      if (!logs.ok) return { ok: false, reason: logs.reason };
+      const planks = await craftPlanks(bot, SHIELD_PLANK_COST, this.signal ?? undefined);
+      if (!planks.ok) return { ok: false, reason: planks.reason };
+    }
+
+    const made: string[] = [];
+    for (const name of plan) {
+      const crafted = await this.craftAtTable(name, table);
+      if (!crafted.ok) return { ok: false, reason: crafted.reason };
+      made.push(name.replace(/^iron_/, ""));
+    }
+    await equipCarriedArmor(bot, this.opts.logger, this.signal ?? undefined);
+    const left = missingIronKitFor(bot).map((piece) => piece.item.replace(/^iron_/, ""));
+    return {
+      ok: true,
+      message: left.length === 0
+        ? `Made and put on ${made.join(", ")}; fully kitted out.`
+        : `Made and put on ${made.join(", ")}; still need ${left.join(", ")}.`,
+    };
   }
 
   /** Ensure a placed furnace exists within `FURNACE_SCAN_RADIUS` of home. */
