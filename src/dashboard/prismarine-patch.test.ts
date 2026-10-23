@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_PERSON_V1, patchMineflayerCrafting, patchViewerClient, patchViewerCamera, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
+import { FIRST_PERSON_V1, patchMineflayerCrafting, patchViewerClient, patchViewerCamera, patchViewerEquipment, patchViewerRecenterHotkey, patchWorker, patchWorldRenderer } from "../../scripts/patch-prismarine-viewer.mjs";
 
 test("patches both modern world-height loops", () => {
   const legacy = "for (let y = 0; y < 256; y += 16) {";
@@ -78,6 +78,11 @@ test("the installed viewer bundle carries the camera modes and still parses", as
   const bundle = await readFile(new URL("../../node_modules/prismarine-viewer/public/index.js", import.meta.url), "utf8");
   assert.match(bundle, /bobCam/);
   assert.doesNotMatch(bundle, /bobPov/);
+  assert.match(bundle, /bobEquipment.attach\(e\)/);
+  assert.match(bundle, /o.on\("equipment"/);
+  assert.match(bundle, /bob-dropped-items/);
+  assert.equal(patchViewerEquipment(bundle), bundle, "equipment patch is idempotent");
+  assert.throws(() => patchViewerEquipment("unrelated"), /refusing to patch/);
   assert.doesNotThrow(() => new Function(bundle));
 });
 

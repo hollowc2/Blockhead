@@ -1,0 +1,74 @@
+{
+  "status": "approved by Corey; prepared for targeted deployment",
+  "host": "corey@maia",
+  "service": "blockhead.service",
+  "runtime": "/home/corey/.local/share/blockhead-runtime",
+  "baselineObservedAt": "2026-10-23T21:00:54.604Z",
+  "baselineService": {
+    "active": true,
+    "automaticRestarts": 0
+  },
+  "files": [
+    {
+      "path": "src/dashboard/viewer-server.ts",
+      "baseline": "1c8478684d5f18c978a7c3bd0c5018762dd51aa7cea5dd2a5a0358ce27559fa6",
+      "candidate": "e03832a3a5354064853311eaf1843537f7d67f85492e729814f7fcf22c289950"
+    },
+    {
+      "path": "src/dashboard/telemetry.ts",
+      "baseline": "5ad8ba7d4cbda6cfc2c654846bf0939bdf69bc083b94f86f7ae12bb27490b3e1",
+      "candidate": "f870e0d32d66c437dd860663a4734fb9fab191ed5efc07ef4e72f98af773ceca"
+    },
+    {
+      "path": "scripts/patch-prismarine-viewer.mjs",
+      "baseline": "38c907411081c340a518aaafbea4d201509b52a3e5b377e29db99b8c15917659",
+      "candidate": "cc7698b42582c97ccfe41b209364b7b5f2b39bff5090e7cc3c3a4f471ebfee61"
+    },
+    {
+      "path": "scripts/patch-prismarine-viewer.d.mts",
+      "baseline": "6af924139e2ecb6935373a9029357c843493ab07faecc061b0057a269102f035",
+      "candidate": "3dac3b9a29fac1b6ee07aa651733b38522b8e9647a3317c19f70d6e79e8ed921"
+    },
+    {
+      "path": "scripts/viewer-equipment.mjs",
+      "baseline": null,
+      "candidate": "ed3f5e4a067f15af919449b00168fb7ec66a0314e47278912f4101fde930eef5"
+    },
+    {
+      "path": "scripts/viewer-equipment.d.mts",
+      "baseline": null,
+      "candidate": "491da842fa50ac95a79d6e50c09d723a647b2b3c968c241b49857f99019b38ee"
+    },
+    {
+      "path": "node_modules/prismarine-viewer/public/index.js",
+      "baseline": "b409d5ad156c5cd13ce9c8419a24a47aa71110a08919929250e140e5765313ef",
+      "candidate": "03984d724ff61eb969142612bff87e9c5762a8e2f57a6e26883b4b29fdca44a7"
+    },
+    {
+      "path": "scripts/viewer-dropped-items.mjs",
+      "baseline": null,
+      "candidate": "b002ce04acbc8a8114d353fb25569bc4175560f861f260b575abc0c0984b5f73"
+    },
+    {
+      "path": "scripts/viewer-dropped-items.d.mts",
+      "baseline": null,
+      "candidate": "d107a88d819f7aa6a805ee2673f23e9fd76dc700faec1cdbba5598b2f6f1a1c2"
+    }
+  ],
+  "validation": {
+    "testsPassed": 899,
+    "typecheck": "passed",
+    "diffCheck": "passed",
+    "browser": "Actual viewer bundle: orbit/follow/eyes, equipped armor/sword/shield, stationary gear removal/tool swap; textured dropped cobblestone, dirt, oak log, raw iron and sword; delayed drop metadata and collection; no browser or asset errors."
+  },
+  "install": [
+    "Recheck each live baseline hash; require newly added modules to be absent. Stop on any drift.",
+    "Create a unique backup directory under /home/corey/.local/share/blockhead-backups/viewer-equipment-20261023 and archive the five existing runtime files, including the browser bundle, with relative paths. Preserve this manifest and systemd service details.",
+    "At a safe task boundary stop only blockhead.service, make a consistent SQLite backup, and copy only the nine manifest files into the isolated runtime. Preserve source checkout working directory and persistent state.",
+    "Verify all candidate hashes, start blockhead.service, check active status, one connected bot and unchanged automatic restart count; check self.health/self.hunger and viewer state.",
+    "Fetch the viewer bundle through private and public shells. Verify the equipment socket snapshot matches currently worn/held inventory and inspect third-person rendering. Do not send bot commands. Verify textured mined drops, late metadata and pickup removal."
+  ],
+  "rollback": "Stop only blockhead.service; restore the five archived existing files, including the browser bundle, into the isolated runtime; verify baseline hashes; start blockhead.service and check one connected bot. The four new unused modules can remain. Do not roll back SQLite or world progress.",
+  "scope": "Viewer equipped gear and textured dropped blocks/items",
+  "sourceBaseCommit": "33ff2bd6076558c684cf93d715fc38a3b9392aeb"
+}

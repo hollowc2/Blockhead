@@ -149,7 +149,7 @@ export class DashboardTelemetryCollector {
 }
 
 /** Read actual equipped slots, rather than inferring equipment from owned items. */
-function projectEquipment(bot: Bot): EquipmentSummary {
+export function projectEquipment(bot: Bot): EquipmentSummary {
   return Object.fromEntries(EQUIPMENT_SLOTS.map((slot) => {
     const item = slot === "off-hand" && bot.supportFeature?.("doesntHaveOffHandSlot") ? null
       : slot === "hand" ? bot.heldItem

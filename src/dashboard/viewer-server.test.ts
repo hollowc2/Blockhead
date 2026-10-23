@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import { createServer as createTcpServer } from "node:net";
 import { test } from "node:test";
 import type { Bot } from "mineflayer";
 import { io as connect, type Socket } from "socket.io-client";
 import { Vec3 } from "vec3";
-import { publicViewerTransform, ReadOnlyViewerServer, staticViewerFile } from "./viewer-server.js";
+import { publicViewerTransform, ReadOnlyViewerServer, staticViewerFile, viewerEntityPayload } from "./viewer-server.js";
 
 test("public transform shifts every coordinate and drops player names", () => {
   const transform = publicViewerTransform(16_000, -4_096);
@@ -39,6 +40,8 @@ function fakeBot(): FakeBot & Bot {
   bot.username = "CobbleBob";
   bot.entities = {};
   bot.entity = { position: new Vec3(100, 64, 200), yaw: 0, pitch: 0 } as never;
+  bot.inventory = Object.assign(new EventEmitter(), { slots: [] }) as never;
+  bot.getEquipmentDestSlot = ((slot: string) => ({ "off-hand": 45, head: 5, torso: 6, legs: 7, feet: 8 })[slot]) as never;
   bot.world = {
     raycast: () => { bot.raycasts += 1; return null; },
     getColumnAt: async () => ({ toJson: () => "{}" }),
@@ -135,4 +138,77 @@ test("public viewer connections are capped", async () => {
     for (const socket of sockets) socket.close();
     server.close();
   }
+});
+
+test("viewers receive equipped gear on connect and while stationary, and release subscriptions", async () => {
+  const bot = fakeBot();
+  const slots = bot.inventory.slots;
+  slots[5] = { name: "iron_helmet" } as never;
+  slots[45] = { name: "shield" } as never;
+  bot.heldItem = { name: "iron_sword" } as never;
+  const port = await freePort();
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = client(port, true);
+  try {
+    assert.deepEqual(await next(socket, "equipment"), {
+      hand: "iron_sword", "off-hand": "shield", head: "iron_helmet", torso: null, legs: null, feet: null,
+    });
+    let changed = next<Record<string, string | null>>(socket, "equipment");
+    slots[5] = null;
+    bot.inventory.emit("updateSlot", 5, null, null);
+    assert.equal((await changed).head, null, "removing armor updates the model without a move");
+    changed = next(socket, "equipment");
+    bot.heldItem = { name: "iron_pickaxe" } as never;
+    bot.emit("heldItemChanged");
+    assert.equal((await changed).hand, "iron_pickaxe");
+    const second = client(port, false);
+    try {
+      assert.equal((await next<Record<string, string>>(second, "equipment")).hand, "iron_pickaxe", "each connection gets current equipment");
+    } finally { second.close(); }
+  } finally {
+    socket.close();
+    server.close();
+  }
+  assert.equal(bot.inventory.listenerCount("updateSlot"), 0);
+  assert.equal(bot.listenerCount("heldItemChanged"), 0);
+  assert.equal(bot.listenerCount("spawn"), 0);
+});
+
+test("dropped stacks send their identity on connect, metadata changes and movement", async () => {
+  const require = createRequire(import.meta.url);
+  const Entity = require("prismarine-entity")("1.21.4");
+  const Item = require("prismarine-item")("1.21.4");
+  const registry = require("minecraft-data")("1.21.4");
+  const bot = fakeBot();
+  const drop = new Entity(42);
+  drop.name = "item";
+  drop.position = new Vec3(100, 64, 200);
+  bot.entities[42] = drop;
+  assert.deepEqual(viewerEntityPayload(bot, { id: 42, name: "item" }), { id: 42, name: "item", itemName: null }, "spawn can precede metadata");
+  drop.metadata[registry.supportFeature("metadataIxOfItem")] = Item.toNotch(new Item(registry.itemsByName.cobblestone.id, 1));
+  const port = await freePort();
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = client(port, true);
+  try {
+    const first = await next<{ itemName: string; pos: { x: number }; metadata?: unknown }>(socket, "entity");
+    assert.equal(first.itemName, "cobblestone");
+    assert.notEqual(first.pos.x, 100, "item positions remain redacted for public viewers");
+    assert.equal(first.metadata, undefined);
+    let changed = next<{ itemName: string }>(socket, "entity");
+    drop.metadata[registry.supportFeature("metadataIxOfItem")] = Item.toNotch(new Item(registry.itemsByName.raw_iron.id, 1));
+    bot.emit("entityUpdate", drop);
+    assert.equal((await changed).itemName, "raw_iron");
+    changed = next(socket, "entity");
+    bot.emit("entityMoved", drop);
+    assert.equal((await changed).itemName, "raw_iron");
+    const gone = next(socket, "entity");
+    bot.emit("entityGone", drop);
+    assert.deepEqual(await gone, { id: 42, delete: true });
+  } finally {
+    socket.close();
+    server.close();
+  }
+  assert.equal(bot.listenerCount("entityUpdate"), 0);
 });

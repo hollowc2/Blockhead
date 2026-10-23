@@ -1,5 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createViewerEquipment } from "./viewer-equipment.mjs";
+import { installViewerDroppedItems } from "./viewer-dropped-items.mjs";
 
 const files = [
   {
@@ -21,6 +24,9 @@ const workerFiles = [
 
 const viewerClient = new URL("../node_modules/prismarine-viewer/public/index.js", import.meta.url);
 const mineflayerInventory = new URL("../node_modules/mineflayer/lib/plugins/inventory.js", import.meta.url);
+const itemTextures = Object.fromEntries(JSON.parse(readFileSync(new URL("../node_modules/prismarine-viewer/public/textures/1.21.4/items_textures.json", import.meta.url), "utf8"))
+  .map(item => [item.name, item.texture.replace(/^minecraft:/, "").replace(/^block\//, "blocks/").replace(/^item\//, "items/") + ".png"])
+  .filter(([, texture]) => /^(?:items|blocks)\/[a-z0-9_]+\.png$/.test(texture)));
 
 export function patchWorldRenderer(source, legacy, modern, path = "world renderer") {
   if (source.includes(modern)) return source;
@@ -150,6 +156,24 @@ export function patchViewerCamera(source, path = "viewer client") {
   return patched;
 }
 
+/** Add worn/held gear and textured dropped stacks to the browser renderer. */
+export function patchViewerEquipment(source, path = "viewer client") {
+  const hook = 'o.on("version",(t=>{';
+  const model = 'e.visible=bobCam.mode!=="eyes")';
+  const code = `u.bobEquipment=(${createViewerEquipment.toString()})(THREE,${JSON.stringify(itemTextures)}),o.on("equipment",e=>u.bobEquipment.update(e)),/* bob-dropped-items */(${installViewerDroppedItems.toString()})(THREE,u.entities,${JSON.stringify(itemTextures)}),`;
+  const start = source.indexOf("u.bobEquipment=");
+  if (start !== -1) {
+    const end = source.indexOf(hook, start);
+    if (end === -1) throw new Error(`Unexpected prismarine-viewer equipment layout in ${path}; refusing to patch`);
+    return source.slice(0, start) + code + source.slice(end);
+  }
+  if (source.split(hook).length !== 2 || source.split(model).length !== 2) {
+    throw new Error(`Unexpected prismarine-viewer equipment layout in ${path}; refusing to patch`);
+  }
+  return source.replace(hook, code + hook)
+    .replace(model, `${model},u.bobEquipment.attach(e)`);
+}
+
 /**
  * Modern servers can keep crafting result slot 0 visually unchanged when
  * another identical result remains. Mineflayer otherwise waits forever for a
@@ -188,13 +212,13 @@ export async function patchPrismarineViewer() {
     if (patched !== source) await writeFile(path, patched);
   }
   const clientSource = await readFile(viewerClient, "utf8");
-  const patchedClient = patchViewerCamera(
+  const patchedClient = patchViewerEquipment(patchViewerCamera(
     patchViewerRecenterHotkey(
       patchViewerClient(clientSource, fileURLToPath(viewerClient)),
       fileURLToPath(viewerClient),
     ),
     fileURLToPath(viewerClient),
-  );
+  ), fileURLToPath(viewerClient));
   if (patchedClient !== clientSource) await writeFile(viewerClient, patchedClient);
 
   const mineflayerSource = await readFile(mineflayerInventory, "utf8");

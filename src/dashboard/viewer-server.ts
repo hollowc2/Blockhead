@@ -7,6 +7,7 @@ import { dirname, extname, join, normalize, sep } from "node:path";
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import { PUBLIC_VIEWER_HEADER } from "./http-guard.js";
+import { projectEquipment } from "./telemetry.js";
 
 const require = createRequire(import.meta.url);
 const VIEWER_ROOT = dirname(require.resolve("prismarine-viewer/package.json"));
@@ -42,6 +43,20 @@ export interface ReadOnlyViewerOptions {
 
 interface Vec { x: number; y: number; z: number }
 type Emit = (event: string, payload?: unknown) => void;
+
+/** Project dropped stacks without sending inventory metadata, NBT or custom names. */
+export function viewerEntityPayload(bot: Bot, payload: unknown): unknown {
+  if (payload === null || typeof payload !== "object") return payload;
+  const data = payload as Record<string, unknown>;
+  if (data.delete) return payload;
+  const entity = bot.entities[data.id as number];
+  const name = entity?.name ?? data.name;
+  if (name !== "item" && name !== "Item" && name !== "item_stack") return payload;
+  let itemName: string | null = null;
+  // Spawn arrives before the stack's metadata on modern servers.
+  try { itemName = entity?.getDroppedItem()?.name ?? null; } catch { /* metadata pending */ }
+  return { ...data, name: "item", itemName };
+}
 
 /**
  * Hides absolute world coordinates from public viewers: every position is
@@ -169,9 +184,10 @@ export class ReadOnlyViewerServer {
       if (dropped > MAX_DROPPED_INBOUND) socket.disconnect(true);
     });
 
-    const emit: Emit = isPublic
-      ? (event, payload) => socket.emit(event, this.publicTransform(event, payload))
-      : (event, payload) => socket.emit(event, payload);
+    const emit: Emit = (event, payload) => {
+      const projected = event === "entity" ? viewerEntityPayload(bot, payload) : payload;
+      socket.emit(event, isPublic ? this.publicTransform(event, projected) : projected);
+    };
     // WorldView subscribes to its emitter for `mouseClick`; this emitter has
     // no inbound side, so that handler is never registered.
     const outbound = { emit: (event: string, payload?: unknown) => { if (!closed) emit(event, payload); return true; }, on: () => outbound };
@@ -187,6 +203,26 @@ export class ReadOnlyViewerServer {
     };
 
     emit("version", bot.version);
+    let lastEquipment = "";
+    const botEquipment = (): void => {
+      const equipment = Object.fromEntries(Object.entries(projectEquipment(bot)).map(([slot, item]) => [slot, item?.name ?? null]));
+      const signature = JSON.stringify(equipment);
+      if (signature === lastEquipment) return;
+      lastEquipment = signature;
+      emit("equipment", equipment);
+    };
+    // Our own worn gear comes from inventory slots, not entity_equipment packets.
+    // Listen even while stationary, and send a fresh snapshot to every new viewer.
+    const inventory = bot.inventory;
+    inventory.on("updateSlot", botEquipment);
+    bot.on("heldItemChanged", botEquipment);
+    bot.on("spawn", botEquipment);
+    botEquipment();
+    const droppedItemUpdate = (entity: Bot["entity"]): void => {
+      if (entity.name !== "item" && entity.name !== "Item" && entity.name !== "item_stack") return;
+      emit("entity", { id: entity.id, name: entity.name, pos: entity.position });
+    };
+    bot.on("entityUpdate", droppedItemUpdate);
     void worldView.init(bot.entity.position).catch(() => undefined);
     const botPosition = (): void => {
       if (bot.entity === null || bot.entity === undefined) return;
@@ -202,6 +238,10 @@ export class ReadOnlyViewerServer {
       this.totalSockets -= 1;
       if (isPublic) this.publicSockets -= 1;
       bot.removeListener("move", botPosition);
+      inventory.removeListener("updateSlot", botEquipment);
+      bot.removeListener("heldItemChanged", botEquipment);
+      bot.removeListener("spawn", botEquipment);
+      bot.removeListener("entityUpdate", droppedItemUpdate);
       worldView.removeListenersFromBot(bot);
     });
   }
@@ -221,7 +261,7 @@ export class ReadOnlyViewerServer {
       response.writeHead(200, {
         "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream",
         "content-length": String(info.size),
-        "cache-control": "public, max-age=3600",
+        "cache-control": extname(file) === ".js" || extname(file) === ".html" ? "no-cache" : "public, max-age=3600",
       });
       createReadStream(file).on("error", () => response.destroy()).pipe(response);
     } catch {
