@@ -103,3 +103,19 @@ test("a repeat run walks the old tunnel and extends it into fresh rock", async (
   const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 20, tunnelLength: 8, deadline: Date.now() + 10_000, actions: m.actions });
   assert.equal(result.mined, 1, "reached the ore beyond the old tunnel's end");
 });
+
+test("the way back joins the trail at the nearest cell and skips one that will not take a step", async () => {
+  // 19:41 (2026-10-22): ore pickup left the bot off the trail; the first
+  // retrace leg stalled and it dug a new stair up from y=15 instead.
+  const m = miner(new Vec3(0, 64, 0), { "(8, 60, 1)": "iron_ore" });
+  const travel = m.actions.travel;
+  let refused = false;
+  m.actions.travel = async (bot, to, signal) => {
+    if (!refused && m.rawIron > 0 && to.y === 60) { refused = true; return false; }
+    return travel(bot, to, signal);
+  };
+  const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 60, tunnelLength: 16, deadline: Date.now() + 10_000, actions: m.actions });
+  assert.equal(result.mined, 1);
+  assert.ok(refused, "one leg was refused");
+  assert.equal(m.position.y, 64, "still walked its own stairs back up");
+});

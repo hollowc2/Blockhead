@@ -181,14 +181,30 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
  * the bot a step aside, so each leg is a short trip. Returns cells walked.
  */
 async function retrace(o: BranchMineOptions, trail: readonly Vec3[]): Promise<number> {
+  // Ore pickups pull the bot off the trail, so join it at the nearest cell
+  // and skip one cell that will not take a step. Stalling on the first leg
+  // left the bot digging a new stair up from y=15 (2026-10-22 19:41).
+  const here = o.bot.entity?.position;
+  let start = trail.length - 2;
+  if (here !== undefined) {
+    let best = Infinity;
+    for (let i = 0; i < trail.length; i++) {
+      const d = trail[i]!.offset(0.5, 0, 0.5).distanceTo(here);
+      if (d <= best) { best = d; start = i; }
+    }
+    if (start === trail.length - 1 && best < 1) start -= 1;
+  }
   let walked = 0;
-  for (let i = trail.length - 2; i >= 0; i--) {
+  let misses = 0;
+  for (let i = start; i >= 0; i--) {
     if (o.signal?.aborted === true) break;
     const cell = trail[i]!;
     if (!await act(o).travel(o.bot, new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5), o.signal)) {
+      if (++misses < 2) continue;
       o.logger.warn({ at: cell, walked }, "branch mine: retrace stalled; leaving the rest to the trip home");
       break;
     }
+    misses = 0;
     walked += 1;
   }
   return walked;
