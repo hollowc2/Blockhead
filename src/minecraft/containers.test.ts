@@ -247,6 +247,45 @@ test("a withdraw opens the category chest that holds the item, not just the gene
   assert.deepEqual(opened, [5], "straight to the wood chest");
 });
 
+test("a full inventory sheds junk before a withdraw instead of failing it", async () => {
+  // 2026-10-22 18:00-19:15: 14 stacks of cobblestone filled every slot and
+  // each bread withdraw failed "Bot inventory is full" for an hour.
+  const { withdrawFromHomeChest, rememberChestContents } = await import("./containers.js");
+  const general = { id: 4, x: 64, y: 96, z: 52, category: "general" };
+  const repo = { list: () => [general], listByCategory: () => [general] } as unknown as StorageRepository;
+  rememberChestContents(3, general, { bread: 10 });
+  const carried: { name: string; count: number }[] = [...Array.from({ length: 35 }, () => ({ name: "cobblestone", count: 64 })), { name: "bread", count: 5 }];
+  const slots = 36;
+  const tossed: Record<number, number> = {};
+  const bot = {
+    entity: { position: new Vec3(65.5, 96, 51.5) },
+    registry: { itemsByName: { bread: { id: 1 }, cobblestone: { id: 2 } } },
+    inventory: { items: () => carried, emptySlotCount: () => slots - carried.length },
+    toss: async (id: number, _m: null, count: number) => {
+      tossed[id] = (tossed[id] ?? 0) + count;
+      let left = count;
+      for (let i = carried.length - 1; i >= 0 && left > 0; i--) {
+        if (carried[i]!.name !== "cobblestone") continue;
+        const take = Math.min(left, carried[i]!.count); carried[i]!.count -= take; left -= take;
+        if (carried[i]!.count === 0) carried.splice(i, 1);
+      }
+    },
+    findBlocks: () => [],
+    blockAt: (p: Vec3) => (p.x === 64 && p.y === 96 && p.z === 52 ? { name: "chest", position: new Vec3(64, 96, 52) } : { name: "air", boundingBox: "empty", position: p }),
+    openContainer: async () => ({
+      containerItems: () => [{ name: "bread", count: 10 }],
+      withdraw: async (_id: number, _m: null, count: number) => {
+        if (carried.length >= slots) throw new Error("Unable to withdraw, Bot inventory is full.");
+        carried.push({ name: "bread", count });
+      },
+      close: async () => {},
+    }),
+  } as unknown as Bot;
+  const result = await leased(() => withdrawFromHomeChest(bot, { ...state, worldId: 3 } as AgentState, repo, "bread", 1, silent));
+  assert.equal(result.withdrawn, 1);
+  assert.equal(tossed[2], 34 * 64, "one stack of cobblestone is kept");
+});
+
 test("seeds past two stacks and saplings past the tree farm's need are shed when the inventory fills", () => {
   // 17:05-17:15 (2026-10-05): 20 stacks of seeds left no room for crafts.
   // Saplings are kept, 16 of each, for the tree farm (2026-10-06).

@@ -5,7 +5,7 @@ import { Vec3 } from "vec3";
 import { cellTouchesLiquid, equipDigTool, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, hasAirNeighbor } from "../minecraft/world.js";
 import { countItem, findItem } from "../minecraft/inventory.js";
-import { digBlock, equipItem, placeBlock } from "../minecraft/primitives.js";
+import { digBlock, equipItem, placeBlock, shedJunk } from "../minecraft/primitives.js";
 import { isNaturalBlock } from "../minecraft/natural-blocks.js";
 
 /**
@@ -44,6 +44,8 @@ export interface BranchMineActions {
   travel: (bot: Bot, to: Vec3, signal?: AbortSignal) => Promise<boolean>;
   collect: (bot: Bot, targets: Block[], drop: string, target: number, signal?: AbortSignal) => Promise<void>;
   torch: (bot: Bot, floor: Block, at: Vec3, signal?: AbortSignal) => Promise<void>;
+  /** Drop surplus junk (see `shedJunk`) so tunnel stone never crowds out the ore. */
+  shed: (bot: Bot, protect: readonly string[], signal?: AbortSignal) => Promise<number>;
 }
 
 const DEFAULT_ACTIONS: BranchMineActions = {
@@ -64,6 +66,7 @@ const DEFAULT_ACTIONS: BranchMineActions = {
     await equipItem(bot, torch, signal);
     await placeBlock(bot, floor, new Vec3(0, 1, 0), signal, at, "torch");
   },
+  shed: (bot, protect, signal) => shedJunk(bot, protect, signal),
 };
 
 export interface BranchMineOptions {
@@ -155,6 +158,10 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
     trail.push(bot.entity!.position.floored());
     await mineVisibleOre(o);
     if (n % TORCH_EVERY === 0) await placeTorch(o, dir);
+    await act(o).shed(bot, [o.drop], o.signal).catch((err) => {
+      if (o.signal?.aborted === true) throw err;
+      o.logger.warn({ err: String(err) }, "branch mine: could not shed junk");
+    });
   }
   return done("tunnel finished");
 }

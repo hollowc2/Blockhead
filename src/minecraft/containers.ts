@@ -7,7 +7,7 @@ import type { StorageLocation, StorageRepository } from "../memory/storage.js";
 import { bareName, countItem } from "./inventory.js";
 import { findBlocksNear } from "./world.js";
 import { requireWorldActionLease, throwIfAborted } from "../agent/world-actions.js";
-import { closeWindow, deposit, openContainer, withdraw } from "./primitives.js";
+import { closeWindow, deposit, openContainer, shedJunk, withdraw } from "./primitives.js";
 import { observedTransfer } from "../status/deltas.js";
 import { canPerform } from "./protection.js";
 import { walkIntoReach } from "./movement.js";
@@ -437,6 +437,10 @@ export async function withdrawFromHomeChest(
     logger.warn({ item: itemName }, "no item id for withdraw");
     return { withdrawn: 0 };
   }
+  // A full inventory made every withdraw fail ("Bot inventory is full") and
+  // the bread restock looped for an hour with 14 stacks of cobblestone
+  // aboard (2026-10-22 18:00-19:15).
+  await shedJunk(bot, [itemName], signal).catch((err) => { throwIfAborted(signal); logger.warn({ err: String(err) }, "could not shed junk before withdraw"); return 0; });
   const before = countItem(bot, itemName);
   const got = (): number => Math.max(0, countItem(bot, itemName) - before);
   for (const chest of chests) {
@@ -481,6 +485,7 @@ export async function withdrawFirstOfEach(
   throwIfAborted(signal);
   const chest = findHomeChest(bot, state, storage);
   if (chest === null || groups.length === 0) return [];
+  await shedJunk(bot, groups.flat(), signal).catch((err) => { throwIfAborted(signal); logger.warn({ err: String(err) }, "could not shed junk before withdraw"); return 0; });
   const taken: string[] = [];
   try {
     const container = await approachAndOpen(bot, state, chest, signal);

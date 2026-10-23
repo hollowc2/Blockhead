@@ -51,6 +51,7 @@ function miner(start: Vec3, overrides: Record<string, string> = {}) {
     travel: async (_bot, to) => { position.x = to.x; position.y = to.y; position.z = to.z; return true; },
     collect: async (_bot, targets) => { for (const t of targets) { w.dug.add(t.position.toString()); rawIron += 1; } },
     torch: async (_bot, _floor, at) => { torches.push(at.toString()); },
+    shed: async () => 0,
   };
   return { bot, w, position, torches, actions, get rawIron() { return rawIron; } };
 }
