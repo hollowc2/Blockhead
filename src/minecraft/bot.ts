@@ -7,6 +7,7 @@ import armorManager from "mineflayer-armor-manager";
 import { plugin as pvp } from "mineflayer-pvp";
 import type { Block } from "prismarine-block";
 import type { MinecraftConfig } from "../config/schema.js";
+import { thriftyPickaxe } from "./movement.js";
 
 const PLUGINS: Plugin[] = [pathfinder, collectBlock, tool, autoEat, armorManager, pvp];
 
@@ -50,10 +51,20 @@ function guardToolRecursion(bot: Bot): void {
       if (typeof cb === "function") cb(err);
       return new Promise<void>((_, reject) => reject(err));
     }
+    // Fastest-tool picking wore out iron pickaxes on plain stone; see
+    // thriftyPickaxe.
+    const thrifty = thriftyPickaxe(bot.inventory.items(), block);
+    if (thrifty !== null) {
+      const equipped = bot.heldItem?.name === thrifty.name ? Promise.resolve() : bot.equip(thrifty, "hand");
+      return equipped.then(() => { if (typeof cb === "function") cb(); }, (err: Error) => { if (typeof cb === "function") cb(err); throw err; });
+    }
     return original(block, options, cb);
   };
   guarded.__blockheadGuarded = true;
   bot.tool.equipForBlock = guarded;
+  // The pathfinder digs through stone on its own routes with the fastest tool.
+  const bestHarvestTool = bot.pathfinder.bestHarvestTool.bind(bot.pathfinder);
+  bot.pathfinder.bestHarvestTool = (block) => thriftyPickaxe(bot.inventory.items(), block) ?? bestHarvestTool(block);
 }
 
 export function createCobbleBob(config: MinecraftConfig): Bot {

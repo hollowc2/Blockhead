@@ -5,7 +5,7 @@ import minecraftData from "minecraft-data";
 import { Vec3 } from "vec3";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
-import { climbToward, creativeFlyToAndWait, digToolKind, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback, SWIM_COST } from "./movement.js";
+import { climbToward, creativeFlyToAndWait, digToolKind, thriftyPickaxe, hasRoof, nearestShore, stepOffPerch, swimToShore, followPlayer, dropAhead, raceTrip, stepOffPartialBlock, travelAndWait, unwedge, avoidStuckCell, stuckCellCost, travelHomeAndWait, walkToward, equipDigTool, setPickaxeFallback, SWIM_COST } from "./movement.js";
 import { openReachableDoor, configureMovements } from "./movement.js";
 import prismarineBlock from "prismarine-block";
 import pathfinderPkg from "mineflayer-pathfinder";
@@ -1000,4 +1000,22 @@ test("postprocessed open-door waypoints stay on the floor, with real collision s
   const closed = waypoint();
   bot.emit("path_update", { path: [closed] });
   assert.equal(closed.y, 101, "closed doors are still obstacles");
+});
+
+test("plain stone is dug with the stone pickaxe; the iron one is kept for what needs it", async () => {
+  // 2026-10-22: 11 iron pickaxes crafted and 7 broken on stone, so the iron
+  // never added up to armor.
+  const items = [{ name: "iron_pickaxe", type: 2 }, { name: "stone_pickaxe", type: 1 }, { name: "iron_axe", type: 3 }];
+  const stoneHarvestable = (type: number | null) => type === 1 || type === 2;
+  const ironOnly = (type: number | null) => type === 2;
+  assert.equal(thriftyPickaxe(items, { name: "stone", material: "mineable/pickaxe", canHarvest: stoneHarvestable })?.name, "stone_pickaxe");
+  assert.equal(thriftyPickaxe(items, { name: "iron_ore", material: "mineable/pickaxe", canHarvest: stoneHarvestable })?.name, "stone_pickaxe");
+  assert.equal(thriftyPickaxe(items, { name: "diamond_ore", material: "mineable/pickaxe", canHarvest: ironOnly }), null, "diamond needs the iron pickaxe");
+  assert.equal(thriftyPickaxe(items, { name: "oak_log", material: "mineable/axe" }), null, "not a pickaxe block");
+  assert.equal(thriftyPickaxe([items[0]!], { name: "stone", material: "mineable/pickaxe", canHarvest: stoneHarvestable }), null, "no stone pickaxe: fall back to the best");
+
+  let held = { name: "stone_sword" };
+  const bot = { get heldItem() { return held; }, inventory: { items: () => items }, equip: async (item: { name: string }) => { held = item; } } as any;
+  await equipDigTool(bot, { name: "stone", material: "mineable/pickaxe", canHarvest: stoneHarvestable } as any);
+  assert.equal(held.name, "stone_pickaxe");
 });

@@ -570,6 +570,8 @@ async function climbStep(
 export async function equipDigTool(bot: Bot, block: import("prismarine-block").Block, signal?: AbortSignal): Promise<void> {
   const want = digToolKind(block);
   const bestTool = (): import("prismarine-item").Item | null => {
+    const thrifty = thriftyPickaxe(bot.inventory?.items() ?? [], block);
+    if (thrifty !== null) return thrifty;
     let best: import("prismarine-item").Item | null = null;
     let bestTier = 0;
     for (const item of bot.inventory?.items() ?? []) {
@@ -591,6 +593,25 @@ export async function equipDigTool(bot: Bot, block: import("prismarine-block").B
   }
   if (best === null || bot.heldItem?.name === best.name) return;
   await raceAbort(bot.equip(best, "hand"), signal, { timeoutMs: 2_000, label: "equip" }).catch(() => undefined);
+}
+
+/**
+ * The stone pickaxe for a pickaxe block it can harvest, so plain stone never
+ * wears down the iron one. Each iron pickaxe costs 3 of the iron the armor
+ * needs: 11 were crafted and 7 broken in one world, more iron than a
+ * helmet, chestplate and boots, and no armor was ever made (2026-10-22).
+ * Null when no stone pickaxe is carried or the block needs a better one
+ * (diamond, gold, redstone).
+ */
+export function thriftyPickaxe<T extends { name: string; type?: number }>(
+  items: readonly T[],
+  block: { name: string; material?: string | null; canHarvest?: (type: number | null) => boolean },
+): T | null {
+  if (digToolKind(block) !== "pickaxe") return null;
+  const stone = items.find((item) => item.name.replace(/^minecraft:/, "") === "stone_pickaxe");
+  if (stone === undefined) return null;
+  if (typeof block.canHarvest === "function" && stone.type !== undefined && !block.canHarvest(stone.type)) return null;
+  return stone;
 }
 
 const TOOL_TIERS: Record<string, number> = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 };
