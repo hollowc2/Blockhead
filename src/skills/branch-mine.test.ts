@@ -119,3 +119,15 @@ test("the way back joins the trail at the nearest cell and skips one that will n
   assert.ok(refused, "one leg was refused");
   assert.equal(m.position.y, 64, "still walked its own stairs back up");
 });
+
+test("cobblestone deep under the stair's top is dug through; near the top it is left alone", async () => {
+  // 20:08 (2026-10-22): the stair stopped 32 cells down on the bot's own
+  // cobblestone patch and the iron run came back empty.
+  const deep = miner(new Vec3(0, 64, 0), { "(9, 55, 0)": "cobblestone", "(9, 56, 0)": "cobblestone", "(9, 57, 0)": "cobblestone" });
+  const r = await branchMine({ bot: deep.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 52, tunnelLength: 0, deadline: Date.now() + 10_000, actions: deep.actions });
+  assert.ok([...deep.w.dug].includes("(9, 55, 0)"), r.reason);
+
+  const shallow = miner(new Vec3(0, 64, 0), { "(1, 63, 0)": "cobblestone" });
+  await branchMine({ bot: shallow.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 60, tunnelLength: 0, deadline: Date.now() + 5_000, actions: shallow.actions });
+  assert.ok(![...shallow.w.dug].includes("(1, 63, 0)"), "a block by the surface may be a build");
+});

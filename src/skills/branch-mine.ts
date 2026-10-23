@@ -84,7 +84,16 @@ export interface BranchMineOptions {
   deadline: number;
   signal?: AbortSignal;
   shouldStop?: () => boolean;
+  /** Where the stair began; set by branchMine itself. */
+  startY?: number;
 }
+
+/**
+ * Cobblestone this far below the stair's top is the bot's own patchwork
+ * from earlier climbs, not a build: a stair stopped 32 cells down on it and
+ * the iron run came back empty (2026-10-22 20:08).
+ */
+const OWN_COBBLE_DEPTH = 8;
 
 export interface BranchMineResult {
   mined: number;
@@ -125,6 +134,7 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
   const feet0 = bot.entity?.position.floored();
   if (feet0 === undefined) return { mined: 0, reason: "not spawned" };
   trail.push(feet0);
+  o = { ...o, startY: feet0.y };
   // Start down whichever way the first steps stay clear of water and lava.
   let dir = DIRECTIONS.find((d) => stepCells(feet0, d, true).every((cell) => !cellTouchesLiquid(bot, cell) && !isLiquid(bot, cell))) ?? null;
   if (dir === null) return { mined: 0, reason: "water or lava on every side" };
@@ -240,7 +250,8 @@ async function step(o: BranchMineOptions, dir: readonly [number, number], down: 
     const block = bot.blockAt(cell);
     if (block === null) return "unloaded";
     if (block.boundingBox !== "block") continue;
-    if (!isNaturalBlock(block.name) || block.name === "bedrock") return `${block.name} in the way`;
+    const ownCobble = /^cobble(stone|d_deepslate)$/.test(block.name) && o.startY !== undefined && cell.y <= o.startY - OWN_COBBLE_DEPTH;
+    if ((!isNaturalBlock(block.name) && !ownCobble) || block.name === "bedrock") return `${block.name} in the way`;
     try {
       await act(o).dig(bot, block, o.signal);
     } catch (err) {
