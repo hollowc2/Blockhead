@@ -31,14 +31,17 @@
   const itemTextures = new Map();
   const slotTextures = { hand: "sword", "off-hand": "shield", head: "helmet", torso: "chestplate", legs: "leggings", feet: "boots" };
   let lastGearState = {};
-  function itemIcon(name, slot) {
+  function itemIcon(name, slot, previous) {
     const key = name?.replace(/^minecraft:/, "");
-    const icon = el("span", `item-icon${key ? "" : " item-icon-empty"}`);
-    icon.setAttribute("aria-hidden", "true");
     // These items use entity models rather than a flat inventory texture.
     const symbol = key === "shield" ? "🛡️" : key?.endsWith("_bed") ? "🛏️" : ["chest", "trapped_chest", "ender_chest", "barrel"].includes(key) ? "📦" : null;
-    icon.append(el("span", "item-icon-fallback", symbol || (key ? "◇" : "")));
     const texture = key ? symbol ? null : itemTextures.get(key) : `gui/sprites/container/slot/${slotTextures[slot]}.png`;
+    const artwork = JSON.stringify([key ?? null, texture ?? null]);
+    if (previous?.dataset.artwork === artwork) return previous;
+    const icon = el("span", `item-icon${key ? "" : " item-icon-empty"}`);
+    icon.dataset.artwork = artwork;
+    icon.setAttribute("aria-hidden", "true");
+    icon.append(el("span", "item-icon-fallback", symbol || (key ? "◇" : "")));
     if (texture) {
       const img = el("img");
       img.alt = "";
@@ -62,29 +65,62 @@
     renderGear(lastGearState);
   }).catch(() => {}); // Labels and fallback icons remain useful if artwork fails.
 
+  const equipmentRows = new Map();
+  const inventoryRows = new Map();
+  function updateItem(value, name, slot, label) {
+    const previous = value.firstElementChild;
+    const icon = itemIcon(name, slot, previous);
+    if (!previous) value.append(icon, el("span", "item-label", label));
+    else {
+      if (icon !== previous) value.replaceChild(icon, previous);
+      if (value.lastElementChild.textContent !== label) value.lastElementChild.textContent = label;
+    }
+  }
+
   function renderGear(s) {
     lastGearState = s;
     const connected = s.connection?.connected === true;
     const equipment = connected ? s.equipment : null;
     const labels = { hand: "Main hand", "off-hand": "Off hand", head: "Helmet", torso: "Chest armor", legs: "Leggings", feet: "Boots" };
-    $("equipment").replaceChildren(...Object.entries(labels).map(([slot, label]) => {
-      const row = el("div");
+    for (const [slot, label] of Object.entries(labels)) {
+      let row = equipmentRows.get(slot);
+      if (!row) {
+        row = el("div");
+        row.append(el("dt", "", label), el("dd"));
+        equipmentRows.set(slot, row);
+      }
       const item = equipment?.[slot];
-      const value = el("dd", `equipment-item${item ? "" : " sub"}`);
-      value.append(itemIcon(item?.name, slot), el("span", "item-label", !equipment ? "Unavailable" : item ? `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty"));
-      row.append(el("dt", "", label), value);
-      return row;
-    }));
+      const value = row.lastElementChild;
+      value.className = `equipment-item${item ? "" : " sub"}`;
+      updateItem(value, item?.name, slot, !equipment ? "Unavailable" : item ? `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty");
+    }
+    // Keep loaded image nodes alive across status polls and count changes.
+    const gearRoot = $("equipment");
+    if (gearRoot.firstElementChild !== equipmentRows.get("hand")) gearRoot.replaceChildren(...equipmentRows.values());
     const inventory = connected ? s.inventory : null;
     setText("inventoryCount", inventory ? `${inventory.totalItems} items` : null);
     const items = inventory?.items || [];
-    $("inventoryItems").replaceChildren(...(items.length ? items.map((item) => {
-      const row = el("li");
-      const identity = el("span", "inventory-item");
-      identity.append(itemIcon(item.name), el("span", "item-label", itemName(item.name)));
-      row.append(identity, el("b", "mono", `×${item.count}`));
-      return row;
-    }) : [el("li", "sub", inventory ? "Inventory is empty." : connected ? "Inventory data unavailable." : "Inventory unavailable while CobbleBob is offline.")]));
+    const inventoryRoot = $("inventoryItems");
+    const names = new Set(items.map((item) => item.name));
+    for (const [name, row] of inventoryRows) if (!names.has(name)) { row.remove(); inventoryRows.delete(name); }
+    if (!items.length) {
+      const message = inventory ? "Inventory is empty." : connected ? "Inventory data unavailable." : "Inventory unavailable while CobbleBob is offline.";
+      if (inventoryRoot.textContent !== message) inventoryRoot.replaceChildren(el("li", "sub", message));
+      return;
+    }
+    if (!inventoryRows.size) inventoryRoot.replaceChildren();
+    items.forEach((item, index) => {
+      let row = inventoryRows.get(item.name);
+      if (!row) {
+        row = el("li");
+        row.append(el("span", "inventory-item"), el("b", "mono"));
+        inventoryRows.set(item.name, row);
+      }
+      updateItem(row.firstElementChild, item.name, undefined, itemName(item.name));
+      const count = `×${item.count}`;
+      if (row.lastElementChild.textContent !== count) row.lastElementChild.textContent = count;
+      if (inventoryRoot.children[index] !== row) inventoryRoot.insertBefore(row, inventoryRoot.children[index] || null);
+    });
   }
 
   function toast(icon, label, message, kind = "") {
