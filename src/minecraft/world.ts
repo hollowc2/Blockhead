@@ -36,12 +36,20 @@ export function diggingStanceBlocker(bot: Bot, target: Vec3, requireAccess = fal
         if (unsafe.test(b.name)) return `unsafe standing space: ${b.name}`;
         if (shapes(b).some(([a,c,d,e,f,g]) => x+e! > p.x-.29 && x+a! < p.x+.29 && z+g! > p.z-.29 && z+d! < p.z+.29 && y+f! > p.y+.001 && y+c! < p.y+1.79)) return `standing space obstructed: ${b.name}`;
       }
+  // The game holds the bot up on any corner of its hitbox. Requiring all five
+  // points refused every pose near a block edge: 53 of 73 trunk approaches
+  // overnight (2026-10-23) arrived beside the log and then would not dig.
+  let supported = false;
   for (const [dx,dz] of [[0,0],[-.29,-.29],[-.29,.29],[.29,-.29],[.29,.29]]) {
     const x = p.x+dx!, z = p.z+dz!;
     const b = bot.blockAt(new Vec3(Math.floor(x),Math.floor(p.y-.001),Math.floor(z)));
-    if (!b || unsafe.test(b.name) || /_leaves$|_log$|_wood$/.test(b.name)) return "unsafe or missing standing support";
-    if (!shapes(b).some(([a,c,d,e,f,g]) => x >= b.position.x+a! && x <= b.position.x+e! && z >= b.position.z+d! && z <= b.position.z+g! && Math.abs(b.position.y+f!-p.y) <= .08)) return "standing support does not match feet height";
+    if (!b) return "unsafe or missing standing support";
+    if (unsafe.test(b.name)) return "unsafe or missing standing support";
+    const holds = shapes(b).some(([a,c,d,e,f,g]) => x >= b.position.x+a! && x <= b.position.x+e! && z >= b.position.z+d! && z <= b.position.z+g! && Math.abs(b.position.y+f!-p.y) <= .08);
+    if (holds && /_leaves$|_log$|_wood$/.test(b.name)) return "unsafe or missing standing support";
+    supported ||= holds;
   }
+  if (!supported) return "standing support does not match feet height";
   if (p.offset(0,1.62,0).distanceTo(target.offset(.5,.5,.5)) > DIRECT_DIG_REACH) return "target outside actual eye reach";
   if (requireAccess) {
     const block = bot.blockAt(target);

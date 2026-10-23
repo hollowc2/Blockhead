@@ -183,6 +183,23 @@ test("fractional farmland stance uses actual body support and eye reach", async 
   assert.match(diggingStanceBlocker(bot,target)!,/support/);
 });
 
+test("a digging stance at a block edge counts the corner that holds the bot", async () => {
+  // 2026-10-23: trunk approaches stopped near ledge edges and refused to dig.
+  const { diggingStanceBlocker } = await import("./world.js");
+  const ground = (top: (x: number) => boolean, name = "grass_block") => ({
+    entity: { position: new Vec3(10.8,64,5.5) },
+    blockAt: (p: Vec3) => {
+      const at = p.floored();
+      const solid = at.y === 63 && top(at.x);
+      return { position: at, name: solid ? name : "air", boundingBox: solid ? "block" : "empty", shapes: solid ? [[0,0,0,1,1,1]] : [] };
+    },
+    canSeeBlock: () => true,
+  } as any);
+  assert.equal(diggingStanceBlocker(ground(x => x === 10), new Vec3(12,65,5)), null, "overhanging a drop is still standing");
+  assert.match(diggingStanceBlocker(ground(x => x === 11, "oak_leaves"), new Vec3(12,65,5))!, /unsafe/, "a canopy corner is never footing");
+  assert.match(diggingStanceBlocker(ground(() => false), new Vec3(12,65,5))!, /support/);
+});
+
 test("observed farmland cleanup digs from safe fractional pose without routing", async () => {
   let digs = 0;
   const bot = {

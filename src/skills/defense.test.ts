@@ -215,6 +215,49 @@ test("a creeper that keeps following is fought hit-and-back after a few evasions
   assert.deepEqual(h.attacked, [], "never a sustained melee");
 });
 
+test("a creeper too close to outrun is blocked with the shield, not run from", async () => {
+  // Death 23 (03:47, 2026-10-23): blown up in iron armor while path-planning
+  // out of a stone cut, with a shield in the off hand.
+  const h = harness();
+  (h.bot as unknown as { inventory: { slots: unknown[] } }).inventory.slots = Object.assign([], { 45: { name: "shield" } });
+  h.add(mob(7, "creeper", { x: 22, y: 64, z: 0 }));
+  const blocked: string[] = [];
+  (h.runner as unknown as { actions: DefenseActions }).actions.shieldBlock = async (_bot, threat) => { blocked.push(threat.name ?? "?"); (threat as unknown as Mob).health = 0; };
+
+  await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(blocked, ["creeper"]);
+  assert.deepEqual(h.travels, [], "no back-away trip the fuse would beat");
+  assert.deepEqual(h.attacked, []);
+});
+
+test("a back-away that leaves the creeper in blast range ends behind the shield", async () => {
+  const h = harness();
+  (h.bot as unknown as { inventory: { slots: unknown[] } }).inventory.slots = Object.assign([], { 45: { name: "shield" } });
+  const creeper = h.add(mob(7, "creeper", { x: 25, y: 64, z: 0 }));
+  const blocked: string[] = [];
+  (h.runner as unknown as { actions: DefenseActions }).actions.shieldBlock = async (_bot, threat) => { blocked.push(threat.name ?? "?"); };
+  // Boxed in: the trip goes nowhere and the creeper closes in.
+  h.hooks.travel = () => { creeper.position = { x: 22, y: 64, z: 0 }; return { status: "timed_out" }; };
+
+  await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.equal(h.travels.length, 1, "tried to back away first");
+  assert.deepEqual(blocked, ["creeper"]);
+});
+
+test("without a shield a close creeper is still backed away from", async () => {
+  const h = harness();
+  h.add(mob(7, "creeper", { x: 22, y: 64, z: 0 }));
+  const blocked: string[] = [];
+  (h.runner as unknown as { actions: DefenseActions }).actions.shieldBlock = async (_bot, threat) => { blocked.push(threat.name ?? "?"); };
+
+  await h.runner.defendSelf({ reflex: true, radius: 24 });
+
+  assert.deepEqual(blocked, []);
+  assert.ok(h.travels.at(-1)!.to.x < 20);
+});
+
 test("retreatTarget runs away from the threats and bends toward home", () => {
   const self = { x: 20, y: 64, z: 0 };
   const straight = retreatTarget(self, [{ x: 20, y: 64, z: 10 }], null);

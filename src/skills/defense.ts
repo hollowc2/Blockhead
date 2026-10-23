@@ -61,6 +61,16 @@ const CREEPER_DANGER_RADIUS = 6;
 const CREEPER_EVADE_LIMIT = 3;
 /** Window the evasions are counted in. */
 const CREEPER_EVADE_WINDOW_MS = 3 * 60_000;
+/**
+ * A creeper this close is not outrun: its 1.5 s fuse beats the path search.
+ * Death 23 (03:47, 2026-10-23): the bot planned partial paths out of a stone
+ * cut for half a second and was blown up wearing iron, a shield unused.
+ */
+const CREEPER_BLOCK_RADIUS = 4;
+/** Longest the shield is held toward one creeper (a fuse plus margin). */
+const CREEPER_BLOCK_MS = 3_000;
+/** Beyond this a lit creeper's fuse goes out. */
+const CREEPER_BLAST_RADIUS = 7;
 /** Hit-and-back rounds against a creeper that will not leave. */
 const CREEPER_HIT_ROUNDS = 8;
 /** Reach for one hit. */
@@ -112,9 +122,32 @@ export interface DefenseActions {
   hit?: (bot: Bot, target: Entity) => void;
   /** Tower straight up; returns the blocks climbed. */
   tower?: (bot: Bot, steps: number, signal?: AbortSignal) => Promise<number>;
+  /** Hold the off-hand shield toward `threat` until it is gone or `ms` passes. */
+  shieldBlock?: (bot: Bot, threat: Entity, ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
-const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore, hit: (bot, target) => bot.attack(target), tower: towerUp };
+/** True when a shield is in the off hand (inventory slot 45). */
+export function holdsShield(bot: Bot): boolean {
+  return bot.inventory?.slots?.[45]?.name === "shield";
+}
+
+/** A raised shield facing an explosion takes the whole blast. */
+async function raiseShield(bot: Bot, threat: Entity, ms: number, signal?: AbortSignal): Promise<void> {
+  const until = Date.now() + ms;
+  bot.clearControlStates();
+  bot.activateItem(true);
+  try {
+    while (Date.now() < until && signal?.aborted !== true && isLiveEntity(threat) && bot.entity
+      && distanceBetween(threat.position, bot.entity.position) <= CREEPER_BLAST_RADIUS) {
+      await bot.lookAt(threat.position.offset(0, 1, 0), true);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } finally {
+    bot.deactivateItem();
+  }
+}
+
+const DEFAULT_ACTIONS: DefenseActions = { travel: travelAndWait, attack: pvpAttack, stop: pvpStop, equip: equipItem, shore: swimToShore, hit: (bot, target) => bot.attack(target), tower: towerUp, shieldBlock: raiseShield };
 
 export interface DefenseOptions {
   bot: Bot;
@@ -289,7 +322,10 @@ export class DefenseRunner {
         // closes in. One that keeps following is fought hit-and-back: a
         // creeper by a field interrupted the work every 15 seconds for 15
         // minutes, 66 evasions and no kill (2026-10-06 06:00-06:15).
-        if (this.noteCreeperEvasion(hostile.id) > CREEPER_EVADE_LIMIT) await this.hitAndBack(hostile);
+        const evasions = this.noteCreeperEvasion(hostile.id);
+        // One that lingers in range without blowing is still fought down.
+        if (evasions > CREEPER_EVADE_LIMIT) await this.hitAndBack(hostile);
+        else if (this.creeperClose(hostile)) await this.blockCreeper(hostile);
         else await this.evade(hostile);
         if (this.stopRequested) return this.interrupted(data);
         break;
@@ -482,6 +518,21 @@ export class DefenseRunner {
     const target = { x: self.x + (dx / length) * distance, y: self.y, z: self.z + (dz / length) * distance };
     this.opts.logger.info({ threat: threat.name, from: { x: Math.round(self.x), z: Math.round(self.z) } }, "defense: backing away from a creeper");
     await this.actions.travel(bot, target, { range: 3, timeoutMs: 8_000, shouldAbort: this.travelAbort, signal: this.signals?.signal });
+    // Boxed in, the trip ends where it started with the fuse still burning.
+    if (this.creeperClose(threat)) await this.blockCreeper(threat);
+  }
+
+  /** A live creeper inside the range no retreat can beat, with a shield to take it on. */
+  private creeperClose(creeper: Entity): boolean {
+    const self = this.opts.bot.entity?.position;
+    return self !== undefined && self !== null && isLiveEntity(creeper) && this.actions.shieldBlock !== undefined
+      && holdsShield(this.opts.bot) && distanceBetween(creeper.position, self) <= CREEPER_BLOCK_RADIUS;
+  }
+
+  /** Face the creeper behind the raised shield until it blows, dies or walks off. */
+  private async blockCreeper(creeper: Entity): Promise<void> {
+    this.opts.logger.info({ id: creeper.id, distance: Number(distanceBetween(creeper.position, this.opts.bot.entity!.position).toFixed(1)) }, "defense: creeper too close to outrun; blocking with the shield");
+    await this.actions.shieldBlock!(this.opts.bot, creeper, CREEPER_BLOCK_MS, this.signals?.signal);
   }
 
   /**
