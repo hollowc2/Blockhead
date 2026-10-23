@@ -145,17 +145,27 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
   }
 
   // Tunnel.
+  // Only steps that dig count toward the length. Each run starts from the
+  // same spot and heading, so every repeat walked the last run's tunnel and
+  // found nothing: 0 iron twice in a row (2026-10-22 19:25-19:28). Counting
+  // fresh rock extends the old tunnel instead; the walk is capped in case
+  // it wanders through open cave.
   logger.info({ at: bot.entity?.position.floored(), dir }, "branch mine: tunnelling");
-  for (let n = 1; n <= o.tunnelLength; n++) {
+  let digs = 0;
+  const counting: BranchMineOptions = { ...o, actions: { ...act(o), dig: async (b, block, signal) => { digs += 1; await act(o).dig(b, block, signal); } } };
+  for (let n = 0, walked = 0; n < o.tunnelLength && walked < o.tunnelLength * 4; walked++) {
     const stop = stopNow();
     if (stop !== null) return done(stop);
-    const stepped = await step(o, dir, false);
+    const before = digs;
+    const stepped = await step(counting, dir, false);
     if (stepped !== null) {
-      const turned = await turn(o, dir, false);
+      const turned = await turn(counting, dir, false);
       if (turned === null) return done(`tunnel blocked: ${stepped}`);
       dir = turned;
     }
     trail.push(bot.entity!.position.floored());
+    if (digs === before) continue;
+    n += 1;
     await mineVisibleOre(o);
     if (n % TORCH_EVERY === 0) await placeTorch(o, dir);
     await act(o).shed(bot, [o.drop], o.signal).catch((err) => {

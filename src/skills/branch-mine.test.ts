@@ -93,3 +93,13 @@ test("the tunnel is lit every eight steps", async () => {
   await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 99, targetY: 20, tunnelLength: 16, deadline: Date.now() + 10_000, actions: m.actions });
   assert.equal(m.torches.length, 2);
 });
+
+test("a repeat run walks the old tunnel and extends it into fresh rock", async () => {
+  // 19:25-19:28 (2026-10-22): two runs from home walked the same tunnel and
+  // mined nothing. Iron sits just past where the first run's tunnel ended.
+  const old: Record<string, string> = { "(19, 20, 1)": "iron_ore" };
+  const m = miner(new Vec3(0, 20, 0), old);
+  for (let x = 1; x <= 16; x++) { m.w.dug.add(new Vec3(x, 20, 0).toString()); m.w.dug.add(new Vec3(x, 21, 0).toString()); }
+  const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 20, tunnelLength: 8, deadline: Date.now() + 10_000, actions: m.actions });
+  assert.equal(result.mined, 1, "reached the ore beyond the old tunnel's end");
+});
