@@ -690,6 +690,13 @@ export class EnsureItemRunner {
     // The inner runner deposited; book the fresh stock so later steps can
     // withdraw it without re-opening the chest.
     this.stored[drop] = (this.stored[drop] ?? 0) + (result.data?.delivered ?? 0);
+    // A partial gather is still short: say so here, not at the smelt step
+    // ("only 3/8 raw irons available in stock" after a gather logged ok,
+    // 2026-10-22 20:17).
+    const short = step.quantity - this.available(drop);
+    if (short > 0) {
+      return { errorCode: "RESOURCE_NOT_FOUND", reason: `gathered too little ${resourceLabel(drop)}: ${step.quantity - short}/${step.quantity}${result.message ? ` (${result.message})` : ""}`, retryable: true };
+    }
     return null;
   }
 

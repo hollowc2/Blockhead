@@ -395,6 +395,28 @@ test("gather runner receives carried stock plus shortfall, and only observed del
   assert.equal(internal.stored.raw_iron, 10);
 });
 
+test("a partial gather that stays short fails the gather step, not the later smelt", async () => {
+  // 2026-10-22 20:17: "Got 3/8 iron ores" logged the gather step ok, and the
+  // shortage only surfaced at the smelt step.
+  const { EnsureItemRunner } = await import("./ensure-item.js");
+  const carried = [{ name: "raw_iron", count: 3 }];
+  const runner = new EnsureItemRunner({
+    bot: { inventory: { items: () => carried } }, config: {},
+    collect: { run: async () => ({ ok: false, status: "partial", message: "Got 3/8 iron ores. No more iron nearby.", data: { gathered: 0, delivered: 0 } }) },
+  } as unknown as ConstructorParameters<typeof EnsureItemRunner>[0]);
+  const internal = runner as unknown as {
+    stored: Record<string, number>;
+    mode: string;
+    stepGather: (step: { item: string; quantity: number }, data: { gathered: number }) => Promise<{ errorCode: string; reason: string; retryable: boolean } | null>;
+  };
+  internal.stored = {};
+  internal.mode = "ensure";
+  const failure = await internal.stepGather({ item: "iron_ore", quantity: 8 }, { gathered: 0 });
+  assert.equal(failure?.errorCode, "RESOURCE_NOT_FOUND");
+  assert.match(failure?.reason ?? "", /3\/8/);
+  assert.equal(failure?.retryable, true);
+});
+
 test("existing finished tools reduce the top-level craft count", () => {
   const result = resolvePlan("iron_pickaxe", 3, stockedCatalog({ iron_pickaxe: 2, iron_ingot: 3, stick: 2 }));
   assert.equal(result.ok, true);
