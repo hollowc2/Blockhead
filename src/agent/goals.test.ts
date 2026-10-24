@@ -15,6 +15,9 @@ import {
   type NewGoal,
 } from "./goal.js";
 import { GoalManager } from "./goals.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { registerGoalTools } from "../tools/goals.js";
+import type { ToolContext } from "../tools/types.js";
 
 function newGen(overrides: Partial<NewGoal> = {}): NewGoal {
   return {
@@ -279,6 +282,149 @@ test("a goal rehydrates the persisted active row on construction", () => {
     second.dispose();
   } finally {
     db.close();
+  }
+});
+
+// --- goal queue ---
+
+test("enqueue starts immediately when idle, then queues behind the active goal", () => {
+  const h = newHarness();
+  try {
+    const house = h.manager.enqueue(newGen({ description: "finish the house" }));
+    const iron = h.manager.enqueue(newGen({ description: "gather iron" }));
+    const chest = h.manager.enqueue(newGen({ description: "stock the chest" }));
+    assert.equal(h.manager.active()!.id, house.id);
+    assert.deepEqual(h.manager.queued().map((g) => g.id), [iron.id, chest.id]);
+    assert.equal(iron.status, GoalStatus.QUEUED);
+    assert.deepEqual(h.events, ["goal.started"], "queued goals do not start");
+  } finally {
+    h.close();
+  }
+});
+
+test("each settled goal promotes the next queued one in order", () => {
+  const h = newHarness();
+  try {
+    h.manager.enqueue(newGen({ description: "finish the house" }));
+    const iron = h.manager.enqueue(newGen({ description: "gather iron" }));
+    const chest = h.manager.enqueue(newGen({ description: "stock the chest" }));
+
+    h.manager.complete();
+    assert.equal(h.manager.active()!.id, iron.id);
+    assert.equal(iron.status, GoalStatus.ACTIVE);
+    h.manager.block("no iron found");
+    assert.equal(h.manager.active()!.id, chest.id, "a blocked goal still moves the plan on");
+    h.manager.complete();
+    assert.equal(h.manager.active(), null);
+    assert.deepEqual(h.events, [
+      "goal.started", "goal.completed", "goal.started", "goal.blocked", "goal.started", "goal.completed",
+    ]);
+  } finally {
+    h.close();
+  }
+});
+
+test("cancel moves on to the next goal and stops the cancelled goal's steps", () => {
+  const h = newHarness();
+  try {
+    const house = h.manager.enqueue(newGen({ description: "finish the house" }));
+    const iron = h.manager.enqueue(newGen({ description: "gather iron" }));
+    const step = enqueueGoalStep(h.scheduler, house.id);
+    h.manager.cancel("cancelled by the owner");
+    assert.equal(h.manager.active()!.id, iron.id);
+    assert.equal(step.status, TaskStatus.CANCELLED);
+  } finally {
+    h.close();
+  }
+});
+
+test("cancelAll and a replacing start drop the whole queue", () => {
+  const h = newHarness();
+  try {
+    h.manager.enqueue(newGen({ description: "finish the house" }));
+    const iron = h.manager.enqueue(newGen({ description: "gather iron" }));
+    h.manager.cancelAll("stopped by the owner");
+    assert.equal(h.manager.active(), null);
+    assert.equal(h.manager.queued().length, 0);
+    assert.equal(iron.status, GoalStatus.CANCELLED);
+
+    h.manager.enqueue(newGen({ description: "a" }));
+    h.manager.enqueue(newGen({ description: "b" }));
+    const fresh = h.manager.start(newGen({ description: "fresh plan" }));
+    assert.equal(h.manager.active()!.id, fresh.id);
+    assert.equal(h.manager.queued().length, 0, "a fresh instruction replaces the plan");
+  } finally {
+    h.close();
+  }
+});
+
+test("an owner goal does not wait behind a background goal", () => {
+  const h = newHarness();
+  try {
+    const background = h.manager.start(newGen({ source: "background" }));
+    const owner = h.manager.enqueue(newGen({ description: "finish the house" }));
+    assert.equal(background.status, GoalStatus.CANCELLED);
+    assert.equal(h.manager.active()!.id, owner.id);
+  } finally {
+    h.close();
+  }
+});
+
+test("the queue survives a restart, and an orphaned queue resumes", () => {
+  const bus = new EventBus();
+  const db = new AppDatabase(":memory:");
+  try {
+    db.runMigrations(MIGRATIONS);
+    const repo = new GoalsRepository(db);
+    const scheduler = new Scheduler({ bus, tasks: new TasksRepository(db) });
+    const first = new GoalManager({ bus, goals: repo, scheduler });
+    const house = first.enqueue(newGen({ description: "finish the house" }));
+    const iron = first.enqueue(newGen({ description: "gather iron" }));
+    const chest = first.enqueue(newGen({ description: "stock the chest" }));
+    first.dispose();
+
+    const second = new GoalManager({ bus, goals: repo, scheduler });
+    assert.equal(second.active()!.id, house.id);
+    assert.deepEqual(second.queued().map((g) => g.id), [iron.id, chest.id]);
+    second.dispose();
+
+    // Crash after settling the active goal but before promoting its successor.
+    db.sql.prepare("UPDATE goals SET status = ? WHERE id = ?").run(GoalStatus.COMPLETED, house.id);
+    const third = new GoalManager({ bus, goals: repo, scheduler });
+    assert.equal(third.active()!.id, iron.id);
+    assert.equal(repo.get(iron.id)!.status, GoalStatus.ACTIVE);
+    assert.deepEqual(third.queued().map((g) => g.id), [chest.id]);
+    third.dispose();
+  } finally {
+    db.close();
+  }
+});
+
+test("start_goal queues a 'then' sequence in one call; append adds to the plan", async () => {
+  const h = newHarness();
+  try {
+    const registry = new ToolRegistry();
+    registerGoalTools(registry, h.manager);
+    const ctx = { goals: h.manager } as unknown as ToolContext;
+    const run = async (name: string, raw: unknown) =>
+      registry.get(name)!.handler(registry.validateArgs(name, raw), ctx);
+
+    const reply = await run("start_goal", {
+      description: "Finish the house",
+      then: [{ description: "Gather iron", successCriteria: [{ kind: "inventory", item: "iron_ingot", min: 8 }] }, { description: "Stock the chest" }],
+    });
+    assert.equal(reply, "Now: Finish the house. Queued: Gather iron, then Stock the chest.");
+    assert.deepEqual(h.manager.queued()[0]!.successCriteria, [{ kind: "inventory", item: "iron_ingot", min: 8 }]);
+
+    await run("start_goal", { description: "Light the base", append: true });
+    assert.deepEqual(h.manager.queued().map((g) => g.description), ["Gather iron", "Stock the chest", "Light the base"]);
+
+    assert.equal(await run("cancel_goal", {}), "Cancelled goal: Finish the house. Next: Gather iron.");
+    await run("cancel_goal", { all: true });
+    assert.equal(h.manager.active(), null);
+    assert.equal(h.manager.queued().length, 0);
+  } finally {
+    h.close();
   }
 });
 

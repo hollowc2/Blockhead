@@ -17,6 +17,8 @@ export enum GoalStatus {
   COMPLETED = "completed",
   BLOCKED = "blocked",
   CANCELLED = "cancelled",
+  /** Waiting in the owner's goal queue; promoted to ACTIVE when the goals ahead of it settle. */
+  QUEUED = "queued",
 }
 
 export type GoalSource = "owner" | "background" | "system";
@@ -61,7 +63,7 @@ export type NewGoal = Omit<Goal, "id" | "status" | "createdAt" | "recentResults"
 };
 
 /** Statuses that mean the goal is still live (resumed on restart). */
-export const UNFINISHED_GOAL_STATUSES: readonly GoalStatus[] = [GoalStatus.ACTIVE];
+export const UNFINISHED_GOAL_STATUSES: readonly GoalStatus[] = [GoalStatus.ACTIVE, GoalStatus.QUEUED];
 
 /** The observable facts a goal's criteria are evaluated against. */
 export interface GoalFacts {

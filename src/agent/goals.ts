@@ -30,7 +30,11 @@ export interface GoalManagerOptions {
  * task events, and the background driver across reconnect attempts.
  *
  * The GoalManager owns the *state machine*: one active goal, transitions to
- * completed/blocked/cancelled, and the per-action result log. It never runs a
+ * completed/blocked/cancelled, the per-action result log, and the owner's
+ * FIFO of queued goals ("finish the house, then gather iron, then stock the
+ * chest"). When the active goal settles for any reason, the next queued goal
+ * is promoted to active in the same call, so the background driver never
+ * sees a gap it could fill with a canned background goal. It never runs a
  * skill itself — the background driver picks actions and the TaskDispatcher
  * executes them as `source: "goal"` tasks; the manager listens for those
  * tasks settling and records the outcome against the goal.
@@ -42,10 +46,14 @@ export interface GoalManagerOptions {
  *                 Temporary watchdog blocks are recorded as retryable waits.
  *  - cancelled  — the owner stopped it (hard interrupt / cancel_goal), a new
  *                 goal superseded it, or the LLM chose "abandon".
+ *
+ * Every terminal transition advances the queue; only an owner "stop"
+ * (`cancelAll`) or a replacing `start` clears it.
  */
 export class GoalManager {
   private readonly opts: GoalManagerOptions;
   private goal: Goal | null = null;
+  private readonly pending: Goal[] = [];
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(options: GoalManagerOptions) {
@@ -54,6 +62,11 @@ export class GoalManager {
     if (this.goal !== null) {
       logger.info({ goalId: this.goal.id, description: this.goal.description }, "goal rehydrated");
     }
+    this.pending.push(...options.goals.listQueued());
+    if (this.pending.length > 0) logger.info({ queued: this.pending.length }, "goal queue rehydrated");
+    // A crash between settling a goal and promoting its successor leaves
+    // queued rows with no active one; resume the queue rather than strand it.
+    if (this.goal === null) this.promoteNext();
     this.subscribe();
   }
 
@@ -68,11 +81,18 @@ export class GoalManager {
     return this.goal;
   }
 
+  /** Goals waiting behind the active one, in the order they will run. */
+  queued(): readonly Goal[] {
+    return this.pending;
+  }
+
   /**
-   * Establish a goal. With only one live goal, a new autonomous goal
-   * replaces (cancels) any current active goal.
+   * Establish a goal now. A new goal replaces (cancels) the current active
+   * goal and discards the queue behind it: a fresh instruction is a fresh
+   * plan. Use `enqueue` to add to the plan instead.
    */
   start(input: NewGoal): Goal {
+    this.clearQueue("replaced by a new goal");
     if (this.goal !== null) {
       const superseded = this.transition(GoalStatus.CANCELLED, "superseded by a new goal");
       // The owner moved the bot on to a new objective: nothing may keep
@@ -80,19 +100,82 @@ export class GoalManager {
       // its queued/paused/blocked steps (scheduler.cancel does both forms).
       if (superseded !== null) this.cancelGoalTasks(superseded);
     }
-    const goal: Goal = {
-      ...input,
-      id: randomUUID(),
-      status: GoalStatus.ACTIVE,
-      createdAt: new Date().toISOString(),
-      currentStep: input.currentStep ?? null,
-      recentResults: [],
-    };
+    const goal = this.newGoal(input, GoalStatus.ACTIVE);
     this.goal = goal;
     this.opts.goals.create(goal);
     this.opts.bus.emit("goal.started", { goal });
     logger.info({ goalId: goal.id, source: goal.source, description: goal.description }, "goal started");
     return goal;
+  }
+
+  /**
+   * Add a goal to the end of the plan. It starts immediately when nothing is
+   * active; otherwise it waits (persisted as QUEUED, so it survives a
+   * restart) until every goal ahead of it settles. An owner goal never waits
+   * behind a self-chosen background goal — that one is dropped, since the
+   * owner's plan outranks the bot's own initiative.
+   */
+  enqueue(input: NewGoal): Goal {
+    if (this.goal !== null && this.goal.source === "background" && input.source === "owner") {
+      const superseded = this.goal;
+      this.goal = null;
+      this.settle(superseded, GoalStatus.CANCELLED, "superseded by the owner's goal");
+      this.cancelGoalTasks(superseded);
+    }
+    if (this.goal === null && this.pending.length === 0) return this.start(input);
+    const goal = this.newGoal(input, GoalStatus.QUEUED);
+    this.pending.push(goal);
+    this.opts.goals.create(goal);
+    logger.info({ goalId: goal.id, position: this.pending.length, description: goal.description }, "goal queued");
+    if (this.goal === null) this.promoteNext();
+    return goal;
+  }
+
+  /**
+   * Owner "stop": cancel the active goal and everything queued behind it.
+   * Returns the cancelled active goal, or null when none was active.
+   */
+  cancelAll(reason: string): Goal | null {
+    this.clearQueue(reason);
+    return this.cancel(reason);
+  }
+
+  private newGoal(input: NewGoal, status: GoalStatus.ACTIVE | GoalStatus.QUEUED): Goal {
+    return {
+      ...input,
+      id: randomUUID(),
+      status,
+      createdAt: new Date().toISOString(),
+      currentStep: input.currentStep ?? null,
+      recentResults: [],
+    };
+  }
+
+  /** Cancel every queued goal (persisted) without touching the active one. */
+  private clearQueue(reason: string): void {
+    for (const goal of this.pending.splice(0)) {
+      goal.status = GoalStatus.CANCELLED;
+      goal.note = reason;
+      goal.endedAt = new Date().toISOString();
+      this.opts.goals.update(goal);
+      logger.info({ goalId: goal.id, reason }, "queued goal dropped");
+    }
+  }
+
+  /**
+   * Activate the next queued goal. Its `createdAt` is reset to the moment it
+   * becomes active: the driver measures deaths "during the goal" from
+   * `createdAt`, and time spent waiting in the queue is not time working on it.
+   */
+  private promoteNext(): void {
+    const next = this.pending.shift();
+    if (next === undefined) return;
+    next.status = GoalStatus.ACTIVE;
+    next.createdAt = new Date().toISOString();
+    this.goal = next;
+    this.opts.goals.update(next);
+    this.opts.bus.emit("goal.started", { goal: next });
+    logger.info({ goalId: next.id, source: next.source, description: next.description, remaining: this.pending.length }, "queued goal started");
   }
 
   /** Mark the active goal completed (persisted; no-op when none is active). */
@@ -105,9 +188,15 @@ export class GoalManager {
     return this.transition(GoalStatus.BLOCKED, reason);
   }
 
-  /** Cancel the active goal (owner stop / new goal superseding / abandonment). */
+  /**
+   * Cancel the active goal (owner stop / abandonment) and stop its steps, so
+   * the next queued goal does not start under a step still working for the
+   * cancelled one.
+   */
   cancel(reason?: string): Goal | null {
-    return this.transition(GoalStatus.CANCELLED, reason ?? "cancelled");
+    const cancelled = this.transition(GoalStatus.CANCELLED, reason ?? "cancelled");
+    if (cancelled !== null) this.cancelGoalTasks(cancelled);
+    return cancelled;
   }
 
   /** Label the high-level action currently being executed for the goal. */
@@ -135,13 +224,19 @@ export class GoalManager {
     const goal = this.goal;
     if (goal === null) return null;
     this.goal = null;
+    this.settle(goal, status, note);
+    // The plan moves on: whatever ended this goal, the next queued one starts.
+    this.promoteNext();
+    return goal;
+  }
+
+  private settle(goal: Goal, status: GoalStatus.COMPLETED | GoalStatus.BLOCKED | GoalStatus.CANCELLED, note: string): void {
     goal.status = status;
     goal.note = note;
     goal.endedAt = new Date().toISOString();
     this.opts.goals.update(goal);
     this.opts.bus.emit(`goal.${status}`, { goal });
     logger.info({ goalId: goal.id, status, note }, "goal settled");
-    return goal;
   }
 
   /**

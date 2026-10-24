@@ -387,6 +387,7 @@ statusServer = new StatusServer({
     state: { self: state.self, timePhase: state.timePhase },
     scheduler,
     goal: goals.active(),
+    queuedGoals: goals.queued(),
     decider,
     client: { endpoint: client.endpoint, modelName: client.modelName, healthState: client.healthState, reachable: client.healthState === "unknown" ? null : client.healthState === "ok", lastSuccessAt: client.lastSuccessAt, consecutiveFailures: client.consecutiveFailures, lastFailure: client.lastFailure },
     inDeathLoop: deathManager.inDeathLoop,

@@ -91,6 +91,18 @@ export class GoalsRepository {
     return valid[0] ?? null;
   }
 
+  /**
+   * Goals waiting in the owner's queue, oldest first. Insertion order (rowid)
+   * is the queue order — several goals queued by one instruction share a
+   * millisecond, so `created_at` alone cannot order them.
+   */
+  listQueued(): Goal[] {
+    const rows = this.db.sql
+      .prepare(`${SELECT_GOAL} WHERE status = ? ORDER BY rowid ASC`)
+      .all(GoalStatus.QUEUED) as GoalRow[];
+    return rows.map((row) => this.safeGoal(row)).filter((goal): goal is Goal => goal !== null);
+  }
+
   private safeGoal(row: GoalRow): Goal | null {
     try {
       return toGoal(row);

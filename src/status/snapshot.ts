@@ -15,6 +15,7 @@ export interface StatusSnapshot {
   task: { active: TaskSummary | null; queued: TaskSummary[]; interrupt: { pending: boolean; reason: "pause" | "cancel" | null }; blockedActions: readonly BlockView[] };
   buildProject: BuildProjectSummary | null;
   goal: Goal | null;
+  queuedGoals: Goal[];
   llm: { endpoint: string; model: string; state: "unknown" | "ok" | "failing"; reachable: boolean | null; lastSuccessAt: string | null; lastSuccessAgeSeconds: number | null; consecutiveFailures: number; lastFailure: { at: string; kind: string; error: string } | null; lastDecision: { at: string; latencyMs: number; tool: string; rationale: string | null } | null };
   autonomy: { paused: boolean; reasons: string[] };
   lastTaskResult: TaskOutcome | null;
@@ -34,6 +35,7 @@ export interface StatusInput {
   state: { self: SelfState; timePhase: "day" | "night" | null };
   scheduler: { active: Task | null; queued: readonly Task[]; interruptPending: boolean; pendingInterruptReason: "pause" | "cancel" | null; blockedActions(): readonly BlockView[] };
   goal: Goal | null;
+  queuedGoals?: readonly Goal[];
   decider: { lastCall: LlmCallRecord | null };
   client: { endpoint: string; modelName: string; healthState: "unknown" | "ok" | "failing"; reachable: boolean | null; lastSuccessAt: number | null; consecutiveFailures: number; lastFailure: { at: number; kind: string; error: string } | null };
   inDeathLoop: boolean;
@@ -67,6 +69,7 @@ export function buildStatusSnapshot(input: StatusInput): StatusSnapshot {
     task: { active: input.scheduler.active === null ? null : taskSummary(input.scheduler.active), queued: input.scheduler.queued.map(taskSummary), interrupt: { pending: input.scheduler.interruptPending, reason: input.scheduler.pendingInterruptReason }, blockedActions: input.scheduler.blockedActions() },
     buildProject: projectBuildProject(input.buildProjects?.currentProject() ?? null),
     goal: input.goal,
+    queuedGoals: [...(input.queuedGoals ?? [])],
     llm: { endpoint: input.client.endpoint, model: input.client.modelName, state: input.client.healthState, reachable: input.client.reachable, lastSuccessAt: lastSuccessAt === null ? null : new Date(lastSuccessAt).toISOString(), lastSuccessAgeSeconds: lastSuccessAt === null ? null : Math.max(0, (now - lastSuccessAt) / 1000), consecutiveFailures: input.client.consecutiveFailures, lastFailure: input.client.lastFailure === null ? null : { ...input.client.lastFailure, at: new Date(input.client.lastFailure.at).toISOString() }, lastDecision: lastDecision === null ? null : { ...lastDecision, at: new Date(lastDecision.at).toISOString() } },
     autonomy: deriveAutonomy(input),
     lastTaskResult: input.outcomes.last,

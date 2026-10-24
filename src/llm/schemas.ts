@@ -105,10 +105,25 @@ export const SuccessCriterionSchema = z.discriminatedUnion("kind", [
 
 export type SuccessCriterionValue = z.infer<typeof SuccessCriterionSchema>;
 
-/** `start_goal` tool arguments: an objective description plus optional criteria. */
-export const StartGoalArgsSchema = z.object({
+const GoalSpecSchema = z.object({
   description: z.string().min(1).max(240),
   successCriteria: z.array(SuccessCriterionSchema).max(6).optional(),
+});
+
+/**
+ * `start_goal` tool arguments: an objective description plus optional
+ * criteria, optional follow-up goals to run in order after it (`then`), and
+ * `append` to add the whole sequence behind the current plan instead of
+ * replacing it.
+ */
+export const StartGoalArgsSchema = GoalSpecSchema.extend({
+  then: z.array(GoalSpecSchema).max(8).optional(),
+  append: z.boolean().optional(),
+});
+
+/** `cancel_goal` tool arguments: `all` also drops every queued goal. */
+export const CancelGoalArgsSchema = z.object({
+  all: z.boolean().optional(),
 });
 
 /** Minimal validation of a llama.cpp `/v1/chat/completions` response. */

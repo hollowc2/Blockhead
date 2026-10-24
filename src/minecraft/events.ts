@@ -502,8 +502,9 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     if (HARD_INTERRUPT_COMMANDS.has(instruction)) {
       ctx.bus.emit("chat.command", { from: username, command: "stop" });
       // The active autonomous goal is cancelled by the same determinist stop:
-      // an owner interrupt always ends the goal it was driving.
-      ctx.goals?.cancel("stopped by the owner");
+      // an owner interrupt always ends the goal it was driving, and the goals
+      // queued behind it — "stop" must not hand the bot its next objective.
+      ctx.goals?.cancelAll("stopped by the owner");
       const reply = runTool(bot, config, ctx, "stop", {});
       if (reply) bot.chat(reply);
       return;

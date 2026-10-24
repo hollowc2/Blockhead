@@ -109,6 +109,8 @@ export interface StateSnapshot {
     criteria: string[];
     recentResults: { action: string; outcome: string; message: string | null }[];
   } | null;
+  /** Descriptions of the owner's goals waiting behind the active one, in run order. */
+  queuedGoals: string[];
   from: string;
   instruction: string;
 }
@@ -362,6 +364,7 @@ export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): Stat
     recentTasks: recentTaskOutcomes(ctx),
     blockedActions: [...ctx.scheduler.blockedActions()],
     activeGoal: ctx.goals?.active() ? activeGoalSummary(ctx.goals.active()!) : null,
+    queuedGoals: ctx.goals?.queued().map((goal) => goal.description) ?? [],
     from: input.from,
     instruction: input.instruction,
   };
