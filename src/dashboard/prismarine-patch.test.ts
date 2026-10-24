@@ -81,6 +81,7 @@ test("the installed viewer bundle carries the camera modes and still parses", as
   assert.match(bundle, /bobEquipment.attach\(e\)/);
   assert.match(bundle, /o.on\("equipment"/);
   assert.match(bundle, /bob-dropped-items/);
+  assert.match(bundle, /bob-preview/);
   assert.equal(patchViewerEquipment(bundle), bundle, "equipment patch is idempotent");
   assert.throws(() => patchViewerEquipment("unrelated"), /refusing to patch/);
   assert.doesNotThrow(() => new Function(bundle));

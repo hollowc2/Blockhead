@@ -459,4 +459,28 @@ export const MIGRATIONS: readonly string[] = [
      SET status = 'blocked'
    WHERE stage = 'blocked';
   `,
+  // v20: owner job controls and viewer history. `held_at` parks a task the
+  // owner paused so arbitration never resumes it on its own; `paused_at`
+  // does the same for a goal. The story feed and the owner's tracked
+  // commands persist so the viewer can show history across restarts.
+  `
+  ALTER TABLE tasks ADD COLUMN held_at TEXT;
+  ALTER TABLE goals ADD COLUMN paused_at TEXT;
+  CREATE TABLE IF NOT EXISTS story_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at TEXT NOT NULL,
+      icon TEXT NOT NULL,
+      text TEXT NOT NULL,
+      highlight INTEGER NOT NULL DEFAULT 0,
+      facts_json TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_story_entries_at ON story_entries(at);
+  CREATE TABLE IF NOT EXISTS owner_commands (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      links_json TEXT NOT NULL DEFAULT '{"tasks":[],"goals":[],"projects":[]}',
+      replies_json TEXT NOT NULL DEFAULT '[]'
+  );
+  `,
 ];

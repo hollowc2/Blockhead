@@ -4,7 +4,7 @@ import type { BuildProjectManager } from "../agent/build-projects.js";
 import type { BuildingDesign } from "../building/schema.js";
 import { z } from "zod";
 import type { ToolRegistry } from "./registry.js";
-import type { ToolDefinition, ToolResult } from "./types.js";
+import type { ToolContext, ToolDefinition, ToolResult } from "./types.js";
 import { Vec3 } from "vec3";
 import { isProtectedFixture } from "../policy/action-boundary.js";
 
@@ -76,48 +76,10 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
         }
       }),
       handler: (args, ctx): ToolResult => {
-        const shape = String(args.shape);
-        const width = Number(args.width);
-        const height = Number(args.height);
-        const length = Number(args.length);
-        const anchorKind = String(args.anchor ?? "owner");
-        const self = ctx.bot.entity;
-        if (self === null) return "I cannot start a structure build until I am spawned.";
-        let point: { x: number; y: number; z: number; dimension: string } | null = null;
-        if (anchorKind === "home" && ctx.state.home !== null) {
-          // The home point is ringed by the bot's own chest, furnace and
-          // table: a room anchored on it was "blocked by furnace" 23 blocks
-          // in. Build on the nearest clear plot beside them instead.
-          const home = ctx.state.home;
-          const plot = clearPlotNear(ctx.bot, home, width, length, height);
-          point = plot === null ? home : { ...plot, dimension: home.dimension };
-        }
-        else if (anchorKind === "current") point = { ...self.position, dimension: String(ctx.bot.game.dimension ?? "overworld") };
-        else {
-          const owner = ctx.config.agent?.owner ?? "Corey";
-          const entity = ctx.bot.players[owner]?.entity;
-          if (!entity) return `I cannot anchor at ${owner}: the owner is not currently visible.`;
-          // Offset the footprint so construction never starts inside the owner.
-          point = { x: entity.position.x + 3, y: entity.position.y, z: entity.position.z + 3, dimension: String(ctx.bot.game.dimension ?? "overworld") };
-        }
-        if (point === null) return "I cannot anchor at home because no home is configured.";
-        const parameters = {
-          shape, width, height, length, material: "planks", anchor: anchorKind,
-          origin: { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z), dimension: point.dimension.replace(/^minecraft:/, "") },
-        };
-        // Asking again for the same build at the same spot resumes it, even
-        // if the wood the bot carries has changed since it was started.
-        const previous = projects.findUnfinishedAt(`simple_${shape}`, parameters.origin);
-        const previousPlank = previous?.design.palette?.primary;
-        const plank = typeof previousPlank === "string" && previousPlank.endsWith("_planks") ? previousPlank : preferredPlank(ctx.bot);
-        const design = simpleStructureDesign(shape as SimpleStructureShape, width, height, length, parameters.origin, plank);
-        const result = projects.createOrResume({
-          userGoal: `Build a ${width}x${height}x${length} ${shape}.`,
-          structureType: `simple_${shape}`,
-          source: "user",
-          design,
-          origin: parameters.origin,
-        });
+        const plan = planSimpleStructure(args, ctx, projects);
+        if (typeof plan === "string") return plan;
+        const { shape, width, height, length, plank, design, origin } = plan;
+        const result = projects.createOrResume({ userGoal: plan.userGoal, structureType: plan.structureType, source: "user", design, origin });
         scheduler.claim();
         const action = result.resumed ? "Resuming" : "Building";
         return `${action} a ${width} wide, ${height} tall, ${length} long ${plank.replace(/_planks$/, "").replace(/_/g, " ")}-plank ${shape}.`;
@@ -128,6 +90,68 @@ export function registerBaseTools(registry: ToolRegistry, scheduler: Scheduler, 
   for (const tool of tools) {
     registry.register(tool);
   }
+}
+
+export interface SimpleStructurePlan {
+  shape: SimpleStructureShape;
+  width: number;
+  height: number;
+  length: number;
+  plank: string;
+  structureType: string;
+  userGoal: string;
+  origin: { x: number; y: number; z: number; dimension: string };
+  design: BuildingDesign;
+}
+
+/**
+ * Resolve a validated build_structure request to the exact design and origin
+ * the build would use, without starting anything. The build tool and the
+ * viewer's build preview share it, so a preview shows what will be built.
+ * Returns the refusal text when the anchor cannot be resolved.
+ */
+export function planSimpleStructure(
+  args: Record<string, unknown>,
+  ctx: Pick<ToolContext, "bot" | "state" | "config">,
+  projects: Pick<BuildProjectManager, "findUnfinishedAt">,
+): SimpleStructurePlan | string {
+  const shape = String(args.shape) as SimpleStructureShape;
+  const width = Number(args.width);
+  const height = Number(args.height);
+  const length = Number(args.length);
+  const anchorKind = String(args.anchor ?? "owner");
+  const self = ctx.bot.entity;
+  if (self === null || self === undefined) return "I cannot start a structure build until I am spawned.";
+  let point: { x: number; y: number; z: number; dimension: string } | null = null;
+  if (anchorKind === "home" && ctx.state.home !== null) {
+    // The home point is ringed by the bot's own chest, furnace and
+    // table: a room anchored on it was "blocked by furnace" 23 blocks
+    // in. Build on the nearest clear plot beside them instead.
+    const home = ctx.state.home;
+    const plot = clearPlotNear(ctx.bot, home, width, length, height);
+    point = plot === null ? home : { ...plot, dimension: home.dimension };
+  }
+  else if (anchorKind === "current") point = { ...self.position, dimension: String(ctx.bot.game.dimension ?? "overworld") };
+  else if (anchorKind !== "home") {
+    const owner = ctx.config.agent?.owner ?? "Corey";
+    const entity = ctx.bot.players[owner]?.entity;
+    if (!entity) return `I cannot anchor at ${owner}: the owner is not currently visible.`;
+    // Offset the footprint so construction never starts inside the owner.
+    point = { x: entity.position.x + 3, y: entity.position.y, z: entity.position.z + 3, dimension: String(ctx.bot.game.dimension ?? "overworld") };
+  }
+  if (point === null) return "I cannot anchor at home because no home is configured.";
+  const origin = { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z), dimension: point.dimension.replace(/^minecraft:/, "") };
+  // Asking again for the same build at the same spot resumes it, even
+  // if the wood the bot carries has changed since it was started.
+  const previous = projects.findUnfinishedAt(`simple_${shape}`, origin);
+  const previousPlank = previous?.design.palette?.primary;
+  const plank = typeof previousPlank === "string" && previousPlank.endsWith("_planks") ? previousPlank : preferredPlank(ctx.bot);
+  return {
+    shape, width, height, length, plank, origin,
+    structureType: `simple_${shape}`,
+    userGoal: `Build a ${width}x${height}x${length} ${shape}.`,
+    design: simpleStructureDesign(shape, width, height, length, origin, plank),
+  };
 }
 
 /**

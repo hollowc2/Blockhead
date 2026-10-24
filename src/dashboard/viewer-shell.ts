@@ -70,7 +70,21 @@ export interface ViewerShellOptions {
   chat?: (question: unknown) => Promise<ViewerChatResult>;
   /** Owner commands; private listener only. */
   command?: (command: unknown) => Promise<ViewerChatResult>;
+  /** Owner-only data and controls (jobs, build preview, history, map); private listener only. */
+  privateApi?: PrivateApi;
   logger?: Pick<Logger, "warn">;
+}
+
+export interface PrivateApiResult { status: number; body: unknown }
+export interface PrivateApi {
+  /** `POST /api/job` `{ kind, id, action }`: pause / resume / cancel one job. */
+  job?: (body: unknown) => Promise<ViewerChatResult>;
+  /** `POST /api/preview` `{ command }`: compile a build without starting it. */
+  preview?: (body: unknown) => Promise<PrivateApiResult>;
+  /** `GET /api/history?since=ISO`: story and summary since the viewer's last visit. */
+  history?: (since: string | null) => Promise<PrivateApiResult>;
+  /** `GET /api/map`: remembered places, Bob, his destination and route. */
+  map?: () => Promise<PrivateApiResult>;
 }
 
 /** Hosts the combined third-person viewer page while proxying viewer traffic. */
@@ -147,6 +161,25 @@ export class ViewerShellServer {
       await this.handleChat(request, response, this.options.command, "command");
       return;
     }
+    const api = this.options.privateApi;
+    if (pathname === "/api/job" && api?.job !== undefined) {
+      await this.handleChat(request, response, api.job, null);
+      return;
+    }
+    if (pathname === "/api/preview" && api?.preview !== undefined) {
+      const body = await this.readJsonBody(request, response);
+      if (body === undefined) return;
+      const result = await api.preview(body).catch(() => ({ status: 503, body: { error: "Preview unavailable." } }));
+      this.sendJson(response, result.status, result.body);
+      return;
+    }
+    if ((pathname === "/api/history" && api?.history !== undefined) || (pathname === "/api/map" && api?.map !== undefined)) {
+      if (request.method !== "GET") { this.sendJson(response, 405, { error: "method not allowed" }); return; }
+      const since = new URL(request.url ?? "/", "http://localhost").searchParams.get("since");
+      const result = await (pathname === "/api/map" ? api.map!() : api.history!(since)).catch(() => ({ status: 503, body: { error: "unavailable" } }));
+      this.sendJson(response, result.status, result.body);
+      return;
+    }
     if (request.method !== "GET") {
       response.writeHead(405, { allow: "GET" });
       response.end("method not allowed");
@@ -215,19 +248,29 @@ export class ViewerShellServer {
     this.sendText(response, 404, "not found");
   }
 
-  private async handleChat(request: IncomingMessage, response: ServerResponse, chat: (question: unknown) => Promise<ViewerChatResult>, field: "question" | "command" = "question"): Promise<void> {
-    if (request.method !== "POST") { this.sendJson(response, 405, { error: "method not allowed" }); return; }
+  private async handleChat(request: IncomingMessage, response: ServerResponse, chat: (question: unknown) => Promise<ViewerChatResult>, field: "question" | "command" | null = "question"): Promise<void> {
+    const body = await this.readJsonBody(request, response);
+    if (body === undefined) return;
+    const question = field === null ? body : (body as Record<string, unknown> | null)?.[field];
+    const result = await chat(question);
+    if (result.ok) this.sendJson(response, 200, { answer: result.answer });
+    else this.sendJson(response, result.status, { error: result.error });
+  }
+
+  /** A same-origin JSON POST body, or undefined after answering the error. */
+  private async readJsonBody(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
+    if (request.method !== "POST") { this.sendJson(response, 405, { error: "method not allowed" }); return undefined; }
     // JSON-only plus a same-origin check: a cross-site page cannot make a
     // browser send this without a preflight we never answer.
-    if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) { this.sendJson(response, 415, { error: "expected application/json" }); return; }
+    if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) { this.sendJson(response, 415, { error: "expected application/json" }); return undefined; }
     const origin = request.headers.origin;
     if (request.headers[PUBLIC_VIEWER_HEADER] !== undefined || request.headers["sec-fetch-site"] === "cross-site"
       || origin !== undefined && (() => { try { return new URL(origin).host !== request.headers.host; } catch { return true; } })()) {
       this.sendJson(response, 403, { error: "cross-origin request" });
-      return;
+      return undefined;
     }
     const declared = Number(request.headers["content-length"] ?? 0);
-    if (declared > MAX_CHAT_POST_BYTES) { this.sendJson(response, 413, { error: "payload too large" }); return; }
+    if (declared > MAX_CHAT_POST_BYTES) { this.sendJson(response, 413, { error: "payload too large" }); return undefined; }
     let body = "";
     try {
       body = await new Promise<string>((resolve, reject) => {
@@ -242,13 +285,9 @@ export class ViewerShellServer {
       });
     } catch {
       this.sendJson(response, 413, { error: "payload too large" });
-      return;
+      return undefined;
     }
-    let question: unknown;
-    try { question = (JSON.parse(body) as Record<string, unknown> | null)?.[field]; } catch { question = undefined; }
-    const result = await chat(question);
-    if (result.ok) this.sendJson(response, 200, { answer: result.answer });
-    else this.sendJson(response, result.status, { error: result.error });
+    try { return JSON.parse(body) as unknown; } catch { return null; }
   }
 
   private sendJson(response: ServerResponse, status: number, body: unknown): void {

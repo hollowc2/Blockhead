@@ -253,6 +253,11 @@ export class BlockerDesk {
     return newest;
   }
 
+  /** Every open offer, newest first. */
+  openBlockers(): OpenBlocker[] {
+    return [...this.open.values()].sort((a, b) => b.openedAt - a.openedAt);
+  }
+
   /** The open offer for one build project, if any. */
   forProject(projectId: string): OpenBlocker | null {
     return this.open.get(`build:${projectId}`) ?? null;

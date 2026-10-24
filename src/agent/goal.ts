@@ -97,10 +97,12 @@ export interface Goal {
   /** Terminal-state note: why the goal completed/blocked/cancelled. */
   note?: string;
   endedAt?: string;
+  /** Set while the owner has paused the goal: the driver takes no step for it. */
+  pausedAt?: string;
 }
 
 /** Goal inputs before the system assigns identity and lifecycle fields. */
-export type NewGoal = Omit<Goal, "id" | "status" | "createdAt" | "recentResults" | "currentStep" | "note" | "endedAt"> & {
+export type NewGoal = Omit<Goal, "id" | "status" | "createdAt" | "recentResults" | "currentStep" | "note" | "endedAt" | "pausedAt"> & {
   currentStep?: string | null;
 };
 

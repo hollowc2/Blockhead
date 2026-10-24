@@ -30,6 +30,8 @@ import {
 import type { DashboardSnapshot } from "./types.js";
 import { EQUIPMENT_SLOTS, type EquipmentSummary } from "./types.js";
 import type { ViewerTelemetry } from "./viewer.js";
+import type { JobsSummary } from "./jobs.js";
+import type { GearDetail } from "./gear.js";
 
 /**
  * Read-only inputs for the process-lifetime dashboard collector. Session
@@ -55,6 +57,10 @@ export interface DashboardTelemetrySource {
   story?: StoryFeed;
   worldStats?: () => WorldStatsSummary | null;
   viewer?: () => ViewerTelemetry;
+  /** Live jobs plus tracked owner commands (private). */
+  jobs?: () => JobsSummary;
+  /** Gear condition and supply readiness (private). */
+  gear?: () => GearDetail | null;
 }
 
 /** A process-lifetime, side-effect-free projection of live agent telemetry. */
@@ -146,8 +152,15 @@ export class DashboardTelemetryCollector {
       recentChat: this.source.eventHistory.recentChat().map((event) => ({ at: event.at, sender: event.category, message: event.message })),
       story: this.source.story?.recent() ?? [],
       world: this.source.worldStats?.() ?? null,
+      ...(this.source.jobs === undefined ? {} : { jobs: this.source.jobs() }),
+      ...(this.source.gear === undefined ? {} : { gear: connected ? safely(this.source.gear) : null }),
     };
   }
+}
+
+/** A failing optional projection must not take the whole snapshot down. */
+function safely<T>(read: () => T | null): T | null {
+  try { return read(); } catch { return null; }
 }
 
 /** Read actual equipped slots, rather than inferring equipment from owned items. */

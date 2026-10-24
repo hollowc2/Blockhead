@@ -5,7 +5,7 @@ import { AppDatabase } from "../memory/database.js";
 import { MIGRATIONS } from "../memory/migrations.js";
 import { TasksRepository } from "../memory/tasks.js";
 import { Scheduler } from "./scheduler.js";
-import { TaskPriority, TaskStatus, type NewTask } from "./task.js";
+import { TaskPriority, TaskStatus, type NewTask, type Task } from "./task.js";
 
 interface Harness {
   db: AppDatabase;
@@ -413,4 +413,39 @@ test("database checkpoint truncates the WAL before close", () => {
   db.close();
   // Closing twice (shutdown step retried after a timeout) is harmless.
   db.close();
+});
+
+test("an owner hold parks queued work until it is released", () => {
+  const { scheduler, tasks } = newHarness();
+  const task = scheduler.enqueue(userTask("gather wood"));
+  assert.equal(scheduler.hold(task.id)?.status, TaskStatus.PAUSED);
+  assert.equal(scheduler.claim(), null, "a held task is never activated");
+  assert.ok(tasks.get(task.id)?.heldAt, "the hold survives a restart");
+  scheduler.release(task.id);
+  assert.equal(scheduler.active?.id, task.id, "release hands it back to arbitration");
+  assert.equal(tasks.get(task.id)?.heldAt, undefined);
+});
+
+test("holding the active task pauses it and keeps it parked after it settles", () => {
+  const { scheduler } = newHarness();
+  const task = scheduler.enqueue(userTask("gather wood"));
+  scheduler.claim();
+  scheduler.hold(task.id);
+  assert.equal(scheduler.pendingInterruptReason, "pause");
+  scheduler.settleInterrupted();
+  assert.equal(scheduler.active, null);
+  assert.equal(scheduler.queued[0]?.status, TaskStatus.PAUSED);
+  assert.equal(scheduler.activateNext(), null, "the paused task does not come straight back");
+  assert.equal(scheduler.release(task.id)?.id, task.id);
+  assert.equal((scheduler.active as Task | null)?.id, task.id);
+});
+
+test("held tasks rehydrate as held", () => {
+  const { db, scheduler, bus } = newHarness();
+  const task = scheduler.enqueue(userTask("gather wood"));
+  scheduler.hold(task.id);
+  const restarted = new Scheduler({ bus, tasks: new TasksRepository(db) });
+  restarted.loadFromPersistence();
+  assert.equal(restarted.claim(), null);
+  assert.ok(restarted.queued[0]?.heldAt);
 });

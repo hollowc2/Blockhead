@@ -52,6 +52,8 @@ export interface Task {
   progressFingerprint?: string;
   lastProgressAt?: string;
   attempts?: number;
+  /** Set while the owner has paused this task; arbitration never resumes it on its own. */
+  heldAt?: string;
 }
 
 /** Task inputs before the system assigns identity and lifecycle fields. */

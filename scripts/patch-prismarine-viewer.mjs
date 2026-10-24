@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createViewerEquipment } from "./viewer-equipment.mjs";
 import { installViewerDroppedItems } from "./viewer-dropped-items.mjs";
+import { installViewerPreview } from "./viewer-preview.mjs";
 
 const files = [
   {
@@ -156,11 +157,11 @@ export function patchViewerCamera(source, path = "viewer client") {
   return patched;
 }
 
-/** Add worn/held gear and textured dropped stacks to the browser renderer. */
+/** Add worn/held gear, textured dropped stacks and the build-preview ghost to the browser renderer. */
 export function patchViewerEquipment(source, path = "viewer client") {
   const hook = 'o.on("version",(t=>{';
   const model = 'e.visible=bobCam.mode!=="eyes")';
-  const code = `u.bobEquipment=(${createViewerEquipment.toString()})(THREE,${JSON.stringify(itemTextures)}),o.on("equipment",e=>u.bobEquipment.update(e)),/* bob-dropped-items */(${installViewerDroppedItems.toString()})(THREE,u.entities,${JSON.stringify(itemTextures)}),`;
+  const code = `u.bobEquipment=(${createViewerEquipment.toString()})(THREE,${JSON.stringify(itemTextures)}),o.on("equipment",e=>u.bobEquipment.update(e)),/* bob-dropped-items */(${installViewerDroppedItems.toString()})(THREE,u.entities,${JSON.stringify(itemTextures)}),/* bob-preview */(${installViewerPreview.toString()})(THREE,u.scene),`;
   const start = source.indexOf("u.bobEquipment=");
   if (start !== -1) {
     const end = source.indexOf(hook, start);

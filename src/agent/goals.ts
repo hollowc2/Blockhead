@@ -168,7 +168,10 @@ export class GoalManager {
    * `createdAt`, and time spent waiting in the queue is not time working on it.
    */
   private promoteNext(): void {
-    const next = this.pending.shift();
+    // A goal the owner paused while it waited keeps its place but is skipped.
+    const index = this.pending.findIndex((goal) => goal.pausedAt === undefined);
+    if (index < 0) return;
+    const [next] = this.pending.splice(index, 1);
     if (next === undefined) return;
     next.status = GoalStatus.ACTIVE;
     next.createdAt = new Date().toISOString();
@@ -197,6 +200,56 @@ export class GoalManager {
     const cancelled = this.transition(GoalStatus.CANCELLED, reason ?? "cancelled");
     if (cancelled !== null) this.cancelGoalTasks(cancelled);
     return cancelled;
+  }
+
+  /**
+   * Owner pause: the driver takes no step for the goal and its steps are
+   * held in the scheduler (a running one parks at its next checkpoint). A
+   * paused active goal keeps the queue behind it waiting; a paused queued
+   * goal is skipped when the queue advances.
+   */
+  pause(id: string): Goal | null {
+    const goal = this.find(id);
+    if (goal === null) return null;
+    goal.pausedAt ??= new Date().toISOString();
+    this.opts.goals.update(goal);
+    this.forGoalTasks(goal, (task) => this.opts.scheduler.hold(task.id));
+    logger.info({ goalId: goal.id }, "goal paused by the owner");
+    return goal;
+  }
+
+  /** Owner resume: undo `pause`, releasing the goal's held steps. */
+  resume(id: string): Goal | null {
+    const goal = this.find(id);
+    if (goal === null || goal.pausedAt === undefined) return null;
+    delete goal.pausedAt;
+    this.opts.goals.update(goal);
+    this.forGoalTasks(goal, (task) => this.opts.scheduler.release(task.id));
+    logger.info({ goalId: goal.id }, "goal resumed by the owner");
+    if (this.goal === null) this.promoteNext();
+    return goal;
+  }
+
+  /** Owner cancel of one goal: the active one (its steps stop) or one waiting in the queue. */
+  cancelGoal(id: string, reason = "cancelled by the owner"): Goal | null {
+    if (this.goal?.id === id) return this.cancel(reason);
+    const index = this.pending.findIndex((goal) => goal.id === id);
+    if (index < 0) return null;
+    const [goal] = this.pending.splice(index, 1);
+    this.settle(goal!, GoalStatus.CANCELLED, reason);
+    this.cancelGoalTasks(goal!);
+    return goal!;
+  }
+
+  private find(id: string): Goal | null {
+    return this.goal?.id === id ? this.goal : this.pending.find((goal) => goal.id === id) ?? null;
+  }
+
+  private forGoalTasks(goal: Goal, action: (task: Task) => unknown): void {
+    const scheduler = this.opts.scheduler;
+    for (const task of [scheduler.active, ...scheduler.queued]) {
+      if (task !== null && task.source === "goal" && task.parameters.goalId === goal.id) action(task);
+    }
   }
 
   /** Label the high-level action currently being executed for the goal. */

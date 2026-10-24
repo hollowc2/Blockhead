@@ -13,11 +13,12 @@ interface GoalRow {
   note: string | null;
   created_at: string;
   ended_at: string | null;
+  paused_at: string | null;
 }
 
 const SELECT_GOAL = `
   SELECT id, description, source, status, success_criteria_json,
-         current_step, recent_results_json, note, created_at, ended_at
+         current_step, recent_results_json, note, created_at, ended_at, paused_at
   FROM goals`;
 
 /**
@@ -34,8 +35,8 @@ export class GoalsRepository {
       .prepare(
         `INSERT INTO goals
            (id, description, source, status, success_criteria_json,
-            current_step, recent_results_json, note, created_at, ended_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            current_step, recent_results_json, note, created_at, ended_at, paused_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         goal.id,
@@ -48,6 +49,7 @@ export class GoalsRepository {
         goal.note ?? null,
         goal.createdAt,
         goal.endedAt ?? null,
+        goal.pausedAt ?? null,
       );
   }
 
@@ -56,7 +58,7 @@ export class GoalsRepository {
       .prepare(
         `UPDATE goals SET
            description = ?, source = ?, status = ?, success_criteria_json = ?,
-           current_step = ?, recent_results_json = ?, note = ?, ended_at = ?
+           current_step = ?, recent_results_json = ?, note = ?, ended_at = ?, paused_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -68,6 +70,7 @@ export class GoalsRepository {
         JSON.stringify(goal.recentResults),
         goal.note ?? null,
         goal.endedAt ?? null,
+        goal.pausedAt ?? null,
         goal.id,
       );
   }
@@ -137,5 +140,6 @@ function toGoal(row: GoalRow): Goal {
     note: row.note ?? undefined,
     createdAt: row.created_at,
     endedAt: row.ended_at ?? undefined,
+    ...(row.paused_at ? { pausedAt: row.paused_at } : {}),
   };
 }

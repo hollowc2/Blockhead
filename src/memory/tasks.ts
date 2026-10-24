@@ -25,6 +25,7 @@ interface TaskRow {
   project_id: string | null;
   project_phase_id: string | null;
   execution_policy: string | null;
+  held_at: string | null;
 }
 
 const SELECT_TASK = `
@@ -32,7 +33,7 @@ const SELECT_TASK = `
          status, resume_state_json, parent_task_id, interrupted_task_id,
          last_error, created_at, started_at, completed_at, pause_sequence,
          work_key, phase, progress_fingerprint, last_progress_at, attempts,
-         project_id, project_phase_id, execution_policy
+         project_id, project_phase_id, execution_policy, held_at
   FROM tasks`;
 
 const UNFINISHED = `
@@ -53,8 +54,8 @@ export class TasksRepository {
             resume_state_json, parent_task_id, interrupted_task_id, last_error,
             created_at, started_at, completed_at, pause_sequence,
             work_key, phase, progress_fingerprint, last_progress_at, attempts,
-            project_id, project_phase_id, execution_policy)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            project_id, project_phase_id, execution_policy, held_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -80,6 +81,7 @@ export class TasksRepository {
         task.projectId ?? null,
         task.projectPhaseId ?? null,
         task.executionPolicy ?? null,
+        task.heldAt ?? null,
       );
   }
 
@@ -91,7 +93,7 @@ export class TasksRepository {
            status = ?, resume_state_json = ?, parent_task_id = ?,
            interrupted_task_id = ?, last_error = ?, started_at = ?, completed_at = ?, pause_sequence = ?,
            work_key = ?, phase = ?, progress_fingerprint = ?, last_progress_at = ?, attempts = ?,
-           project_id = ?, project_phase_id = ?, execution_policy = ?
+           project_id = ?, project_phase_id = ?, execution_policy = ?, held_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -115,6 +117,7 @@ export class TasksRepository {
         task.projectId ?? null,
         task.projectPhaseId ?? null,
         task.executionPolicy ?? null,
+        task.heldAt ?? null,
         task.id,
       );
   }
@@ -221,6 +224,7 @@ function toTask(row: TaskRow): Task {
     ...(row.project_id === null ? {} : { projectId: row.project_id }),
     ...(row.project_phase_id === null ? {} : { projectPhaseId: row.project_phase_id }),
     ...(row.execution_policy === "resumable" || row.execution_policy === "terminal" ? { executionPolicy: row.execution_policy } : {}),
+    ...(row.held_at === null || row.held_at === undefined ? {} : { heldAt: row.held_at }),
   };
 }
 

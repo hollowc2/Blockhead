@@ -5,6 +5,8 @@ import type { WorldStatsSummary } from "./world-stats.js";
 import type { TaskPriority, TaskSource, TaskStatus } from "../agent/task.js";
 import type { BuildProjectStatus, BuildPhaseStatus, BuildMaterialShortage } from "../memory/build-projects.js";
 import type { WorldProjectKind, WorldProjectStatus, WorldProjectPhaseStatus } from "../memory/world-projects.js";
+import type { JobsSummary } from "./jobs.js";
+import type { GearDetail } from "./gear.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -106,4 +108,8 @@ export interface DashboardSnapshot {
   story?: readonly StoryEntry[];
   /** Lifetime stats and milestones (server stats file + SQLite counts); safe for the public viewer. */
   world?: WorldStatsSummary | null;
+  /** Live tasks and goals with owner controls, and tracked owner commands. Private. */
+  jobs?: JobsSummary;
+  /** Durability, enchantments, free slots and carried-versus-stored supplies. Private. */
+  gear?: GearDetail | null;
 }

@@ -90,6 +90,13 @@ import { cachedPublicState } from "./dashboard/public-state.js";
 import { createViewerChat } from "./dashboard/viewer-chat.js";
 import { createViewerCommand } from "./dashboard/viewer-command.js";
 import { StoryFeed } from "./dashboard/story.js";
+import { StoryRepository } from "./memory/story.js";
+import { CommandTracker, createJobControl, projectJobs } from "./dashboard/jobs.js";
+import { projectGearDetail, storedContents } from "./dashboard/gear.js";
+import { readOwnerMap, RouteTracker } from "./dashboard/owner-map.js";
+import { createBuildPreview } from "./dashboard/build-preview.js";
+import { readHistory, type UnresolvedProblem } from "./dashboard/history.js";
+import { TaskStatus } from "./agent/task.js";
 import { createWorldStatsReader } from "./dashboard/world-stats.js";
 import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
@@ -110,9 +117,11 @@ const connectionState = new ConnectionStateMachine();
 // server outage does not reopen SQLite and re-run migrations on every retry.
 const bus = new EventBus();
 const eventHistory = new EventHistory({ bus });
-const storyFeed = new StoryFeed({ bus });
 const db = new AppDatabase(config.storage?.db_path ?? "data/blockhead.db");
 db.runMigrations(MIGRATIONS);
+// The story feed persists so the viewer's history survives restarts.
+const storyStore = new StoryRepository(db);
+const storyFeed = new StoryFeed({ bus, store: storyStore });
 const locations = new LocationsRepository(db);
 const taskStore = new TasksRepository(db);
 const buildProjects = new WorldProjectsRepository(db);
@@ -165,6 +174,8 @@ const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 // it.") and waits for the owner's "go ahead" or "change the plan".
 const blockers = new BlockerDesk({ bus, scheduler, buildProjects: buildProjectManager, goals, announce: (message) => announceProject(message) });
 blockers.adopt(rehydratedProjects.builds);
+// Each command sent from the viewer is followed to the work it started.
+const commandTracker = new CommandTracker({ bus, db, scheduler, task: (id) => taskStore.get(id), goals: () => goals, goal: (id) => goalsRepo.get(id) });
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
 // code (the movement tools) performs the mechanics.
@@ -299,7 +310,27 @@ const viewerManager = new ViewerManager({
     publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
     // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
     chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
-    command: createViewerCommand({ deliver: deliverOwnerCommand }),
+    command: createViewerCommand({ deliver: (text) => {
+      // Tracking starts first: delivery runs the command synchronously and
+      // the tasks it enqueues must find their command open.
+      const id = commandTracker.begin(text);
+      try { deliverOwnerCommand(text); } catch (error) { commandTracker.discard(id); throw error; }
+    } }),
+    privateApi: {
+      job: createJobControl({ scheduler, goals }),
+      preview: async (body) => {
+        const result = await buildPreview(body);
+        return result.ok ? { status: 200, body: { preview: result.preview } } : { status: result.status, body: { error: result.error } };
+      },
+      history: async (since) => ({ status: 200, body: readHistory(storyStore, since, unresolvedProblems()) }),
+      map: async () => {
+        const project = buildProjectManager.currentProject()?.project ?? null;
+        return { status: 200, body: readOwnerMap({
+          db, worldId: state.worldId, bot: session?.bot ?? null, routes: session?.routes ?? null,
+          build: project === null ? null : { ...project.origin, label: `Build: ${(project.userGoal || project.structureType).replace(/_/g, " ")}` },
+        }) };
+      },
+    },
     logger,
   }),
   logger,
@@ -322,6 +353,8 @@ interface Session {
   workSafety: WorkSafetyCoordinator;
   /** Digs in for the night when there is no bed to sleep in. */
   nightShelter: NightShelterWatch;
+  /** Walked trail and planned path for the private viewer's map. */
+  routes: RouteTracker;
 }
 let session: Session | null = null;
 let currentBootstrap: BootstrapRunner | null = null;
@@ -360,7 +393,50 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   story: storyFeed,
   worldStats: worldStats.current,
   viewer: () => viewerManager.telemetry(),
+  jobs: () => projectJobs({ scheduler, goals }, commandTracker.view()),
+  gear: () => {
+    const bot = session?.bot;
+    if (bot === undefined || bot.entity === null || bot.entity === undefined) return null;
+    const home = homeStored();
+    return projectGearDetail({ bot, stored: home.stored, storageSeenAt: home.seenAt, targets: session?.maintenance.snapshot?.targets ?? null });
+  },
 });
+
+/** What the home chests held when last opened. */
+function homeStored(): ReturnType<typeof storedContents> {
+  if (state.worldId === null) return { stored: {}, seenAt: null };
+  try { return storedContents(storage.list(state.worldId)); } catch { return { stored: {}, seenAt: null }; }
+}
+
+const buildPreview = createBuildPreview({
+  bot: () => session?.bot ?? null,
+  state,
+  config,
+  projects: buildProjectManager,
+  validateArgs: (tool, args) => registry.validateArgs(tool, args),
+  stored: () => homeStored().stored,
+});
+
+/** Problems still open right now, for the viewer's "since your last visit". */
+function unresolvedProblems(): UnresolvedProblem[] {
+  const problems: UnresolvedProblem[] = [];
+  if (session === null) problems.push({ kind: "system", title: "CobbleBob is offline", detail: connectionState.state, since: null });
+  if (deathManager.inDeathLoop) problems.push({ kind: "system", title: "Death-loop brake is on", detail: "Recovery trips are paused after repeated deaths at one spot.", since: null });
+  if (client.healthState === "failing") problems.push({ kind: "system", title: "The language model is failing", detail: client.lastFailure?.error ?? null, since: client.lastFailure === null ? null : new Date(client.lastFailure.at).toISOString() });
+  const offers = blockers.openBlockers();
+  for (const offer of offers) problems.push({ kind: "blocker", title: offer.summary, detail: "Say “go ahead”, or “change the plan”.", since: new Date(offer.openedAt).toISOString() });
+  const project = buildProjectManager.currentProject()?.project ?? null;
+  if (project !== null && project.status === "blocked" && !offers.some((offer) => offer.subject.kind === "build" && offer.subject.projectId === project.id)) {
+    problems.push({ kind: "build", title: `The ${(project.userGoal || project.structureType).replace(/_/g, " ").replace(/\.$/, "")} is blocked`, detail: project.lastError ?? null, since: project.updatedAt });
+  }
+  for (const task of scheduler.queued) {
+    if (task.status === TaskStatus.BLOCKED) problems.push({ kind: "task", title: task.objective, detail: task.lastError ?? "blocked", since: task.lastProgressAt ?? task.createdAt });
+    else if (task.heldAt !== undefined) problems.push({ kind: "task", title: task.objective, detail: "Paused by you; resume it from Jobs.", since: task.heldAt });
+  }
+  const goal = goals.active();
+  if (goal?.pausedAt !== undefined) problems.push({ kind: "goal", title: goal.description, detail: "Goal paused by you.", since: goal.pausedAt });
+  return problems;
+}
 
 // Phase 12 (spec 33): the development dashboard runs for the whole process,
 // across connect attempts, and reads session state through getters. It owns
@@ -738,7 +814,8 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   bot.once("end", () => breathWatch.detach());
   bot.on("end", () => publicInteractions.cancel());
   bot.on("death", () => publicInteractions.cancel());
-  session = { bot, background, hostile, publicSafety, publicProtocol, maintenance, dispatcher, selfDefense, nightShelter, workSafety };
+  const routes = new RouteTracker(bot);
+  session = { bot, background, hostile, publicSafety, publicProtocol, maintenance, dispatcher, selfDefense, nightShelter, workSafety, routes };
   currentBootstrap = bootstrap;
 
   registerEvents(bot, config, logger, {
@@ -819,6 +896,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   workSafety.detach();
   nightShelter.detach();
   dispatcher.dispose();
+  routes.dispose();
   session = null;
   currentBootstrap = null;
   if (connectionState.state === "INTERRUPTING") connectionState.transition("REINITIALIZING");

@@ -487,3 +487,38 @@ test("evaluateSuccessCriteria: any unmet or unknown fact blocks completion", () 
   const unknown = evaluateSuccessCriteria(goal, { inventory: { iron_pickaxe: 1 } });
   assert.equal(unknown.satisfied, false);
 });
+
+test("owner pause holds a goal's steps and resume releases them", () => {
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS);
+  const bus = new EventBus();
+  const scheduler = new Scheduler({ bus, tasks: new TasksRepository(db) });
+  const manager = new GoalManager({ bus, goals: new GoalsRepository(db), scheduler });
+  const goal = manager.start(newGen());
+  const step = scheduler.enqueue({ type: "collect_resource", priority: TaskPriority.FOREGROUND, source: "goal", objective: "gather", parameters: { goalId: goal.id, resource: "oak_log" } });
+  manager.pause(goal.id);
+  assert.ok(manager.active()?.pausedAt);
+  assert.ok(scheduler.queued.find((task) => task.id === step.id)?.heldAt, "the goal's queued step is held");
+  assert.ok(new GoalsRepository(db).get(goal.id)?.pausedAt, "the pause is persisted");
+  manager.resume(goal.id);
+  assert.equal(manager.active()?.pausedAt, undefined);
+  assert.equal(scheduler.active?.id, step.id, "the released step runs");
+});
+
+test("a paused queued goal is skipped when the queue advances, and can be cancelled on its own", () => {
+  const db = new AppDatabase(":memory:");
+  db.runMigrations(MIGRATIONS);
+  const bus = new EventBus();
+  const scheduler = new Scheduler({ bus, tasks: new TasksRepository(db) });
+  const manager = new GoalManager({ bus, goals: new GoalsRepository(db), scheduler });
+  manager.enqueue(newGen({ description: "first" }));
+  const second = manager.enqueue(newGen({ description: "second" }));
+  const third = manager.enqueue(newGen({ description: "third" }));
+  manager.pause(second.id);
+  manager.complete();
+  assert.equal(manager.active()?.id, third.id, "the paused goal keeps its place but does not start");
+  assert.deepEqual(manager.queued().map((goal) => goal.id), [second.id]);
+  assert.equal(manager.cancelGoal(second.id)?.status, GoalStatus.CANCELLED);
+  assert.equal(manager.queued().length, 0);
+  assert.equal(manager.active()?.id, third.id, "cancelling a queued goal leaves the active one alone");
+});

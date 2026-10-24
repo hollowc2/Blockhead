@@ -136,12 +136,13 @@ export function parseDeterministicGatherCommand(instruction: string, nearbyLog: 
 /** Small, explicit owner-command rail that remains available while the LLM is down. */
 export function parseDeterministicBuildCommand(instruction: string): DeterministicBuildCommand | null {
   instruction = instruction.trim().toLowerCase().replace(/[!?.,]+$/, "");
-  const landmark = instruction.match(/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?(?:medium |small |large )?(?:pentagon|pentagon building|us pentagon|sears tower|willis tower|chicago skyscraper|castle|cathedral|museum|greenhouse|bridge|mansion)(?:-inspired)?(?: skyscraper)?(?: with .*)?$/);
+  const landmark = instruction.match(/^(?:please )?(?:build|make|construct)(?: me)? (?:a |the )?(?:medium |small |large )?(?:pentagon|pentagon building|us pentagon|sears tower|willis tower|chicago skyscraper|castle|cathedral|museum|greenhouse|bridge|mansion)(?:-inspired)?(?: skyscraper)?(?: with .*?)?(?: (?:at|from) (?:owner|current|home))?$/);
   if (landmark) {
     const name = instruction.match(/pentagon|sears tower|willis tower|chicago skyscraper|castle|cathedral|museum|greenhouse|bridge|mansion/)?.[0] ?? "museum";
     const template = /pentagon/.test(name) ? "pentagon_complex" : /sears|willis|chicago/.test(name) ? "bundled_tube_skyscraper" : name;
     const scale = /large/.test(instruction) ? "large" : /small/.test(instruction) ? "small" : "medium";
-    return { tool: "build_design", args: { template, scale, anchor: "owner" } };
+    const anchor = instruction.match(/ (?:at|from) (owner|current|home)$/)?.[1] ?? "owner";
+    return { tool: "build_design", args: { template, scale, anchor } };
   }
   if (/^(please )?build (a |the )?(standard )?(stockpile )?shed$/.test(instruction)
     || /^(please )?build (a |the )?(standard )?base$/.test(instruction)) {

@@ -849,7 +849,7 @@ export class TaskDispatcher {
   private async runFollow(player: string, signals: TaskSignals): Promise<SkillResult> {
     const bot = this.opts.bot;
     const deadline = Date.now() + FOLLOW_MAX_MS;
-    const newCommand = (): boolean => this.opts.scheduler.queued.some((task) => task.source === "user");
+    const newCommand = (): boolean => this.opts.scheduler.queued.some((task) => task.source === "user" && task.heldAt === undefined);
     let tick = 0;
     let unseenSince: number | null = null;
     while (Date.now() < deadline) {

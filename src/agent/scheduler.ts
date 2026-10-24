@@ -312,6 +312,7 @@ export class Scheduler {
   activate(id: string): Task | null {
     if (this.halted) return null;
     const guarded = this.queue.find(task => task.id === id);
+    if (guarded?.heldAt !== undefined) return null;
     if (guarded !== undefined && this.activationGuard?.(guarded) === false) return null;
     const task = this.findQueued(id);
     if (!task) return null;
@@ -564,6 +565,43 @@ export class Scheduler {
     return task;
   }
 
+  /**
+   * Owner pause: park a task so arbitration never resumes it on its own. An
+   * active run is asked to pause cooperatively (it settles PAUSED at its next
+   * checkpoint, keeping its resume state); queued work turns PAUSED now.
+   * Blocked work stays blocked and is also held.
+   */
+  hold(id: string): Task | null {
+    const task = this.activeTask?.id === id ? this.activeTask : this.findQueued(id);
+    if (task === null) return null;
+    task.heldAt ??= new Date().toISOString();
+    if (task === this.activeTask) {
+      this.tasks.update(task);
+      this.requestPause();
+      return task;
+    }
+    if (task.status === TaskStatus.QUEUED) {
+      task.status = TaskStatus.PAUSED;
+      task.pauseSequence = ++this.pausedSeq;
+      this.pausedAt.set(task.id, task.pauseSequence);
+    }
+    this.tasks.update(task);
+    this.bus.emit("task.paused", { task });
+    logger.info({ taskId: task.id }, "task held by the owner");
+    return task;
+  }
+
+  /** Owner resume: release a held task back to normal arbitration. */
+  release(id: string): Task | null {
+    const task = this.findQueued(id) ?? (this.activeTask?.id === id ? this.activeTask : null);
+    if (task === null || task.heldAt === undefined) return null;
+    task.heldAt = undefined;
+    this.tasks.update(task);
+    logger.info({ taskId: task.id }, "task released by the owner");
+    if (task !== this.activeTask) this.claim();
+    return task;
+  }
+
   /** Requeue blocked tasks whose watchdog cooldown has expired, even when idle. */
   maintainExpiredBlocks(): number {
     const before = this.queue.filter((task) => task.status === TaskStatus.QUEUED).length;
@@ -584,6 +622,7 @@ export class Scheduler {
     for (const task of this.queue) {
       if (task.id === excludedId) continue;
       if (task.status !== TaskStatus.QUEUED && task.status !== TaskStatus.PAUSED) continue;
+      if (task.heldAt !== undefined) continue;
       if (this.activationGuard?.(task) === false) continue;
       if (best === null || this.candidateKey(task) > this.candidateKey(best)) best = task;
     }

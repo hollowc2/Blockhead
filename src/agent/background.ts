@@ -118,7 +118,7 @@ export interface BackgroundManagerOptions {
  * queue; counting it as pending work silenced the idle loop for good.
  */
 function isRunnable(task: Task): boolean {
-  return task.status === TaskStatus.QUEUED || task.status === TaskStatus.PAUSED;
+  return (task.status === TaskStatus.QUEUED || task.status === TaskStatus.PAUSED) && task.heldAt === undefined;
 }
 
 /**
@@ -970,6 +970,10 @@ export class BackgroundManager {
       this.opts.logger.info({ goalId: goal.id }, "goal completed by criteria");
       return true;
     }
+
+    // The owner paused this goal: no new step until they resume it. The
+    // director's own upkeep still runs.
+    if (goal.pausedAt !== undefined) return false;
 
     // A build the goal is waiting on that can never verify ends the goal:
     // nothing the goal driver chooses can finish a failed or cancelled build.

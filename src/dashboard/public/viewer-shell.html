@@ -64,10 +64,23 @@
     <aside class="panel" id="panel" data-active="live">
       <nav class="tabs" role="tablist">
         <button type="button" role="tab" data-tab-button="live" aria-selected="true">Live</button>
+        <button type="button" role="tab" data-tab-button="jobs" aria-selected="false" data-private>Jobs <i id="jobsAlert" class="unseen alert" hidden></i></button>
+        <button type="button" role="tab" data-tab-button="map" aria-selected="false" data-private>Map</button>
         <button type="button" role="tab" data-tab-button="gear" aria-selected="false">Gear</button>
         <button type="button" role="tab" data-tab-button="story" aria-selected="false">Story <i id="storyUnseen" class="unseen" hidden></i></button>
         <button type="button" role="tab" data-tab-button="stats" aria-selected="false">Stats</button>
       </nav>
+      <article id="visitCard" class="card visit" data-tab="live" data-private data-on-demand hidden>
+        <h2>Since your last visit <button id="visitDismiss" class="link-btn" type="button">Dismiss</button></h2>
+        <p id="visitWhen" class="sub"></p>
+        <ul id="visitSummary" class="visit-summary"></ul>
+        <div id="visitProblemsWrap" hidden>
+          <h3>Still unresolved</h3>
+          <ul id="visitProblems" class="problems"></ul>
+        </div>
+        <button id="visitStory" class="link-btn" type="button">See everything that happened</button>
+      </article>
+
       <article class="card now" data-tab="live" data-private>
         <h2>Now</h2>
         <p id="action" class="action">—</p>
@@ -101,6 +114,7 @@
         <p class="sub">Tell Bob what to do, just like in Minecraft chat. For building while you're away, say “at home” or “at current”.</p>
         <form id="commandForm" class="chat-form command-form" autocomplete="off">
           <input id="commandInput" type="text" maxlength="500" placeholder="Gather 32 oak logs" aria-label="Task for CobbleBob" required>
+          <button id="commandPreview" class="secondary" type="button" disabled title="See a build before starting it">Preview</button>
           <button id="commandSend" type="submit" disabled>Send task</button>
         </form>
         <div id="commandQuick" class="chat-quick">
@@ -109,7 +123,29 @@
           <button type="button" data-command="stop" class="stop-command" disabled>Stop</button>
         </div>
         <p id="commandStatus" class="sub" role="status">Connecting to CobbleBob…</p>
+        <div id="commandLatest" class="command-latest" hidden></div>
         <div id="commandReplies" class="chat-log" aria-live="polite" aria-label="CobbleBob's replies"></div>
+      </article>
+
+      <article id="previewCard" class="card preview" data-tab="live" data-private data-on-demand hidden>
+        <h2>Build preview <button id="previewClear" class="link-btn" type="button">Clear</button></h2>
+        <p id="previewName" class="strong"></p>
+        <dl class="grid2 plain preview-facts">
+          <div><dt>Footprint</dt><dd id="previewFootprint">—</dd></div>
+          <div><dt>Entrance faces</dt><dd id="previewFacing">—</dd></div>
+          <div><dt>Blocks</dt><dd id="previewBlocks">—</dd></div>
+          <div><dt>Site</dt><dd id="previewSite">—</dd></div>
+        </dl>
+        <table class="materials">
+          <thead><tr><th>Material</th><th>Need</th><th>Carried</th><th>Stored</th><th>Short</th></tr></thead>
+          <tbody id="previewMaterials"></tbody>
+        </table>
+        <ul id="previewNotes" class="notes"></ul>
+        <p class="sub">The translucent ghost in the 3D view shows where it goes.</p>
+        <div class="row-actions">
+          <button id="previewStart" class="primary-btn" type="button">Start this build</button>
+          <button id="previewLook" class="ghost-btn" type="button">Hide ghost</button>
+        </div>
       </article>
 
       <article class="card chat" data-tab="live" data-private>
@@ -159,21 +195,107 @@
         <p class="sub">A read-only window into an autonomous Minecraft agent. CobbleBob is gathering, building and surviving on its own.</p>
       </article>
 
+      <article class="card" data-tab="jobs" data-private>
+        <h2>Your commands</h2>
+        <p class="sub">Tasks you sent from this page, followed until they finish.</p>
+        <ol id="jobCommands" class="commands-list"><li class="sub">No commands sent from the viewer yet.</li></ol>
+      </article>
+
+      <article class="card" data-tab="jobs" data-private>
+        <h2>Running now <span id="jobActiveCount" class="count"></span></h2>
+        <ul id="jobActive" class="jobs"><li class="sub">Nothing running.</li></ul>
+        <p id="jobStatus" class="sub" role="status" aria-live="polite"></p>
+      </article>
+
+      <article class="card" data-tab="jobs" data-private>
+        <h2>Goals <span id="jobGoalCount" class="count"></span></h2>
+        <ul id="jobGoals" class="jobs"><li class="sub">No goals.</li></ul>
+      </article>
+
+      <article class="card" data-tab="jobs" data-private>
+        <h2>Queue <span id="jobQueueCount" class="count"></span></h2>
+        <div class="filters" role="group" aria-label="Filter queue">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="queued" aria-pressed="false">Queued</button>
+          <button type="button" data-filter="paused" aria-pressed="false">Paused</button>
+          <button type="button" data-filter="blocked" aria-pressed="false">Blocked</button>
+        </div>
+        <ul id="jobQueue" class="jobs"><li class="sub">The queue is empty.</li></ul>
+      </article>
+
+      <article class="card map-card" data-tab="map" data-private>
+        <h2>Map <span id="mapDimension" class="count"></span></h2>
+        <div class="map-wrap">
+          <canvas id="mapCanvas" aria-label="Top-down map of what CobbleBob remembers"></canvas>
+          <div class="map-tools">
+            <button id="mapZoomIn" class="icon-btn small" type="button" aria-label="Zoom in">+</button>
+            <button id="mapZoomOut" class="icon-btn small" type="button" aria-label="Zoom out">−</button>
+            <button id="mapFollow" class="icon-btn small" type="button" aria-label="Follow CobbleBob" aria-pressed="true" title="Follow CobbleBob">◎</button>
+            <button id="mapHome" class="icon-btn small" type="button" aria-label="Center on home" title="Center on home">⌂</button>
+          </div>
+          <p class="map-north" aria-hidden="true">N ↑</p>
+        </div>
+        <p id="mapInfo" class="sub" role="status">Loading the map…</p>
+        <div class="legend" id="mapLegend">
+          <label><input type="checkbox" data-layer="trail" checked><i class="lg lg-trail"></i>Walked</label>
+          <label><input type="checkbox" data-layer="path" checked><i class="lg lg-path"></i>Planned route</label>
+          <label><input type="checkbox" data-layer="resources" checked><i class="lg lg-res"></i>Resources</label>
+          <label><input type="checkbox" data-layer="chests" checked><i class="lg lg-chest"></i>Chests</label>
+          <label><input type="checkbox" data-layer="deaths" checked><i class="lg lg-death"></i>Deaths</label>
+          <label><input type="checkbox" data-layer="locations" checked><i class="lg lg-spot"></i>Places</label>
+        </div>
+      </article>
+
+      <article class="card" data-tab="map" data-private>
+        <h2>Where he's going</h2>
+        <dl class="grid2 plain">
+          <div><dt>Destination</dt><dd id="mapDestination">—</dd></div>
+          <div><dt>Distance</dt><dd id="mapDistance">—</dd></div>
+          <div><dt>From home</dt><dd id="mapFromHome">—</dd></div>
+          <div><dt>Route</dt><dd id="mapRoute">—</dd></div>
+        </dl>
+      </article>
+
+      <article class="card" data-tab="gear" data-private>
+        <h2>Ready to head out? <span id="readyCount" class="count">—</span></h2>
+        <ul id="readiness" class="readiness"><li class="sub">Waiting for gear data…</li></ul>
+      </article>
+
       <article class="card" data-tab="gear">
         <h2>Equipped</h2>
         <p class="sub">What CobbleBob is holding and wearing right now.</p>
         <dl id="equipment" class="equipment"><div><dt>Gear</dt><dd>Waiting for gear data…</dd></div></dl>
       </article>
 
+      <article class="card" data-tab="gear" data-private>
+        <h2>Supplies</h2>
+        <p class="sub" id="suppliesSeen">Carried versus stored in the home chests.</p>
+        <table class="materials supplies">
+          <thead><tr><th>Supply</th><th>Carried</th><th>Stored</th><th>Target</th></tr></thead>
+          <tbody id="supplies"></tbody>
+        </table>
+      </article>
+
+      <article class="card" data-tab="gear" data-private>
+        <h2>Tool condition</h2>
+        <ul id="toolCondition" class="conditions"><li class="sub">No spare tools carried.</li></ul>
+      </article>
+
       <article class="card" data-tab="gear">
         <h2>Inventory <span id="inventoryCount" class="count">—</span></h2>
-        <p class="sub">Carried items, grouped by type.</p>
+        <p class="sub">Carried items, grouped by type. <span id="slotSummary" data-private></span></p>
         <ul id="inventoryItems" class="inventory-items"><li class="sub">Waiting for inventory data…</li></ul>
       </article>
 
       <article class="card" data-tab="story">
         <h2>Story so far</h2>
         <ol id="story" class="story"><li class="story-empty">Nothing yet. Stick around, things happen fast.</li></ol>
+      </article>
+
+      <article class="card" data-tab="story" data-private>
+        <h2>History <button id="historyLoad" class="link-btn" type="button">Load</button></h2>
+        <p id="historyInfo" class="sub">Everything CobbleBob has done, kept across restarts.</p>
+        <div id="history" class="history"></div>
       </article>
 
       <article class="card" data-tab="stats">
