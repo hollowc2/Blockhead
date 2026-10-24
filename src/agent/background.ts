@@ -971,7 +971,7 @@ export class BackgroundManager {
     if (!decisionEligible && this.lastDecisionAt !== null && now - this.lastDecisionAt < intervalMs) return true;
 
     this.lastDecisionAt = now;
-    return this.decideGoalStep(goal.id);
+    return this.decideGoalStep(goal.id, snapshot);
   }
 
   /**
@@ -1051,7 +1051,7 @@ export class BackgroundManager {
    * goal terminal states (`complete` / `abandon`). Model failures stand the
    * tick down; the periodic interval re-checks.
    */
-  private async decideGoalStep(goalId: string): Promise<boolean> {
+  private async decideGoalStep(goalId: string, snapshot: StockpileSnapshot): Promise<boolean> {
     const goals = this.opts.goals!;
     const goal = goals.active();
     if (goal === null || goal.id !== goalId) return false;
@@ -1089,6 +1089,24 @@ export class BackgroundManager {
 
     const args = actionArguments(action);
     if (action.type === "collect_resource") args.quantity = Math.min(action.quantity, AUTONOMOUS_GATHER_MAX);
+    if (action.type === "stockpile_maintenance") {
+      // The restore needs a target and deficit: bare `{kind}` replanned to a
+      // zero deficit and settled instantly, and the goal re-chose the same
+      // no-op every 4 seconds for 17 hours ("torches stockpile >= 128" at 66,
+      // 2026-10-24). Restore toward the goal's own threshold when it asks for
+      // more than the everyday target.
+      const target = Math.max(
+        snapshot.targets[action.kind],
+        ...goal.successCriteria.map((c) => (c.kind === "stockpile" && c.stockpile === action.kind ? c.min : 0)),
+      );
+      const current = snapshot.levels[action.kind];
+      if (current >= target) {
+        goals.recordStandingBy(action.type, `${action.kind} already at ${current} (target ${target}); choose a different action`);
+        this.opts.logger.info({ goalId, kind: action.kind, current, target }, "goal stockpile step already satisfied; not dispatched");
+        return true;
+      }
+      Object.assign(args, { target, current, deficit: Math.min(target - current, AUTONOMOUS_GATHER_MAX) });
+    }
     const parameters = { ...args, goalId };
     const stepLabel = goalStepLabel(action.type, args);
     goals.setCurrentStep(stepLabel);

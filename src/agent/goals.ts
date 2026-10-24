@@ -208,12 +208,12 @@ export class GoalManager {
   }
 
   /** Record the LLM "wait" hold (no action ran; the goal stands by). */
-  recordStandingBy(action: string): void {
+  recordStandingBy(action: string, message?: string): void {
     const goal = this.goal;
     if (goal === null) return;
     const results: GoalResult[] = [
       ...goal.recentResults,
-      { action, outcome: "standing_by", at: new Date().toISOString() },
+      { action, outcome: "standing_by", message, at: new Date().toISOString() },
     ];
     goal.recentResults = results.slice(-MAX_RECENT_RESULTS);
     this.opts.goals.update(goal);

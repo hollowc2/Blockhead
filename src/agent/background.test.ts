@@ -916,6 +916,44 @@ test("the goal layer backs off after deaths: no new expedition, and a deadly goa
 });
 
 
+test("a goal's stockpile step restores toward the goal threshold, and a met one is not dispatched", async () => {
+  // 2026-10-24: "torches stockpile >= 128" with 66 torches. The bare {kind}
+  // step replanned to a zero deficit, settled instantly, and the goal chose
+  // it again every 4 seconds for 17 hours.
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  let levels = { wood: 64, food: 64, fuel: 64, torches: 66 };
+  (h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> }).check = async () =>
+    ({ levels, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] });
+  const standing: Array<string | undefined> = [];
+  const active = { id: "g1", description: "Light up the mines", source: "owner", createdAt: new Date(0).toISOString(), currentStep: null, recentResults: [], successCriteria: [{ kind: "stockpile", stockpile: "torches", min: 128 }] };
+  (h.options as { goals?: unknown }).goals = {
+    active: () => active,
+    complete: () => null,
+    setCurrentStep: () => undefined,
+    recordStandingBy: (_action: string, message?: string) => { standing.push(message); },
+  };
+  (h.options.decider as unknown as { decideGoalAction: () => Promise<unknown> }).decideGoalAction =
+    async () => ({ action: { type: "stockpile_maintenance", kind: "torches" }, rationale: "test" });
+
+  await h.manager.tick(true);
+  const step = h.enqueued.find((task) => task.type === "stockpile_maintenance");
+  assert.ok(step, "goal step enqueued");
+  assert.deepEqual(
+    { target: step.parameters.target, current: step.parameters.current, deficit: step.parameters.deficit },
+    { target: 128, current: 66, deficit: 62 },
+  );
+
+  h.enqueued.length = 0;
+  h.queued.length = 0;
+  active.successCriteria = [{ kind: "stockpile", stockpile: "torches", min: 60 }, { kind: "stockpile", stockpile: "food", min: 100 }];
+  levels = { ...levels, torches: 70 };
+  await h.manager.tick(true);
+  assert.equal(h.enqueued.filter((task) => task.type === "stockpile_maintenance").length, 0, "no no-op step dispatched");
+  assert.match(standing.at(-1) ?? "", /torches already at 70 \(target 64\)/);
+  h.manager.stop();
+});
+
 test("model backoff uses deterministic maintenance without another model call", async () => {
   const h = newHarness(20, 20);
   h.crisis = null;
