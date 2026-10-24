@@ -33,6 +33,7 @@ import { TaskDispatcher } from "./agent/task-dispatcher.js";
 import { DeathRecoveryManager } from "./agent/death-recovery.js";
 import { BackgroundManager } from "./agent/background.js";
 import { GoalManager } from "./agent/goals.js";
+import { BlockerDesk } from "./agent/blockers.js";
 import { registerGoalTools } from "./tools/goals.js";
 import { BootstrapRunner } from "./skills/bootstrap-survival.js";
 import { CollectResourceRunner } from "./skills/collect-resource.js";
@@ -160,6 +161,9 @@ setEscapeRouteProvider((position, dimension) => {
 buildProjectManager.rehydrateAll();
 const survivalInterrupts = new SurvivalInterruptCoordinator({ bus, scheduler, projects: buildProjectManager });
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
+// Stuck work explains itself ("Need 18 glass; missing 18 sand. I can gather
+// it.") and waits for the owner's "go ahead" or "change the plan".
+const blockers = new BlockerDesk({ bus, scheduler, buildProjects: buildProjectManager, goals, announce: (message) => announceProject(message) });
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
 // code (the movement tools) performs the mechanics.
@@ -348,6 +352,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   buildProjects: buildProjectManager,
   worldProjects: buildProjectManager,
   goals: () => goals,
+  blockers,
   decider,
   client,
   eventHistory,
@@ -706,7 +711,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   workSafety.attach();
   const dispatcher = new TaskDispatcher({ bus, scheduler, state, bot, config, maintenance, storage, collect, food, torches, lightHome, developLand, deathRecovery, organizeStorage, buildBase, ensureItem, defense, utility, nightShelter: nightShelterRunner, delivery, buildProjects: buildProjectManager, terrainProjects, destructiveAuthorizations, watchdog, logger });
 
-  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop, recentDeathTimes: () => (state.worldId === null ? [] : deaths.list(state.worldId, 8).map((death) => Date.parse(death.createdAt))) });
+  const background = new BackgroundManager({ bot, state, config, bus, scheduler, maintenance, collect, decider, bootstrap, organizeStorage, buildBase, storage, tasks: taskStore, backgroundFailures, goals, blockers, buildProjects: buildProjectManager, lightHome, developLand, logger, inDeathLoop: () => deathManager.inDeathLoop, recentDeathTimes: () => (state.worldId === null ? [] : deaths.list(state.worldId, 8).map((death) => Date.parse(death.createdAt))) });
   background.start();
 
   // Phase 12: the session's hostile sensor emits `hostile.detected` (spec 33
@@ -748,6 +753,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
     maintenance,
     goals,
     worldProjects: buildProjectManager,
+    blockers,
   });
 
   // Bootstrap runs on first spawn; the runner is resumable and idempotent, so a

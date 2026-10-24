@@ -277,7 +277,7 @@
       const total = build.totalOperations || 0, done = build.verifiedOperations || 0;
       setText("buildName", (build.userGoal || build.structureType || "").replace(/_/g, " "));
       $("buildBar").style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
-      const blocked = build.currentShortage ? "waiting on materials" : build.lastBlockingReason;
+      const blocked = build.blocker || build.lastBlockingReason;
       setText("buildDetail", `${build.phase?.label || build.status} · ${done}/${total} blocks${blocked ? ` · ${blocked}` : ""}`);
     } else if (world) {
       setText("buildName", String(world.kind).replace(/_/g, " "));

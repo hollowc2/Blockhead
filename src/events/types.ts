@@ -1,5 +1,6 @@
 import type { Task } from "../agent/task.js";
 import type { Goal } from "../agent/goal.js";
+import type { BlockerExplanation } from "../agent/blockers.js";
 import type { BootstrapStage } from "../agent/bootstrap.js";
 import type { StockpileDeficit, StockpileKind } from "../agent/maintenance.js";
 import type { HomeLocation } from "../minecraft/movement.js";
@@ -56,6 +57,12 @@ export interface ToolDurabilityEvent {
 /** Lifecycle events carry the persisted task so listeners can introspect it. */
 export interface TaskEvent {
   task: Task;
+}
+
+/** A settled skill run could not get its materials, with what it needs and lacks. */
+export interface TaskBlockerEvent {
+  task: Task;
+  blocker: BlockerExplanation;
 }
 
 /** Goal lifecycle events carry the persisted goal (see the goal layer, spec goals). */
@@ -254,6 +261,7 @@ export interface EventMap {
   "task.cancelled": TaskEvent;
   "task.paused": TaskEvent;
   "task.requeued": TaskEvent;
+  "task.blocker": TaskBlockerEvent;
   "goal.started": GoalEvent;
   "goal.completed": GoalEvent;
   "goal.blocked": GoalEvent;

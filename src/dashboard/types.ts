@@ -28,6 +28,8 @@ export interface BuildProjectSummary {
   totalOperations: number;
   currentShortage: BuildMaterialShortage | null;
   lastBlockingReason: string | null;
+  /** What the build needs and lacks, with the next step ("Need 18 glass; missing 18 sand. I can gather it."). */
+  blocker?: string | null;
   blueprintHash: string;
 }
 export interface WorldProjectSummary {

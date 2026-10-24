@@ -54,7 +54,7 @@ export function viewerChatContext(s: DashboardSnapshot): Record<string, unknown>
     phase: project.phase?.label ?? null,
     blocksPlaced: project.verifiedOperations,
     blocksTotal: project.totalOperations,
-    blockedBy: project.currentShortage ? "missing materials" : project.lastBlockingReason,
+    blockedBy: project.blocker ?? project.lastBlockingReason,
   };
   const worldProject = s.worldProject && { status: s.worldProject.status, kind: s.worldProject.kind, phase: s.worldProject.phase?.label ?? null, blocker: s.worldProject.blocker };
   return {

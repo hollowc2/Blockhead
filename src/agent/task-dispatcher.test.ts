@@ -55,3 +55,19 @@ test("development dispatch preserves planned identity and cancels stale plans wi
   assert.equal(received, undefined, "unidentified legacy task cannot mutate freshly selected work");
   d.dispose();
 });
+
+test("a failure that explains its shortage carries the explanation and announces a blocker", () => {
+  const bus = new EventBus();
+  const failed: string[] = [];
+  const blockers: unknown[] = [];
+  bus.on("task.blocker", ({ blocker }) => blockers.push(blocker));
+  const d = new TaskDispatcher({
+    bus,
+    scheduler: { failActive: (message: string) => { failed.push(message); } },
+  } as unknown as TaskDispatcherOptions);
+  const blocker = { need: { item: "glass", count: 18 }, missing: [{ item: "sand", count: 18, via: "gather" }], canFix: true };
+  (d as any).settleResult(task({ type: "craft_item", source: "user" }), { ok: false, status: "failed", errorCode: "INSUFFICIENT_MATERIALS", message: "need 18 more sand and craft mode does not mine", retryable: false, data: { blocker } });
+  assert.deepEqual(failed, ["Need 18 glass; missing 18 sand. I can gather it."]);
+  assert.deepEqual(blockers, [blocker]);
+  d.dispose();
+});

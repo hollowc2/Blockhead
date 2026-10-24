@@ -5,6 +5,7 @@ import type { Scheduler } from "../agent/scheduler.js";
 import type { BuildProjectManager } from "../agent/build-projects.js";
 import type { WorldProjectManager } from "../agent/world-projects.js";
 import type { GoalManager } from "../agent/goals.js";
+import type { BlockerDesk } from "../agent/blockers.js";
 import type { StockpileManager } from "../agent/maintenance.js";
 import type { HostileTracker } from "../minecraft/entities.js";
 import type { DecisionMaker } from "../llm/decider.js";
@@ -47,6 +48,7 @@ export interface DashboardTelemetrySource {
   buildProjects?: BuildProjectManager;
   worldProjects?: WorldProjectManager;
   goals(): GoalManager | null;
+  blockers?: BlockerDesk;
   decider?: DecisionMaker | null;
   client?: LlamaClient | null;
   eventHistory: EventHistory;
@@ -119,7 +121,7 @@ export class DashboardTelemetryCollector {
       },
       goal: projectGoal(activeGoal),
       task: projectTask(activeTask),
-      buildProject: projectBuildProject(buildProject),
+      buildProject: projectBuildProject(buildProject, buildProject === null ? null : this.source.blockers?.forProject(buildProject.project.id)?.summary),
       worldProject: projectWorldProject(worldProject),
       action: { label: actionForTask(activeTask), taskId: activeTask?.id ?? null },
       background: {

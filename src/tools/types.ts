@@ -10,6 +10,7 @@ import type { StorageRepository } from "../memory/storage.js";
 import type { EventBus } from "../events/bus.js";
 import type { BootstrapRunner } from "../skills/bootstrap-survival.js";
 import type { WorldProjectManager } from "../agent/world-projects.js";
+import type { BlockerDesk } from "../agent/blockers.js";
 
 /** Deterministic environment a tool handler may act on. */
 export interface ToolContext {
@@ -34,6 +35,8 @@ export interface ToolContext {
   goals?: GoalManager;
   /** Process-lifetime world-project coordinator for bounded terrain tools. */
   worldProjects?: WorldProjectManager;
+  /** Process-lifetime blocker offers ("go ahead" / "change the plan"). */
+  blockers?: BlockerDesk;
 }
 
 /** Tool handlers return a short player-facing reply, or nothing to stay silent. */

@@ -19,6 +19,7 @@ import { TaskPriority, TaskStatus, type Task } from "./task.js";
 import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { GoalManager } from "./goals.js";
+import type { BlockerDesk } from "./blockers.js";
 import type { WorldProjectManager } from "./world-projects.js";
 import { boundsKey, chestKey, criterionLabel, criterionProgress, evaluateSuccessCriteria, type AreaClearedCriterion, type Goal, type GoalFacts, type SuccessCriterion } from "./goal.js";
 import { createFrozenTerrainPlan } from "../terrain/schema.js";
@@ -89,6 +90,8 @@ export interface BackgroundManagerOptions {
    * configs without one run the director exactly as before).
    */
   goals?: GoalManager;
+  /** Blocker explanations for the builds a goal waits on (shown to the goal LLM). */
+  blockers?: BlockerDesk;
   /** Active durable construction projects suppress director replanning. */
   buildProjects?: WorldProjectManager;
   /** Home lighting: dark spots around home are torched before ordinary restores. */
@@ -1296,6 +1299,13 @@ export class BackgroundManager {
       lines.push(`Measured now: ${goal.successCriteria.map((c) => criterionProgress(c, facts)).join("; ")}.`);
     }
     if (goal.currentStep !== null) lines.push(`Current step: ${goal.currentStep}.`);
+    // A build the goal waits on that is stuck says what it lacks, so the next
+    // step can fetch it (collect_resource / ensure_item) before resume_build.
+    for (const c of goal.successCriteria) {
+      if (c.kind !== "building_verified" || c.target !== "project" || c.projectId === undefined) continue;
+      const blocker = this.opts.blockers?.forProject(c.projectId);
+      if (blocker !== null && blocker !== undefined) lines.push(`Build blocker: ${blocker.summary}`);
+    }
     if (goal.recentResults.length > 0) {
       const outcomes = goal.recentResults
         .map((r) => `${r.action} ${r.outcome}${r.message ? ` (${r.message})` : ""}`)

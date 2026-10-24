@@ -172,6 +172,10 @@ export const CancelGoalArgsSchema = z.object({
   all: z.boolean().optional(),
 });
 
+export const ResolveBlockerArgsSchema = z.object({
+  choice: z.enum(["proceed", "change_plan"]),
+});
+
 /** Minimal validation of a llama.cpp `/v1/chat/completions` response. */
 export const ChatCompletionSchema = z.object({
   choices: z

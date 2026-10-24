@@ -377,6 +377,24 @@ export class BuildProjectManager {
     return this.scheduleNextWork(project.id);
   }
 
+  /**
+   * Owner "change the plan" on a stuck build: park it as paused, keeping its
+   * progress and its blocked tasks, so "continue the build" reopens it later.
+   * Only a blocked (or blocked-in-all-but-name) project is set aside; one
+   * still making progress is left alone.
+   */
+  setAside(projectId: string, reason: string): boolean {
+    const project = this.projects.get(projectId);
+    if (project === null || (project.status !== "blocked" && !this.onlyBlockedWork(project))) return false;
+    const now = new Date().toISOString();
+    project.status = "paused";
+    project.lastError = reason;
+    project.updatedAt = now;
+    this.projects.update(project);
+    this.projects.appendEvent({ projectId: project.id, kind: "set_aside", details: { reason }, createdAt: now });
+    return true;
+  }
+
   /** Prefer the project actually executing; retain unfinished backlog for gates. */
   currentProject(): BuildProjectStatusView | null {
     const project = this.projects.loadUnfinished()

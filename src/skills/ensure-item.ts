@@ -27,6 +27,7 @@ import { FOOD_ITEM_NAMES } from "./gather-food.js";
 import { TOOL_FAMILIES } from "./expedition.js";
 import { missingIronKitFor } from "./armor.js";
 import { equipAllArmor } from "../minecraft/primitives.js";
+import { explainPlan, type BlockerExplanation } from "../agent/blockers.js";
 
 /**
  * Phase 13 (spec 14.3 / 20.2): the `ensure_item` family of skills.
@@ -443,6 +444,8 @@ export interface EnsureItemData {
   delivered: number;
   /** Times this task was cooperatively interrupted (persisted across resumes). */
   interruptions: number;
+  /** What the chain needed and lacked when it stopped (failures only). */
+  blocker?: BlockerExplanation;
 }
 
 /** Progress persisted as the task's resume state (Phase 8). A paused run
@@ -606,6 +609,7 @@ export class EnsureItemRunner {
     const catalog = makeRecipeCatalog(bot, (item) => this.available(item));
     const planResult = resolvePlan(bare, quantity, catalog);
     if (!planResult.ok) {
+      data.blocker = { need: { item: bare, count: quantity - data.availableAtStart }, missing: [], canFix: false, reason: planResult.reason };
       return this.fail(data, planResult.errorCode, planResult.reason, false);
     }
     const plan = planResult.plan;
@@ -636,6 +640,10 @@ export class EnsureItemRunner {
       const failure = await this.executeStep(step, table, furnace, data);
       this.opts.logger.info({ step, ok: failure === null, reason: failure?.reason, carried: countItem(this.opts.bot, bareName("item" in step ? step.item : bare)) }, "ensure_item step settled");
       if (failure !== null) {
+        // Name the raw inputs the chain still lacks ("need 18 glass; missing
+        // 18 sand"), not just the step that stopped.
+        const explanation = explainPlan({ item: bare, count: quantity - data.availableAtStart }, plan.steps, (name) => this.available(name), { dropOf: carriedItemName, ...(failure.errorCode === "INSUFFICIENT_MATERIALS" ? {} : { reason: failure.reason }) });
+        if (explanation.missing.length > 0) data.blocker = explanation;
         return this.fail(data, failure.errorCode, failure.reason, failure.retryable);
       }
       if (this.stopRequested) return this.interrupted(data);
@@ -1153,7 +1161,9 @@ export class EnsureItemRunner {
   }
 
   private fail(data: EnsureItemData, errorCode: string, reason: string, retryable: boolean): SkillResult<EnsureItemData> {
-    this.announce(`Stuck: ${reason}.`);
+    // An explained shortage is said once, with its next step, by whoever owns
+    // the work (the blocker desk for the owner's tasks and builds).
+    if (data.blocker === undefined) this.announce(`Stuck: ${reason}.`);
     this.opts.logger.info({ item: data.item, errorCode, reason }, "ensure_item failed");
     return {
       ok: false,

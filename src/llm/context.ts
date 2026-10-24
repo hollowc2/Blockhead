@@ -111,6 +111,12 @@ export interface StateSnapshot {
   } | null;
   /** Descriptions of the owner's goals waiting behind the active one, in run order. */
   queuedGoals: string[];
+  /**
+   * The stuck work waiting on the owner's answer ("Need 18 glass for the
+   * house; missing 18 sand. I can gather it."), or null. Answer it with
+   * resolve_blocker.
+   */
+  openBlocker: string | null;
   from: string;
   instruction: string;
 }
@@ -365,6 +371,7 @@ export function buildStateSnapshot(ctx: ToolContext, input: DecisionInput): Stat
     blockedActions: [...ctx.scheduler.blockedActions()],
     activeGoal: ctx.goals?.active() ? activeGoalSummary(ctx.goals.active()!) : null,
     queuedGoals: ctx.goals?.queued().map((goal) => goal.description) ?? [],
+    openBlocker: ctx.blockers?.latest()?.summary ?? null,
     from: input.from,
     instruction: input.instruction,
   };

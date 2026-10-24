@@ -1,7 +1,7 @@
 import type { NewGoal, SuccessCriterion } from "../agent/goal.js";
 import type { GoalManager } from "../agent/goals.js";
 import { resolveCriterion } from "../agent/goal-criteria.js";
-import { CancelGoalArgsSchema, StartGoalArgsSchema, type SuccessCriterionInput } from "../llm/schemas.js";
+import { CancelGoalArgsSchema, ResolveBlockerArgsSchema, StartGoalArgsSchema, type SuccessCriterionInput } from "../llm/schemas.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
@@ -98,6 +98,19 @@ export function registerGoalTools(registry: ToolRegistry, goals: GoalManager): v
         return next === null
           ? `Cancelled goal: ${goal.description}.`
           : `Cancelled goal: ${goal.description}. Next: ${next.description}.`;
+      },
+    },
+    {
+      name: "resolve_blocker",
+      description:
+        'Answer the open blocker offer (state.openBlocker, e.g. "Need 18 glass for the house; missing 18 sand. I can gather it."). choice "proceed" when the owner agrees ("sure, get the sand", "go for it", "I put some in the chest, try again"); "change_plan" when the owner wants something else instead ("forget the glass", "do something else", "leave the house for now").',
+      args: {
+        choice: { type: "string", description: '"proceed" | "change_plan"' },
+      },
+      argsSchema: ResolveBlockerArgsSchema,
+      handler: (args, ctx): ToolResult => {
+        if (ctx.blockers === undefined) return "Nothing is blocked right now.";
+        return ctx.blockers.resolve((args as { choice: "proceed" | "change_plan" }).choice);
       },
     },
   ];

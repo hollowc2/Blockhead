@@ -7,6 +7,7 @@ import type { Scheduler } from "./scheduler.js";
 import type { TaskSignals } from "./scheduler.js";
 import type { Task } from "./task.js";
 import { TaskPriority, TaskStatus } from "./task.js";
+import { blockerOf, describeBlocker } from "./blockers.js";
 import {
   travelAndWait,
   travelHomeAndWait,
@@ -343,6 +344,14 @@ export class TaskDispatcher {
   /** Settle from the lifecycle status; `ok` remains compatibility data only. */
   private settleResult(task: Task, result: SkillResult): void {
     const scheduler = this.opts.scheduler;
+    const blocker = result.status === "completed" ? null : blockerOf(result.data);
+    if (blocker !== null) {
+      // Say what is needed and missing instead of the step's bare error: the
+      // task's lastError (goal results, the viewer) carries the explanation,
+      // and the blocker desk offers the owner a next step.
+      result = { ...result, message: describeBlocker(blocker) };
+      this.opts.bus.emit("task.blocker", { task, blocker });
+    }
     if (task.type === "develop_land" && result.errorCode === "DEVELOPMENT_PLAN_STALE") {
       // The planned action was never attempted. Cancel this obsolete identity
       // so the next idle pass creates a fresh task, without charging or

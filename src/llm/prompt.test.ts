@@ -48,6 +48,7 @@ const SNAPSHOT: StateSnapshot = {
   blockedActions: [],
   activeGoal: null,
   queuedGoals: [],
+  openBlocker: null,
   from: "Corey",
   instruction: "get me 32 oak logs",
 };

@@ -18,7 +18,20 @@ export function projectTask(task: Task | null | undefined): TaskSummary | null {
   return { ...(task.projectId === undefined ? {} : { projectId: task.projectId }), id: task.id, type: task.type, priority: task.priority, source: task.source, objective: task.objective, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt ?? null, completedAt: task.completedAt ?? null, phase: task.phase ?? null, attempts: task.attempts ?? null, lastError: task.lastError ?? null };
 }
 
-export function projectBuildProject(view: BuildProjectStatusView | null | undefined): BuildProjectSummary | null {
+/**
+ * The build's blocker in words: the open owner-facing explanation, else the
+ * explanation a failed acquisition left as the project's error (it survives
+ * a restart), else the bare shortage ("Need 6 stone.").
+ */
+export function buildBlockerText(project: { status: string; lastError?: string; shortages: readonly { material: string; required: number; available: number }[] }, explanation?: string | null): string | null {
+  if (explanation) return explanation;
+  if (project.status === "blocked" && project.lastError?.startsWith("Need ") === true) return project.lastError;
+  const gaps = project.shortages.filter((shortage) => shortage.required > shortage.available);
+  if (gaps.length === 0) return null;
+  return `Need ${gaps.map((gap) => `${gap.required - gap.available} ${gap.material.replace(/_/g, " ")}`).join(" and ")}.`;
+}
+
+export function projectBuildProject(view: BuildProjectStatusView | null | undefined, explanation?: string | null): BuildProjectSummary | null {
   if (view === null || view === undefined) return null;
   const { project, phase } = view;
   return {
@@ -39,6 +52,7 @@ export function projectBuildProject(view: BuildProjectStatusView | null | undefi
     totalOperations: project.verificationState.totalOperations,
     currentShortage: project.shortages[0] ?? null,
     lastBlockingReason: project.status === "blocked" ? project.lastError ?? null : null,
+    blocker: buildBlockerText(project, explanation),
     blueprintHash: project.blueprintHash,
   };
 }

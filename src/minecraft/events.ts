@@ -18,6 +18,7 @@ import type { AgentDecision } from "../llm/schemas.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { GoalManager } from "../agent/goals.js";
+import { parseBlockerAnswer, type BlockerDesk } from "../agent/blockers.js";
 import { stopWorldPrimitives } from "../agent/world-actions.js";
 import type { TerrainToolName } from "../tools/terrain.js";
 import { loadSavedBuildPlan } from "../building/saved-plan.js";
@@ -41,7 +42,12 @@ export interface AgentContext {
   /** Process-lifetime goal coordinator (the active autonomous objective). */
   goals?: GoalManager;
   worldProjects?: import("../agent/world-projects.js").WorldProjectManager;
+  /** Open "go ahead / change the plan" offers for stuck work. */
+  blockers?: BlockerDesk;
 }
+
+/** Answers to a blocker offer that never mean anything else. */
+const EXPLICIT_BLOCKER_ANSWERS: ReadonlySet<string> = new Set(["go ahead", "proceed", "change the plan", "change plan"]);
 
 /** Matches a bare "CobbleBob?" (case-insensitive, optional trailing punctuation). */
 export const HELLO_PATTERN = /^cobblebob[!?.,]*$/i;
@@ -225,6 +231,7 @@ function makeToolContext(bot: Bot, config: MinecraftConfig, ctx: AgentContext): 
     maintenance: ctx.maintenance,
     goals: ctx.goals,
     worldProjects: ctx.worldProjects,
+    blockers: ctx.blockers,
   };
 }
 
@@ -514,6 +521,19 @@ export function registerEvents(bot: Bot, config: MinecraftConfig, logger: Logger
     // deterministic soft/movement matchers (spec 15); bare "stop" stays
     // universal as a safety interrupt.
     if (username !== ctx.owner) return;
+
+    // An answer to the open blocker offer ("Need 18 glass; missing 18 sand.
+    // I can gather it. Say go ahead, or change the plan."). A bare "yes" only
+    // counts while the offer is fresh; the explicit phrases always do.
+    const answer = ctx.blockers === undefined ? null : parseBlockerAnswer(instruction);
+    if (answer !== null && ctx.blockers !== undefined && ctx.blockers.latest() !== null
+      && (EXPLICIT_BLOCKER_ANSWERS.has(instruction) || ctx.blockers.awaitingAnswer())) {
+      ctx.bus.emit("chat.command", { from: username, command: instruction });
+      const reply = ctx.blockers.resolve(answer);
+      bot.chat(reply);
+      logger.info({ reply, answer }, "blocker offer answered");
+      return;
+    }
 
     const savedPlan = instruction.match(/^(?:please )?build plan (.+)$/);
     if (savedPlan) {
