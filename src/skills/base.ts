@@ -48,6 +48,7 @@ import { isCreativeMode, provideCreativeItem } from "../minecraft/mode.js";
 import type { BuildingDesign } from "../building/schema.js";
 import { compileBuildingDesign, type Blueprint } from "../building/compiler.js";
 import { DEFAULT_BUILDING_LIMITS } from "../building/validation.js";
+import type { BlockerExplanation } from "../agent/blockers.js";
 
 /**
  * The centralized stockpile base (spec 4.3 "improve basic infrastructure"):
@@ -610,6 +611,8 @@ export interface BaseBuildData {
   remainingCells?: Array<{ x: number; y: number; z: number }>;
   /** Times this task was cooperatively interrupted (Phase 8). */
   interruptions: number;
+  /** What the build needed and lacked when it stopped (material failures only). */
+  blocker?: BlockerExplanation;
 }
 
 /** Progress persisted as the task's resume state (Phase 8). */
@@ -936,10 +939,10 @@ export class BaseBuilderRunner {
         if (logsNeeded > 0) {
           const gathered = await this.gatherLogs(logsNeeded);
           if (this.stopRequested) return this.interrupted(data);
-          if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
+          if (!gathered.ok) return this.failShortOfPlanks(data, missingPlanks().length, "RESOURCE_NOT_FOUND", gathered.reason);
         }
         const crafted = await craftPlanks(this.opts.bot, missingPlanks().length, this.signals?.signal);
-        if (!crafted.ok) return this.fail(data, "INSUFFICIENT_MATERIALS", crafted.reason);
+        if (!crafted.ok) return this.failShortOfPlanks(data, missingPlanks().length, "INSUFFICIENT_MATERIALS", crafted.reason);
       }
 
       const placed = new Set<string>();
@@ -1651,11 +1654,11 @@ export class BaseBuilderRunner {
       if (logsNeeded > 0) {
         const gathered = await this.gatherLogs(logsNeeded);
         if (this.stopRequested) return this.interrupted(data);
-        if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
+        if (!gathered.ok) return this.failShortOfPlanks(data, before.planksNeeded, "RESOURCE_NOT_FOUND", gathered.reason);
       }
       const planks = await craftPlanks(bot, before.planksNeeded, this.signals?.signal);
       if (this.stopRequested) return this.interrupted(data);
-      if (!planks.ok) return this.fail(data, "INSUFFICIENT_MATERIALS", planks.reason);
+      if (!planks.ok) return this.failShortOfPlanks(data, before.planksNeeded, "INSUFFICIENT_MATERIALS", planks.reason);
     }
 
     // 2. A door item, when the gap is empty. The door recipe needs the home
@@ -1803,12 +1806,33 @@ export class BaseBuilderRunner {
     return { ok: false, status: "interrupted", retryable: true, data, message: "interrupted" };
   }
 
+  /**
+   * A plank shortfall the run could not cover: name the planks the structure
+   * needs and the logs still missing ("Need 40 planks; missing 6 logs"),
+   * so the owner hears what to fetch instead of the gather's bare error.
+   */
+  private failShortOfPlanks(
+    data: BaseBuildData,
+    planksNeeded: number,
+    errorCode: "RESOURCE_NOT_FOUND" | "INSUFFICIENT_MATERIALS",
+    reason: string,
+  ): SkillResult<BaseBuildData> {
+    const bot = this.opts.bot;
+    const planksShort = Math.max(0, planksNeeded - countPlanks(bot));
+    const logsShort = Math.max(0, Math.ceil(planksShort / 4) - countLogs(bot));
+    if (planksShort > 0 && logsShort > 0) {
+      data.blocker = { need: { item: "planks", count: planksShort }, missing: [{ item: "log", count: logsShort, via: "gather" }], canFix: true, reason };
+    }
+    return this.fail(data, errorCode, reason);
+  }
+
   private fail(
     data: BaseBuildData,
     errorCode: "NOT_READY" | "PATH_UNREACHABLE" | "RESOURCE_NOT_FOUND" | "INSUFFICIENT_MATERIALS",
     reason: string,
   ): SkillResult<BaseBuildData> {
-    this.announce(`Stuck: ${reason}.`);
+    // An explained shortage is said once, with its next step, by the blocker desk.
+    if (data.blocker === undefined) this.announce(`Stuck: ${reason}.`);
     return { ok: false, status: "failed", errorCode, message: reason, retryable: true, data };
   }
 

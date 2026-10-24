@@ -72,6 +72,17 @@ function label(item: string): string {
   return item.replace(/^minecraft:/, "").replace(/_/g, " ");
 }
 
+/** Countable names that read wrong unpluralized ("6 log", "32 torch"). */
+const PLURALS: Readonly<Record<string, string>> = { log: "logs", torch: "torches", plank: "planks" };
+
+/** "6 logs", "32 torches", "18 sand". */
+function amount(count: number, item: string): string {
+  const name = label(item);
+  if (count === 1) return `${count} ${name}`;
+  const plural = PLURALS[name] ?? (/ log$/.test(name) ? `${name}s` : name);
+  return `${count} ${plural}`;
+}
+
 function joinList(parts: readonly string[]): string {
   if (parts.length <= 1) return parts.join("");
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
@@ -84,12 +95,12 @@ function joinList(parts: readonly string[]): string {
  */
 export function describeBlocker(explanation: BlockerExplanation, subject?: string): string {
   const { need, missing, reason } = explanation;
-  const head = `Need ${need.count} ${label(need.item)}${subject === undefined ? "" : ` for ${subject}`}`;
+  const head = `Need ${amount(need.count, need.item)}${subject === undefined ? "" : ` for ${subject}`}`;
   const why = reason === undefined ? "" : ` (${reason})`;
   if (missing.length === 0) {
     return `${head}; I can't work out how to make it${why}.`;
   }
-  const gaps = joinList(missing.map((gap) => `${gap.count} ${gap.via === "fuel" ? "coal or charcoal" : label(gap.item)}`));
+  const gaps = joinList(missing.map((gap) => (gap.via === "fuel" ? `${gap.count} coal or charcoal` : amount(gap.count, gap.item))));
   if (!explanation.canFix) return `${head}; missing ${gaps}${why}. I can't get that myself.`;
   const verbs = new Set(missing.map((gap) => gap.via));
   const verb = verbs.size === 1 && verbs.has("gather") ? "gather" : verbs.size === 1 && verbs.has("hunt") ? "hunt for" : "get";
@@ -108,7 +119,12 @@ export function blockerOf(data: unknown): BlockerExplanation | null {
 
 export type BlockerSubject =
   | { kind: "build"; projectId: string; name: string }
-  | { kind: "task"; item: string; quantity: number };
+  | { kind: "task"; item: string; quantity: number }
+  /** An owner task with no single item to ask for (the shed, a stockpile restore): rerun it as it was. */
+  | { kind: "rerun"; type: string; parameters: Record<string, unknown>; objective: string };
+
+/** Item tasks whose "proceed" becomes a full ensure_item (which may mine and hunt). */
+const ITEM_TASKS: ReadonlySet<string> = new Set(["ensure_item", "craft_item", "smelt_item"]);
 
 /** An owner-facing blocker waiting for "go ahead" or "change the plan". */
 export interface OpenBlocker {
@@ -190,7 +206,8 @@ export class BlockerDesk {
       // the project's work completing (an acquisition landing) closes it too.
       bus.on("task.completed", ({ task }) => {
         if (task.projectId !== undefined) this.close(`build:${task.projectId}`);
-        else if (task.source === "user" && typeof task.parameters.item === "string") this.close(`task:${task.parameters.item.replace(/^minecraft:/, "")}`);
+        else if (task.source === "user" && ITEM_TASKS.has(task.type) && typeof task.parameters.item === "string") this.close(`task:${task.parameters.item.replace(/^minecraft:/, "")}`);
+        else if (task.source === "user") this.close(`rerun:${task.type}`);
       }),
       // An owner "stop" abandons the work, so a later "yes" must not
       // restart it.
@@ -254,6 +271,8 @@ export class BlockerDesk {
       // The bot's own development builds reopen themselves on a timer.
       if (project === null || project === undefined || project.structureType.startsWith("village:")) return;
       subject = { kind: "build", projectId: project.id, name: projectName(project) };
+    } else if (task.source === "user" && !ITEM_TASKS.has(task.type)) {
+      subject = { kind: "rerun", type: task.type, parameters: { ...task.parameters }, objective: task.objective };
     } else if (task.source === "user") {
       // The owner's original request: ensure_item counts stock toward its
       // quantity, so "proceed" re-asks for the same total, not the gap.
@@ -288,7 +307,8 @@ export class BlockerDesk {
    * Carry out the owner's answer to the newest offer. Returns the reply.
    *  - proceed: a build is reopened (its slice re-measures the shortage and
    *    schedules the acquisition); an item task runs again as a full
-   *    ensure_item, which may mine, hunt, and smelt.
+   *    ensure_item, which may mine, hunt, and smelt; any other owner task
+   *    (the shed, a stockpile restore) runs again as it was.
    *  - change_plan: a build is set aside (paused, resumable with "continue
    *    the house") and the owner goal waiting on it is cancelled so the
    *    queue moves on; an item task is simply dropped.
@@ -304,6 +324,11 @@ export class BlockerDesk {
         if (task === null) return `There's nothing left to schedule for ${subject.name}.`;
         this.opts.scheduler.claim();
         return `On it: back to ${subject.name}, getting ${gapsLabel(blocker.explanation)} first.`;
+      }
+      if (subject.kind === "rerun") {
+        this.opts.scheduler.enqueue({ type: subject.type, priority: TaskPriority.FOREGROUND, source: "user", objective: subject.objective, parameters: subject.parameters });
+        this.opts.scheduler.claim();
+        return `On it: getting ${gapsLabel(blocker.explanation)} and trying again.`;
       }
       this.opts.scheduler.enqueue({
         type: "ensure_item",
@@ -324,15 +349,17 @@ export class BlockerDesk {
       const then = next === null ? "What should I do instead?" : `Next: ${next.description}`;
       return `OK, ${subject.name} is set aside (say "continue the build" to pick it back up). ${then}`;
     }
+    if (subject.kind === "rerun") return "OK, dropping that. What should I do instead?";
     return `OK, dropping the ${subject.quantity} ${label(subject.item)}. What should I do instead?`;
   }
 }
 
 function keyOf(subject: BlockerSubject): string {
-  return subject.kind === "build" ? `build:${subject.projectId}` : `task:${subject.item}`;
+  if (subject.kind === "build") return `build:${subject.projectId}`;
+  return subject.kind === "rerun" ? `rerun:${subject.type}` : `task:${subject.item}`;
 }
 
 function gapsLabel(explanation: BlockerExplanation): string {
   if (explanation.missing.length === 0) return `the ${label(explanation.need.item)}`;
-  return joinList(explanation.missing.map((gap) => (gap.via === "fuel" ? "fuel" : label(gap.item))));
+  return joinList(explanation.missing.map((gap) => (gap.via === "fuel" ? "fuel" : PLURALS[label(gap.item)] ?? label(gap.item))));
 }

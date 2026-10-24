@@ -753,3 +753,16 @@ test("an upstairs slice approaches its pending storey instead of the home floor,
   assert.equal(last.status, "completed");
   assert.deepEqual(approaches, [new Vec3(-2, 70, -2), new Vec3(-2, 73, -2)]);
 });
+
+test("a shed short of planks explains the logs still missing", async () => {
+  const { BaseBuilderRunner } = await import("./base.js");
+  const runner = new BaseBuilderRunner({
+    bot: { entity: null, inventory: { items: () => [{ name: "oak_planks", count: 4 }] } }, config: {}, logger: pino({ level: "silent" }),
+  } as unknown as ConstructorParameters<typeof BaseBuilderRunner>[0]);
+  const internal = runner as unknown as {
+    failShortOfPlanks: (data: object, planksNeeded: number, code: string, reason: string) => { message?: string; data?: { blocker?: unknown } };
+  };
+  const result = internal.failShortOfPlanks({}, 28, "RESOURCE_NOT_FOUND", "no trees within 64 blocks");
+  assert.equal(result.message, "no trees within 64 blocks");
+  assert.deepEqual(result.data?.blocker, { need: { item: "planks", count: 24 }, missing: [{ item: "log", count: 6, via: "gather" }], canFix: true, reason: "no trees within 64 blocks" });
+});

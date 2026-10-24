@@ -226,3 +226,32 @@ test("a build stuck before a restart is re-adopted silently from its explained e
     h.db.close();
   }
 });
+
+test("describeBlocker pluralizes logs and torches", () => {
+  assert.equal(
+    describeBlocker({ need: { item: "torch", count: 32 }, missing: [{ item: "coal", count: 8, via: "fuel" }], canFix: true }),
+    "Need 32 torches; missing 8 coal or charcoal. I can get it.",
+  );
+  assert.equal(
+    describeBlocker({ need: { item: "planks", count: 24 }, missing: [{ item: "log", count: 6, via: "gather" }], canFix: true, reason: "no trees within 64 blocks" }),
+    "Need 24 planks; missing 6 logs (no trees within 64 blocks). I can gather it.",
+  );
+});
+
+test("an owner's shed build short of logs reruns the same task on go ahead", () => {
+  const h = harness();
+  try {
+    const task: Task = { id: "shed", type: "build_base", priority: TaskPriority.FOREGROUND, source: "user", objective: "Build the base.", parameters: {}, status: TaskStatus.ACTIVE, createdAt: new Date().toISOString() };
+    h.bus.emit("task.blocker", { task, blocker: { need: { item: "planks", count: 24 }, missing: [{ item: "log", count: 6, via: "gather" }], canFix: true } });
+    assert.deepEqual(h.said, ['Need 24 planks; missing 6 logs. I can gather it. Say "go ahead", or "change the plan".']);
+    assert.equal(h.desk.resolve("proceed"), "On it: getting logs and trying again.");
+    const rerun = h.tasks.loadUnfinished().find((t) => t.type === "build_base");
+    assert.equal(rerun?.source, "user");
+    assert.equal(h.desk.latest(), null);
+
+    h.bus.emit("task.blocker", { task, blocker: { need: { item: "planks", count: 24 }, missing: [{ item: "log", count: 6, via: "gather" }], canFix: true } });
+    assert.equal(h.desk.resolve("change_plan"), "OK, dropping that. What should I do instead?");
+  } finally {
+    h.db.close();
+  }
+});

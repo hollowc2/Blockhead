@@ -13,6 +13,7 @@ import { deliverCarried, withdrawFromHomeChest } from "../minecraft/containers.j
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, hasAirNeighbor, isRawLog, placeItemAt } from "../minecraft/world.js";
 import { ChatThrottle, gameChatBudgetAllows, type SkillResult } from "./skill-library.js";
+import type { BlockerExplanation, MaterialGap } from "../agent/blockers.js";
 
 /**
  * Phase 7: `ensure_torches` skill (spec 29 — torch stockpile; one
@@ -87,6 +88,8 @@ export interface EnsureTorchesData {
   delivered: number;
   /** Times this task was cooperatively interrupted (Phase 8, persisted across resumes). */
   interruptions: number;
+  /** What the restore needed and lacked when it stopped (material failures only). */
+  blocker?: BlockerExplanation;
 }
 
 /** Progress persisted as the task's resume state (Phase 8). */
@@ -203,11 +206,11 @@ export class EnsureTorchesRunner {
         // carried.
         const mined = await this.mineCoalOre(crafts);
         if (this.stopRequested) return this.interrupted(data);
-        if (!mined.ok) return this.fail(data, mined.code, mined.reason);
+        if (!mined.ok) return this.failShort(data, crafts, { item: "coal", count: crafts - countFuelItems(bot), via: "fuel" }, mined.code, mined.reason);
         fuel = countFuelItems(bot);
       }
       if (fuel < crafts) {
-        return this.fail(data, "RESOURCE_NOT_FOUND", `only ${fuel}/${crafts} fuel for ${crafts} torch crafts`);
+        return this.failShort(data, crafts, { item: "coal", count: crafts - fuel, via: "fuel" }, "RESOURCE_NOT_FOUND", `only ${fuel}/${crafts} fuel for ${crafts} torch crafts`);
       }
     }
 
@@ -221,7 +224,7 @@ export class EnsureTorchesRunner {
         if (countLogs(bot) < logsNeeded) {
           const gathered = await this.gatherLogs(logsNeeded);
           if (this.stopRequested) return this.interrupted(data);
-          if (!gathered.ok) return this.fail(data, "RESOURCE_NOT_FOUND", gathered.reason);
+          if (!gathered.ok) return this.failShort(data, crafts, { item: "log", count: logsNeeded - countLogs(bot), via: "gather" }, "RESOURCE_NOT_FOUND", gathered.reason);
         }
         const planks = await craftMorePlanks(bot, planksNeeded, this.signals?.signal);
         if (!planks.ok) return this.fail(data, "TOOL_REQUIRED", planks.reason);
@@ -511,8 +514,19 @@ export class EnsureTorchesRunner {
     });
   }
 
+  /**
+   * The torch run could not get one of its inputs: name the torches it was
+   * making and the raw input still missing ("Need 32 torches; missing 8 coal
+   * or charcoal"), not just the search that came up empty.
+   */
+  private failShort(data: EnsureTorchesData, crafts: number, gap: MaterialGap, errorCode: string, reason: string): SkillResult<EnsureTorchesData> {
+    if (gap.count > 0) data.blocker = { need: { item: "torch", count: crafts * 4 }, missing: [gap], canFix: true, reason };
+    return this.fail(data, errorCode, reason);
+  }
+
   private fail(data: EnsureTorchesData, errorCode: string, reason: string): SkillResult<EnsureTorchesData> {
-    this.announce(`Stuck: ${reason}.`);
+    // An explained shortage is said once, with its next step, by the blocker desk.
+    if (data.blocker === undefined) this.announce(`Stuck: ${reason}.`);
     return {
       ok: false,
       status: "failed",
