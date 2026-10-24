@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { EventBus } from "../events/bus.js";
 import type { BuildProjectManager } from "./build-projects.js";
+import type { BuildProject } from "../memory/build-projects.js";
 import type { GoalManager } from "./goals.js";
 import type { Scheduler } from "./scheduler.js";
 import { TaskPriority, type Task } from "./task.js";
@@ -191,6 +192,11 @@ export class BlockerDesk {
         if (task.projectId !== undefined) this.close(`build:${task.projectId}`);
         else if (task.source === "user" && typeof task.parameters.item === "string") this.close(`task:${task.parameters.item.replace(/^minecraft:/, "")}`);
       }),
+      // An owner "stop" abandons the work, so a later "yes" must not
+      // restart it.
+      bus.on("chat.command", ({ command }) => {
+        if (command === "stop") this.open.clear();
+      }),
       bus.on("goal.blocked", ({ goal }) => {
         if (goal.source !== "owner") return;
         // The queue has already moved on (or emptied) by the time this fires.
@@ -204,6 +210,23 @@ export class BlockerDesk {
   dispose(): void {
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers.length = 0;
+  }
+
+  /**
+   * Re-open (silently) the offers for owner builds that were stuck on
+   * materials before a restart: their explained error survives as the
+   * project's lastError, so "go ahead" keeps working after a deploy.
+   */
+  adopt(projects: readonly BuildProject[]): void {
+    for (const project of projects) {
+      if (project.status !== "blocked" || project.structureType.startsWith("village:")) continue;
+      const summary = project.lastError;
+      if (summary === undefined || !summary.startsWith("Need ")) continue;
+      const shortage = project.shortages[0];
+      const explanation: BlockerExplanation = { need: { item: shortage?.material ?? "materials", count: shortage === undefined ? 0 : shortage.required - shortage.available }, missing: [], canFix: true };
+      const subject: BlockerSubject = { kind: "build", projectId: project.id, name: projectName(project) };
+      this.open.set(keyOf(subject), { id: randomUUID(), subject, explanation, summary, message: `${summary} Say "go ahead", or "change the plan".`, openedAt: this.now() });
+    }
   }
 
   /** The newest open offer, or null. */

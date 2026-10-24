@@ -158,12 +158,13 @@ setEscapeRouteProvider((position, dimension) => {
   }
   return null;
 });
-buildProjectManager.rehydrateAll();
+const rehydratedProjects = buildProjectManager.rehydrateAll();
 const survivalInterrupts = new SurvivalInterruptCoordinator({ bus, scheduler, projects: buildProjectManager });
 const goals = new GoalManager({ bus, goals: goalsRepo, scheduler });
 // Stuck work explains itself ("Need 18 glass; missing 18 sand. I can gather
 // it.") and waits for the owner's "go ahead" or "change the plan".
 const blockers = new BlockerDesk({ bus, scheduler, buildProjects: buildProjectManager, goals, announce: (message) => announceProject(message) });
+blockers.adopt(rehydratedProjects.builds);
 
 // Phase 4: the LLM only selects registered high-level tools; deterministic
 // code (the movement tools) performs the mechanics.

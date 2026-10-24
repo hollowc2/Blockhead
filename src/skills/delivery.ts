@@ -175,6 +175,16 @@ export class DeliveryRunner {
       if (here !== normalizeDimension(chest.dimension)) {
         return { ok: false, message: `the chest is in ${chest.dimension}, I am in ${here}`, errorCode: "PATH_UNREACHABLE", retryable: false, data };
       }
+      // Gathering and crafting deposit into the home chests, so the goods for
+      // "stock this chest" are usually stored, not carried: top up from home
+      // stock first (never from the target chest itself).
+      const wanted = bareName(item);
+      const short = quantity - countItem(bot, wanted);
+      if (short > 0) {
+        const { withdrawn } = await withdrawFromHomeChest(bot, this.opts.state, this.opts.storage, wanted, short, this.opts.logger, this.signals?.signal, chest);
+        if (this.stopRequested) return this.interruptedResult(data);
+        if (withdrawn > 0) this.opts.logger.info({ item: wanted, withdrawn }, "goal delivery topped up from home stock");
+      }
       const travel = await travelAndWait(bot, new Vec3(chest.x + 0.5, chest.y, chest.z + 0.5), {
         timeoutMs: TRAVEL_TIMEOUT_MS,
         range: 3,
@@ -198,7 +208,7 @@ export class DeliveryRunner {
         return { ok: true, message: `Delivered ${result.delivered} ${name}; the chest holds ${held}.`, data };
       }
       if (carried === 0) {
-        return { ok: false, message: `carrying no ${name} to deliver; the chest holds ${held}`, errorCode: "RESOURCE_NOT_FOUND", retryable: false, data };
+        return { ok: false, message: `no ${name} carried or stored to deliver (get some first: collect_resource or ensure_item); the chest holds ${held}`, errorCode: "RESOURCE_NOT_FOUND", retryable: false, data };
       }
       return { ok: false, message: `could not deposit ${name} (${describeDeliveryFailure(result.failure)}); the chest holds ${held}`, errorCode: result.failure === "chest_full" ? "INVENTORY_FULL" : "NOT_READY", retryable: result.failure !== "chest_full", data };
     });

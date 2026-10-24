@@ -483,7 +483,7 @@ export async function deliverCarriedItems(
  * category chests (2026-10-05 13:50), logs sat in a wood chest while every
  * withdraw opened the general one: "Can't find oak_log" with oak in stock.
  */
-function chestsHolding(bot: Bot, state: AgentState, storage: StorageRepository, itemName: string): Block[] {
+function chestsHolding(bot: Bot, state: AgentState, storage: StorageRepository, itemName: string, exclude?: { x: number; y: number; z: number }): Block[] {
   const worldId = state.worldId;
   const bare = bareName(itemName);
   const chests: { block: Block; count: number }[] = [];
@@ -499,10 +499,15 @@ function chestsHolding(bot: Bot, state: AgentState, storage: StorageRepository, 
   const ordered = chests.sort((a, b) => b.count - a.count).map((chest) => chest.block);
   const general = findHomeChest(bot, state, storage);
   if (general !== null && !ordered.some((block) => block.position.equals(general.position))) ordered.push(general);
-  return ordered;
+  if (exclude === undefined) return ordered;
+  return ordered.filter((block) => block.position.x !== exclude.x || block.position.y !== exclude.y || block.position.z !== exclude.z);
 }
 
-/** Withdraw up to `count` of `itemName` from the home chests into the inventory. */
+/**
+ * Withdraw up to `count` of `itemName` from the home chests into the
+ * inventory. `exclude` skips one chest (a goal's delivery target, which must
+ * not be drained to refill itself).
+ */
 export async function withdrawFromHomeChest(
   bot: Bot,
   state: AgentState,
@@ -511,10 +516,11 @@ export async function withdrawFromHomeChest(
   count: number,
   logger: Logger,
   signal?: AbortSignal,
+  exclude?: { x: number; y: number; z: number },
 ): Promise<{ withdrawn: number }> {
   requireWorldActionLease(signal);
   throwIfAborted(signal);
-  const chests = chestsHolding(bot, state, storage, itemName);
+  const chests = chestsHolding(bot, state, storage, itemName, exclude);
   if (chests.length === 0) {
     logger.warn("no chest at home to withdraw from");
     return { withdrawn: 0 };

@@ -141,8 +141,10 @@ function blockedBuild(h: ReturnType<typeof harness>) {
   h.buildProjects.settleChildTask(created.task, { ok: false, status: "blocked", errorCode: "INSUFFICIENT_MATERIALS", data: { shortages: [{ material: "stone_bricks", required: 8, available: 0 }] } });
   h.scheduler.blockActive("missing stone bricks");
   const acquisition = h.tasks.loadUnfinished().find((t) => t.type === "build_project_acquire")!;
-  h.buildProjects.settleChildTask(acquisition, { ok: false, status: "failed", errorCode: "RESOURCE_NOT_FOUND", message: "no stone", retryable: false, data: { blocker: bricks } });
-  h.bus.emit("task.blocker", { task: acquisition, blocker: { ...bricks, reason: "no stone found nearby" } });
+  // As the dispatcher settles it: the explanation becomes the failure message.
+  const blocker = { ...bricks, reason: "no stone found nearby" };
+  h.bus.emit("task.blocker", { task: acquisition, blocker });
+  h.buildProjects.settleChildTask(acquisition, { ok: false, status: "failed", errorCode: "RESOURCE_NOT_FOUND", message: describeBlocker(blocker), retryable: false, data: { blocker } });
   h.scheduler.blockActive("no stone");
   return created.project;
 }
@@ -188,6 +190,38 @@ test("a blocked owner goal says why and what comes next", () => {
     h.goals.enqueue({ description: "Stock the chest.", source: "owner", successCriteria: [] });
     h.goals.block("build the house is failed");
     assert.deepEqual(h.said, ['Can\'t finish "Finish the house.": build the house is failed. Moving on to: Stock the chest.']);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("an owner stop drops open offers so a later yes restarts nothing", () => {
+  const h = harness();
+  try {
+    h.bus.emit("task.blocker", { task: userTask("craft_item", "glass", 18), blocker: glass });
+    h.bus.emit("chat.command", { from: "Corey", command: "stop" });
+    assert.equal(h.desk.latest(), null);
+    assert.equal(h.desk.resolve("proceed"), "Nothing is blocked right now.");
+  } finally {
+    h.db.close();
+  }
+});
+
+test("a build stuck before a restart is re-adopted silently from its explained error", () => {
+  const h = harness();
+  try {
+    const project = blockedBuild(h);
+    const restarted = harness();
+    try {
+      const stored = h.projects.get(project.id)!;
+      assert.match(stored.lastError ?? "", /^Need /);
+      restarted.desk.adopt([stored, { ...stored, id: "village", structureType: "village:cottage" }]);
+      assert.deepEqual(restarted.said, []);
+      assert.equal(restarted.desk.forProject(project.id)?.summary, stored.lastError);
+      assert.equal(restarted.desk.forProject("village"), null);
+    } finally {
+      restarted.db.close();
+    }
   } finally {
     h.db.close();
   }
