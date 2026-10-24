@@ -517,6 +517,18 @@ export class TaskDispatcher {
           { signals, resumeState: task.resumeState as { interruptions?: number } | undefined },
         );
       }
+      case "deliver_items": {
+        const params = task.parameters as Partial<{ item: string; quantity: number; chest: { x: number; y: number; z: number; dimension: string } }>;
+        const chest = params.chest;
+        if (typeof params.item !== "string" || params.item === "" || chest === undefined
+          || ![chest.x, chest.y, chest.z].every(Number.isFinite) || typeof chest.dimension !== "string") {
+          return this.invalidParams("deliver_items");
+        }
+        return this.opts.delivery.deliverTo(chest, params.item, Math.max(1, Math.floor(Number(params.quantity) || 1)), {
+          signals,
+          resumeState: task.resumeState as { interruptions?: number } | undefined,
+        });
+      }
       case "retrieve_items": {
         const params = task.parameters as Partial<{ items: { item: string; quantity?: number }[]; location: string }>;
         const items = Array.isArray(params.items) ? params.items : [];

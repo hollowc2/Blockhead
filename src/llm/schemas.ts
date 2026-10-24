@@ -77,6 +77,17 @@ export const NextGoalActionSchema = z.object({
       quantity: z.number().int().min(1).max(1024),
     }),
     z.object({ type: z.literal("upgrade_equipment") }),
+    // Delivery into the goal's own chest (a chest_contains criterion): walk
+    // there, deposit up to `quantity` carried, and read the chest back.
+    z.object({
+      type: z.literal("deliver_items"),
+      item: z.string().min(1).max(64),
+      quantity: z.number().int().min(1).max(1024),
+    }),
+    // Reopen and schedule the goal's build project (building_verified).
+    z.object({ type: z.literal("resume_build") }),
+    // Start (or resume) the terrain clear for the goal's area_cleared box.
+    z.object({ type: z.literal("clear_area") }),
     z.object({ type: z.literal("complete") }),
     z.object({ type: z.literal("abandon") }),
   ]),
@@ -105,9 +116,44 @@ export const SuccessCriterionSchema = z.discriminatedUnion("kind", [
 
 export type SuccessCriterionValue = z.infer<typeof SuccessCriterionSchema>;
 
+/**
+ * The criteria an owner instruction may name, before the tool freezes them
+ * against the world: the measurable kinds above, plus
+ *  - building_verified: the home base shed, or a build project (optionally
+ *    matched by name) that passes its final verification;
+ *  - chest_contains: an item count in one chest — "home", the chest by the
+ *    owner ("owner", i.e. "this chest"), by the bot ("bot"), or a registered
+ *    storage label/category — resolved to coordinates at goal creation;
+ *  - area_cleared: a clear_area-shaped box resolved from its anchor at goal
+ *    creation ("this area" in front of the owner by default).
+ */
+export const SuccessCriterionInputSchema = z.union([
+  SuccessCriterionSchema,
+  z.object({
+    kind: z.literal("building_verified"),
+    target: z.enum(["base", "project"]).default("project"),
+    project: z.string().min(1).max(64).optional(),
+  }),
+  z.object({
+    kind: z.literal("chest_contains"),
+    item: z.string().min(1).max(64),
+    min: z.number().int().min(1).max(100_000),
+    chest: z.string().min(1).max(64).default("home"),
+  }),
+  z.object({
+    kind: z.literal("area_cleared"),
+    width: z.number().int().min(1).max(32),
+    length: z.number().int().min(1).max(32),
+    height: z.number().int().min(1).max(16).default(4),
+    anchor: z.enum(["owner", "owner_front", "current", "home"]).default("owner_front"),
+  }),
+]);
+
+export type SuccessCriterionInput = z.infer<typeof SuccessCriterionInputSchema>;
+
 const GoalSpecSchema = z.object({
   description: z.string().min(1).max(240),
-  successCriteria: z.array(SuccessCriterionSchema).max(6).optional(),
+  successCriteria: z.array(SuccessCriterionInputSchema).max(6).optional(),
 });
 
 /**

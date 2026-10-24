@@ -327,6 +327,93 @@ export async function deliverCarried(
 }
 
 /**
+ * What one chest held when last read: this session's reading, else the
+ * registry's persisted one for a registered chest. Null when it has never
+ * been read — a goal must not count an unread chest as empty or full.
+ */
+export function rememberedChestContents(
+  worldId: number | null,
+  at: { x: number; y: number; z: number },
+  storage?: StorageRepository,
+): Record<string, number> | null {
+  if (worldId === null) return null;
+  const session = lastChestContents.get(`${worldId}:${at.x},${at.y},${at.z}`);
+  if (session !== undefined) return { ...session };
+  const registered = storage?.list(worldId).find((location) => location.x === at.x && location.y === at.y && location.z === at.z);
+  return registered?.lastContents === undefined ? null : { ...registered.lastContents };
+}
+
+export interface ChestDepositResult {
+  delivered: number;
+  /** The chest's contents read right after the deposit, or null when it could not be opened. */
+  contents: Record<string, number> | null;
+  failure?: DeliveryFailure;
+}
+
+/**
+ * Deposit up to `quantity` carried `itemName` into the chest at `at` (any
+ * chest the protected-region policy allows, not only home storage), then
+ * read the chest back in the same window so the caller learns its verified
+ * contents. With nothing carried it still opens and reads the chest. The
+ * reading is remembered (and persisted for a registered chest).
+ */
+export async function depositIntoChestAt(
+  bot: Bot,
+  state: AgentState,
+  storage: StorageRepository,
+  at: { x: number; y: number; z: number },
+  itemName: string,
+  quantity: number,
+  logger: Logger,
+  signal?: AbortSignal,
+): Promise<ChestDepositResult> {
+  requireWorldActionLease(signal);
+  throwIfAborted(signal);
+  const block = bot.blockAt(new Vec3(at.x, at.y, at.z));
+  if (block === null || !isChestBlock(block)) return { delivered: 0, contents: null, failure: "no_chest" };
+  const bare = bareName(itemName);
+  const before = countItem(bot, bare);
+  const itemId = bot.registry.itemsByName[bare]?.id;
+  let failure: DeliveryFailure | undefined;
+  let contents: Record<string, number> | null = null;
+  try {
+    const container = await approachAndOpen(bot, state, block, signal);
+    throwIfAborted(signal);
+    try {
+      const amount = Math.min(before, Math.max(0, Math.floor(quantity)));
+      if (amount > 0 && itemId !== undefined) {
+        try {
+          assertContainerAllowed(state, block);
+          await deposit(container, itemId, null, amount, signal);
+        } catch (err) {
+          throwIfAborted(signal);
+          logger.warn({ err: String(err), item: bare }, "goal chest deposit failed");
+          failure = classifyDepositError(err);
+        }
+      }
+      contents = {};
+      for (const item of container.containerItems()) {
+        const name = bareName(item.name);
+        contents[name] = (contents[name] ?? 0) + item.count;
+      }
+    } finally {
+      await closeWindow(container);
+    }
+  } catch (err) {
+    throwIfAborted(signal);
+    logger.warn({ err: String(err), at }, "goal chest could not be opened");
+    return { delivered: Math.max(0, before - countItem(bot, bare)), contents: null, failure: classifyDepositError(err) };
+  }
+  const worldId = state.worldId;
+  if (worldId !== null && contents !== null) {
+    lastChestContents.set(`${worldId}:${at.x},${at.y},${at.z}`, { ...contents });
+    const registered = storage.list(worldId).find((location) => location.x === at.x && location.y === at.y && location.z === at.z);
+    if (registered !== undefined) storage.rememberContents?.(worldId, registered.id, contents);
+  }
+  return { delivered: Math.max(0, before - countItem(bot, bare)), contents, ...(failure === undefined ? {} : { failure }) };
+}
+
+/**
  * Deposit every carried instance of each of `itemNames` (e.g. every meat
  * type of a food stockpile) in one container session. The chest is located
  * once for the whole call — a missing chest warns once and counts zero for

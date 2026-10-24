@@ -43,7 +43,7 @@ function anchorFor(ctx: ToolContext, anchor: TerrainAnchor): { x: number; y: num
   return { x: Math.floor(owner.x), y: Math.floor(owner.y), z: Math.floor(owner.z), dimension: owner.dimension, yaw: owner.yaw };
 }
 
-function terrainPlan(ctx: ToolContext, kind: "clear" | "flatten" | "excavate" | "mineshaft", args: TerrainToolArgs): ReturnType<typeof createFrozenTerrainPlan> | string {
+export function terrainPlan(ctx: ToolContext, kind: "clear" | "flatten" | "excavate" | "mineshaft", args: TerrainToolArgs): ReturnType<typeof createFrozenTerrainPlan> | string {
   const anchorKind = args.anchor;
   const resolved = anchorFor(ctx, anchorKind);
   if (typeof resolved === "string") return resolved;

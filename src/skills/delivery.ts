@@ -5,7 +5,9 @@ import type { TaskSignals } from "../agent/scheduler.js";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { StorageRepository } from "../memory/storage.js";
 import { bareName, countItem, findItem } from "../minecraft/inventory.js";
-import { deliverCarried, describeDeliveryFailure, type DeliveryFailure, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { deliverCarried, depositIntoChestAt, describeDeliveryFailure, type DeliveryFailure, withdrawFromHomeChest } from "../minecraft/containers.js";
+import { normalizeDimension } from "../minecraft/protection.js";
+import { Vec3 } from "vec3";
 import { travelAndWait, travelHomeAndWait } from "../minecraft/movement.js";
 import { tossItem } from "../minecraft/primitives.js";
 import { resourceStem } from "./skill-library.js";
@@ -38,7 +40,9 @@ export interface DeliveryOptions {
 }
 
 export interface DeliveryData {
-  action: "give" | "store" | "retrieve";
+  action: "give" | "store" | "retrieve" | "deliver";
+  /** deliver: the chest's verified contents read after the deposit. */
+  chestContents?: Record<string, number> | null;
   player: string | null;
   item: string | null;
   quantity: number;
@@ -153,6 +157,53 @@ export class DeliveryRunner {
     });
   }
 
+  /**
+   * A goal's chest delivery: walk to one specific chest, deposit up to
+   * `quantity` carried `item`, and read the chest back. The reading is the
+   * point — the goal's chest_contains criterion is measured from it — so a
+   * trip with nothing to deposit still opens the chest and reports what it
+   * holds (as a failure, so the goal log shows why nothing moved).
+   */
+  async deliverTo(
+    chest: { x: number; y: number; z: number; dimension: string },
+    item: string,
+    quantity: number,
+    options: { signals?: TaskSignals; resumeState?: { interruptions?: number } } = {},
+  ): Promise<SkillResult<DeliveryData>> {
+    return this.run("deliver", null, item, quantity, options, async (bot, data) => {
+      const here = normalizeDimension(String(bot.game?.dimension ?? "overworld"));
+      if (here !== normalizeDimension(chest.dimension)) {
+        return { ok: false, message: `the chest is in ${chest.dimension}, I am in ${here}`, errorCode: "PATH_UNREACHABLE", retryable: false, data };
+      }
+      const travel = await travelAndWait(bot, new Vec3(chest.x + 0.5, chest.y, chest.z + 0.5), {
+        timeoutMs: TRAVEL_TIMEOUT_MS,
+        range: 3,
+        shouldAbort: this.travelAbort,
+      });
+      if (this.stopRequested) return this.interruptedResult(data);
+      if (travel.status !== "arrived" && travel.status !== "already_there") {
+        return { ok: false, message: `could not reach the chest at ${chest.x},${chest.y},${chest.z}: ${travel.status}`, errorCode: "PATH_UNREACHABLE", retryable: true, data };
+      }
+      const name = bareName(item);
+      const carried = countItem(bot, name);
+      const result = await depositIntoChestAt(bot, this.opts.state, this.opts.storage, chest, name, quantity, this.opts.logger, this.signals?.signal);
+      if (this.stopRequested) return this.interruptedResult(data);
+      data.handled = result.delivered;
+      data.chestContents = result.contents;
+      if (result.contents === null) {
+        return { ok: false, message: `could not open the chest at ${chest.x},${chest.y},${chest.z}: ${describeDeliveryFailure(result.failure)}`, errorCode: result.failure === "no_chest" ? "STORAGE_NOT_FOUND" : "PATH_UNREACHABLE", retryable: result.failure !== "no_chest", data };
+      }
+      const held = result.contents[name] ?? 0;
+      if (result.delivered > 0) {
+        return { ok: true, message: `Delivered ${result.delivered} ${name}; the chest holds ${held}.`, data };
+      }
+      if (carried === 0) {
+        return { ok: false, message: `carrying no ${name} to deliver; the chest holds ${held}`, errorCode: "RESOURCE_NOT_FOUND", retryable: false, data };
+      }
+      return { ok: false, message: `could not deposit ${name} (${describeDeliveryFailure(result.failure)}); the chest holds ${held}`, errorCode: result.failure === "chest_full" ? "INVENTORY_FULL" : "NOT_READY", retryable: result.failure !== "chest_full", data };
+    });
+  }
+
   /** Withdraw the listed items (with optional counts) from the home chest. */
   async retrieve(
     items: { item: string; quantity: number }[],
@@ -193,7 +244,7 @@ export class DeliveryRunner {
   // --- plumbing ---
 
   private async run(
-    action: "give" | "store" | "retrieve",
+    action: DeliveryData["action"],
     player: string | null,
     item: string | null,
     quantity: number,

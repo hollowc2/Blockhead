@@ -954,6 +954,88 @@ test("a goal's stockpile step restores toward the goal threshold, and a met one 
   h.manager.stop();
 });
 
+/** A goal-layer harness: a full stockpile, a stub goal manager over `active`, and a scripted goal decider. */
+function goalHarness(active: Record<string, unknown>, action: Record<string, unknown>) {
+  const h = newHarness(20, 20);
+  h.crisis = null;
+  const full: StockpileSnapshot = { levels: { wood: 64, food: 64, fuel: 64, torches: 64 }, targets: { wood: 64, food: 64, fuel: 64, torches: 64 }, deficits: [] };
+  (h.options.maintenance as unknown as { check: () => Promise<StockpileSnapshot> }).check = async () => full;
+  const log = { completed: [] as string[], blocked: [] as string[], notes: [] as Array<{ action: string; outcome: string; message?: string }>, criteria: [] as unknown[] };
+  const goal = { id: "g1", description: "Test goal", source: "owner", createdAt: new Date(0).toISOString(), currentStep: null, recentResults: [], successCriteria: [], ...active };
+  (h.options as { goals?: unknown }).goals = {
+    active: () => goal,
+    complete: (note: string) => { log.completed.push(note); return null; },
+    block: (reason: string) => { log.blocked.push(reason); return null; },
+    cancel: () => null,
+    setCurrentStep: () => undefined,
+    recordStandingBy: () => undefined,
+    recordNote: (a: string, outcome: string, message?: string) => { log.notes.push({ action: a, outcome, message }); },
+    updateCriteria: (_id: string, criteria: unknown[]) => { log.criteria.push(criteria); (goal as { successCriteria: unknown[] }).successCriteria = criteria; },
+  };
+  (h.options.decider as unknown as { decideGoalAction: () => Promise<unknown> }).decideGoalAction = async () => ({ action, rationale: "test" });
+  return { h, goal, log };
+}
+
+test("a building_verified goal binds its build, completes on verification, and blocks on a failed build", async () => {
+  const { h, log } = goalHarness({ successCriteria: [{ kind: "building_verified", target: "project", match: "cottage" }] }, { type: "wait" });
+  let status = "active";
+  (h.options as { buildProjects?: unknown }).buildProjects = {
+    findForGoal: (match: string) => (match === "cottage" ? { id: "p1", userGoal: "build a cottage", status } : null),
+    getProject: () => ({ id: "p1", status }),
+    currentProjectForBackground: () => null,
+  };
+  await h.manager.tick(true);
+  assert.deepEqual(log.criteria.at(-1), [{ kind: "building_verified", target: "project", match: "cottage", projectId: "p1", projectName: "build a cottage" }]);
+  assert.deepEqual(log.completed, [], "an unverified build is not done");
+
+  status = "completed";
+  await h.manager.tick(true);
+  assert.deepEqual(log.completed, ["success criteria met"]);
+
+  status = "failed";
+  log.completed.length = 0;
+  await h.manager.tick(true);
+  assert.match(log.blocked[0] ?? "", /build a cottage is failed/);
+  h.manager.stop();
+});
+
+test("the model cannot declare a measured goal complete while the world disagrees", async () => {
+  const chest = { x: 10, y: 64, z: -3, dimension: "overworld" };
+  const { h, log } = goalHarness({ successCriteria: [{ kind: "chest_contains", item: "iron_ingot", min: 32, chest }] }, { type: "complete" });
+  await h.manager.tick(true);
+  assert.deepEqual(log.completed, []);
+  assert.equal(log.notes.at(-1)?.outcome, "failed");
+  assert.match(log.notes.at(-1)?.message ?? "", /not done yet: chest contents not read yet/);
+  h.manager.stop();
+});
+
+test("deliver_items goes to the goal's frozen chest", async () => {
+  const chest = { x: 10, y: 64, z: -3, dimension: "overworld" };
+  const { h } = goalHarness({ successCriteria: [{ kind: "chest_contains", item: "iron_ingot", min: 32, chest }] }, { type: "deliver_items", item: "minecraft:iron_ingot", quantity: 16 });
+  await h.manager.tick(true);
+  const step = h.enqueued.find((task) => task.type === "deliver_items");
+  assert.ok(step);
+  assert.deepEqual({ item: step.parameters.item, quantity: step.parameters.quantity, chest: step.parameters.chest, goalId: step.parameters.goalId }, { item: "iron_ingot", quantity: 16, chest, goalId: "g1" });
+  h.manager.stop();
+});
+
+test("clear_area starts the terrain project for the goal's frozen box, then waits on its work", async () => {
+  const bounds = { minX: 0, maxX: 3, minY: 64, maxY: 66, minZ: 0, maxZ: 3 };
+  const area = { kind: "area_cleared", dimension: "overworld", bounds, anchor: { x: 2, y: 64, z: 2 }, anchorKind: "home", width: 4, length: 4, height: 3 };
+  const { h, log } = goalHarness({ successCriteria: [area] }, { type: "clear_area" });
+  (h.options.bot as unknown as { blockAt: () => unknown }).blockAt = () => ({ name: "oak_leaves", boundingBox: "block" });
+  (h.options.config as unknown as { server: unknown }).server = { world_key: "test" };
+  const plans: Array<{ bounds: unknown; source: string }> = [];
+  (h.options as { buildProjects?: unknown }).buildProjects = {
+    createTerrainProject: (input: { plan: { bounds: unknown }; source: string }) => { plans.push({ bounds: input.plan.bounds, source: input.source }); return { project: { id: "t1" }, task: { id: "x" }, resumed: false }; },
+    currentProjectForBackground: () => null,
+  };
+  await h.manager.tick(true);
+  assert.deepEqual(plans, [{ bounds, source: "goal" }]);
+  assert.equal((log.criteria.at(-1) as Array<{ projectId?: string }>)[0]?.projectId, "t1");
+  h.manager.stop();
+});
+
 test("model backoff uses deterministic maintenance without another model call", async () => {
   const h = newHarness(20, 20);
   h.crisis = null;

@@ -348,6 +348,35 @@ export class BuildProjectManager {
     return this.projects.get(projectId);
   }
 
+  /**
+   * The build a goal's building_verified criterion should track: the newest
+   * project (any status but cancelled) whose name or goal mentions `match`,
+   * else — with no match given — the newest unfinished project, else the
+   * newest project started since the goal began.
+   */
+  findForGoal(match: string | undefined, since: string): BuildProject | null {
+    const all = this.projects.listRecent(50).filter((project) => project.status !== "cancelled");
+    if (match !== undefined) {
+      const needle = match.toLowerCase();
+      return all.find((project) => project.userGoal.toLowerCase().includes(needle) || project.structureType.toLowerCase().includes(needle)) ?? null;
+    }
+    // The owner's own builds before the bot's self-chosen development ones.
+    const unfinished = all.filter((project) => project.status !== "completed" && project.status !== "failed");
+    return unfinished.find((project) => project.source === "user")
+      ?? unfinished[0]
+      ?? all.find((project) => project.createdAt >= since)
+      ?? null;
+  }
+
+  /** Reopen one blocked/paused project and schedule its next work (a goal's resume_build). */
+  resumeProject(projectId: string): Task | null {
+    const project = this.projects.get(projectId);
+    if (project === null || project.status === "completed" || project.status === "cancelled" || project.status === "failed") return null;
+    if (project.status === "verifying") return this.scheduleFinalVerification(project.id);
+    this.reopen(project);
+    return this.scheduleNextWork(project.id);
+  }
+
   /** Prefer the project actually executing; retain unfinished backlog for gates. */
   currentProject(): BuildProjectStatusView | null {
     const project = this.projects.loadUnfinished()

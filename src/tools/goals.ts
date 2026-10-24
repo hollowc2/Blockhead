@@ -1,10 +1,11 @@
-import type { NewGoal } from "../agent/goal.js";
+import type { NewGoal, SuccessCriterion } from "../agent/goal.js";
 import type { GoalManager } from "../agent/goals.js";
-import { CancelGoalArgsSchema, StartGoalArgsSchema } from "../llm/schemas.js";
+import { resolveCriterion } from "../agent/goal-criteria.js";
+import { CancelGoalArgsSchema, StartGoalArgsSchema, type SuccessCriterionInput } from "../llm/schemas.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
-type GoalSpec = { description: string; successCriteria?: NewGoal["successCriteria"] };
+type GoalSpec = { description: string; successCriteria?: SuccessCriterionInput[] };
 
 /**
  * Goal tools: establish, queue, and cancel autonomous goals. Short,
@@ -24,7 +25,7 @@ export function registerGoalTools(registry: ToolRegistry, goals: GoalManager): v
     {
       name: "start_goal",
       description:
-        'Begin a persistent autonomous goal (a multi-step objective that is pursued across several actions until its success criteria are met, it becomes impossible, or the owner cancels it). Use this for instructions like "prepare for a mining expedition", "stock up for a long journey", or "build up supplies", where one single action will not finish the job. Provide a short description of the objective; optionally list success criteria that are measurable from stockpile levels (kind "stockpile" with wood/food/fuel/torches) or carried items (kind "inventory" with an item name), each with a minimum count. When the owner lists several objectives in order ("do X, then Y, then Z"), put the first in description/successCriteria and the rest, in order, in "then"; each runs after the previous one settles. By default this replaces (cancels) the current goal and any queued goals; set "append": true when the owner says to do it after the current work ("after that", "next", "also", "queue").',
+        'Begin a persistent autonomous goal (a multi-step objective that is pursued across several actions until its success criteria are met, it becomes impossible, or the owner cancels it). Use this for instructions like "prepare for a mining expedition", "stock up for a long journey", or "build up supplies", where one single action will not finish the job. Provide a short description of the objective, and give it a definition of done whenever the instruction implies one — success criteria the bot measures itself: a stockpile level (kind "stockpile"), a carried item count (kind "inventory"), a verified building (kind "building_verified": target "base" for the home shed, or "project" for a build, optionally matched by name — "finish the house"), items delivered to a chest (kind "chest_contains": item, min, chest "home" | "owner" for "this chest" by the owner | a storage label), or a fully cleared area (kind "area_cleared": width, length, height, anchor like clear_area — "clear this area"). When the owner lists several objectives in order ("do X, then Y, then Z"), put the first in description/successCriteria and the rest, in order, in "then"; each runs after the previous one settles. By default this replaces (cancels) the current goal and any queued goals; set "append": true when the owner says to do it after the current work ("after that", "next", "also", "queue").',
       args: {
         description: {
           type: "string",
@@ -33,7 +34,7 @@ export function registerGoalTools(registry: ToolRegistry, goals: GoalManager): v
         successCriteria: {
           type: "array",
           description:
-            'Optional readiness conditions, each either {kind:"stockpile", stockpile:"wood|food|fuel|torches", min} or {kind:"inventory", item, min}.',
+            'Optional definitions of done, each one of {kind:"stockpile", stockpile:"wood|food|fuel|torches", min}, {kind:"inventory", item, min}, {kind:"building_verified", target:"base"|"project", project?}, {kind:"chest_contains", item, min, chest?:"home"|"owner"|"<label>"}, {kind:"area_cleared", width, length, height?, anchor?:"owner_front"|"owner"|"current"|"home"}.',
         },
         then: {
           type: "array",
@@ -49,11 +50,18 @@ export function registerGoalTools(registry: ToolRegistry, goals: GoalManager): v
       handler: (args, ctx): ToolResult => {
         if (ctx.goals === undefined) return "No goal manager is wired.";
         const { then, append, ...first } = args as GoalSpec & { then?: GoalSpec[]; append?: boolean };
-        const sequence = [first, ...(then ?? [])].map((spec): NewGoal => ({
-          description: spec.description,
-          source: "owner",
-          successCriteria: spec.successCriteria ?? [],
-        }));
+        // Freeze every criterion before touching the plan: a chest or area
+        // that cannot be pinned down now leaves the current plan untouched.
+        const sequence: NewGoal[] = [];
+        for (const spec of [first, ...(then ?? [])]) {
+          const successCriteria: SuccessCriterion[] = [];
+          for (const input of spec.successCriteria ?? []) {
+            const resolved = resolveCriterion(input, ctx);
+            if (typeof resolved === "string") return `Can't set "${spec.description}": ${resolved}.`;
+            successCriteria.push(resolved);
+          }
+          sequence.push({ description: spec.description, source: "owner", successCriteria });
+        }
         const [head, ...rest] = sequence as [NewGoal, ...NewGoal[]];
         if (append === true) ctx.goals.enqueue(head);
         else ctx.goals.start(head);

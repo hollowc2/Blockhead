@@ -1,4 +1,4 @@
-import type { Goal } from "../agent/goal.js";
+import { criterionLabel, type Goal } from "../agent/goal.js";
 import type { StockpileSnapshot } from "../agent/maintenance.js";
 import type { Task } from "../agent/task.js";
 import type { BuildProjectStatusView } from "../agent/build-projects.js";
@@ -62,7 +62,7 @@ export function projectGoal(goal: Goal | null | undefined): GoalSummary | null {
   return {
     id: goal.id, description: goal.description, source: goal.source, status: goal.status, createdAt: goal.createdAt,
     currentStep: goal.currentStep ?? null,
-    successCriteria: goal.successCriteria.map((criterion) => ({ kind: criterion.kind, stockpile: criterion.kind === "stockpile" ? criterion.stockpile : null, item: criterion.kind === "inventory" ? criterion.item : null, min: criterion.min })),
+    successCriteria: goal.successCriteria.map((criterion) => ({ kind: criterion.kind, stockpile: criterion.kind === "stockpile" ? criterion.stockpile : null, item: criterion.kind === "inventory" || criterion.kind === "chest_contains" ? criterion.item : null, min: "min" in criterion ? criterion.min : 1, label: criterionLabel(criterion) })),
     recentResults: goal.recentResults.map((result) => ({ action: result.action, outcome: result.outcome, message: result.message ?? null, at: result.at })),
     note: goal.note ?? null, endedAt: goal.endedAt ?? null,
   };

@@ -209,13 +209,32 @@ export class GoalManager {
 
   /** Record the LLM "wait" hold (no action ran; the goal stands by). */
   recordStandingBy(action: string, message?: string): void {
+    this.recordNote(action, "standing_by", message);
+  }
+
+  /**
+   * Record the outcome of a goal action that ran outside the scheduler (a
+   * project resumed, a terrain clear started) so the LLM sees it next time.
+   */
+  recordNote(action: string, outcome: GoalResult["outcome"], message?: string): void {
     const goal = this.goal;
     if (goal === null) return;
     const results: GoalResult[] = [
       ...goal.recentResults,
-      { action, outcome: "standing_by", message, at: new Date().toISOString() },
+      { action, outcome, message, at: new Date().toISOString() },
     ];
     goal.recentResults = results.slice(-MAX_RECENT_RESULTS);
+    this.opts.goals.update(goal);
+  }
+
+  /**
+   * Persist the active goal's criteria after the driver bound one to the
+   * world (a building_verified criterion learning its project id).
+   */
+  updateCriteria(goalId: string, criteria: Goal["successCriteria"]): void {
+    const goal = this.goal;
+    if (goal === null || goal.id !== goalId) return;
+    goal.successCriteria = criteria;
     this.opts.goals.update(goal);
   }
 

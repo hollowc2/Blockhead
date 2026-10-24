@@ -20,11 +20,14 @@ import type { AgentState } from "./state.js";
 import { BootstrapStage } from "./bootstrap.js";
 import type { GoalManager } from "./goals.js";
 import type { WorldProjectManager } from "./world-projects.js";
-import { criterionLabel, evaluateSuccessCriteria, type Goal, type SuccessCriterion } from "./goal.js";
+import { boundsKey, chestKey, criterionLabel, criterionProgress, evaluateSuccessCriteria, type AreaClearedCriterion, type Goal, type GoalFacts, type SuccessCriterion } from "./goal.js";
+import { createFrozenTerrainPlan } from "../terrain/schema.js";
+import { verifyClearArea } from "../terrain/verification.js";
+import { normalizeDimension } from "../minecraft/protection.js";
 import type { StorageRepository } from "../memory/storage.js";
 import type { TasksRepository } from "../memory/tasks.js";
 import type { BackgroundFailuresRepository } from "../memory/background-failures.js";
-import { adoptHomeChests, findHomeChest, homeStorageUnloaded, pruneBlockedChests } from "../minecraft/containers.js";
+import { adoptHomeChests, findHomeChest, homeStorageUnloaded, pruneBlockedChests, rememberedChestContents } from "../minecraft/containers.js";
 import { bareName } from "../minecraft/inventory.js";
 import { isCreativeMode } from "../minecraft/mode.js";
 import { actionFingerprint } from "./watchdog.js";
@@ -956,6 +959,7 @@ export class BackgroundManager {
     const lastDeath = (this.opts.recentDeathTimes?.() ?? [])[0];
     if (lastDeath !== undefined && this.now() - lastDeath < GOAL_AFTER_DEATH_PAUSE_MS) return false;
 
+    this.bindGoalProjects(goal);
     const facts = this.goalFacts(goal.successCriteria, snapshot);
     const check = evaluateSuccessCriteria(goal, facts);
     if (check.satisfied && goal.successCriteria.length > 0) {
@@ -963,6 +967,22 @@ export class BackgroundManager {
       this.opts.logger.info({ goalId: goal.id }, "goal completed by criteria");
       return true;
     }
+
+    // A build the goal is waiting on that can never verify ends the goal:
+    // nothing the goal driver chooses can finish a failed or cancelled build.
+    for (const criterion of check.unmet) {
+      if (this.opts.buildProjects === undefined) break;
+      if (criterion.kind !== "building_verified" || criterion.target !== "project" || criterion.projectId === undefined) continue;
+      const status = facts.projects?.[criterion.projectId];
+      if (status === "failed" || status === "cancelled" || status === undefined) {
+        goals.block(`build ${criterion.projectName ?? criterion.projectId} is ${status ?? "gone"}`);
+        return true;
+      }
+    }
+
+    // The goal's own project work is still queued or running: let it finish
+    // instead of asking the model for another step on top of it.
+    if (this.goalProjectWorkPending(goal)) return true;
 
     // Same decision throttle as the director: at most one LLM decision per
     // interval, bypassed only when a settle-kick made this pass eligible.
@@ -1001,7 +1021,58 @@ export class BackgroundManager {
         if (c.kind === "inventory") inventory[c.item] ??= 0;
       }
     }
-    return { stockpile: snapshot.levels, inventory };
+    const facts: GoalFacts = { stockpile: snapshot.levels, inventory };
+    const here = normalizeDimension(String(this.opts.bot.game?.dimension ?? "overworld"));
+    for (const c of criteria) {
+      if (c.kind === "building_verified" && c.target === "base") {
+        facts.baseVerified = this.opts.buildBase.verifiedComplete?.() ?? false;
+      } else if (c.kind === "building_verified" && c.projectId !== undefined) {
+        const status = this.opts.buildProjects?.getProject(c.projectId)?.status;
+        if (status !== undefined) (facts.projects ??= {})[c.projectId] = status;
+      } else if (c.kind === "chest_contains") {
+        const contents = rememberedChestContents(this.opts.state.worldId, c.chest, this.opts.storage);
+        if (contents !== null) (facts.chests ??= {})[chestKey(c.chest)] = contents;
+      } else if (c.kind === "area_cleared" && normalizeDimension(c.dimension) === here) {
+        // The same cell rule the clear-area verifier applies; an unloaded
+        // cell reads unobserved and keeps the box unmet.
+        const inspection = verifyClearArea(this.opts.bot, c.bounds, 1);
+        const data = inspection.data;
+        if (data !== undefined) (facts.areas ??= {})[boundsKey(c.dimension, c.bounds)] = { inspected: data.inspected, verified: data.verified };
+      }
+    }
+    return facts;
+  }
+
+  /**
+   * Bind each unbound building_verified project criterion to a concrete
+   * build the first time one matches (the owner may queue "finish the house"
+   * before or after starting it), and persist the binding.
+   */
+  private bindGoalProjects(goal: Goal): void {
+    const projects = this.opts.buildProjects;
+    if (projects === undefined) return;
+    let changed = false;
+    const criteria = goal.successCriteria.map((criterion): SuccessCriterion => {
+      if (criterion.kind !== "building_verified" || criterion.target !== "project" || criterion.projectId !== undefined) return criterion;
+      const project = projects.findForGoal(criterion.match, goal.createdAt);
+      if (project === null) return criterion;
+      changed = true;
+      this.opts.logger.info({ goalId: goal.id, projectId: project.id, userGoal: project.userGoal }, "goal bound to build project");
+      return { ...criterion, projectId: project.id, projectName: project.userGoal.slice(0, 60) };
+    });
+    if (changed) this.opts.goals?.updateCriteria(goal.id, criteria);
+  }
+
+  /** True while runnable scheduler work belongs to a project this goal is tracking. */
+  private goalProjectWorkPending(goal: Goal): boolean {
+    const ids = new Set<string>();
+    for (const c of goal.successCriteria) {
+      if ((c.kind === "building_verified" || c.kind === "area_cleared") && "projectId" in c && c.projectId !== undefined) ids.add(c.projectId);
+    }
+    if (ids.size === 0) return false;
+    const scheduler = this.opts.scheduler;
+    if (scheduler.active?.projectId !== undefined && ids.has(scheduler.active.projectId)) return true;
+    return scheduler.queued.some((task) => task.projectId !== undefined && ids.has(task.projectId) && isRunnable(task));
   }
 
   /**
@@ -1056,7 +1127,7 @@ export class BackgroundManager {
     const goal = goals.active();
     if (goal === null || goal.id !== goalId) return false;
 
-    const situation = this.buildGoalSituation(goal);
+    const situation = this.buildGoalSituation(goal, snapshot);
     let decision: NextGoalActionDecision;
     try {
       decision = await this.opts.decider.decideGoalAction(
@@ -1079,6 +1150,18 @@ export class BackgroundManager {
       return true;
     }
     if (action.type === "complete") {
+      // A measured definition of done outranks the model's verdict: with
+      // criteria on the goal, "complete" only lands when the world agrees
+      // (the driver completes it deterministically the moment it does).
+      if (goal.successCriteria.length > 0) {
+        const facts = this.goalFacts(goal.successCriteria, snapshot);
+        const unmet = evaluateSuccessCriteria(goal, facts).unmet;
+        if (unmet.length > 0) {
+          goals.recordNote("complete", "failed", `not done yet: ${unmet.map((c) => criterionProgress(c, facts)).join("; ")}`);
+          this.opts.logger.info({ goalId, unmet: unmet.map(criterionLabel) }, "goal completion refused; criteria unmet");
+          return true;
+        }
+      }
       goals.complete(decision.rationale ?? "goal achieved");
       return true;
     }
@@ -1087,8 +1170,25 @@ export class BackgroundManager {
       return true;
     }
 
+    if (action.type === "resume_build") return this.resumeGoalBuild(goal);
+    if (action.type === "clear_area") return this.startGoalClear(goal, snapshot);
+
     const args = actionArguments(action);
     if (action.type === "collect_resource") args.quantity = Math.min(action.quantity, AUTONOMOUS_GATHER_MAX);
+    if (action.type === "deliver_items") {
+      // Deliveries go to the goal's own frozen chest: the unmet criterion for
+      // this item first, else any chest criterion the goal names.
+      const chests = goal.successCriteria.filter((c): c is Extract<SuccessCriterion, { kind: "chest_contains" }> => c.kind === "chest_contains");
+      const facts = this.goalFacts(chests, snapshot);
+      const unmet = evaluateSuccessCriteria({ successCriteria: chests }, facts).unmet as typeof chests;
+      const target = unmet.find((c) => c.item === bareName(action.item)) ?? chests.find((c) => c.item === bareName(action.item)) ?? unmet[0] ?? chests[0];
+      if (target === undefined) {
+        goals.recordNote(action.type, "failed", "the goal names no chest to deliver into");
+        return true;
+      }
+      args.item = bareName(action.item);
+      args.chest = target.chest;
+    }
     if (action.type === "stockpile_maintenance") {
       // The restore needs a target and deficit: bare `{kind}` replanned to a
       // zero deficit and settled instantly, and the goal re-chose the same
@@ -1122,18 +1222,78 @@ export class BackgroundManager {
     return true;
   }
 
+  /** resume_build: reopen and schedule the build the goal is tracking. */
+  private resumeGoalBuild(goal: Goal): boolean {
+    const goals = this.opts.goals!;
+    const criterion = goal.successCriteria.find((c): c is Extract<SuccessCriterion, { kind: "building_verified"; target: "project" }> =>
+      c.kind === "building_verified" && c.target === "project");
+    if (criterion === undefined || criterion.projectId === undefined || this.opts.buildProjects === undefined) {
+      goals.recordNote("resume_build", "failed", criterion === undefined
+        ? "the goal tracks no build project (use build_base for the home shed)"
+        : "no matching build project has been started yet; the owner must start it");
+      return true;
+    }
+    const task = this.opts.buildProjects.resumeProject(criterion.projectId);
+    if (task === null) {
+      goals.recordNote("resume_build", "failed", `build ${criterion.projectName ?? criterion.projectId} has no work left to schedule`);
+      return true;
+    }
+    goals.setCurrentStep(`resume build ${criterion.projectName ?? ""}`.trim());
+    goals.recordNote("resume_build", "completed", `resumed build ${criterion.projectName ?? criterion.projectId}`);
+    this.opts.scheduler.claim();
+    this.opts.logger.info({ goalId: goal.id, projectId: criterion.projectId, taskId: task.id }, "goal resumed build project");
+    return true;
+  }
+
+  /**
+   * clear_area: create (or resume — same frozen geometry, same hash) the
+   * terrain clear for the goal's first unmet area box and remember the
+   * project so its progress holds off further decisions.
+   */
+  private startGoalClear(goal: Goal, snapshot: StockpileSnapshot): boolean {
+    const goals = this.opts.goals!;
+    const areas = goal.successCriteria.filter((c): c is AreaClearedCriterion => c.kind === "area_cleared");
+    const facts = this.goalFacts(areas, snapshot);
+    const area = areas.find((c) => !evaluateSuccessCriteria({ successCriteria: [c] }, facts).satisfied) ?? areas[0];
+    if (area === undefined || this.opts.buildProjects === undefined) {
+      goals.recordNote("clear_area", "failed", "the goal names no area to clear");
+      return true;
+    }
+    const dimension = normalizeDimension(area.dimension);
+    try {
+      const plan = createFrozenTerrainPlan({
+        world: this.opts.config.server.world_key,
+        dimension,
+        anchor: { ...area.anchor, dimension },
+        bounds: area.bounds,
+        specification: { kind: "clear", anchor: area.anchorKind, width: area.width, length: area.length, height: area.height },
+      });
+      const result = this.opts.buildProjects.createTerrainProject({ userGoal: `[goal] ${goal.description}`, source: "goal", plan });
+      this.opts.scheduler.claim();
+      goals.updateCriteria(goal.id, goal.successCriteria.map((c) => (c === area ? { ...area, projectId: result.project.id } : c)));
+      goals.setCurrentStep(`clear ${area.width}x${area.length} area`);
+      goals.recordNote("clear_area", "completed", `${result.resumed ? "resumed" : "started"} clearing ${area.width}x${area.length}x${area.height}`);
+      this.opts.logger.info({ goalId: goal.id, projectId: result.project.id, resumed: result.resumed }, "goal clear-area project started");
+    } catch (err) {
+      goals.recordNote("clear_area", "failed", `could not start the clear: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
+  }
+
   /**
    * The goal context digest handed to the LLM: the objective, its criteria,
    * where it is now, and what the last few actions accomplished — plus the
    * same high-signal situation lines the director sees.
    */
-  private buildGoalSituation(goal: Goal): string {
+  private buildGoalSituation(goal: Goal, snapshot: StockpileSnapshot): string {
     const lines: string[] = [
       `Objective: ${goal.description}`,
       `Source: ${goal.source}`,
     ];
     if (goal.successCriteria.length > 0) {
       lines.push(`Success criteria (complete when all are met): ${goal.successCriteria.map(criterionLabel).join("; ")}.`);
+      const facts = this.goalFacts(goal.successCriteria, snapshot);
+      lines.push(`Measured now: ${goal.successCriteria.map((c) => criterionProgress(c, facts)).join("; ")}.`);
     }
     if (goal.currentStep !== null) lines.push(`Current step: ${goal.currentStep}.`);
     if (goal.recentResults.length > 0) {
@@ -1195,6 +1355,8 @@ function goalStepLabel(type: string, args: Record<string, unknown>): string {
       return "go home";
     case "upgrade_equipment":
       return "upgrade equipment";
+    case "deliver_items":
+      return `deliver ${String(args.quantity ?? "?")} ${String(args.item ?? "?")}`;
     default:
       return type;
   }

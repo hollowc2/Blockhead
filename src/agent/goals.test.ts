@@ -428,6 +428,22 @@ test("start_goal queues a 'then' sequence in one call; append adds to the plan",
   }
 });
 
+test("start_goal refuses an unresolvable chest without touching the current plan", async () => {
+  const h = newHarness();
+  try {
+    const registry = new ToolRegistry();
+    registerGoalTools(registry, h.manager);
+    const ctx = { goals: h.manager, bot: { game: { dimension: "overworld" }, players: {} }, config: { agent: { owner: "Corey" } }, state: { worldId: 1 } } as unknown as ToolContext;
+    const current = h.manager.start(newGen({ description: "keep me" }));
+    const raw = { description: "Stock this chest", successCriteria: [{ kind: "chest_contains", item: "iron_ingot", min: 8, chest: "owner" }] };
+    const reply = await registry.get("start_goal")!.handler(registry.validateArgs("start_goal", raw), ctx);
+    assert.match(String(reply), /Can't set "Stock this chest": I can't see Corey/);
+    assert.equal(h.manager.active()!.id, current.id);
+  } finally {
+    h.close();
+  }
+});
+
 // --- evaluateSuccessCriteria (pure) ---
 
 function criterionGoal(criteria: Goal["successCriteria"]): Goal {

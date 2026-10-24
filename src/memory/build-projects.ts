@@ -205,6 +205,12 @@ export class BuildProjectsRepository {
     return rows.map((row) => { const origin = JSON.parse(row.origin_json) as { x: number; y: number; z: number }; return { x: origin.x, y: origin.y, z: origin.z }; });
   }
 
+  /** The newest projects of any status, newest first. */
+  listRecent(limit: number): BuildProject[] {
+    const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(limit) as BuildProjectRow[];
+    return rows.map(toProject);
+  }
+
   /** Active, paused, blocked, and verifying projects survive a restart. */
   loadUnfinished(): BuildProject[] {
     const rows = this.db.sql.prepare(`SELECT ${PROJECT_COLUMNS} FROM build_projects WHERE status IN ('active', 'paused', 'blocked', 'verifying') ORDER BY created_at, rowid`).all() as BuildProjectRow[];

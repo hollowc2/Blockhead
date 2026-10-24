@@ -1555,6 +1555,18 @@ export class BaseBuilderRunner {
     return { ok: travel.status === "arrived" || travel.status === "already_there", status: travel.status, destination: new Vec3(approach.x, approach.y, approach.z) };
   }
 
+  /**
+   * A goal's "base verified" check: every wall, roof, and door cell of the
+   * shed reads in place right now. Stricter than `needsAttention` — a foreign
+   * block in a gap or an unloaded cell is not complete — and false when there
+   * is no home or the shed was displaced (nothing to verify against).
+   */
+  verifiedComplete(): boolean {
+    const home = this.opts.state.home;
+    if (home === null || displacedBaseOffset(this.opts.bot, home) !== null) return false;
+    return !measureStructure(this.opts.bot, baseLayoutFor(home)).needsWork;
+  }
+
   /** Lightweight background probe: is the stockpile shed incomplete? */
   async needsAttention(): Promise<{ needsWork: boolean; reason: string | null }> {
     const home = this.opts.state.home;

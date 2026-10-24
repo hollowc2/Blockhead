@@ -189,8 +189,11 @@ const GOAL_ACTION_DOC = [
   '"organize_storage" — sort the home chests by category, creating more storage when full.',
   '"build_base" — build or repair the stockpile shed at home.',
   '"go_home" — return to the configured home location.',
+  '"deliver_items" — carry `quantity` of `item` to the goal\'s own chest (its chest_contains criterion), deposit it, and read the chest back. Get the items first (collect_resource / ensure_item). Parameters: item (item name), quantity (integer, 1-1024).',
+  '"resume_build" — reopen and continue the build project the goal is waiting on (building_verified) when it is blocked or paused.',
+  '"clear_area" — start or resume clearing the goal\'s area (area_cleared); it runs until verified.',
   '"wait" — do nothing this round.',
-  '"complete" — declare the goal finished because every success criterion is satisfied by the current state.',
+  '"complete" — declare the goal finished because every success criterion is satisfied by the current state. Criteria are measured, not declared: building, chest, and area criteria only count once the world shows them done.',
   '"abandon" — give up on the goal because it is impossible.',
 ].join("\n");
 
