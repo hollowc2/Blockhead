@@ -34,6 +34,12 @@ export function installViewerPreview(THREE, scene) {
       mesh.renderOrder = 10;
       mesh.userData.next = 0;
       group.add(mesh);
+      // A faint x-ray pass sharing the same instances, so parts buried in
+      // terrain or trees still show where they will go.
+      const xray = new THREE.InstancedMesh(cube, new THREE.MeshBasicMaterial({ color: color(name, index), transparent: true, opacity: 0.12, depthWrite: false, depthTest: false }), counts[index]);
+      xray.instanceMatrix = mesh.instanceMatrix;
+      xray.renderOrder = 9;
+      group.add(xray);
       return mesh;
     });
     const matrix = new THREE.Matrix4();

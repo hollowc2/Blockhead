@@ -59,6 +59,7 @@ const SUPPLIES: readonly { key: string; label: string; match: (name: string) => 
   { key: "iron", label: "Iron", match: (name) => name === "iron_ingot" || name === "raw_iron" },
 ];
 
+const TIERS = ["wooden", "golden", "stone", "iron", "diamond", "netherite"];
 const TOOL = /_(?:pickaxe|axe|shovel|hoe|sword)$|^(?:bow|crossbow|shield|shears|fishing_rod|flint_and_steel|trident)$/;
 const ARMOR = /_(?:helmet|chestplate|leggings|boots)$/;
 
@@ -96,8 +97,12 @@ export function projectGearDetail(input: GearInput): GearDetail {
   }));
 
   const all = [...Object.values(equipped).filter((item): item is ItemCondition => item !== null), ...tools];
+  // The tool Bob would reach for: the best tier still above the wear limit,
+  // else the best tier at all (ties go to the less worn one).
+  const usable = (item: ItemCondition): boolean => (item.durability?.percent ?? 100) >= EXPEDITION_MIN_TOOL_DURABILITY * 100;
+  const tier = (item: ItemCondition): number => TIERS.findIndex((prefix) => item.name.startsWith(`${prefix}_`));
   const best = (pattern: RegExp): ItemCondition | null => all.filter((item) => pattern.test(item.name))
-    .sort((a, b) => (b.durability?.percent ?? 100) - (a.durability?.percent ?? 100))[0] ?? null;
+    .sort((a, b) => Number(usable(b)) - Number(usable(a)) || tier(b) - tier(a) || (b.durability?.percent ?? 100) - (a.durability?.percent ?? 100))[0] ?? null;
   const toolCheck = (key: string, label: string, pattern: RegExp): ReadinessCheck => {
     const item = best(pattern);
     if (item === null) return { key, label, ok: false, detail: "none carried" };

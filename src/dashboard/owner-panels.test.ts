@@ -137,6 +137,10 @@ test("gear reports durability, enchantments, free slots and carried versus store
   const checks = Object.fromEntries(gear.readiness.map((check) => [check.key, check.ok]));
   assert.deepEqual(checks, { health: true, food: true, space: true, pickaxe: true, axe: false, weapon: true, torches: false, armor: false });
   assert.equal(gear.storageSeenAt, "2026-10-24T10:00:00.000Z");
+
+  const axes = (items: unknown[]) => projectGearDetail({ bot: { ...bot, heldItem: null, inventory: { ...bot.inventory, items: () => items } } as never, stored: {}, storageSeenAt: null }).readiness.find((check) => check.key === "axe")?.detail;
+  assert.equal(axes([{ name: "wooden_axe", count: 1, maxDurability: 59, durabilityUsed: 0 }, { name: "iron_axe", count: 1, maxDurability: 250, durabilityUsed: 50 }]), "iron axe · 80%", "the better tier wins");
+  assert.equal(axes([{ name: "wooden_axe", count: 1, maxDurability: 59, durabilityUsed: 4 }, { name: "iron_axe", count: 1, maxDurability: 250, durabilityUsed: 175 }]), "wooden axe · 93%", "a worn-out tier loses to a usable one");
 });
 
 test("the story persists and 'since your last visit' counts what happened", () => {
