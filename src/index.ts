@@ -94,7 +94,7 @@ import { StoryRepository } from "./memory/story.js";
 import { CommandTracker, createJobControl, projectJobs } from "./dashboard/jobs.js";
 import { projectGearDetail, storedContents } from "./dashboard/gear.js";
 import { readOwnerMap, RouteTracker } from "./dashboard/owner-map.js";
-import { createBuildPreview } from "./dashboard/build-preview.js";
+import { createBuildPreview, createPreviewStart } from "./dashboard/build-preview.js";
 import { readHistory, type UnresolvedProblem } from "./dashboard/history.js";
 import { TaskStatus } from "./agent/task.js";
 import { createWorldStatsReader } from "./dashboard/world-stats.js";
@@ -295,6 +295,12 @@ const publicInteractions: PublicInteractions = new PublicInteractions({
   log: record => logger.info(record, "public interaction"),
 });
 bindPublicSafetyInterrupts(bus, () => publicInteractions.cancel());
+const viewerCommand = createViewerCommand({ deliver: (text) => {
+  // Tracking starts first: delivery runs the command synchronously and
+  // the tasks it enqueues must find their command open.
+  const id = commandTracker.begin(text);
+  try { deliverOwnerCommand(text); } catch (error) { commandTracker.discard(id); throw error; }
+} });
 const viewerManager = new ViewerManager({
   enabled: config.dashboard?.viewer_enabled ?? false,
   port: config.dashboard?.viewer_port ?? 3001,
@@ -310,18 +316,14 @@ const viewerManager = new ViewerManager({
     publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
     // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
     chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
-    command: createViewerCommand({ deliver: (text) => {
-      // Tracking starts first: delivery runs the command synchronously and
-      // the tasks it enqueues must find their command open.
-      const id = commandTracker.begin(text);
-      try { deliverOwnerCommand(text); } catch (error) { commandTracker.discard(id); throw error; }
-    } }),
+    command: viewerCommand,
     privateApi: {
       job: createJobControl({ scheduler, goals, blockers, builds: buildProjectManager }),
       preview: async (body) => {
         const result = await buildPreview(body);
-        return result.ok ? { status: 200, body: { preview: result.preview } } : { status: result.status, body: { error: result.error } };
+        return result.ok ? { status: 200, body: { preview: result.preview, changes: result.changes } } : { status: result.status, body: { error: result.error } };
       },
+      previewStart: createPreviewStart({ preview: (body) => buildPreview(body), send: viewerCommand }),
       history: async (since) => ({ status: 200, body: readHistory(storyStore, since, unresolvedProblems()) }),
       map: async () => {
         const project = buildProjectManager.currentProject()?.project ?? null;

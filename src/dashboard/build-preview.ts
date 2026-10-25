@@ -20,6 +20,10 @@ import { planDesignBuild } from "../tools/build-design.js";
 export interface PreviewMaterial { material: string; needed: number; carried: number; stored: number; missing: number }
 export interface BuildPreview {
   command: string;
+  /** Where the build is measured from; "current" and "owner" move until the build starts. */
+  anchor: "home" | "current" | "owner";
+  /** When the server planned this preview (ISO). */
+  generatedAt: string;
   name: string;
   structureType: string;
   /** Asking for this build would resume an unfinished project at the same spot. */
@@ -39,7 +43,18 @@ export interface BuildPreview {
   notes: string[];
 }
 
-export type PreviewResult = { ok: true; preview: BuildPreview } | { ok: false; status: 400 | 503; error: string };
+/** What the viewer saw: echoed back so a later check can say what changed since. */
+export interface PreviewBaseline {
+  origin: BuildPreview["origin"];
+  structureType: string;
+  resumes: boolean;
+  site: BuildPreview["site"];
+  materials: readonly { material: string; missing: number }[];
+}
+/** Placement changes make a preview unsafe to start; condition changes only make it stale. */
+export interface PreviewChanges { placement: string[]; conditions: string[] }
+
+export type PreviewResult = { ok: true; preview: BuildPreview; changes?: PreviewChanges } | { ok: false; status: 400 | 503; error: string };
 
 const MAX_GHOST_BLOCKS = 12_000;
 const MAX_SITE_CHECKS = 20_000;
@@ -93,16 +108,20 @@ export function createBuildPreview(options: BuildPreviewOptions): (raw: unknown)
     try { operations = compileBuildingDesign(design, origin).operations; } catch (error) {
       return { ok: false, status: 400, error: `That design can't be built: ${String(error instanceof Error ? error.message : error)}` };
     }
-    const preview = describePreview({ text, design, origin, structureType, operations, bot, stored: options.stored(), resumes: options.projects.findUnfinishedAt(structureType, origin) !== null });
-    // Only a home anchor is fixed; the others are measured again when the build starts.
-    if (args.anchor === "current") preview.notes = [...preview.notes, "Anchored where CobbleBob stands now; if he moves before it starts, it moves with him."];
-    else if (args.anchor === "owner") preview.notes = [...preview.notes, "Anchored beside you; if you move before it starts, it moves with you."];
-    return { ok: true, preview };
+    const preview = describePreview({ text, anchor: args.anchor === "current" || args.anchor === "home" ? args.anchor : "owner", design, origin, structureType, operations, bot, stored: options.stored(), resumes: options.projects.findUnfinishedAt(structureType, origin) !== null });
+    // Only a home anchor is fixed; the others are measured again when the
+    // build starts, and starting from the preview refuses if they moved.
+    if (args.anchor === "current") preview.notes = [...preview.notes, "Anchored where CobbleBob stands now. It moves with him, so it's checked again before it starts."];
+    else if (args.anchor === "owner") preview.notes = [...preview.notes, "Anchored beside you. It moves with you, so it's checked again before it starts."];
+    const baseline = parseBaseline(body.baseline);
+    return baseline === null ? { ok: true, preview } : { ok: true, preview, changes: previewChanges(baseline, preview) };
   };
 }
 
 interface DescribeInput {
   text: string;
+  anchor?: BuildPreview["anchor"];
+  now?: Date;
   design: BuildingDesign;
   origin: BuildPreview["origin"];
   structureType: string;
@@ -178,6 +197,8 @@ export function describePreview(input: DescribeInput): BuildPreview {
   }
   return {
     command: input.text,
+    anchor: input.anchor ?? "owner",
+    generatedAt: (input.now ?? new Date()).toISOString(),
     name: input.design.name,
     structureType: input.structureType,
     resumes: input.resumes,
@@ -191,5 +212,83 @@ export function describePreview(input: DescribeInput): BuildPreview {
     phases: Object.entries(phases).map(([phase, blocks]) => ({ phase, blocks })),
     ghost: { palette, blocks: ghost, truncated: operations.length > MAX_GHOST_BLOCKS },
     notes,
+  };
+}
+
+const count = (value: unknown): number => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+
+/** The baseline a viewer echoes back, or null when it is absent or malformed. */
+export function parseBaseline(raw: unknown): PreviewBaseline | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  const o = b.origin as Record<string, unknown> | null | undefined;
+  const site = b.site as Record<string, unknown> | null | undefined;
+  if (o === null || typeof o !== "object" || ![o.x, o.y, o.z].every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+  if (typeof b.structureType !== "string" || !Array.isArray(b.materials)) return null;
+  return {
+    origin: { x: o.x as number, y: o.y as number, z: o.z as number, dimension: typeof o.dimension === "string" ? o.dimension : "overworld" },
+    structureType: b.structureType.slice(0, 200),
+    resumes: b.resumes === true,
+    site: { placed: count(site?.placed), obstructed: count(site?.obstructed), unloaded: count(site?.unloaded) },
+    materials: b.materials.slice(0, 200).flatMap((m) => m !== null && typeof m === "object" && typeof (m as Record<string, unknown>).material === "string"
+      ? [{ material: String((m as Record<string, unknown>).material).slice(0, 80), missing: count((m as Record<string, unknown>).missing) }] : []),
+  };
+}
+
+const label = (material: string) => material.replace(/_/g, " ");
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** What differs between the preview a viewer saw and a fresh one for the same request. */
+export function previewChanges(before: PreviewBaseline, after: BuildPreview): PreviewChanges {
+  const placement: string[] = [];
+  const conditions: string[] = [];
+  const a = before.origin, b = after.origin;
+  if (a.dimension.replace(/^minecraft:/, "") !== b.dimension.replace(/^minecraft:/, "")) placement.push(`The site is now in the ${b.dimension.replace(/_/g, " ")}.`);
+  else if (a.x !== b.x || a.y !== b.y || a.z !== b.z) {
+    const moved = Math.round(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z));
+    const why = after.anchor === "current" ? " with CobbleBob" : after.anchor === "owner" ? " with you" : "";
+    placement.push(`The site moved ${plural(Math.max(1, moved), "block")}${why}, to ${b.x}, ${b.y}, ${b.z}.`);
+  }
+  if (before.structureType !== after.structureType) placement.push(`The request now plans a ${label(after.structureType)}.`);
+  if (before.resumes !== after.resumes) placement.push(after.resumes ? "An unfinished build now sits here; starting resumes it." : "The unfinished build here is gone; starting begins a new one.");
+  if (after.site.obstructed > before.site.obstructed) placement.push(`${plural(after.site.obstructed - before.site.obstructed, "more cell")} ${after.site.obstructed - before.site.obstructed === 1 ? "is" : "are"} now blocked.`);
+  else if (after.site.obstructed < before.site.obstructed) conditions.push(`${plural(before.site.obstructed - after.site.obstructed, "blocked cell")} cleared.`);
+  if (after.site.placed !== before.site.placed) conditions.push(`${plural(after.site.placed, "block")} already in place (was ${before.site.placed}).`);
+  const was = new Map(before.materials.map((m) => [m.material, m.missing]));
+  for (const m of after.materials) {
+    const old = was.get(m.material) ?? 0;
+    if (m.missing === old) continue;
+    conditions.push(m.missing === 0 ? `No longer short of ${label(m.material)}.` : old === 0 ? `Now short ${m.missing} ${label(m.material)}.` : `Short ${m.missing} ${label(m.material)} (was ${old}).`);
+  }
+  return { placement, conditions };
+}
+
+export interface PreviewStartOptions {
+  preview: (raw: unknown) => Promise<PreviewResult>;
+  /** Sends the command exactly as the dock's Send would. */
+  send: (command: string) => Promise<{ ok: true; answer: string } | { ok: false; status: number; error: string }>;
+}
+
+/**
+ * Start a previewed build only if it would still go where the viewer saw it:
+ * plan it again against the viewer's baseline and refuse (409, with the fresh
+ * preview) when the placement moved, a project appeared or vanished there, or
+ * new blocks are in the way. Delivery follows the check in the same tick, and
+ * the build tool freezes its origin on delivery, so a moving anchor can't
+ * drift between the check and the start.
+ */
+export function createPreviewStart(options: PreviewStartOptions): (raw: unknown) => Promise<{ status: number; body: unknown }> {
+  return async (raw) => {
+    const body = raw !== null && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    if (parseBaseline(body.baseline) === null) return { status: 400, body: { error: "Preview the build again before starting it." } };
+    const result = await options.preview(body);
+    if (!result.ok) return { status: result.status === 503 ? 503 : 409, body: { error: `Nothing started: ${result.error}` } };
+    const changes = result.changes ?? { placement: [], conditions: [] };
+    if (changes.placement.length > 0) {
+      return { status: 409, body: { error: "The placement changed since this preview, so nothing started. Check the updated preview, then start it again.", preview: result.preview, changes } };
+    }
+    const sent = await options.send(result.preview.command);
+    if (!sent.ok) return { status: sent.status, body: { error: sent.error, preview: result.preview, changes } };
+    return { status: 200, body: { answer: sent.answer, preview: result.preview, changes } };
   };
 }

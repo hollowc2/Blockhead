@@ -756,7 +756,12 @@
   }
 
   // ---- Build preview: compile a build without starting it ----
-  let previewBusy = false, preview = null, ghostVisible = true;
+  // While a preview is open it is re-planned every few seconds against what
+  // the viewer saw; any difference marks it outdated (nothing is swapped in
+  // until the owner updates it), and Start re-checks placement on the server.
+  let previewBusy = false, preview = null, ghostVisible = true, freshPreview = null, staleReasons = [], checkTimer = null, checking = false;
+  const PREVIEW_CHECK_MS = 6000;
+  const ANCHORS = { home: ["Home plot", false], current: ["Where Bob stands · moves with him", true], owner: ["Beside you · moves with you", true] };
   function sendGhost() {
     try {
       const win = viewerFrame.contentWindow;
@@ -764,16 +769,44 @@
       win.dispatchEvent(new win.CustomEvent("bob-preview", { detail }));
     } catch {}
   }
+  function frameBuild() {
+    if (!preview) return;
+    setView("orbit");
+    try {
+      const win = viewerFrame.contentWindow;
+      win.dispatchEvent(new win.CustomEvent("bob-frame", { detail: { footprint: preview.footprint, facing: preview.facing } }));
+    } catch {}
+  }
   viewerFrame.addEventListener("load", () => { if (preview) setTimeout(sendGhost, 1500); });
+  const baseline = (p) => ({ origin: p.origin, structureType: p.structureType, resumes: p.resumes, site: p.site, materials: p.materials.map((m) => ({ material: m.material, missing: m.missing })) });
   function clearPreview() {
-    preview = null;
+    preview = null; freshPreview = null; staleReasons = [];
+    stopPreviewChecks();
     $("previewCard").hidden = true;
+    $("stageFrame").hidden = true;
     sendGhost();
   }
-  function showPreview(next) {
+  function renderPreviewState() {
+    const stale = staleReasons.length > 0;
+    $("previewCard").classList.toggle("stale", stale);
+    const state = $("previewState");
+    state.textContent = stale ? "Outdated" : checking ? "Checking…" : "Current";
+    state.className = `preview-state${stale ? " stale" : checking ? " checking" : ""}`;
+    $("previewStale").hidden = !stale;
+    $("previewStaleTitle").textContent = freshPreview ? "Outdated: conditions changed since this preview" : "Outdated: this preview can't be checked right now";
+    $("previewStaleList").replaceChildren(...staleReasons.map((reason) => el("li", "", reason)));
+    $("previewRefresh").hidden = freshPreview === null;
+    if (preview) $("previewChecked").textContent = `· planned ${since(preview.generatedAt)}`;
+  }
+  function showPreview(next, { reveal = false } = {}) {
     preview = next;
+    freshPreview = null; staleReasons = [];
     ghostVisible = true;
     $("previewLook").textContent = "Hide ghost";
+    $("previewCommand").textContent = next.command;
+    const [anchorText, moving] = ANCHORS[next.anchor] ?? ANCHORS.owner;
+    $("previewAnchor").textContent = anchorText;
+    $("previewAnchor").className = `anchor-chip${moving ? " moving" : ""}`;
     $("previewName").textContent = `${next.name}${next.resumes ? " (resumes)" : ""}`;
     const f = next.footprint;
     $("previewFootprint").textContent = `${f.width} × ${f.depth}, ${f.height} tall`;
@@ -782,17 +815,69 @@
     const bob = lastState?.self?.position;
     const distance = bob ? Math.round(Math.hypot((f.minX + f.maxX) / 2 - bob.x, (f.minZ + f.maxZ) / 2 - bob.z)) : null;
     $("previewSite").textContent = `${f.minX}, ${f.minY}, ${f.minZ}${distance !== null ? ` · ${distance} m away` : ""}`;
-    $("previewMaterials").replaceChildren(...next.materials.map((m) => {
-      const row = el("tr");
+    // Problems first: site conflicts, then shortages, biggest first.
+    const short = next.materials.filter((m) => m.missing > 0).sort((a, b) => b.missing - a.missing);
+    const problems = [];
+    if (next.site.obstructed) problems.push(["", `${next.site.obstructed} planned ${next.site.obstructed === 1 ? "cell holds" : "cells hold"} other blocks that need clearing first.`]);
+    if (next.site.unloaded) problems.push(["mid", `${next.site.unloaded} ${next.site.unloaded === 1 ? "cell is" : "cells are"} in unloaded chunks and weren't checked.`]);
+    if (next.resumes) problems.push(["mid", "An unfinished build already sits here; starting resumes it."]);
+    for (const m of short) problems.push(["mid", `Short ${m.missing} ${words(m.material)} (need ${m.needed}, have ${m.carried + m.stored}).`]);
+    $("previewProblems").replaceChildren(...problems.map(([kind, text]) => el("li", kind, text)));
+    $("previewReady").hidden = problems.length > 0;
+    const rows = [...short, ...next.materials.filter((m) => m.missing === 0)];
+    $("previewMaterials").replaceChildren(...rows.map((m) => {
+      const row = el("tr", m.missing ? "short-row" : "");
       row.append(el("td", "", words(m.material)), el("td", "mono", String(m.needed)), el("td", "mono", String(m.carried)), el("td", "mono", String(m.stored)), el("td", `mono${m.missing ? " short" : " ok"}`, m.missing ? String(m.missing) : "✓"));
       return row;
     }));
-    const notes = [...next.notes];
+    // Site conflicts and the resume note are already listed above.
+    const notes = next.notes.filter((note) => !/would need clearing|haven't loaded|already sits here/.test(note));
     if (next.ghost.truncated) notes.push("The ghost shows the first part of a very large build.");
     $("previewNotes").replaceChildren(...notes.map((note) => el("li", "", note)));
     $("previewCard").hidden = false;
+    $("stageFrame").hidden = false;
+    renderPreviewState();
     sendGhost();
+    startPreviewChecks();
+    if (reveal) {
+      selectTab("live");
+      const card = $("previewCard");
+      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      requestAnimationFrame(() => { card.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" }); card.focus({ preventScroll: true }); });
+    }
   }
+  function markStale(reasons, fresh) {
+    staleReasons = reasons;
+    freshPreview = fresh;
+    renderPreviewState();
+  }
+  async function checkPreview() {
+    if (!preview || checking || previewBusy || document.hidden) return;
+    const watched = preview;
+    checking = true;
+    renderPreviewState();
+    try {
+      const { ok, data } = await postJson("/api/preview", { command: watched.command, baseline: baseline(watched) });
+      if (preview !== watched) return;
+      if (ok && data.preview) {
+        const changes = [...(data.changes?.placement ?? []), ...(data.changes?.conditions ?? [])];
+        markStale(changes, changes.length ? data.preview : null);
+      } else markStale([data.error || "CobbleBob couldn't re-plan this build."], null);
+    } catch {
+      if (preview === watched) markStale(["CobbleBob can't be reached to re-check this preview."], null);
+    } finally {
+      checking = false;
+      if (preview === watched) renderPreviewState();
+    }
+  }
+  function startPreviewChecks() {
+    if (checkTimer === null) checkTimer = setInterval(() => { void checkPreview(); }, PREVIEW_CHECK_MS);
+  }
+  function stopPreviewChecks() {
+    if (checkTimer !== null) clearInterval(checkTimer);
+    checkTimer = null;
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && preview) void checkPreview(); });
   async function previewBuild() {
     const command = commandInput.value.trim();
     if (!command) { commandStatus.textContent = "Type a build request first, like “build a tower at home”."; return; }
@@ -801,7 +886,7 @@
     commandStatus.textContent = "Planning the build…";
     try {
       const { ok, data } = await postJson("/api/preview", { command });
-      if (ok && data.preview) { showPreview(data.preview); commandStatus.textContent = "Preview ready. Nothing has started yet."; }
+      if (ok && data.preview) { showPreview(data.preview, { reveal: true }); commandStatus.textContent = "Preview ready. Nothing has started yet."; }
       else commandStatus.textContent = data.error || "Couldn't preview that build.";
     } catch {
       commandStatus.textContent = "Couldn't reach CobbleBob for a preview.";
@@ -810,19 +895,43 @@
       updateCommandButtons();
     }
   }
+  async function startPreviewed() {
+    if (!preview || previewBusy) return;
+    const started = preview;
+    previewBusy = true;
+    updateCommandButtons();
+    $("previewStart").disabled = true;
+    commandStatus.textContent = "Checking the site before starting…";
+    try {
+      const { ok, data } = await postJson("/api/preview/start", { command: started.command, baseline: baseline(started) });
+      if (preview !== started) return;
+      if (ok) { clearPreview(); commandStatus.textContent = data.answer || "Sent to CobbleBob."; return; }
+      commandStatus.textContent = data.error || "Couldn't start this build.";
+      if (data.preview) markStale([...(data.changes?.placement ?? []), ...(data.changes?.conditions ?? [])], data.preview);
+      else markStale([data.error || "Couldn't start this build."], null);
+    } catch {
+      commandStatus.textContent = "Couldn't confirm the start. Check Bob's task before retrying.";
+    } finally {
+      previewBusy = false;
+      $("previewStart").disabled = false;
+      updateCommandButtons();
+    }
+  }
   $("commandPreview").addEventListener("click", () => { void previewBuild(); });
   $("previewClear").addEventListener("click", clearPreview);
+  $("previewRefresh").addEventListener("click", () => {
+    if (!freshPreview) return;
+    showPreview(freshPreview);
+    commandStatus.textContent = "Preview updated. Nothing has started yet.";
+  });
+  $("previewFrame").addEventListener("click", frameBuild);
+  $("stageFrame").addEventListener("click", frameBuild);
   $("previewLook").addEventListener("click", () => {
     ghostVisible = !ghostVisible;
     $("previewLook").textContent = ghostVisible ? "Hide ghost" : "Show ghost";
     sendGhost();
   });
-  $("previewStart").addEventListener("click", () => {
-    if (!preview) return;
-    const command = preview.command;
-    clearPreview();
-    void sendCommand(command);
-  });
+  $("previewStart").addEventListener("click", () => { void startPreviewed(); });
 
   // ---- Map: remembered places, Bob, his destination and route ----
   const map = { data: null, cx: 0, cz: 0, scale: 3, follow: true, timer: null, drag: null, picked: null, layers: { trail: true, path: true, resources: true, chests: true, deaths: true, locations: true } };

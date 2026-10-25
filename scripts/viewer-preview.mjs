@@ -2,9 +2,11 @@
  * Browser code embedded in the viewer bundle by the install patch: a
  * translucent ghost of a planned build, its footprint outline and an arrow
  * out of its entrance. The private viewer shell sends `bob-preview` events
- * (null clears); nothing here talks to the server.
+ * (null clears) and `bob-frame` events (a footprint and facing) to swing the
+ * orbit camera onto the build, looking in at its entrance; nothing here
+ * talks to the server.
  */
-export function installViewerPreview(THREE, scene) {
+export function installViewerPreview(THREE, scene, view) {
   const KNOWN = {
     stone_bricks: 0x8f8f8f, cobblestone: 0x7a7a7a, smooth_stone: 0xa6a6a6, glass: 0x9fd8ef, torch: 0xffc94d,
     oak_door: 0xa0794a, bookshelf: 0x7b5a32, red_carpet: 0xb3312c, cyan_concrete: 0x15889a, oak_planks: 0xb8945f,
@@ -73,6 +75,34 @@ export function installViewerPreview(THREE, scene) {
     }
     scene.add(group);
   }
+  let flight = 0;
+  function frame(target) {
+    const f = target?.footprint;
+    const controls = view?.controls?.();
+    if (!f || !view?.camera || !controls) return;
+    // Leave eyes/follow first; the camera modes listen for this.
+    window.dispatchEvent(new CustomEvent("bob-cam", { detail: "orbit" }));
+    const w = f.maxX + 1 - f.minX, d = f.maxZ + 1 - f.minZ, h = f.maxY + 1 - f.minY;
+    const centre = new THREE.Vector3(f.minX + w / 2, f.minY + h * 0.4, f.minZ + d / 2);
+    // From the entrance side (south-east when there is none), a little off
+    // axis so two walls show, far enough back that the whole build fits.
+    const side = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[target.facing] ?? [0.7, 0.7];
+    const across = [-side[1], side[0]];
+    const reach = Math.max(w, d, h) * 1.15 + 6;
+    const goal = new THREE.Vector3(centre.x + (side[0] + across[0] * 0.45) * reach, centre.y + h * 0.6 + reach * 0.45, centre.z + (side[1] + across[1] * 0.45) * reach);
+    const fromPos = view.camera.position.clone(), fromTarget = controls.target.clone();
+    const started = performance.now(), id = ++flight;
+    const step = (now) => {
+      if (id !== flight) return;
+      const t = Math.min(1, (now - started) / 700), e = t * t * (3 - 2 * t);
+      view.camera.position.lerpVectors(fromPos, goal, e);
+      controls.target.lerpVectors(fromTarget, centre, e);
+      controls.update();
+      if (t < 1) window.requestAnimationFrame(step);
+    };
+    window.requestAnimationFrame(step);
+  }
   window.addEventListener("bob-preview", (event) => show(event.detail));
-  return { show, clear };
+  window.addEventListener("bob-frame", (event) => frame(event.detail));
+  return { show, clear, frame };
 }

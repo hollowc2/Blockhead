@@ -18,7 +18,7 @@ import type { BuildProject } from "../memory/build-projects.js";
 import { itemCondition, projectGearDetail, storedContents } from "./gear.js";
 import { readHistory } from "./history.js";
 import { StoryFeed } from "./story.js";
-import { describePreview } from "./build-preview.js";
+import { createPreviewStart, describePreview, parseBaseline, previewChanges, type BuildPreview, type PreviewResult } from "./build-preview.js";
 import { pathfinderDestination, readOwnerMap } from "./owner-map.js";
 import { ViewerShellServer } from "./viewer-shell.js";
 import { toPublicViewerState } from "./public-state.js";
@@ -278,6 +278,48 @@ test("a build preview reports footprint, entrance, materials and site state", ()
   assert.equal(preview.blocks, operations.length);
 });
 
+function previewFixture(origin = { x: 100, y: 64, z: -20, dimension: "overworld" }, carried = 20, anchor: BuildPreview["anchor"] = "current"): BuildPreview {
+  const design = simpleStructureDesign("room", 7, 4, 7, origin, "oak_planks");
+  const operations = compileBuildingDesign(design, origin).operations;
+  const bot = { inventory: { items: () => [{ name: "oak_planks", count: carried }] }, blockAt: () => ({ name: "air" }) };
+  return describePreview({ text: "build a house at current", anchor, design, origin, structureType: "simple_room", operations, bot: bot as never, stored: {}, resumes: false });
+}
+
+test("a fresh preview names what changed since the one the viewer saw", () => {
+  const seen = previewFixture();
+  assert.equal(seen.anchor, "current");
+  assert.ok(!Number.isNaN(Date.parse(seen.generatedAt)));
+  const baseline = parseBaseline(JSON.parse(JSON.stringify(seen)))!;
+  assert.deepEqual(previewChanges(baseline, seen), { placement: [], conditions: [] }, "nothing changed");
+  const moved = previewChanges(baseline, previewFixture({ x: 106, y: 64, z: -20, dimension: "overworld" }));
+  assert.deepEqual(moved.placement, ["The site moved 6 blocks with CobbleBob, to 106, 64, -20."]);
+  const restocked = previewChanges(baseline, previewFixture(undefined, 200));
+  assert.deepEqual(restocked.placement, []);
+  assert.deepEqual(restocked.conditions, ["No longer short of oak planks."]);
+  assert.equal(parseBaseline({ origin: { x: "1" }, structureType: "x", materials: [] }), null, "malformed baselines are ignored");
+});
+
+test("starting a previewed build refuses when its placement moved and sends it when it held", async () => {
+  const seen = previewFixture();
+  const sent: string[] = [];
+  let next: BuildPreview = seen;
+  const start = createPreviewStart({
+    preview: async (raw): Promise<PreviewResult> => ({ ok: true, preview: next, changes: previewChanges(parseBaseline((raw as { baseline: unknown }).baseline)!, next) }),
+    send: async (command) => { sent.push(command); return { ok: true, answer: "Sent." }; },
+  });
+  const body = { command: seen.command, baseline: JSON.parse(JSON.stringify(seen)) };
+  assert.equal((await start({ command: seen.command })).status, 400, "a start needs the baseline it was previewed with");
+  next = previewFixture({ x: 103, y: 64, z: -16, dimension: "overworld" });
+  const refused = await start(body);
+  assert.equal(refused.status, 409);
+  assert.deepEqual(sent, [], "nothing is sent when the site moved");
+  assert.equal((refused.body as { preview: BuildPreview }).preview.origin.x, 103, "the fresh preview comes back to review");
+  next = previewFixture(undefined, 200);
+  const ok = await start(body);
+  assert.equal(ok.status, 200, "material changes alone don't block a start");
+  assert.deepEqual(sent, [seen.command]);
+});
+
 test("the map reads remembered places for Bob's dimension and his pathfinder goal", () => {
   const { db } = harness();
   db.sql.prepare("INSERT INTO worlds (id, server_key, world_key, created_at) VALUES (1, 's', 'w', 'now')").run();
@@ -325,6 +367,7 @@ test("the private shell serves the owner API and the public shell never does", a
   const privateApi = {
     job: async (body: unknown) => { seen.push(body); return { ok: true as const, answer: "Paused." }; },
     preview: async (body: unknown) => ({ status: 200, body: { preview: body } }),
+    previewStart: async (body: unknown) => ({ status: 409, body: { started: body } }),
     history: async (since: string | null) => ({ status: 200, body: { since } }),
     map: async () => ({ status: 200, body: { dimension: "overworld" } }),
   };
@@ -341,10 +384,12 @@ test("the private shell serves the owner API and the public shell never does", a
     assert.equal((await send(port, "GET", "/api/job")).status, 405);
     const preview = await send(port, "POST", "/api/preview", JSON.stringify({ command: "build a tower" }));
     assert.deepEqual(JSON.parse(preview.body), { preview: { command: "build a tower" } });
+    const start = await send(port, "POST", "/api/preview/start", JSON.stringify({ command: "build a tower" }));
+    assert.deepEqual([start.status, JSON.parse(start.body)], [409, { started: { command: "build a tower" } }]);
     assert.deepEqual(JSON.parse((await send(port, "GET", "/api/history?since=2026-10-24T00:00:00.000Z")).body), { since: "2026-10-24T00:00:00.000Z" });
     assert.equal((await send(port, "GET", "/api/map")).status, 200);
-    for (const path of ["/api/job", "/api/preview", "/api/history", "/api/map"]) {
-      const post = path.endsWith("job") || path.endsWith("preview");
+    for (const path of ["/api/job", "/api/preview", "/api/preview/start", "/api/history", "/api/map"]) {
+      const post = path.endsWith("job") || path.includes("preview");
       assert.equal((await send(publicPort, post ? "POST" : "GET", path, post ? "{}" : undefined)).status, 404, `${path} is private`);
     }
   } finally {

@@ -81,6 +81,8 @@ export interface PrivateApi {
   job?: (body: unknown) => Promise<ViewerChatResult>;
   /** `POST /api/preview` `{ command }`: compile a build without starting it. */
   preview?: (body: unknown) => Promise<PrivateApiResult>;
+  /** `POST /api/preview/start` `{ command, baseline }`: start a previewed build if its placement still holds. */
+  previewStart?: (body: unknown) => Promise<PrivateApiResult>;
   /** `GET /api/history?since=ISO`: story and summary since the viewer's last visit. */
   history?: (since: string | null) => Promise<PrivateApiResult>;
   /** `GET /api/map`: remembered places, Bob, his destination and route. */
@@ -166,10 +168,11 @@ export class ViewerShellServer {
       await this.handleChat(request, response, api.job, null);
       return;
     }
-    if (pathname === "/api/preview" && api?.preview !== undefined) {
+    if ((pathname === "/api/preview" && api?.preview !== undefined) || (pathname === "/api/preview/start" && api?.previewStart !== undefined)) {
       const body = await this.readJsonBody(request, response);
       if (body === undefined) return;
-      const result = await api.preview(body).catch(() => ({ status: 503, body: { error: "Preview unavailable." } }));
+      const run = pathname === "/api/preview" ? api.preview! : api.previewStart!;
+      const result = await run(body).catch(() => ({ status: 503, body: { error: "Preview unavailable." } }));
       this.sendJson(response, result.status, result.body);
       return;
     }

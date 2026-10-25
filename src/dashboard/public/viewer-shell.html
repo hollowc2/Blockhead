@@ -56,6 +56,10 @@
         <div class="help">Drag to look · Scroll to zoom · Right-drag to pan · <kbd>R</kbd> find CobbleBob · <kbd>T</kbd> follow · <kbd>V</kbd> CobbleBob's eyes</div>
       </div>
 
+      <button id="stageFrame" class="stage-frame" type="button" data-private data-on-demand hidden title="Point the camera at the previewed build">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/><path d="m12 7 5 3v5l-5 3-5-3v-5z"/></svg>Frame build
+      </button>
+
       <button id="stageStop" class="stage-stop stop-command" type="button" data-command="stop" data-private hidden disabled title="Stop whatever Bob is doing">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop
       </button>
@@ -85,6 +89,36 @@
         <button id="visitStory" class="link-btn" type="button">See everything that happened</button>
       </article>
 
+      <article id="previewCard" class="card preview" data-tab="live" data-private data-on-demand hidden tabindex="-1" aria-labelledby="previewHeading">
+        <h2 id="previewHeading">Build preview <span id="previewState" class="preview-state">Current</span> <button id="previewClear" class="link-btn" type="button">Clear</button></h2>
+        <p class="preview-request">For <q id="previewCommand"></q></p>
+        <p class="sub"><span id="previewAnchor" class="anchor-chip"></span> <span id="previewChecked"></span></p>
+        <div id="previewStale" class="preview-stale" role="status" hidden>
+          <p id="previewStaleTitle" class="strong">Outdated</p>
+          <ul id="previewStaleList"></ul>
+          <button id="previewRefresh" class="ghost-btn" type="button">Update preview</button>
+        </div>
+        <ul id="previewProblems" class="attention preview-problems"></ul>
+        <p id="previewReady" class="preview-ready" hidden>Ready: materials are on hand and the site is clear.</p>
+        <p id="previewName" class="strong"></p>
+        <dl class="grid2 plain preview-facts">
+          <div><dt>Footprint</dt><dd id="previewFootprint">—</dd></div>
+          <div><dt>Entrance faces</dt><dd id="previewFacing">—</dd></div>
+          <div><dt>Blocks</dt><dd id="previewBlocks">—</dd></div>
+          <div><dt>Site</dt><dd id="previewSite">—</dd></div>
+        </dl>
+        <table class="materials">
+          <thead><tr><th>Material</th><th>Need</th><th>Carried</th><th>Stored</th><th>Short</th></tr></thead>
+          <tbody id="previewMaterials"></tbody>
+        </table>
+        <ul id="previewNotes" class="notes"></ul>
+        <div class="row-actions">
+          <button id="previewStart" class="primary-btn" type="button">Start this build</button>
+          <button id="previewFrame" class="ghost-btn" type="button" title="Point the camera at the planned build">Frame build</button>
+          <button id="previewLook" class="ghost-btn" type="button">Hide ghost</button>
+        </div>
+      </article>
+
       <article id="nowCard" class="card now" data-tab="live" data-private>
         <h2>Now <span id="nowState" class="now-state">Idle</span></h2>
         <p id="action" class="action">—</p>
@@ -110,26 +144,6 @@
         <p id="dangerDetail" class="sub" hidden></p>
       </article>
 
-      <article id="previewCard" class="card preview" data-tab="live" data-private data-on-demand hidden>
-        <h2>Build preview <button id="previewClear" class="link-btn" type="button">Clear</button></h2>
-        <p id="previewName" class="strong"></p>
-        <dl class="grid2 plain preview-facts">
-          <div><dt>Footprint</dt><dd id="previewFootprint">—</dd></div>
-          <div><dt>Entrance faces</dt><dd id="previewFacing">—</dd></div>
-          <div><dt>Blocks</dt><dd id="previewBlocks">—</dd></div>
-          <div><dt>Site</dt><dd id="previewSite">—</dd></div>
-        </dl>
-        <table class="materials">
-          <thead><tr><th>Material</th><th>Need</th><th>Carried</th><th>Stored</th><th>Short</th></tr></thead>
-          <tbody id="previewMaterials"></tbody>
-        </table>
-        <ul id="previewNotes" class="notes"></ul>
-        <p class="sub">The translucent ghost in the 3D view shows where it goes.</p>
-        <div class="row-actions">
-          <button id="previewStart" class="primary-btn" type="button">Start this build</button>
-          <button id="previewLook" class="ghost-btn" type="button">Hide ghost</button>
-        </div>
-      </article>
 
       <article class="card chat" data-tab="live" data-private>
         <h2>Ask CobbleBob</h2>

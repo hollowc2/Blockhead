@@ -161,7 +161,7 @@ export function patchViewerCamera(source, path = "viewer client") {
 export function patchViewerEquipment(source, path = "viewer client") {
   const hook = 'o.on("version",(t=>{';
   const model = 'e.visible=bobCam.mode!=="eyes")';
-  const code = `u.bobEquipment=(${createViewerEquipment.toString()})(THREE,${JSON.stringify(itemTextures)}),o.on("equipment",e=>u.bobEquipment.update(e)),/* bob-dropped-items */(${installViewerDroppedItems.toString()})(THREE,u.entities,${JSON.stringify(itemTextures)}),/* bob-preview */(${installViewerPreview.toString()})(THREE,u.scene),`;
+  const code = `u.bobEquipment=(${createViewerEquipment.toString()})(THREE,${JSON.stringify(itemTextures)}),o.on("equipment",e=>u.bobEquipment.update(e)),/* bob-dropped-items */(${installViewerDroppedItems.toString()})(THREE,u.entities,${JSON.stringify(itemTextures)}),/* bob-preview */(${installViewerPreview.toString()})(THREE,u.scene,{camera:u.camera,controls:()=>h}),`;
   const start = source.indexOf("u.bobEquipment=");
   if (start !== -1) {
     const end = source.indexOf(hook, start);
