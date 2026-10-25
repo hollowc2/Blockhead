@@ -3,6 +3,8 @@ import { assessPublicAdmission, type AdmissionCheck } from "./agent/public-actio
 import { PublicProtocolObservations } from "./agent/public-protocol-observations.js";
 import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
 import { PublicInteractions } from "./dashboard/public-interactions.js";
+import { answerWithModel } from "./dashboard/public-model-chat.js";
+import type { PublicFacts } from "./dashboard/public-chat.js";
 import { homedir } from "node:os";
 import type { Bot } from "mineflayer";
 import { loadConfig } from "./config/load.js";
@@ -284,9 +286,22 @@ const publicGestures = new PublicActionController({
   safe: (candidate: GestureBot): boolean => publicAdmission(candidate).safe,
   tryRun: (signal, action) => scheduler.tryPublicWorldAction(signal, action),
 });
+// Public model answers go through the Aegis firewall on their own base URL.
+// Owner and autonomous calls above keep using llm.base_url, unfiltered.
+const publicModel = config.dashboard?.public_viewer.interactions.model_questions;
+const publicModelClient = publicModel?.enabled && publicModel.base_url.replace(/\/+$/, "") !== llm.base_url.replace(/\/+$/, "")
+  ? new LlamaClient({
+    baseUrl: publicModel.base_url,
+    timeoutMs: publicModel.request_timeout_ms,
+    maxRetries: 0,
+    onFailure: (failure) => debugLog.write({ event: `public_llm_${failure.kind}`, ...failure }),
+  })
+  : null;
+if (publicModel?.enabled && !publicModelClient) logger.error("model_questions.base_url must point at the Aegis firewall, not llm.base_url; public questions stay rules-based");
 const publicInteractions: PublicInteractions = new PublicInteractions({
   config: config.dashboard?.public_viewer.interactions ?? { questions_enabled: false, actions_enabled: false },
   gestures: publicGestures,
+  ...(publicModelClient ? { modelAnswer: (question: string, facts: PublicFacts) => answerWithModel(messages => publicModelClient.complete(messages), facts, question) } : {}),
   facts: () => ({
     connected: connectionState.state === "READY" && !!session?.bot.entity,
     health: session?.bot.health ?? null, hunger: session?.bot.food ?? null, time: state.timePhase,

@@ -289,6 +289,16 @@ export const MinecraftConfigSchema = z.object({
             allowed_origin: z.string().refine(value => {
               try { const url = new URL(value); return url.protocol === "https:" && url.origin === value; } catch { return false; }
             }, "must be an exact HTTPS origin").optional(),
+            /**
+             * Model-backed answers to public questions. The base URL must be the
+             * Aegis firewall in front of llama.cpp, never llama.cpp itself; owner
+             * and autonomous calls keep using llm.base_url, unfiltered.
+             */
+            model_questions: z.object({
+              enabled: z.boolean().default(false),
+              base_url: z.string().url().default("http://127.0.0.1:8000"),
+              request_timeout_ms: z.number().int().positive().default(40_000),
+            }).default({}),
           }).default({}).refine(value => !(value.questions_enabled || value.actions_enabled) || !!value.allowed_origin, "allowed_origin is required"),
           max_connections: z.number().int().positive().max(32).default(6),
         })

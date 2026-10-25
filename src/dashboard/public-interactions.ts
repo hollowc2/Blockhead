@@ -4,9 +4,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PUBLIC_ACTIONS, type PublicActionController } from "../agent/public-actions.js";
 import { answerPublicQuestion, publicFacts, type PublicFacts } from "./public-chat.js";
+import { BLOCKED_ANSWER, type PublicModelAnswer } from "./public-model-chat.js";
 import { clientAddress, SHELL_SECURITY_HEADERS } from "./http-guard.js";
 
-export const PUBLIC_LIMITS = { bodyBytes: 1024, bodyMs: 5000, deadlineMs: 8000, concurrent: 8, keys: 10_000 } as const;
+/** modelDeadlineMs: the model is shared with the bot's own decisions, so a question can queue behind one. */
+export const PUBLIC_LIMITS = { bodyBytes: 1024, bodyMs: 5000, deadlineMs: 8000, modelDeadlineMs: 45_000, concurrent: 8, keys: 10_000 } as const;
 export const questionSchema = z.object({ question: z.string().transform(s => s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim()).refine(s => [...s].length > 0 && [...s].length <= 200) }).strict();
 export const actionSchema = z.object({ action: z.enum(PUBLIC_ACTIONS) }).strict();
 const settingsSchema = z.object({ questions_enabled: z.boolean(), actions_enabled: z.boolean() }).strict();
@@ -61,6 +63,13 @@ async function readJson(request: IncomingMessage, signal: AbortSignal): Promise<
     if (signal.aborted) aborted();
   });
 }
+/** Resolves to null once *signal* aborts, so a slow model never outlives the request deadline. */
+async function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | null> {
+  if (signal.aborted) return null;
+  let onAbort!: () => void;
+  const aborted = new Promise<null>(resolve => { onAbort = () => resolve(null); signal.addEventListener("abort", onAbort, { once: true }); });
+  try { return await Promise.race([work, aborted]); } finally { signal.removeEventListener("abort", onAbort); }
+}
 export class PublicInteractions {
   private questions: boolean;
   private actions: boolean;
@@ -72,6 +81,8 @@ export class PublicInteractions {
     config: { questions_enabled: boolean; actions_enabled: boolean; allowed_origin?: string };
     facts: () => PublicFacts;
     gestures: PublicActionController;
+    /** Model-backed answers (through the Aegis firewall); rules-based answers when absent or failing. */
+    modelAnswer?: (question: string, facts: PublicFacts) => Promise<PublicModelAnswer>;
     now?: () => number;
     log?: (record: Record<string, unknown>) => void;
   }) {
@@ -82,7 +93,7 @@ export class PublicInteractions {
   availability(): { questions: boolean; actions: boolean } {
     return { questions: this.questions && !!this.options.config.allowed_origin, actions: this.actions && !!this.options.config.allowed_origin && this.options.gestures.available() };
   }
-  diagnostics(): unknown { return { ...this.availability(), configuredActions: this.actions, modelQuestions: false, gesture: this.options.gestures.diagnostics(), ...this.counters, inFlight: this.active.size, questionsInFlight: [...this.active.values()].filter(feature => feature === "question").length, actionsInFlight: [...this.active.values()].filter(feature => feature === "action").length }; }
+  diagnostics(): unknown { return { ...this.availability(), configuredActions: this.actions, modelQuestions: !!this.options.modelAnswer, gesture: this.options.gestures.diagnostics(), ...this.counters, inFlight: this.active.size, questionsInFlight: [...this.active.values()].filter(feature => feature === "question").length, actionsInFlight: [...this.active.values()].filter(feature => feature === "action").length }; }
   configure(raw: unknown): unknown {
     const config = settingsSchema.parse(raw);
     if ((config.questions_enabled || config.actions_enabled) && !this.options.config.allowed_origin) throw new Error("origin required");
@@ -97,8 +108,9 @@ export class PublicInteractions {
     const controller = new AbortController(); let admitted = false, ownsQuestion = false;
     const disconnect = (): void => { if (!response.writableEnded) controller.abort(); };
     request.once("aborted", disconnect); response.once("close", disconnect);
-    const timer = setTimeout(() => controller.abort(), PUBLIC_LIMITS.deadlineMs);
+    const timer = setTimeout(() => controller.abort(), feature === "question" && this.options.modelAnswer ? PUBLIC_LIMITS.modelDeadlineMs : PUBLIC_LIMITS.deadlineMs);
     let actionId: string | undefined;
+    let answeredBy: "rules" | "model" | "firewall" | undefined;
     try {
       const ip = interactionAddress(clientAddress(request, true));
       if (!this.limiter.take("attempt:global", 120, 60_000) || !this.limiter.take(`attempt:${ip}`, 10, 60_000)) throw new Refusal(429, "limited");
@@ -115,7 +127,13 @@ export class PublicInteractions {
         const parsed = questionSchema.safeParse(raw); if (!parsed.success) throw new Refusal(400, "invalid");
         if (this.questionBusy || !this.limiter.take(`question:${ip}`, 1, 30_000) || !this.limiter.take("question:global", 1, 15_000) || !this.limiter.take("question:hour", 120, 3600_000)) throw new Refusal(429, "limited");
         this.questionBusy = true; ownsQuestion = true;
-        text = answerPublicQuestion(parsed.data.question, publicFacts(this.options.facts()));
+        const facts = publicFacts(this.options.facts());
+        text = answerPublicQuestion(parsed.data.question, facts); answeredBy = "rules";
+        if (this.options.modelAnswer && facts.connected) {
+          const model = await untilAborted(this.options.modelAnswer(parsed.data.question, facts).catch(() => null), controller.signal);
+          if (model?.kind === "answer") { text = model.text; answeredBy = "model"; }
+          else if (model?.kind === "blocked") { text = BLOCKED_ANSWER; answeredBy = "firewall"; }
+        }
       } else {
         const parsed = actionSchema.safeParse(raw); if (!parsed.success) throw new Refusal(400, "invalid");
         actionId = parsed.data.action;
@@ -134,7 +152,7 @@ export class PublicInteractions {
       if (ownsQuestion) this.questionBusy = false;
       this.counters[status === 200 ? "accepted" : "rejected"]++;
       if (code === "body_timeout" || code === "action_timeout" || controller.signal.aborted) this.counters.timeout++;
-      this.options.log?.({ time: new Date().toISOString(), requestId: id, feature, action: actionId, outcome: status === 200 ? "accepted" : "refused", durationMs: Date.now() - started, reason: code });
+      this.options.log?.({ time: new Date().toISOString(), requestId: id, feature, action: actionId, answeredBy, outcome: status === 200 ? "accepted" : "refused", durationMs: Date.now() - started, reason: code });
     }
     if (!response.destroyed) {
       response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...(status === 429 ? { "retry-after": "30" } : {}), ...(status !== 200 ? { connection: "close" } : {}) });
