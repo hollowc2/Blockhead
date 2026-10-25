@@ -306,13 +306,13 @@
 
       <section id="commandDock" class="dock" data-private hidden aria-label="Give CobbleBob a task">
         <form id="commandForm" class="chat-form command-form" autocomplete="off">
-          <input id="commandInput" type="text" maxlength="500" placeholder="Tell Bob what to do, e.g. build a shed at home" aria-label="Task for CobbleBob" aria-keyshortcuts="/" title="Just like Minecraft chat. To build while you're away, say “at home” or “at current”. Press / to jump here." required>
+          <input id="commandInput" type="text" maxlength="500" placeholder="Tell Bob what to do…" aria-label="Task for CobbleBob" aria-keyshortcuts="/" title="Just like Minecraft chat. To build while you're away, say “at home” or “at current”. Press / to jump here." required>
           <button id="commandSend" type="submit" disabled>Send</button>
         </form>
         <div id="commandQuick" class="dock-actions">
           <button id="commandPreview" type="button" disabled title="See a build before starting it">Preview</button>
           <button type="button" data-command="go home" disabled>Go home</button>
-          <button type="button" data-command="continue building" disabled>Resume build</button>
+          <button type="button" data-command="continue building" disabled title="Resume the current build">Resume</button>
           <button type="button" data-command="stop" class="stop-command" disabled title="Stop whatever Bob is doing">Stop</button>
         </div>
         <p id="commandStatus" class="sub dock-status" role="status">Connecting to CobbleBob…</p>
