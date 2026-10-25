@@ -38,6 +38,7 @@
         <div class="chip"><i id="timeIcon" class="time-icon"></i><span id="time">—</span></div>
         <div class="chip"><span id="dimension">—</span></div>
         <div class="chip" data-private><span class="mono" id="position">—</span></div>
+        <div id="statusChip" class="chip status-chip" data-public data-activity="offline" hidden><i class="status-dot" aria-hidden="true"></i><span id="statusChipLabel">Offline</span></div>
       </div>
       <div class="stage-tools">
         <button id="findBob" class="icon-btn" type="button" aria-label="Find CobbleBob" title="Find CobbleBob (R)">
@@ -178,6 +179,18 @@
         </form>
       </article>
 
+      <article id="statusCard" class="card spectate" data-tab="live" data-public hidden data-live="bot" data-activity="offline">
+        <h2>Right now</h2>
+        <div class="spectate-head">
+          <span class="spectate-icon" aria-hidden="true"></span>
+          <div>
+            <p id="statusLabel" class="spectate-label" role="status" aria-live="polite">Offline</p>
+            <p id="statusSince" class="sub" hidden></p>
+          </div>
+        </div>
+        <p id="statusDetail" class="sub">CobbleBob isn't connected to the world right now.</p>
+      </article>
+
       <article class="card" data-tab="live" data-public hidden>
         <h2>Ask CobbleBob</h2>
         <p class="sub">Read-only answers about Bob's public status. Simple actions work while Bob is idle. Shared cooldowns apply.</p>
@@ -185,12 +198,14 @@
           <input id="publicQuestion" type="text" maxlength="200" placeholder="What are you doing?" aria-label="Public question" required>
           <button id="publicAsk" type="submit" disabled>Ask</button>
         </form>
+        <p id="questionNote" class="avail-note" hidden></p>
         <div id="publicActions" class="chat-quick">
           <button type="button" data-action="hello" disabled>Say hello</button>
           <button type="button" data-action="wave" disabled>Wave</button>
           <button type="button" data-action="look_left" disabled>Look left</button>
           <button type="button" data-action="look_right" disabled>Look right</button>
         </div>
+        <p id="actionNote" class="avail-note" hidden></p>
         <p id="publicReply" class="sub" role="status" aria-live="polite">Public interactions are unavailable.</p>
       </article>
 

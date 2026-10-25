@@ -359,6 +359,12 @@
     reachable = true; botLive = connected; lastReceivedAt = Date.now();
     if (connected) lastLiveAt = lastReceivedAt;
     publicAvailable = { questions: connected && !!s.public && !!s.interactions?.questions, actions: connected && !!s.public && !!s.interactions?.actions };
+    if (s.public) {
+      const i = s.interactions || {};
+      publicWhy = { questions: connected ? i.questionsReason ?? null : "offline", actions: connected ? i.actionsReason ?? null : "offline" };
+      sharedUntil = { questions: Date.now() + (i.questionsCooldownMs || 0), actions: Date.now() + (i.actionsCooldownMs || 0) };
+      renderPublicStatus(s.status, connected);
+    }
     updatePublicButtons();
     renderStory(s.story || []);
     renderWorld(s.world);
@@ -485,6 +491,7 @@
       show("offline", true);
       $("offlineReason").textContent = "Lost connection to the dashboard. Reconnecting…";
       publicAvailable = { questions: false, actions: false };
+      publicWhy = { questions: "unreachable", actions: "unreachable" };
       updatePublicButtons();
       if (commandConnected && !commandBusy) commandStatus.textContent = "Connection lost. Tasks can't be sent until it's back.";
       commandConnected = false;
@@ -633,10 +640,62 @@
   });
 
   let publicAvailable = { questions: false, actions: false }, publicBusy = false;
+  // Why each feature is off, and until when it is cooling down: shared (from state) or this visitor's own (from a refusal).
+  let publicWhy = { questions: "offline", actions: "offline" };
+  let sharedUntil = { questions: 0, actions: 0 }, ownUntil = { questions: 0, actions: 0 };
+  let publicActivity = "offline";
   const publicButtons = [...document.querySelectorAll("#publicActions button")];
+  const ACTIVITY = {
+    offline: { label: "Offline", doing: "offline" },
+    recovering: { label: "Recovering", doing: "recovering" },
+    building: { label: "Building", doing: "building" },
+    gathering: { label: "Gathering", doing: "gathering" },
+    exploring: { label: "Exploring", doing: "exploring" },
+    resting: { label: "Resting", doing: "resting" },
+    working: { label: "Working", doing: "doing chores" },
+  };
+  function renderPublicStatus(status, connected) {
+    const activity = connected && ACTIVITY[status?.activity] ? status.activity : "offline";
+    publicActivity = activity;
+    const { label } = ACTIVITY[activity];
+    $("statusCard").dataset.activity = activity;
+    $("statusChip").dataset.activity = activity;
+    setText("statusLabel", label);
+    setText("statusChipLabel", label);
+    setText("statusDetail", connected ? status?.detail : "CobbleBob isn't connected to the world right now.");
+    const started = connected && status?.since ? Date.parse(status.since) : NaN;
+    const sinceText = Number.isFinite(started) && Date.now() - started >= 5000 ? `For ${span(Date.now() - started)}` : null;
+    setText("statusSince", sinceText); show("statusSince", Boolean(sinceText));
+  }
+  /** One plain sentence for why *feature* can't be used right now, or null when it can. */
+  function publicNote(feature) {
+    const why = publicWhy[feature];
+    const asking = feature === "questions";
+    if (why === "unreachable") return "Can't reach the page's server. Retrying…";
+    if (why === "offline") return asking ? "Bob is offline, so he can't answer right now." : "Bob is offline, so he can't act right now.";
+    if (why === "disabled") return asking ? "Questions are switched off right now." : "Actions are switched off right now.";
+    if (why === "busy") {
+      if (asking) return "Bob is answering another viewer. Try again in a moment.";
+      if (publicActivity === "resting") return "Bob isn't free right now: he's thinking or keeping an eye out. Actions open when he's idle and safe.";
+      return `Bob is busy ${ACTIVITY[publicActivity]?.doing ?? "working"}. Actions open when he's idle and safe.`;
+    }
+    const left = Math.max(ownUntil[feature], sharedUntil[feature]) - Date.now();
+    if (left > 0) return ownUntil[feature] >= sharedUntil[feature]
+      ? `You can ${asking ? "ask" : "try"} again in ${span(left)}.`
+      : `Shared cooldown: ready in ${span(left)}.`;
+    return null;
+  }
   function updatePublicButtons() {
-    $("publicAsk").disabled = publicBusy || !publicAvailable.questions;
-    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions; });
+    const notes = { questions: publicNote("questions"), actions: publicNote("actions") };
+    const cooling = (feature) => Math.max(ownUntil[feature], sharedUntil[feature]) > Date.now();
+    $("publicAsk").disabled = publicBusy || !publicAvailable.questions || cooling("questions");
+    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions || cooling("actions"); });
+    // Only explain once the page knows it is public; the private shell never shows these.
+    for (const [feature, id] of [["questions", "questionNote"], ["actions", "actionNote"]]) {
+      const note = mode === true && !publicBusy ? notes[feature] : null;
+      setText(id, note); show(id, Boolean(note));
+      $(id).dataset.why = note ? publicWhy[feature] ?? "cooldown" : "";
+    }
   }
   async function publicSubmit(feature, body) {
     if (publicBusy || !(feature === "question" ? publicAvailable.questions : publicAvailable.actions)) return;
@@ -647,6 +706,7 @@
     try {
       const response = await fetch(`/api/public/${feature}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const result = await response.json();
+      if (typeof result.retryAfterMs === "number") ownUntil[feature === "question" ? "questions" : "actions"] = Date.now() + result.retryAfterMs;
       $("publicReply").textContent = result.text || "Public interaction unavailable.";
     } catch { $("publicReply").textContent = feature === "action" ? "Delivery could not be confirmed." : "Couldn't reach Bob. Try again later."; }
     finally { clearTimeout(timer); publicBusy = false; updatePublicButtons(); }
@@ -1478,4 +1538,6 @@
 
   refresh(); setInterval(refresh, 1000);
   setInterval(() => { if (!reachable || !botLive) renderFreshness(); }, 1000);
+  // Countdowns tick between state polls too.
+  setInterval(() => { if (mode === true) updatePublicButtons(); }, 1000);
 })();

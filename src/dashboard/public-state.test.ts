@@ -29,6 +29,7 @@ test("public state is an allowlisted, redacted projection", () => {
   assert.deepEqual(toPublicViewerState(secretSnapshot()), {
     public: true,
     connection: { connected: true },
+    status: { activity: "resting", detail: "Taking a break between jobs.", since: null },
     self: { health: 20, hunger: 17, dimension: "overworld", timePhase: "day" },
     viewer: { status: "running" },
     story: [],

@@ -166,3 +166,26 @@ test("hourly question budget and hello cooldown survive rotating clients", async
     assert.deepEqual(f.effects, ["Hello, everyone!", "Hello, everyone!"]);
   } finally { await close(f.server); }
 });
+test("limiter wait reports the time until the next slot without consuming one", () => {
+  let now = 0; const limiter = new InteractionLimiter(() => now);
+  assert.equal(limiter.wait("k", 1, 10_000), 0);
+  assert(limiter.take("k", 1, 10_000));
+  now = 4000; assert.equal(limiter.wait("k", 1, 10_000), 6000); assert.equal(limiter.wait("k", 1, 10_000), 6000);
+  now = 10_000; assert.equal(limiter.wait("k", 1, 10_000), 0);
+});
+test("availability explains disabled, busy and shared cooldowns, and refusals carry the visitor's wait", async () => {
+  const f = fixture(), port = await listen(f.server);
+  try {
+    assert.deepEqual(f.interactions.availability(), { questions: true, actions: true, questionsReason: null, actionsReason: null, questionsCooldownMs: 0, actionsCooldownMs: 0 });
+    const ok = await send(port, "/action", '{"action":"wave"}');
+    assert.equal(ok.status, 200); assert.equal(JSON.parse(ok.body).retryAfterMs, 10_000);
+    const state = f.interactions.availability();
+    assert.equal(state.actionsReason, "cooldown"); assert.equal(state.actionsCooldownMs, 5000); assert.equal(state.actions, true);
+    const limited = await send(port, "/action", '{"action":"wave"}');
+    assert.equal(limited.status, 429); assert.equal(JSON.parse(limited.body).retryAfterMs, 10_000); assert.equal(limited.retry, "10");
+    f.interactions.configure({ questions_enabled: false, actions_enabled: true });
+    assert.equal(f.interactions.availability().questionsReason, "disabled");
+  } finally { await close(f.server); }
+  const busy = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true }, gestures: new PublicActionController({ session: () => null, safe: () => true, tryRun: () => null }), facts: () => ({ connected: true, health: 20, hunger: 20, activity: "working", time: "day", actions: false }) });
+  assert.equal(busy.availability().actionsReason, "busy"); assert.equal(busy.availability().actions, false);
+});

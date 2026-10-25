@@ -44,10 +44,28 @@ export class InteractionLimiter {
     times.push(now);
     return true;
   }
+  /** Milliseconds until *take* with the same policy could succeed; never records an attempt. */
+  wait(key: string, count: number, window: number): number {
+    const now = this.now();
+    const times = (this.entries.get(key) ?? []).filter(at => at > now - window);
+    return times.length < count ? 0 : times[times.length - count]! + window - now;
+  }
+}
+
+/** Why a public feature is unavailable: switched off, Bob busy (or answering someone else), or a shared cooldown. */
+export type UnavailableReason = "disabled" | "busy" | "cooldown";
+export interface PublicAvailability {
+  questions: boolean;
+  actions: boolean;
+  questionsReason: UnavailableReason | null;
+  actionsReason: UnavailableReason | null;
+  /** Shared cooldowns every viewer is under; a visitor's own limit arrives with a refusal. */
+  questionsCooldownMs: number;
+  actionsCooldownMs: number;
 }
 
 export type PublicResultCode = "ok" | "unavailable" | "cancelled" | "invalid" | "too_large" | "body_timeout" | "limited" | "capacity" | "origin" | "content_type" | "disabled" | "unconfirmed" | "action_timeout";
-export interface PublicInteractionResponse { code: PublicResultCode; text: string }
+export interface PublicInteractionResponse { code: PublicResultCode; text: string; retryAfterMs?: number }
 class Refusal extends Error { constructor(readonly status: number, readonly code: PublicResultCode) { super(code); } }
 async function readJson(request: IncomingMessage, signal: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -90,8 +108,24 @@ export class PublicInteractions {
     this.actions = options.config.actions_enabled;
     this.limiter = new InteractionLimiter(options.now);
   }
-  availability(): { questions: boolean; actions: boolean } {
-    return { questions: this.questions && !!this.options.config.allowed_origin, actions: this.actions && !!this.options.config.allowed_origin && this.options.gestures.available() };
+  availability(): PublicAvailability {
+    const origin = !!this.options.config.allowed_origin;
+    const questionsCooldownMs = Math.max(this.limiter.wait("question:global", 1, 15_000), this.limiter.wait("question:hour", 120, 3600_000));
+    const actionsCooldownMs = this.limiter.wait("action:global", 1, 5000);
+    const questionsReason: UnavailableReason | null = !this.questions || !origin ? "disabled" : this.questionBusy ? "busy" : questionsCooldownMs > 0 ? "cooldown" : null;
+    const actionsReason: UnavailableReason | null = !this.actions || !origin ? "disabled" : !this.options.gestures.available() ? "busy" : actionsCooldownMs > 0 ? "cooldown" : null;
+    // Cooldowns don't flip the flags: the countdown is advisory and the server re-checks on submit.
+    return {
+      questions: this.questions && origin, actions: this.actions && origin && actionsReason !== "busy",
+      questionsReason, actionsReason, questionsCooldownMs, actionsCooldownMs,
+    };
+  }
+  /** The longest wait among every limit *feature* passes through for this address. */
+  private retryAfter(feature: "question" | "action", ip: string, action?: string): number {
+    const waits = [this.limiter.wait("attempt:global", 120, 60_000), this.limiter.wait(`attempt:${ip}`, 10, 60_000)];
+    if (feature === "question") waits.push(this.limiter.wait(`question:${ip}`, 1, 30_000), this.limiter.wait("question:global", 1, 15_000), this.limiter.wait("question:hour", 120, 3600_000));
+    else waits.push(this.limiter.wait(`action:${ip}`, 1, 10_000), this.limiter.wait("action:global", 1, 5000), action === "hello" ? this.limiter.wait("action:hello", 1, 30_000) : 0);
+    return Math.max(...waits);
   }
   diagnostics(): unknown { return { ...this.availability(), configuredActions: this.actions, modelQuestions: !!this.options.modelAnswer, gesture: this.options.gestures.diagnostics(), ...this.counters, inFlight: this.active.size, questionsInFlight: [...this.active.values()].filter(feature => feature === "question").length, actionsInFlight: [...this.active.values()].filter(feature => feature === "action").length }; }
   configure(raw: unknown): unknown {
@@ -112,8 +146,9 @@ export class PublicInteractions {
     const timer = setTimeout(() => controller.abort(), feature === "question" && this.options.modelAnswer ? PUBLIC_LIMITS.modelDeadlineMs : PUBLIC_LIMITS.deadlineMs);
     let actionId: string | undefined;
     let answeredBy: "rules" | "model" | "firewall" | undefined;
+    let retryAfterMs: number | undefined, ip = "unknown";
     try {
-      const ip = interactionAddress(clientAddress(request, true));
+      ip = interactionAddress(clientAddress(request, true));
       if (!this.limiter.take("attempt:global", 120, 60_000) || !this.limiter.take(`attempt:${ip}`, 10, 60_000)) throw new Refusal(429, "limited");
       if (request.method !== "POST") throw new Refusal(400, "invalid");
       if (!this.options.config.allowed_origin || request.headers.origin !== this.options.config.allowed_origin || request.headers["sec-fetch-site"] === "cross-site") throw new Refusal(403, "origin");
@@ -144,8 +179,13 @@ export class PublicInteractions {
         text = "Done!";
       }
       code = "ok"; status = 200;
+      // The visitor's own next opening, so the page can count down without guessing.
+      // The hello-only limit is left out so it never greys out the other gestures.
+      const next = this.retryAfter(feature, ip);
+      if (next > 0) retryAfterMs = next;
     } catch (error) {
       if (error instanceof Refusal) { status = error.status; code = error.code; }
+      if (status === 429) retryAfterMs = Math.max(1000, this.retryAfter(feature, ip, actionId));
       text = status === 429 ? "Please wait before trying again. Shared public limits apply." : (code === "unconfirmed" || code === "action_timeout") ? "Delivery could not be confirmed." : status === 400 ? "Invalid request." : "Public interaction unavailable.";
     } finally {
       clearTimeout(timer); request.off("aborted", disconnect); response.off("close", disconnect);
@@ -156,8 +196,8 @@ export class PublicInteractions {
       this.options.log?.({ time: new Date().toISOString(), requestId: id, feature, action: actionId, answeredBy, outcome: status === 200 ? "accepted" : "refused", durationMs: Date.now() - started, reason: code });
     }
     if (!response.destroyed) {
-      response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...(status === 429 ? { "retry-after": "30" } : {}), ...(status !== 200 ? { connection: "close" } : {}) });
-      const result: PublicInteractionResponse = { code, text: [...text].slice(0, 500).join("") };
+      response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...(status === 429 ? { "retry-after": String(Math.ceil((retryAfterMs ?? 30_000) / 1000)) } : {}), ...(status !== 200 ? { connection: "close" } : {}) });
+      const result: PublicInteractionResponse = { code, text: [...text].slice(0, 500).join(""), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
       response.end(JSON.stringify(result));
     }
   }

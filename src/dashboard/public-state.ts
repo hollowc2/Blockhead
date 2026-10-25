@@ -1,7 +1,9 @@
+import { publicStatus, type PublicStatus } from "./public-status.js";
 import type { StoryEntry } from "./story.js";
 import type { DashboardSnapshot } from "./types.js";
 import { EQUIPMENT_SLOTS, type EquipmentSummary, type InventorySummary } from "./types.js";
 import type { WorldStatsSummary } from "./world-stats.js";
+import type { PublicAvailability } from "./public-interactions.js";
 
 /**
  * Everything the public viewer page may learn about the bot. Built by
@@ -13,8 +15,10 @@ import type { WorldStatsSummary } from "./world-stats.js";
 export interface PublicViewerState {
   public: true;
   /** Fresh server-derived flags may be attached by the public listener. */
-  interactions?: { questions: boolean; actions: boolean };
+  interactions?: PublicAvailability;
   connection: { connected: boolean };
+  /** Coarse spectator status; see public-status.ts. */
+  status: PublicStatus;
   self: { health: number | null; hunger: number | null; dimension: string | null; timePhase: "day" | "night" | null };
   viewer: { status: DashboardSnapshot["viewer"]["status"] };
   story: readonly StoryEntry[];
@@ -28,6 +32,7 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
   return {
     public: true,
     connection: { connected: snapshot.connection.connected === true },
+    status: publicStatus(snapshot),
     self: {
       health: round(snapshot.self.health),
       hunger: round(snapshot.self.hunger),
