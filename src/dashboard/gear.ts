@@ -19,7 +19,8 @@ export interface ItemCondition {
   enchantments: readonly { name: string; level: number }[];
 }
 
-export interface SupplyLine { key: string; label: string; carried: number; stored: number; target: number | null }
+/** `stored` is null until a home chest has been opened: unknown, not zero. */
+export interface SupplyLine { key: string; label: string; carried: number; stored: number | null; target: number | null }
 export interface ReadinessCheck { key: string; label: string; ok: boolean; detail: string }
 
 export interface GearDetail {
@@ -65,8 +66,8 @@ const ARMOR = /_(?:helmet|chestplate|leggings|boots)$/;
 
 export interface GearInput {
   bot: Bot;
-  /** Name → count summed over home chests as last opened. */
-  stored: Readonly<Record<string, number>>;
+  /** Name → count summed over home chests as last opened; null when none has been opened. */
+  stored: Readonly<Record<string, number>> | null;
   storageSeenAt: string | null;
   targets?: Partial<Record<"food" | "torches" | "wood" | "fuel", number>> | null;
 }
@@ -92,7 +93,7 @@ export function projectGearDetail(input: GearInput): GearDetail {
   const sum = (counts: Readonly<Record<string, number>>, match: (name: string) => boolean): number =>
     Object.entries(counts).reduce((total, [name, count]) => total + (match(bare(name)) ? count : 0), 0);
   const supplies = SUPPLIES.map((supply) => ({
-    key: supply.key, label: supply.label, carried: sum(carried, supply.match), stored: sum(input.stored, supply.match),
+    key: supply.key, label: supply.label, carried: sum(carried, supply.match), stored: input.stored === null ? null : sum(input.stored, supply.match),
     target: supply.stockpile === undefined ? null : input.targets?.[supply.stockpile] ?? null,
   }));
 
@@ -126,16 +127,17 @@ export function projectGearDetail(input: GearInput): GearDetail {
   return { equipment: equipped, tools, slots: { used: total - free, free, total }, supplies, readiness, storageSeenAt: input.storageSeenAt };
 }
 
-/** Sum the remembered contents of every chest; the newest read time comes along. */
-export function storedContents(chests: readonly { lastContents?: Record<string, number>; lastSeenAt: string | null }[]): { stored: Record<string, number>; seenAt: string | null } {
+/** Sum the remembered contents of every chest; the newest read time comes along. Null when no chest has been read. */
+export function storedContents(chests: readonly { lastContents?: Record<string, number>; lastSeenAt: string | null }[]): { stored: Record<string, number> | null; seenAt: string | null } {
   const stored: Record<string, number> = {};
-  let seenAt: string | null = null;
+  let seenAt: string | null = null, read = false;
   for (const chest of chests) {
     if (chest.lastContents === undefined) continue;
+    read = true;
     for (const [name, count] of Object.entries(chest.lastContents)) {
       if (typeof count === "number" && Number.isFinite(count)) stored[bare(name)] = (stored[bare(name)] ?? 0) + count;
     }
     if (chest.lastSeenAt !== null && (seenAt === null || chest.lastSeenAt > seenAt)) seenAt = chest.lastSeenAt;
   }
-  return { stored, seenAt };
+  return { stored: read ? stored : null, seenAt };
 }

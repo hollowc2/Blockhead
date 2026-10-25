@@ -27,7 +27,7 @@
     <section class="stage" id="stage">
       <iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe>
 
-      <div class="hud hud-top">
+      <div class="hud hud-top" data-live="bot">
         <div id="dayChip" class="chip chip-day" hidden><span id="dayCount">Day —</span></div>
         <div class="chip"><i id="timeIcon" class="time-icon"></i><span id="time">—</span></div>
         <div class="chip"><span id="dimension">—</span></div>
@@ -49,7 +49,7 @@
       </div>
 
       <div class="hud hud-bottom">
-        <div class="vitals">
+        <div class="vitals" data-live="bot">
           <div class="bar"><div id="hearts" class="icons hearts" aria-hidden="true"></div><span class="num" id="health">—</span></div>
           <div class="bar"><div id="food" class="icons food" aria-hidden="true"></div><span class="num" id="hunger">—</span></div>
         </div>
@@ -70,6 +70,7 @@
     </section>
 
     <aside class="panel" id="panel" data-active="live">
+      <div id="staleBanner" class="stale-banner" role="alert" hidden><strong id="staleTitle">Showing last known state</strong><span id="staleDetail"></span></div>
       <nav class="tabs" role="tablist">
         <button type="button" role="tab" data-tab-button="live" aria-selected="true">Live</button>
         <button type="button" role="tab" data-tab-button="jobs" aria-selected="false" data-private>Jobs <i id="jobsAlert" class="unseen alert" hidden></i></button>
@@ -119,7 +120,7 @@
         </div>
       </article>
 
-      <article id="nowCard" class="card now" data-tab="live" data-private>
+      <article id="nowCard" class="card now" data-tab="live" data-private data-live="bot">
         <h2>Now <span id="nowState" class="now-state">Idle</span></h2>
         <p id="action" class="action">—</p>
         <ul id="attention" class="attention" aria-live="polite" hidden></ul>
@@ -139,7 +140,7 @@
         </details>
       </article>
 
-      <article id="surroundingsCard" class="card quiet surroundings" data-tab="live" data-private>
+      <article id="surroundingsCard" class="card quiet surroundings" data-tab="live" data-private data-live="bot">
         <h2>Surroundings <span id="danger" class="danger-chip">—</span></h2>
         <p id="dangerDetail" class="sub" hidden></p>
       </article>
@@ -181,7 +182,7 @@
         <p id="publicReply" class="sub" role="status" aria-live="polite">Public interactions are unavailable.</p>
       </article>
 
-      <article class="card world" data-tab="live" data-public hidden>
+      <article class="card world" data-tab="live" data-public hidden data-live="bot">
         <h2>World</h2>
         <dl class="grid2">
           <div><dt>Health</dt><dd id="healthPublic">—</dd></div>
@@ -192,7 +193,7 @@
         <p class="sub">A read-only window into an autonomous Minecraft agent. CobbleBob is gathering, building and surviving on its own.</p>
       </article>
 
-      <article class="card" data-tab="jobs" data-private>
+      <article class="card" data-tab="jobs" data-private data-live="server">
         <h2>Work <span id="jobTrailCount" class="count"></span></h2>
         <p class="sub">Each request with its goal, build, current step and whatever is blocking it.</p>
         <div class="filters" role="group" aria-label="Filter work">
@@ -210,7 +211,7 @@
         </details>
       </article>
 
-      <article class="card map-card" data-tab="map" data-private>
+      <article class="card map-card" data-tab="map" data-private data-live="server">
         <h2>Map <span id="mapDimension" class="count"></span></h2>
         <div class="map-wrap">
           <canvas id="mapCanvas" aria-label="Top-down map of what CobbleBob remembers"></canvas>
@@ -233,7 +234,7 @@
         </div>
       </article>
 
-      <article class="card" data-tab="map" data-private>
+      <article class="card" data-tab="map" data-private data-live="server">
         <h2>Where he's going</h2>
         <dl class="grid2 plain">
           <div><dt>Destination</dt><dd id="mapDestination">—</dd></div>
@@ -254,7 +255,7 @@
         <dl id="equipment" class="equipment"><div><dt>Gear</dt><dd>Waiting for gear data…</dd></div></dl>
       </article>
 
-      <article class="card" data-tab="gear" data-private>
+      <article class="card" data-tab="gear" data-private data-live="bot">
         <h2>Supplies</h2>
         <p class="sub" id="suppliesSeen">Carried versus stored in the home chests.</p>
         <table class="materials supplies">
@@ -274,7 +275,7 @@
         <ul id="inventoryItems" class="inventory-items"><li class="sub">Waiting for inventory data…</li></ul>
       </article>
 
-      <article class="card" data-tab="story">
+      <article class="card" data-tab="story" data-live="server">
         <h2>Story so far</h2>
         <ol id="story" class="story"><li class="story-empty">Nothing yet. Stick around, things happen fast.</li></ol>
       </article>
@@ -285,7 +286,7 @@
         <div id="history" class="history"></div>
       </article>
 
-      <article class="card" data-tab="stats">
+      <article class="card" data-tab="stats" data-live="server">
         <h2>Lifetime</h2>
         <div class="stat-grid">
           <div class="stat"><b id="statDay">—</b><span>Day</span></div>
@@ -303,7 +304,7 @@
         <ul id="milestones" class="milestones"></ul>
       </article>
 
-      <footer class="foot"><span>Viewer <b id="viewerStatus">—</b></span><span data-private>Up <b id="uptime">—</b></span></footer>
+      <footer class="foot"><span>Viewer <b id="viewerStatus">—</b></span><span>Updated <b id="dataAge">—</b></span><span data-private>Up <b id="uptime">—</b></span></footer>
 
       <section id="commandDock" class="dock" data-private hidden aria-label="Give CobbleBob a task">
         <form id="commandForm" class="chat-form command-form" autocomplete="off">

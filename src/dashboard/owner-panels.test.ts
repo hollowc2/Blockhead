@@ -219,6 +219,11 @@ test("gear reports durability, enchantments, free slots and carried versus store
   assert.deepEqual(checks, { health: true, food: true, space: true, pickaxe: true, axe: false, weapon: true, torches: false, armor: false });
   assert.equal(gear.storageSeenAt, "2026-10-24T10:00:00.000Z");
 
+  const unread = storedContents([{ lastSeenAt: null }]);
+  assert.equal(unread.stored, null, "chests never opened are unknown, not empty");
+  const unknown = projectGearDetail({ bot: bot as never, stored: unread.stored, storageSeenAt: unread.seenAt, targets: { torches: 64 } });
+  assert.equal(unknown.supplies.find((supply) => supply.key === "torches")?.stored, null);
+
   const axes = (items: unknown[]) => projectGearDetail({ bot: { ...bot, heldItem: null, inventory: { ...bot.inventory, items: () => items } } as never, stored: {}, storageSeenAt: null }).readiness.find((check) => check.key === "axe")?.detail;
   assert.equal(axes([{ name: "wooden_axe", count: 1, maxDurability: 59, durabilityUsed: 0 }, { name: "iron_axe", count: 1, maxDurability: 250, durabilityUsed: 50 }]), "iron axe · 80%", "the better tier wins");
   assert.equal(axes([{ name: "wooden_axe", count: 1, maxDurability: 59, durabilityUsed: 4 }, { name: "iron_axe", count: 1, maxDurability: 250, durabilityUsed: 175 }]), "wooden axe · 93%", "a worn-out tier loses to a usable one");
@@ -276,6 +281,12 @@ test("a build preview reports footprint, entrance, materials and site state", ()
   assert.equal(preview.site.placed, 1);
   assert.equal(preview.ghost.blocks.length, operations.length * 4);
   assert.equal(preview.blocks, operations.length);
+
+  const blind = describePreview({ text: "build a house at home", design, origin, structureType: "simple_room", operations, bot: bot as never, stored: null, resumes: false });
+  const blindPlanks = blind.materials.find((material) => material.material === "oak_planks")!;
+  assert.equal(blindPlanks.stored, null, "unopened chests report Unknown, not zero");
+  assert.equal(blindPlanks.missing, Math.max(0, blindPlanks.needed - 20 - 20));
+  assert.ok(blind.notes.some((note) => /stored counts are unknown/.test(note)));
 });
 
 function previewFixture(origin = { x: 100, y: 64, z: -20, dimension: "overworld" }, carried = 20, anchor: BuildPreview["anchor"] = "current"): BuildPreview {

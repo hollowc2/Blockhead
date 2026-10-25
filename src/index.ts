@@ -421,8 +421,8 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
 
 /** What the home chests held when last opened. */
 function homeStored(): ReturnType<typeof storedContents> {
-  if (state.worldId === null) return { stored: {}, seenAt: null };
-  try { return storedContents(storage.list(state.worldId)); } catch { return { stored: {}, seenAt: null }; }
+  if (state.worldId === null) return { stored: null, seenAt: null };
+  try { return storedContents(storage.list(state.worldId)); } catch { return { stored: null, seenAt: null }; }
 }
 
 const buildPreview = createBuildPreview({

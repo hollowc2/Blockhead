@@ -17,7 +17,8 @@ import { planDesignBuild } from "../tools/build-design.js";
  * stored, and every block for a translucent ghost in the 3D view.
  */
 
-export interface PreviewMaterial { material: string; needed: number; carried: number; stored: number; missing: number }
+/** `stored` is null when no home chest has been opened; `missing` then counts only what Bob carries. */
+export interface PreviewMaterial { material: string; needed: number; carried: number; stored: number | null; missing: number }
 export interface BuildPreview {
   command: string;
   /** Where the build is measured from; "current" and "owner" move until the build starts. */
@@ -68,8 +69,8 @@ export interface BuildPreviewOptions {
   projects: Pick<BuildProjectManager, "findUnfinishedAt">;
   /** Validates arguments with the registered tool's schema (bounds, pyramid rules). */
   validateArgs: (tool: string, args: unknown) => Record<string, unknown>;
-  /** Name → count over the home chests as last opened. */
-  stored: () => Readonly<Record<string, number>>;
+  /** Name → count over the home chests as last opened; null when none has been opened. */
+  stored: () => Readonly<Record<string, number>> | null;
 }
 
 function normalize(text: string): string {
@@ -127,7 +128,7 @@ interface DescribeInput {
   structureType: string;
   operations: readonly BlueprintOperation[];
   bot: Pick<Bot, "blockAt" | "inventory">;
-  stored: Readonly<Record<string, number>>;
+  stored: Readonly<Record<string, number>> | null;
   resumes: boolean;
 }
 
@@ -155,17 +156,18 @@ export function describePreview(input: DescribeInput): BuildPreview {
   const notes: string[] = [];
   const materials = Object.entries(needed).sort((a, b) => b[1] - a[1]).map(([material, count]) => {
     const have = carried[material] ?? 0;
-    const stock = input.stored[material] ?? 0;
-    let missing = Math.max(0, count - have - stock);
+    const stock = input.stored === null ? null : input.stored[material] ?? 0;
+    let missing = Math.max(0, count - have - (stock ?? 0));
     // Planks come from logs at four per log; count logs of the same wood.
     const wood = WOODS.find((name) => material === `${name}_planks`);
     if (wood !== undefined && missing > 0) {
-      const logs = (carried[`${wood}_log`] ?? 0) + (input.stored[`${wood}_log`] ?? 0);
+      const logs = (carried[`${wood}_log`] ?? 0) + (input.stored?.[`${wood}_log`] ?? 0);
       if (logs > 0) notes.push(`${Math.min(missing, logs * 4)} ${material.replace(/_/g, " ")} can be crafted from ${logs} logs on hand.`);
       missing = Math.max(0, missing - logs * 4);
     }
     return { material, needed: count, carried: have, stored: stock, missing };
   });
+  if (input.stored === null && materials.some((m) => m.missing > 0)) notes.push("The home chests haven't been opened yet, so stored counts are unknown and shortages count only what CobbleBob carries.");
 
   // Door cells sit in the entrance wall: whichever side of the footprint they touch.
   const door = operations.find((op) => /_door$/.test(op.material));

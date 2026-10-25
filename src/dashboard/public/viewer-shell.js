@@ -237,23 +237,56 @@
     $("connectionText").textContent = label;
   }
 
+  // Freshness: when the dashboard can't be reached, or Bob is off the server,
+  // everything still on screen is a retained reading. Say so, say how old it
+  // is, and keep every control's availability in step with it.
+  let reachable = false, botLive = false, lastReceivedAt = null, lastLiveAt = null;
+  const clock = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const age = (ms) => Date.now() - ms < 3000 ? "just now" : `${span(Date.now() - ms)} ago`;
+  function renderFreshness() {
+    const staleServer = !reachable && lastReceivedAt !== null;
+    const staleBot = staleServer || (reachable && !botLive);
+    document.body.classList.toggle("stale-server", staleServer);
+    document.body.classList.toggle("stale-bot", staleBot);
+    $("dataAge").textContent = lastReceivedAt === null ? "never" : age(lastReceivedAt);
+    $("connection").title = lastReceivedAt === null ? "No update received yet" : `Last update received at ${clock(lastReceivedAt)}`;
+    if (!reachable) setConnection("wait", lastReceivedAt === null ? "Connecting…" : `Reconnecting… · data ${age(lastReceivedAt)}`);
+    else setConnection(botLive ? "ok" : "down", botLive ? "Online" : lastLiveAt === null ? "Offline" : `Offline · live ${age(lastLiveAt)}`);
+    const banner = $("staleBanner");
+    banner.hidden = !staleBot;
+    if (!staleBot) return;
+    $("nowCard").dataset.state = "stale";
+    $("nowState").textContent = "Last known";
+    $("nowState").className = "now-state stale";
+    const controls = mode === false ? " Controls are unavailable until it reconnects." : "";
+    if (staleServer) {
+      $("staleTitle").textContent = "Connection lost: showing last known state";
+      $("staleDetail").textContent = `Nothing received for ${span(Date.now() - lastReceivedAt)} (last update at ${clock(lastReceivedAt)}). Anything marked Stale may no longer be true.${controls}`;
+    } else {
+      $("staleTitle").textContent = "CobbleBob is offline: showing last known state";
+      $("staleDetail").textContent = `${lastLiveAt === null ? "He hasn't been connected to Minecraft since this page opened, so health, activity and surroundings may be from before he went offline." : `Health, activity and surroundings were last live at ${clock(lastLiveAt)}.`} Anything marked Stale may no longer be true.${controls}`;
+    }
+  }
+
   function render(s) {
     applyMode(Boolean(s.public));
-    publicAvailable = { questions: !!s.public && !!s.interactions?.questions, actions: !!s.public && !!s.interactions?.actions };
+    const connected = s.connection?.connected === true;
+    reachable = true; botLive = connected; lastReceivedAt = Date.now();
+    if (connected) lastLiveAt = lastReceivedAt;
+    publicAvailable = { questions: connected && !!s.public && !!s.interactions?.questions, actions: connected && !!s.public && !!s.interactions?.actions };
     updatePublicButtons();
     renderStory(s.story || []);
     renderWorld(s.world);
     renderGear(s);
     lastState = s;
-    if (!s.public) { renderJobs(s.jobs); renderGearDetail(s.connection?.connected === true ? s.gear : null); }
+    if (!s.public) { renderJobs(s.jobs); renderGearDetail(connected ? s.gear : null); }
     const self = s.self || {};
-    const connected = s.connection?.connected === true;
     const wasCommandConnected = commandConnected;
     commandConnected = connected && !s.public;
     if (commandConnected !== wasCommandConnected && !commandBusy) commandStatus.textContent = commandConnected ? "Ready for a task." : "CobbleBob is offline.";
     updateCommandButtons();
     if (!s.public) renderCommandReplies(s.recentChat || []);
-    setConnection(connected ? "ok" : "down", connected ? "Online" : "Offline");
+    renderFreshness();
 
     icons("hearts", self.health); icons("food", self.hunger);
     setText("health", self.health); setText("hunger", self.hunger);
@@ -315,9 +348,10 @@
 
     const busy = Boolean(activity) && !/^(idle|standing by)$/i.test(activity);
     const working = busy || ["active", "running", "in_progress"].includes(s.task?.status);
-    const nowState = attention.some(([severity]) => severity === "high") ? "problem" : attention.length ? "warn" : working ? "active" : "idle";
+    // A disconnected Bob is neither working nor idle; what's shown is his last known state.
+    const nowState = !connected ? "stale" : attention.some(([severity]) => severity === "high") ? "problem" : attention.length ? "warn" : working ? "active" : "idle";
     $("nowCard").dataset.state = nowState;
-    $("nowState").textContent = { problem: "Needs attention", warn: "Heads up", active: "Working", idle: "Idle" }[nowState];
+    $("nowState").textContent = { stale: "Last known", problem: "Needs attention", warn: "Heads up", active: "Working", idle: "Idle" }[nowState];
     $("nowState").className = `now-state ${nowState}`;
 
     show("buildCard", Boolean(build || world));
@@ -360,12 +394,17 @@
       if (!response.ok) throw new Error(String(response.status));
       render(await response.json());
     } catch {
-      setConnection("wait", "Reconnecting…");
+      reachable = false; botLive = false;
       renderGear({});
+      if (mode === false) renderGearDetail(null);
+      show("offline", true);
+      $("offlineReason").textContent = "Lost connection to the dashboard. Reconnecting…";
       publicAvailable = { questions: false, actions: false };
       updatePublicButtons();
+      if (commandConnected && !commandBusy) commandStatus.textContent = "Connection lost. Tasks can't be sent until it's back.";
       commandConnected = false;
       updateCommandButtons();
+      renderFreshness();
     }
   }
 
@@ -415,14 +454,18 @@
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.
-  let commandConnected = false, commandBusy = false;
+  let commandConnected = null, commandBusy = false; // null until the first update, so the dock status always gets set
   const commandForm = $("commandForm"), commandInput = $("commandInput"), commandSend = $("commandSend"), commandStatus = $("commandStatus");
   // Stop lives in the dock and on the 3D stage, so it stays reachable from any tab and in fullscreen.
   const commandButtons = [...document.querySelectorAll("button[data-command]")];
+  // Every owner control follows the same rule: live connection to Bob, or disabled.
   function updateCommandButtons() {
     commandSend.disabled = !commandConnected || commandBusy;
     $("commandPreview").disabled = !commandConnected || previewBusy;
+    $("previewStart").disabled = !commandConnected || previewBusy;
     commandButtons.forEach((button) => { button.disabled = !commandConnected || (commandBusy && button.dataset.command !== "stop"); });
+    updateChatButtons();
+    document.querySelectorAll(".job-btn").forEach((button) => { button.disabled = !reachable; });
   }
   function renderCommandReplies(entries) {
     const replies = entries.filter((entry) => entry.sender === "reply").slice(-4);
@@ -466,7 +509,13 @@
   }
   let quickAsked = false;
   const quickButtons = [...document.querySelectorAll("#chatQuick button")];
-  const setBusy = (busy) => { chatSend.disabled = busy; quickButtons.forEach((button) => { button.disabled = busy; }); };
+  let chatBusy = false;
+  function updateChatButtons() {
+    const off = chatBusy || !commandConnected;
+    chatSend.disabled = off;
+    quickButtons.forEach((button) => { button.disabled = off; });
+  }
+  const setBusy = (busy) => { chatBusy = busy; updateChatButtons(); };
   quickButtons.forEach((button) => button.addEventListener("click", () => {
     if (chatSend.disabled) return;
     chatInput.value = button.textContent;
@@ -570,6 +619,7 @@
   function actionButton(target) {
     const button = el("button", `job-btn ${target.tone}`, target.label);
     button.type = "button";
+    button.disabled = !reachable;
     button.addEventListener("click", () => {
       // Cancelling or dropping a plan cannot be undone: the first press asks, the second acts.
       if (CONFIRM.has(target.action) && button.dataset.armed !== "1") {
@@ -728,7 +778,10 @@
     }
     $("slotSummary").textContent = gear ? `${gear.slots.free} of ${gear.slots.total} slots free.` : "";
     if (!gear) {
-      keyed($("readiness"), "none", () => list($("readiness"), [], "Gear data unavailable while CobbleBob is offline.", () => null));
+      const why = reachable ? "while CobbleBob is offline" : "until the connection is back";
+      keyed($("readiness"), `none:${why}`, () => list($("readiness"), [], `Gear data unavailable ${why}.`, () => null));
+      keyed($("toolCondition"), `none:${why}`, () => list($("toolCondition"), [], `Tool condition unavailable ${why}.`, () => null));
+      keyed($("supplies"), `none:${why}`, () => { const row = el("tr"); const cell = el("td", "sub", `Supplies unavailable ${why}.`); cell.colSpan = 4; row.append(cell); $("supplies").replaceChildren(row); });
       $("readyCount").textContent = "—";
       return;
     }
@@ -741,8 +794,10 @@
     }));
     keyed($("supplies"), JSON.stringify(gear.supplies), () => $("supplies").replaceChildren(...gear.supplies.map((supply) => {
       const row = el("tr");
-      const short = supply.target !== null && supply.carried + supply.stored < supply.target;
-      row.append(el("td", "", supply.label), el("td", "mono", String(supply.carried)), el("td", "mono", String(supply.stored)), el("td", `mono${short ? " short" : ""}`, supply.target === null ? "—" : String(supply.target)));
+      // Unopened chests are Unknown, never zero; a shortfall is only claimed when it's certain.
+      const known = supply.stored !== null;
+      const short = supply.target !== null && known && supply.carried + supply.stored < supply.target;
+      row.append(el("td", "", supply.label), el("td", "mono", String(supply.carried)), el("td", known ? "mono" : "unknown", known ? String(supply.stored) : "Unknown"), el("td", `mono${short ? " short" : ""}`, supply.target === null ? "—" : String(supply.target)));
       return row;
     })));
     $("suppliesSeen").textContent = gear.storageSeenAt ? `Carried versus stored in the home chests (chests last checked ${since(gear.storageSeenAt)}).` : "Carried versus stored. The home chests haven't been opened yet, so stored counts are unknown.";
@@ -821,13 +876,13 @@
     if (next.site.obstructed) problems.push(["", `${next.site.obstructed} planned ${next.site.obstructed === 1 ? "cell holds" : "cells hold"} other blocks that need clearing first.`]);
     if (next.site.unloaded) problems.push(["mid", `${next.site.unloaded} ${next.site.unloaded === 1 ? "cell is" : "cells are"} in unloaded chunks and weren't checked.`]);
     if (next.resumes) problems.push(["mid", "An unfinished build already sits here; starting resumes it."]);
-    for (const m of short) problems.push(["mid", `Short ${m.missing} ${words(m.material)} (need ${m.needed}, have ${m.carried + m.stored}).`]);
+    for (const m of short) problems.push(["mid", `Short ${m.missing} ${words(m.material)} (need ${m.needed}, ${m.stored === null ? `carrying ${m.carried}; stored unknown` : `have ${m.carried + m.stored}`}).`]);
     $("previewProblems").replaceChildren(...problems.map(([kind, text]) => el("li", kind, text)));
     $("previewReady").hidden = problems.length > 0;
     const rows = [...short, ...next.materials.filter((m) => m.missing === 0)];
     $("previewMaterials").replaceChildren(...rows.map((m) => {
       const row = el("tr", m.missing ? "short-row" : "");
-      row.append(el("td", "", words(m.material)), el("td", "mono", String(m.needed)), el("td", "mono", String(m.carried)), el("td", "mono", String(m.stored)), el("td", `mono${m.missing ? " short" : " ok"}`, m.missing ? String(m.missing) : "✓"));
+      row.append(el("td", "", words(m.material)), el("td", "mono", String(m.needed)), el("td", "mono", String(m.carried)), m.stored === null ? el("td", "unknown", "Unknown") : el("td", "mono", String(m.stored)), el("td", `mono${m.missing ? " short" : " ok"}`, m.missing ? String(m.missing) : "✓"));
       return row;
     }));
     // Site conflicts and the resume note are already listed above.
@@ -913,7 +968,6 @@
       commandStatus.textContent = "Couldn't confirm the start. Check Bob's task before retrying.";
     } finally {
       previewBusy = false;
-      $("previewStart").disabled = false;
       updateCommandButtons();
     }
   }
@@ -1221,4 +1275,5 @@
   $("historyLoad").addEventListener("click", () => { void loadHistory(); });
 
   refresh(); setInterval(refresh, 1000);
+  setInterval(() => { if (!reachable || !botLive) renderFreshness(); }, 1000);
 })();

@@ -474,3 +474,22 @@ h3 { margin: 0; font-size: .82rem; font-weight: 600; color: var(--text); }
 .history { display: flex; flex-direction: column; gap: 12px; max-height: 520px; overflow-y: auto; }
 .history:empty { display: none; }
 .history-day, .history-problems { display: flex; flex-direction: column; gap: 6px; }
+
+/* Stale and unknown data: retained readings dim, desaturate and carry a label. */
+.stale-banner { display: flex; flex-direction: column; gap: 2px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--amber); border-left-width: 4px; border-radius: var(--radius); background: #f2b84b14; color: var(--text); font-size: .85rem; }
+.stale-banner strong { color: var(--amber); }
+.stale-banner span { color: var(--muted); }
+.stale-banner[hidden] { display: none; }
+body.stale-bot .card[data-live="bot"], body.stale-server .card[data-live] { border-style: dashed; border-color: #f2b84b88; }
+body.stale-bot .card[data-live="bot"] > :not(h2), body.stale-server .card[data-live] > :not(h2),
+body.stale-bot .hud[data-live] > *, body.stale-server .hud[data-live] > *, body.stale-bot .vitals[data-live] > *, body.stale-server .vitals[data-live] > * { opacity: .5; filter: grayscale(1); transition: opacity .2s, filter .2s; }
+body.stale-bot .card[data-live="bot"] > h2::after, body.stale-server .card[data-live] > h2::after { content: "Stale"; margin-left: auto; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--amber); color: var(--amber); }
+body.stale-bot .vitals[data-live]::before, body.stale-server .vitals[data-live]::before { content: "Last known"; font-size: .68rem; font-weight: 700; text-transform: uppercase; color: var(--amber); }
+body.stale-bot .hud-top[data-live] .chip, body.stale-server .hud-top[data-live] .chip { border-style: dashed; }
+.now-state.stale { background: #f2b84b1f; color: var(--amber); }
+.unknown { color: var(--muted); font-style: italic; }
+button:disabled { cursor: not-allowed; filter: grayscale(1); }
+.job-btn:disabled, .primary-btn:disabled, .ghost-btn:disabled { opacity: .45; }
+/* Retained HUD readings stay readable (and marked) above the offline veil. */
+.offline { z-index: 1; }
+.hud { z-index: 2; }
