@@ -378,12 +378,14 @@
     else if (event.key === "r" || event.key === "R") findBob();
     else if (event.key === "v" || event.key === "V") toggleView("eyes");
     else if (event.key === "t" || event.key === "T") toggleView("follow");
+    else if (event.key === "/" && !$("commandDock").hidden) { event.preventDefault(); $("commandInput").focus(); }
   });
 
   // Viewer Q&A (private page only): the server answers through the LLM.
   let commandConnected = false, commandBusy = false;
   const commandForm = $("commandForm"), commandInput = $("commandInput"), commandSend = $("commandSend"), commandStatus = $("commandStatus");
-  const commandButtons = [...document.querySelectorAll("#commandQuick button")];
+  // Stop lives in the dock and on the 3D stage, so it stays reachable from any tab and in fullscreen.
+  const commandButtons = [...document.querySelectorAll("button[data-command]")];
   function updateCommandButtons() {
     commandSend.disabled = !commandConnected || commandBusy;
     $("commandPreview").disabled = !commandConnected || previewBusy;
@@ -416,6 +418,8 @@
   }
   commandForm.addEventListener("submit", (event) => { event.preventDefault(); void sendCommand(commandInput.value.trim()); });
   commandButtons.forEach((button) => button.addEventListener("click", () => { void sendCommand(button.dataset.command); }));
+  // On narrow screens the dock is pinned to the viewport; reserve room for it.
+  new ResizeObserver(([entry]) => { document.body.style.setProperty("--dock-h", `${Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.target.offsetHeight)}px`); }).observe($("commandDock"));
 
   const chatLog = $("chatLog"), chatForm = $("chatForm"), chatInput = $("chatInput"), chatSend = $("chatSend");
   function addMessage(kind, value) {

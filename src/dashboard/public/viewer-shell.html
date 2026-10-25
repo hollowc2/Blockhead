@@ -56,6 +56,10 @@
         <div class="help">Drag to look · Scroll to zoom · Right-drag to pan · <kbd>R</kbd> find CobbleBob · <kbd>T</kbd> follow · <kbd>V</kbd> CobbleBob's eyes</div>
       </div>
 
+      <button id="stageStop" class="stage-stop stop-command" type="button" data-command="stop" data-private hidden disabled title="Stop whatever Bob is doing">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop
+      </button>
+
       <div id="toasts" class="toasts" aria-live="polite"></div>
 
       <div id="offline" class="offline" hidden><div><strong>Viewer offline</strong><span id="offlineReason">Waiting for CobbleBob to reconnect…</span></div></div>
@@ -107,24 +111,6 @@
         <h2>Surroundings</h2>
         <p id="danger" class="strong">—</p>
         <p id="dangerDetail" class="sub"></p>
-      </article>
-
-      <article class="card commands" data-tab="live" data-private hidden>
-        <h2>Give a task</h2>
-        <p class="sub">Tell Bob what to do, just like in Minecraft chat. For building while you're away, say “at home” or “at current”.</p>
-        <form id="commandForm" class="chat-form command-form" autocomplete="off">
-          <input id="commandInput" type="text" maxlength="500" placeholder="Gather 32 oak logs" aria-label="Task for CobbleBob" required>
-          <button id="commandPreview" class="secondary" type="button" disabled title="See a build before starting it">Preview</button>
-          <button id="commandSend" type="submit" disabled>Send task</button>
-        </form>
-        <div id="commandQuick" class="chat-quick">
-          <button type="button" data-command="go home" disabled>Go home</button>
-          <button type="button" data-command="continue building" disabled>Resume build</button>
-          <button type="button" data-command="stop" class="stop-command" disabled>Stop</button>
-        </div>
-        <p id="commandStatus" class="sub" role="status">Connecting to CobbleBob…</p>
-        <div id="commandLatest" class="command-latest" hidden></div>
-        <div id="commandReplies" class="chat-log" aria-live="polite" aria-label="CobbleBob's replies"></div>
       </article>
 
       <article id="previewCard" class="card preview" data-tab="live" data-private data-on-demand hidden>
@@ -317,6 +303,22 @@
       </article>
 
       <footer class="foot"><span>Viewer <b id="viewerStatus">—</b></span><span data-private>Up <b id="uptime">—</b></span></footer>
+
+      <section id="commandDock" class="dock" data-private hidden aria-label="Give CobbleBob a task">
+        <form id="commandForm" class="chat-form command-form" autocomplete="off">
+          <input id="commandInput" type="text" maxlength="500" placeholder="Tell Bob what to do, e.g. build a shed at home" aria-label="Task for CobbleBob" aria-keyshortcuts="/" title="Just like Minecraft chat. To build while you're away, say “at home” or “at current”. Press / to jump here." required>
+          <button id="commandSend" type="submit" disabled>Send</button>
+        </form>
+        <div id="commandQuick" class="dock-actions">
+          <button id="commandPreview" type="button" disabled title="See a build before starting it">Preview</button>
+          <button type="button" data-command="go home" disabled>Go home</button>
+          <button type="button" data-command="continue building" disabled>Resume build</button>
+          <button type="button" data-command="stop" class="stop-command" disabled title="Stop whatever Bob is doing">Stop</button>
+        </div>
+        <p id="commandStatus" class="sub dock-status" role="status">Connecting to CobbleBob…</p>
+        <div id="commandLatest" class="command-latest" hidden></div>
+        <div id="commandReplies" class="chat-log" aria-live="polite" aria-label="CobbleBob's replies"></div>
+      </section>
     </aside>
   </main>
   <script src="/viewer-shell.js" defer></script>
