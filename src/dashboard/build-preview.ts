@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
 import type { MinecraftConfig } from "../config/schema.js";
@@ -35,6 +36,8 @@ export interface BuildPreview {
   facing: "north" | "south" | "east" | "west" | null;
   footprint: { width: number; depth: number; height: number; minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
   blocks: number;
+  /** Fingerprint of every planned block (material and offset from the origin), so a design that changes in place is caught. */
+  designHash: string;
   /** Cells already holding the planned block, and cells holding something else (loaded chunks only). */
   site: { placed: number; obstructed: number; unloaded: number };
   materials: readonly PreviewMaterial[];
@@ -48,6 +51,8 @@ export interface BuildPreview {
 export interface PreviewBaseline {
   origin: BuildPreview["origin"];
   structureType: string;
+  /** Null when the viewer didn't send one; that counts as a changed design. */
+  designHash: string | null;
   resumes: boolean;
   site: BuildPreview["site"];
   materials: readonly { material: string; missing: number }[];
@@ -190,6 +195,10 @@ export function describePreview(input: DescribeInput): BuildPreview {
   if (site.unloaded > 0) notes.push(`${site.unloaded} cells are in chunks CobbleBob hasn't loaded, so they weren't checked.`);
   if (input.resumes) notes.push("An unfinished build already sits here; starting it resumes that build.");
 
+  const design = createHash("sha256");
+  const cells = operations.map((op) => { const p = at(op); return `${p.x - origin.x},${p.y - origin.y},${p.z - origin.z},${op.material}`; }).sort();
+  for (const cell of cells) design.update(`${cell};`);
+
   const palette = Object.keys(needed);
   const index = new Map(palette.map((material, i) => [material, i]));
   const ghost: number[] = [];
@@ -209,6 +218,7 @@ export function describePreview(input: DescribeInput): BuildPreview {
     facing,
     footprint: { width: maxX - minX + 1, depth: maxZ - minZ + 1, height: maxY - minY + 1, minX, maxX, minY, maxY, minZ, maxZ },
     blocks: operations.length,
+    designHash: design.digest("hex").slice(0, 32),
     site,
     materials,
     phases: Object.entries(phases).map(([phase, blocks]) => ({ phase, blocks })),
@@ -230,6 +240,7 @@ export function parseBaseline(raw: unknown): PreviewBaseline | null {
   return {
     origin: { x: o.x as number, y: o.y as number, z: o.z as number, dimension: typeof o.dimension === "string" ? o.dimension : "overworld" },
     structureType: b.structureType.slice(0, 200),
+    designHash: typeof b.designHash === "string" ? b.designHash.slice(0, 64) : null,
     resumes: b.resumes === true,
     site: { placed: count(site?.placed), obstructed: count(site?.obstructed), unloaded: count(site?.unloaded) },
     materials: b.materials.slice(0, 200).flatMap((m) => m !== null && typeof m === "object" && typeof (m as Record<string, unknown>).material === "string"
@@ -252,6 +263,14 @@ export function previewChanges(before: PreviewBaseline, after: BuildPreview): Pr
     placement.push(`The site moved ${plural(Math.max(1, moved), "block")}${why}, to ${b.x}, ${b.y}, ${b.z}.`);
   }
   if (before.structureType !== after.structureType) placement.push(`The request now plans a ${label(after.structureType)}.`);
+  else if (before.designHash !== after.designHash) {
+    // Name a material swap when one explains it (oak walls turning birch); otherwise the shape changed.
+    const was = new Set(before.materials.map((m) => m.material)), now = new Set(after.materials.map((m) => m.material));
+    const gone = [...was].filter((m) => !now.has(m)), added = [...now].filter((m) => !was.has(m));
+    placement.push(before.designHash === null ? "This preview predates design checks; preview it again to confirm the design."
+      : gone.length || added.length ? `The design changed: it now uses ${added.map(label).join(", ") || "fewer materials"}${gone.length ? ` instead of ${gone.map(label).join(", ")}` : ""}.`
+      : "The design changed: blocks or their layout differ from this preview.");
+  }
   if (before.resumes !== after.resumes) placement.push(after.resumes ? "An unfinished build now sits here; starting resumes it." : "The unfinished build here is gone; starting begins a new one.");
   if (after.site.obstructed > before.site.obstructed) placement.push(`${plural(after.site.obstructed - before.site.obstructed, "more cell")} ${after.site.obstructed - before.site.obstructed === 1 ? "is" : "are"} now blocked.`);
   else if (after.site.obstructed < before.site.obstructed) conditions.push(`${plural(before.site.obstructed - after.site.obstructed, "blocked cell")} cleared.`);

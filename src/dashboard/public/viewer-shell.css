@@ -194,6 +194,7 @@ dd.sub { margin-top: 2px; }
 .msg-pending { color: var(--muted); }
 .msg-pending::after { content: "…"; animation: blink 1.2s steps(4, end) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes blink { from { width: 0; } to { width: 1.2em; } }
+#publicReply.thinking { color: var(--cyan); }
 .chat-quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-quick button { padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; cursor: pointer; }
 .chat-quick button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
@@ -536,6 +537,12 @@ h3 { margin: 0; font-size: .82rem; font-weight: 600; color: var(--text); }
 /* Expanded: the map card takes over the viewport; Esc or Close returns. */
 body.map-open { overflow: hidden; }
 .map-card.expanded { position: fixed; inset: 12px; z-index: 60; display: flex; flex-direction: column; overflow-y: auto; box-shadow: 0 0 0 100vmax #0b1015cc; }
+/* The expanded map covers the dock, so it carries its own Stop. */
+.map-stop { display: none; }
+.map-card.expanded .map-stop { display: inline-flex; margin-left: auto; color: var(--red); border-color: #ef5a5a66; background: #ef5a5a14; font-weight: 700; }
+.map-card.expanded .map-stop:hover:not(:disabled) { color: #1d0b0b; background: var(--red); border-color: var(--red); }
+/* Keep the actions row (and Stop) pinned in view even when details push the card past the screen. */
+.map-card.expanded .map-actions { position: sticky; bottom: 0; z-index: 3; margin: 0 -16px; padding: 8px 16px; background: var(--surface); border-top: 1px solid var(--line); }
 .map-card.expanded .map-wrap { flex: 1 1 0; min-height: 280px; }
 .map-card.expanded #mapCanvas { aspect-ratio: auto; height: 100%; }
 @media (min-width: 900px) {

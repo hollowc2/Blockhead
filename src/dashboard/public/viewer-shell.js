@@ -479,25 +479,42 @@
     setText("uptime", duration(s.process?.uptimeSeconds));
   }
 
+  // Each poll gets a deadline, and only the newest answer counts: a slow
+  // response that lands after a newer one is dropped, never rendered.
+  const STATE_DEADLINE_MS = 4000, STALE_AFTER_MS = 5000;
+  let refreshSeq = 0, appliedSeq = 0;
   async function refresh() {
+    const seq = ++refreshSeq;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), STATE_DEADLINE_MS);
     try {
-      const response = await fetch("/api/state", { cache: "no-store" });
+      const response = await fetch("/api/state", { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
-      render(await response.json());
+      const state = await response.json();
+      if (seq < appliedSeq) return;
+      appliedSeq = seq;
+      render(state);
     } catch {
-      reachable = false; botLive = false;
-      renderGear({});
-      if (mode === false) renderGearDetail(null);
-      show("offline", true);
-      $("offlineReason").textContent = "Lost connection to the dashboard. Reconnecting…";
-      publicAvailable = { questions: false, actions: false };
-      publicWhy = { questions: "unreachable", actions: "unreachable" };
-      updatePublicButtons();
-      if (commandConnected && !commandBusy) commandStatus.textContent = "Connection lost. Tasks can't be sent until it's back.";
-      commandConnected = false;
-      updateCommandButtons();
-      renderFreshness();
+      // A newer poll already answered; this one's failure says nothing new.
+      if (seq < appliedSeq) return;
+      markUnreachable();
+    } finally {
+      clearTimeout(timer);
     }
+  }
+  function markUnreachable() {
+    reachable = false; botLive = false;
+    renderGear({});
+    if (mode === false) renderGearDetail(null);
+    show("offline", true);
+    $("offlineReason").textContent = "Lost connection to the dashboard. Reconnecting…";
+    publicAvailable = { questions: false, actions: false };
+    publicWhy = { questions: "unreachable", actions: "unreachable" };
+    updatePublicButtons();
+    if (commandConnected && !commandBusy) commandStatus.textContent = "Connection lost. Tasks can't be sent until it's back.";
+    commandConnected = false;
+    updateCommandButtons();
+    renderFreshness();
   }
 
   function toggleFullscreen() {
@@ -700,16 +717,20 @@
   async function publicSubmit(feature, body) {
     if (publicBusy || !(feature === "question" ? publicAvailable.questions : publicAvailable.actions)) return;
     publicBusy = true; updatePublicButtons();
-    $("publicReply").textContent = "Sending…";
+    // Model answers may take the server's full 45 s (plus up to 5 s reading the
+    // body); actions settle within its 8 s deadline. Wait a little past each.
+    const asking = feature === "question";
+    $("publicReply").textContent = asking ? "Bob is thinking…" : "Sending…";
+    $("publicReply").classList.toggle("thinking", asking);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8500);
+    const timer = setTimeout(() => controller.abort(), asking ? 52_000 : 9_500);
     try {
       const response = await fetch(`/api/public/${feature}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const result = await response.json();
       if (typeof result.retryAfterMs === "number") ownUntil[feature === "question" ? "questions" : "actions"] = Date.now() + result.retryAfterMs;
       $("publicReply").textContent = result.text || "Public interaction unavailable.";
-    } catch { $("publicReply").textContent = feature === "action" ? "Delivery could not be confirmed." : "Couldn't reach Bob. Try again later."; }
-    finally { clearTimeout(timer); publicBusy = false; updatePublicButtons(); }
+    } catch { $("publicReply").textContent = feature === "action" ? "Delivery could not be confirmed." : controller.signal.aborted ? "Bob took too long to answer. Try again later." : "Couldn't reach Bob. Try again later."; }
+    finally { clearTimeout(timer); $("publicReply").classList.remove("thinking"); publicBusy = false; updatePublicButtons(); }
   }
   $("publicQuestionForm").addEventListener("submit", event => { event.preventDefault(); void publicSubmit("question", { question: $("publicQuestion").value }); });
   publicButtons.forEach(button => button.addEventListener("click", () => { void publicSubmit("action", { action: button.dataset.action }); }));
@@ -762,62 +783,127 @@
       void refresh();
     }
   }
-  function actionButton(target) {
-    const button = el("button", `job-btn ${target.tone}`, target.label);
-    button.type = "button";
+  // Cancelling or dropping a plan cannot be undone: the first press arms it,
+  // the second acts. Armed state is kept by job and action, not by button, so
+  // a live update that redraws the row keeps "Confirm" until it times out.
+  const ARM_MS = 4000;
+  const armed = new Map();
+  const targetKey = (target) => `${target.kind}:${target.id}:${target.action}`;
+  const isArmed = (target) => (armed.get(targetKey(target)) ?? 0) > Date.now();
+  function paintAction(button, target) {
+    button.className = `job-btn ${target.tone}`;
+    const label = isArmed(target) ? `Confirm: ${target.label.toLowerCase()}` : target.label;
+    if (button.textContent !== label) button.textContent = label;
+    button.dataset.armed = isArmed(target) ? "1" : "";
     button.disabled = !reachable;
+  }
+  function actionButton(target) {
+    const button = el("button");
+    button.type = "button";
+    button.dataset.key = targetKey(target);
+    button.jobTarget = target;
+    paintAction(button, target);
     button.addEventListener("click", () => {
-      // Cancelling or dropping a plan cannot be undone: the first press asks, the second acts.
-      if (CONFIRM.has(target.action) && button.dataset.armed !== "1") {
-        button.dataset.armed = "1";
-        button.textContent = `Confirm: ${target.label.toLowerCase()}`;
-        setTimeout(() => { if (button.isConnected) { button.dataset.armed = ""; button.textContent = target.label; } }, 4000);
+      const current = button.jobTarget;
+      if (CONFIRM.has(current.action) && !isArmed(current)) {
+        const key = targetKey(current);
+        armed.set(key, Date.now() + ARM_MS);
+        paintAction(button, current);
+        setTimeout(() => {
+          if ((armed.get(key) ?? 0) > Date.now()) return;
+          armed.delete(key);
+          document.querySelectorAll(".job-btn").forEach((other) => { if (other.dataset.key === key && other.jobTarget) paintAction(other, other.jobTarget); });
+        }, ARM_MS + 50);
         return;
       }
-      void jobAction(target);
+      armed.delete(targetKey(current));
+      void jobAction(current);
     });
     return button;
   }
+  /**
+   * Make *parent*'s children match *items*, keyed by `data-key`: existing
+   * elements are updated in place (so focus and hover survive), new ones are
+   * built, and missing ones removed. Elements only move when out of order.
+   */
+  function reconcile(parent, items, keyOf, make, update) {
+    const existing = new Map();
+    for (const child of [...parent.children]) {
+      if (child.dataset.key !== undefined && !existing.has(child.dataset.key)) existing.set(child.dataset.key, child);
+      else child.remove();
+    }
+    const next = items.map((item) => {
+      const key = keyOf(item);
+      const old = existing.get(key);
+      existing.delete(key);
+      if (old) { update(old, item); return old; }
+      const fresh = make(item);
+      fresh.dataset.key = key;
+      return fresh;
+    });
+    for (const stale of existing.values()) stale.remove();
+    next.forEach((node, i) => { if (parent.children[i] !== node) parent.insertBefore(node, parent.children[i] ?? null); });
+  }
   const slug = (value) => String(value).replace(/[^a-z_]/gi, "_");
+  /** One job node, built once with every slot and then kept current by fillNode. */
   function trailNode(node) {
-    const row = el("li", `tnode tnode-${node.kind} st-${slug(node.status)}`);
+    const row = el("li");
     row.dataset.ref = node.ref;
     const head = el("div", "job-head");
     const title = el("span", "tnode-title");
-    title.append(el("span", "tkind", KIND_LABEL[node.kind] || node.kind), el("span", "job-title", node.title));
-    head.append(title, el("em", `badge ${slug(node.status)}`, words(node.status)));
-    row.append(head);
-    const meta = [...node.meta];
-    if (node.progress) {
-      const pct = node.progress.total ? Math.round((node.progress.done / node.progress.total) * 100) : 0;
-      const bar = el("div", "mini");
-      const fill = el("i");
-      fill.style.width = `${pct}%`;
-      bar.append(fill);
-      row.append(bar);
-      meta.push(`${node.progress.done}/${node.progress.total} blocks`);
-    }
-    if (meta.length) row.append(el("p", "sub", meta.join(" · ")));
-    if (node.detail) row.append(el("p", "job-detail", node.detail));
-    if (node.actions.length) {
-      const actions = el("div", "job-actions");
-      actions.append(...node.actions.map(actionButton));
-      row.append(actions);
-    }
-    if (node.children.length) {
-      const children = el("ul", "tchildren");
-      children.append(...node.children.map(trailNode));
-      row.append(children);
-    }
+    title.append(el("span", "tkind"), el("span", "job-title"));
+    head.append(title, el("em"));
+    const bar = el("div", "mini");
+    bar.append(el("i"));
+    row.append(head, bar, el("p", "sub"), el("p", "job-detail"), el("div", "job-actions"), el("ul", "tchildren"));
+    fillNode(row, node);
     return row;
   }
+  function fillNode(row, node) {
+    const [head, bar, sub, detail, actions, children] = row.children;
+    const set = (target, value) => { if (target.textContent !== value) target.textContent = value; };
+    const cls = `tnode tnode-${node.kind} st-${slug(node.status)}${row.classList.contains("focus") ? " focus" : ""}`;
+    if (row.className !== cls) row.className = cls;
+    const [kind, title] = head.firstChild.children;
+    set(kind, KIND_LABEL[node.kind] || node.kind);
+    set(title, node.title);
+    const badgeEl = head.lastChild;
+    badgeEl.className = `badge ${slug(node.status)}`;
+    set(badgeEl, words(node.status));
+    const meta = [...node.meta];
+    bar.hidden = !node.progress;
+    if (node.progress) {
+      const pct = node.progress.total ? Math.round((node.progress.done / node.progress.total) * 100) : 0;
+      bar.firstChild.style.width = `${pct}%`;
+      meta.push(`${node.progress.done}/${node.progress.total} blocks`);
+    }
+    set(sub, meta.join(" · ")); sub.hidden = meta.length === 0;
+    set(detail, node.detail || ""); detail.hidden = !node.detail;
+    actions.hidden = node.actions.length === 0;
+    reconcile(actions, node.actions, targetKey, actionButton, (button, target) => { button.jobTarget = target; paintAction(button, target); });
+    children.hidden = node.children.length === 0;
+    reconcile(children, node.children, (child) => child.ref, trailNode, fillNode);
+  }
   function trailRow(trail) {
-    const row = el("li", `trail trail-${slug(trail.status)}${trail.owner ? " owner" : ""}`);
-    row.dataset.ref = trail.ref;
-    const top = el("ul", "tchildren root");
-    top.append(trailNode(trail.root));
-    row.append(top);
+    const row = el("li");
+    row.append(el("ul", "tchildren root"));
+    fillTrail(row, trail);
     return row;
+  }
+  function fillTrail(row, trail) {
+    const cls = `trail trail-${slug(trail.status)}${trail.owner ? " owner" : ""}`;
+    if (row.className !== cls) row.className = cls;
+    row.dataset.ref = trail.ref;
+    reconcile(row.firstChild, [trail.root], (node) => node.ref, trailNode, fillNode);
+  }
+  /** Keep a trail list current without rebuilding rows, so buttons keep focus and confirm state. */
+  function renderTrailList(root, trails, empty) {
+    if (!trails.length) {
+      const only = root.children.length === 1 && root.firstChild.classList.contains("empty-row") ? root.firstChild : null;
+      if (only) only.textContent = empty; else root.replaceChildren(el("li", "sub empty-row", empty));
+      return;
+    }
+    reconcile(root, trails, (trail) => trail.ref, trailRow, fillTrail);
   }
   const matchesFilter = (trail) => trailFilter === "all" || trail.status === trailFilter;
   function* walk(node) { yield node; for (const child of node.children) yield* walk(child); }
@@ -862,11 +948,11 @@
     const live = trails.filter((trail) => !trail.finished);
     const finished = trails.filter((trail) => trail.finished);
     const shown = live.filter(matchesFilter);
-    keyed($("jobTrails"), JSON.stringify([shown, trailFilter, minute]), () => list($("jobTrails"), shown, trailFilter === "all" ? "Nothing to do right now." : `Nothing ${trailFilter}.`, trailRow));
+    keyed($("jobTrails"), JSON.stringify([shown, trailFilter, minute]), () => renderTrailList($("jobTrails"), shown, trailFilter === "all" ? "Nothing to do right now." : `Nothing ${trailFilter}.`));
     $("jobTrailCount").textContent = live.length ? String(live.length) : "";
     show("jobFinishedWrap", finished.length > 0);
     $("jobFinishedCount").textContent = finished.length ? String(finished.length) : "";
-    keyed($("jobFinished"), JSON.stringify([finished, minute]), () => list($("jobFinished"), finished, "", trailRow));
+    keyed($("jobFinished"), JSON.stringify([finished, minute]), () => renderTrailList($("jobFinished"), finished, ""));
     renderLatestCommand((jobs.commands || [])[0]);
     const trouble = live.some((trail) => trail.status === "blocked" || trail.status === "failed");
     if (panel.dataset.active !== "jobs") $("jobsAlert").hidden = !trouble;
@@ -1002,7 +1088,7 @@
     } catch {}
   }
   viewerFrame.addEventListener("load", () => { if (preview) setTimeout(sendGhost, 1500); });
-  const baseline = (p) => ({ origin: p.origin, structureType: p.structureType, resumes: p.resumes, site: p.site, materials: p.materials.map((m) => ({ material: m.material, missing: m.missing })) });
+  const baseline = (p) => ({ origin: p.origin, structureType: p.structureType, designHash: p.designHash, resumes: p.resumes, site: p.site, materials: p.materials.map((m) => ({ material: m.material, missing: m.missing })) });
   function clearPreview() {
     preview = null; freshPreview = null; staleReasons = [];
     stopPreviewChecks();
@@ -1537,7 +1623,11 @@
   $("historyLoad").addEventListener("click", () => { void loadHistory(); });
 
   refresh(); setInterval(refresh, 1000);
-  setInterval(() => { if (!reachable || !botLive) renderFreshness(); }, 1000);
+  setInterval(() => {
+    // Silence counts as a lost connection even while requests hang unanswered.
+    if (reachable && lastReceivedAt !== null && Date.now() - lastReceivedAt > STALE_AFTER_MS) markUnreachable();
+    else if (!reachable || !botLive) renderFreshness();
+  }, 1000);
   // Countdowns tick between state polls too.
   setInterval(() => { if (mode === true) updatePublicButtons(); }, 1000);
 })();

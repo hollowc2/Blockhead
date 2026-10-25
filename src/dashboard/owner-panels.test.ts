@@ -289,8 +289,8 @@ test("a build preview reports footprint, entrance, materials and site state", ()
   assert.ok(blind.notes.some((note) => /stored counts are unknown/.test(note)));
 });
 
-function previewFixture(origin = { x: 100, y: 64, z: -20, dimension: "overworld" }, carried = 20, anchor: BuildPreview["anchor"] = "current"): BuildPreview {
-  const design = simpleStructureDesign("room", 7, 4, 7, origin, "oak_planks");
+function previewFixture(origin = { x: 100, y: 64, z: -20, dimension: "overworld" }, carried = 20, anchor: BuildPreview["anchor"] = "current", material = "oak_planks"): BuildPreview {
+  const design = simpleStructureDesign("room", 7, 4, 7, origin, material);
   const operations = compileBuildingDesign(design, origin).operations;
   const bot = { inventory: { items: () => [{ name: "oak_planks", count: carried }] }, blockAt: () => ({ name: "air" }) };
   return describePreview({ text: "build a house at current", anchor, design, origin, structureType: "simple_room", operations, bot: bot as never, stored: {}, resumes: false });
@@ -307,6 +307,10 @@ test("a fresh preview names what changed since the one the viewer saw", () => {
   const restocked = previewChanges(baseline, previewFixture(undefined, 200));
   assert.deepEqual(restocked.placement, []);
   assert.deepEqual(restocked.conditions, ["No longer short of oak planks."]);
+  const birch = previewChanges(baseline, previewFixture(undefined, 20, "current", "birch_planks"));
+  assert.ok(birch.placement.some((line) => /birch planks instead of oak planks/.test(line)), "a material swap in place is a design change");
+  const unhashed = parseBaseline({ ...JSON.parse(JSON.stringify(seen)), designHash: undefined })!;
+  assert.equal(previewChanges(unhashed, seen).placement.length, 1, "a baseline without a design hash must be previewed again");
   assert.equal(parseBaseline({ origin: { x: "1" }, structureType: "x", materials: [] }), null, "malformed baselines are ignored");
 });
 
@@ -325,6 +329,9 @@ test("starting a previewed build refuses when its placement moved and sends it w
   assert.equal(refused.status, 409);
   assert.deepEqual(sent, [], "nothing is sent when the site moved");
   assert.equal((refused.body as { preview: BuildPreview }).preview.origin.x, 103, "the fresh preview comes back to review");
+  next = previewFixture(undefined, 20, "current", "birch_planks");
+  assert.equal((await start(body)).status, 409, "a design that changed in place needs a new preview");
+  assert.deepEqual(sent, []);
   next = previewFixture(undefined, 200);
   const ok = await start(body);
   assert.equal(ok.status, 200, "material changes alone don't block a start");
