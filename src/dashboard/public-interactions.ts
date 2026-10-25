@@ -102,7 +102,8 @@ export class PublicInteractions {
     for (const [controller, feature] of this.active) if (feature === "question" ? !this.questions : !this.actions) controller.abort();
     return this.diagnostics();
   }
-  cancel(): void { this.options.gestures.invalidate(); for (const c of this.active.keys()) c.abort(); }
+  /** Safety interrupts stop physical actions; questions never move the bot, so a model answer in flight is left to finish. */
+  cancel(): void { this.options.gestures.invalidate(); for (const [c, feature] of this.active) if (feature === "action") c.abort(); }
   async handle(feature: "question" | "action", request: IncomingMessage, response: ServerResponse): Promise<void> {
     const started = Date.now(), id = randomUUID(); let code: PublicResultCode = "unavailable"; let status = 503, text = "Bob is unavailable right now.";
     const controller = new AbortController(); let admitted = false, ownsQuestion = false;

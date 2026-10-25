@@ -28,6 +28,10 @@ by misconfiguration.
   because llama.cpp is shared with the bot's own decisions; rules-based
   questions keep 8 s. Existing per-IP and global limits are unchanged
   (1 question per IP per 30 s, 1 per 15 s globally, 120 per hour).
+- Safety interrupts (task changes, damage, night, hostiles) cancel public
+  actions only. A question waiting on the model is left to finish, since
+  answering never moves the bot; otherwise routine task changes cut answers
+  off and they fell back to rules (seen on the first live attack question).
 - Each public interaction log record now carries `answeredBy`
   (`model`, `rules` or `firewall`); diagnostics report `modelQuestions`.
 

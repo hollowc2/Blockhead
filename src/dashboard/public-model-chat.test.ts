@@ -97,3 +97,17 @@ test("without a model, or while offline, questions stay rules-based and the mode
   });
   assert.equal(called, false);
 });
+
+test("safety interrupts (bot task changes) do not cut off a question waiting on the model", async () => {
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { release = resolve; });
+  let finish!: (answer: PublicModelAnswer) => void;
+  await withInteractions(() => { release(); return new Promise(resolve => { finish = resolve; }); }, true, async (port, records, interactions) => {
+    const reply = ask(port, "what are you up to?");
+    await started;
+    interactions.cancel();
+    finish({ kind: "answer", text: "Chopping oak logs!" });
+    assert.deepEqual(await reply, { status: 200, text: "Chopping oak logs!" });
+    assert.equal(records.at(-1)!.answeredBy, "model");
+  });
+});
