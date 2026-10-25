@@ -1,4 +1,5 @@
 import type { Bot } from "mineflayer";
+import { Vec3 } from "vec3";
 import type { AppDatabase } from "../memory/database.js";
 import { normalizeDimension } from "../minecraft/protection.js";
 
@@ -12,12 +13,18 @@ import { normalizeDimension } from "../minecraft/protection.js";
 export type MapPoint = [x: number, z: number];
 export interface MapMarker { x: number; y: number; z: number; label: string; detail?: string | null; at?: string | null }
 
+/**
+ * Whether a resource site is open to the sky. "shallow" means one or two
+ * solid blocks overhead; "unknown" means the column above it isn't loaded.
+ */
+export type Exposure = "surface" | "shallow" | "underground" | "unknown";
+
 export interface OwnerMapView {
   dimension: string | null;
   bob: { x: number; y: number; z: number; yaw: number } | null;
   home: MapMarker | null;
   locations: readonly MapMarker[];
-  resources: readonly (MapMarker & { depleted: boolean })[];
+  resources: readonly (MapMarker & { depleted: boolean; exposure: Exposure })[];
   chests: readonly MapMarker[];
   deaths: readonly (MapMarker & { recovered: boolean })[];
   build: MapMarker | null;
@@ -89,6 +96,48 @@ export function pathfinderDestination(bot: Bot): MapMarker | null {
   return null;
 }
 
+interface ColumnBlock { name: string; boundingBox?: string }
+const SCAN_HEIGHT = 64;
+const BURIED_COVER = 3;
+// Canopy, plants and fluids don't hide a site from someone walking past.
+const SEE_THROUGH = /leaves|log|wood|stem|vine|grass|fern|flower|sapling|mushroom|bush|snow|torch|carpet|rail|crop|wheat|carrot|potato|beetroot|cane|bamboo|kelp|seagrass|lily|water|lava|glass|ice/;
+
+/** Counts solid cover above (x, y, z): enough of it means the site is underground. */
+export function resourceExposure(blockAt: (x: number, y: number, z: number) => ColumnBlock | null, x: number, y: number, z: number): Exposure {
+  let cover = 0;
+  for (let dy = 1; dy <= SCAN_HEIGHT; dy++) {
+    const block = blockAt(x, y + dy, z);
+    if (block === null) return cover >= BURIED_COVER ? "underground" : "unknown";
+    if (block.name.endsWith("air")) { if (block.name === "void_air") break; continue; }
+    if (block.boundingBox === "block" && !SEE_THROUGH.test(block.name)) cover++;
+    if (cover >= BURIED_COVER) return "underground";
+  }
+  return cover === 0 ? "surface" : "shallow";
+}
+
+const EXPOSURE_TTL_MS = 30_000;
+const exposureCache = new Map<string, { exposure: Exposure; at: number }>();
+function cachedExposure(bot: Bot | null, dimension: string | null, x: number, y: number, z: number): Exposure {
+  const blockAt = (bot as unknown as { blockAt?: (point: Vec3) => ColumnBlock | null } | null)?.blockAt;
+  if (bot === null || typeof blockAt !== "function") return "unknown";
+  const key = `${dimension}:${x},${y},${z}`;
+  const now = Date.now();
+  const hit = exposureCache.get(key);
+  if (hit !== undefined && now - hit.at < EXPOSURE_TTL_MS) return hit.exposure;
+  let exposure: Exposure;
+  try {
+    exposure = resourceExposure((bx, by, bz) => blockAt.call(bot, new Vec3(bx, by, bz)) ?? null, x, y, z);
+  } catch {
+    exposure = "unknown";
+  }
+  // Unloaded columns are retried on the next poll rather than remembered.
+  if (exposure !== "unknown") {
+    if (exposureCache.size > 2000) exposureCache.clear();
+    exposureCache.set(key, { exposure, at: now });
+  }
+  return exposure;
+}
+
 interface Row { name?: string; category?: string; label?: string | null; resource?: string; x: number; y: number; z: number; dimension: string; depleted?: number; last_seen_at?: string | null; created_at?: string; recovered?: number; recovery_failed_reason?: string | null }
 
 export interface OwnerMapInput {
@@ -123,7 +172,7 @@ export function readOwnerMap(input: OwnerMapInput): OwnerMapView {
     bob,
     home: homeRow === undefined ? null : { x: homeRow.x, y: homeRow.y, z: homeRow.z, label: "Home" },
     locations: places.filter((row) => row.category !== "home").map((row) => ({ x: row.x, y: row.y, z: row.z, label: row.name ?? "spot", detail: row.category ?? null })),
-    resources: resources.map((row) => ({ x: row.x, y: row.y, z: row.z, label: (row.resource ?? "resource").replace(/_/g, " "), at: row.last_seen_at ?? null, depleted: row.depleted === 1 })),
+    resources: resources.map((row) => ({ x: row.x, y: row.y, z: row.z, label: (row.resource ?? "resource").replace(/_/g, " "), at: row.last_seen_at ?? null, depleted: row.depleted === 1, exposure: cachedExposure(bot, dimension, row.x, row.y, row.z) })),
     chests: chests.map((row) => ({ x: row.x, y: row.y, z: row.z, label: row.label ?? `${row.category ?? "storage"} chest`, at: row.last_seen_at ?? null })),
     deaths: deaths.map((row) => ({ x: row.x, y: row.y, z: row.z, label: "Death", at: row.created_at ?? null, detail: row.recovered === 1 ? "items recovered" : row.recovery_failed_reason ?? null, recovered: row.recovered === 1 })),
     build: input.build !== null && here(input.build) ? { x: input.build.x, y: input.build.y, z: input.build.z, label: input.build.label } : null,

@@ -19,7 +19,7 @@ import { itemCondition, projectGearDetail, storedContents } from "./gear.js";
 import { readHistory } from "./history.js";
 import { StoryFeed } from "./story.js";
 import { createPreviewStart, describePreview, parseBaseline, previewChanges, type BuildPreview, type PreviewResult } from "./build-preview.js";
-import { pathfinderDestination, readOwnerMap } from "./owner-map.js";
+import { pathfinderDestination, readOwnerMap, resourceExposure } from "./owner-map.js";
 import { ViewerShellServer } from "./viewer-shell.js";
 import { toPublicViewerState } from "./public-state.js";
 import type { DashboardSnapshot } from "./types.js";
@@ -344,10 +344,22 @@ test("the map reads remembered places for Bob's dimension and his pathfinder goa
   assert.deepEqual(map.home, { x: 0, y: 64, z: 0, label: "Home" });
   assert.deepEqual(map.locations.map((location) => location.label), ["mine"], "other dimensions are left out");
   assert.equal(map.resources[0]?.label, "iron ore");
+  assert.equal(map.resources[0]?.exposure, "unknown", "no loaded world means no depth claim");
   assert.equal(map.deaths[0]?.recovered, true);
   assert.deepEqual(map.destination, { x: 12, y: 64, z: 8, label: "Near" });
   const follow = pathfinderDestination({ pathfinder: { goal: { entity: { position: { x: 3, y: 4, z: 5 }, username: "Corey" } } } } as never);
   assert.equal(follow?.label, "Following Corey");
+});
+
+test("resource exposure tells surface sites from buried ones", () => {
+  const solid = { name: "stone", boundingBox: "block" };
+  const air = { name: "air", boundingBox: "empty" };
+  const column = (cover: Record<number, { name: string; boundingBox: string }>, loadedTo = 200) => (_x: number, y: number) => y > loadedTo ? null : cover[y] ?? air;
+  assert.equal(resourceExposure(column({}), 0, 70, 0), "surface");
+  assert.equal(resourceExposure(column({ 75: { name: "oak_leaves", boundingBox: "block" }, 74: { name: "oak_log", boundingBox: "block" } }), 0, 70, 0), "surface", "a tree canopy isn't cover");
+  assert.equal(resourceExposure(column({ 71: solid }), 0, 70, 0), "shallow");
+  assert.equal(resourceExposure(column({ 30: solid, 40: solid, 60: solid }), 0, 20, 0), "underground");
+  assert.equal(resourceExposure(column({}, 80), 0, 70, 0), "unknown", "an unloaded column above stays unknown");
 });
 
 async function freePort(): Promise<number> {

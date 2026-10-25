@@ -1073,7 +1073,7 @@
   $("previewStart").addEventListener("click", () => { void startPreviewed(); });
 
   // ---- Map: remembered places, Bob, his destination and route ----
-  const map = { data: null, cx: 0, cz: 0, scale: 3, follow: true, timer: null, drag: null, picked: null, layers: { trail: true, path: true, resources: true, chests: true, deaths: true, locations: true } };
+  const map = { data: null, cx: 0, cz: 0, scale: 3, follow: true, timer: null, drag: null, picked: null, note: null, layers: { trail: true, path: true, resources: true, chests: true, deaths: true, locations: true } };
   const canvas = $("mapCanvas");
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   async function loadMap() {
@@ -1082,8 +1082,11 @@
       if (!response.ok) throw new Error(String(response.status));
       map.data = await response.json();
       if (map.follow && map.data.bob) { map.cx = map.data.bob.x; map.cz = map.data.bob.z; }
+      // Keep the open detail card on the same marker, with fresh distances.
+      if (map.picked) map.picked = markers().find((m) => sameMarker(m, map.picked)) ?? null;
       drawMap();
       renderMapFacts();
+      renderDetail();
     } catch {
       $("mapInfo").textContent = "The map is unavailable right now.";
     }
@@ -1115,6 +1118,7 @@
     if (d.bob) out.push({ ...d.bob, label: "CobbleBob", type: "bob" });
     return out;
   }
+  const sameMarker = (a, b) => a.type === b.type && a.x === b.x && a.y === b.y && a.z === b.z;
   function drawMap() {
     const rect = canvas.getBoundingClientRect();
     if (!rect.width) return;
@@ -1155,9 +1159,15 @@
       if (x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
       g.lineWidth = 2;
       if (m.type === "resource") {
-        g.fillStyle = resourceColor(m.label); g.strokeStyle = resourceColor(m.label);
-        g.beginPath(); g.arc(x, y, 3.2, 0, Math.PI * 2);
+        // Solid = open to the sky, outlined = just under the surface,
+        // hollow with a dark core = buried: nearby-looking dots may be far below.
+        const color = resourceColor(m.label);
+        g.fillStyle = color; g.strokeStyle = color; g.globalAlpha = m.depleted ? .4 : 1;
+        g.beginPath(); g.arc(x, y, 3.6, 0, Math.PI * 2);
         if (m.depleted) g.stroke(); else g.fill();
+        if (!m.depleted && m.exposure === "underground") { g.fillStyle = "#0b1015"; g.beginPath(); g.arc(x, y, 1.7, 0, Math.PI * 2); g.fill(); }
+        else if (!m.depleted && m.exposure === "shallow") { g.strokeStyle = "#0b1015"; g.lineWidth = 1.2; g.beginPath(); g.arc(x, y, 2.2, 0, Math.PI * 2); g.stroke(); }
+        g.globalAlpha = 1;
       } else if (m.type === "chest") {
         g.fillStyle = "#a0794a"; g.fillRect(x - 3.5, y - 3.5, 7, 7); g.strokeStyle = "#1d252c"; g.lineWidth = 1; g.strokeRect(x - 3.5, y - 3.5, 7, 7);
       } else if (m.type === "death") {
@@ -1191,11 +1201,50 @@
     g.fillStyle = "#e6edf2"; g.fillRect(10, h - 14, blocks * map.scale, 2);
     g.font = "10px ui-monospace, monospace"; g.textAlign = "left"; g.fillText(`${blocks} m`, 10, h - 19);
   }
-  function describeMarker(m) {
-    const bob = map.data?.bob;
-    const distance = bob && m.type !== "bob" ? ` · ${Math.round(Math.hypot(m.x - bob.x, m.z - bob.z))} m from Bob` : "";
-    const extra = [m.detail, m.at ? `seen ${since(m.at)}` : null, m.depleted ? "depleted" : null].filter(Boolean).join(" · ");
-    return `${m.label}: ${Math.round(m.x)}, ${Math.round(m.y)}, ${Math.round(m.z)}${distance}${extra ? ` · ${extra}` : ""}`;
+  const KIND = { bob: "CobbleBob", home: "Home", build: "Build site", destination: "Destination", spot: "Place", chest: "Chest", resource: "Resource", death: "Death" };
+  const EXPOSURE = {
+    surface: ["surface", "Open to the sky — visible from the surface."],
+    shallow: ["shallow", "Just under the surface — a block or two overhead."],
+    underground: ["underground", "Underground — buried under solid rock or dirt."],
+  };
+  const vertical = (dy) => Math.abs(dy) < 2 ? "level with Bob" : `${Math.abs(Math.round(dy))} blocks ${dy < 0 ? "below" : "above"} Bob`;
+  function markerFacts(m) {
+    const d = map.data, bob = d?.bob;
+    const facts = [["Coordinates", `${Math.round(m.x)}, ${Math.round(m.y)}, ${Math.round(m.z)}`]];
+    if (bob && m.type !== "bob") facts.push(["From Bob", `${Math.round(Math.hypot(m.x - bob.x, m.z - bob.z))} m · ${vertical(m.y - bob.y)}`]);
+    if (d?.home && m.type !== "home") facts.push(["From home", `${Math.round(Math.hypot(m.x - d.home.x, m.z - d.home.z))} m`]);
+    if (m.type === "bob" && d?.destination) facts.push(["Heading to", `${d.destination.label} · ${Math.round(Math.hypot(d.destination.x - m.x, d.destination.z - m.z))} m`]);
+    if (m.type === "resource") facts.push(["Status", m.depleted ? "Depleted" : "Still there when last seen"]);
+    if (m.type === "death") facts.push(["Items", m.recovered ? "Recovered" : m.detail ? words(m.detail) : "Not recovered"]);
+    else if (m.detail) facts.push(["Kind", words(m.detail)]);
+    if (m.at) facts.push([m.type === "death" ? "Died" : "Last seen", since(m.at)]);
+    return facts;
+  }
+  function depthHint(m) {
+    if (m.type !== "resource") return null;
+    const known = EXPOSURE[m.exposure];
+    if (known) return { tone: m.exposure, text: known[1] };
+    // Unloaded column: the y level still says a lot in the overworld.
+    if (map.data?.dimension === "overworld" && m.y < 50) return { tone: "underground", text: `Probably underground (Y ${Math.round(m.y)}); the blocks above aren't loaded to confirm.` };
+    return { tone: "unknown", text: "Depth unknown — the blocks above it aren't loaded." };
+  }
+  function renderDetail() {
+    const m = map.picked;
+    $("mapDetail").hidden = !m;
+    if (!m) return;
+    $("mapDetailKind").textContent = KIND[m.type] || words(m.type);
+    $("mapDetailKind").dataset.kind = m.type;
+    $("mapDetailTitle").textContent = m.type === "resource" ? words(m.label).replace(/^./, (c) => c.toUpperCase()) : m.label;
+    const hint = depthHint(m);
+    $("mapDetailDepth").hidden = !hint;
+    if (hint) { $("mapDetailDepth").textContent = hint.text; $("mapDetailDepth").dataset.tone = hint.tone; }
+    $("mapDetailFacts").replaceChildren(...markerFacts(m).map(([label, value]) => { const row = el("div"); row.append(el("dt", "", label), el("dd", "", value)); return row; }));
+  }
+  function pick(m) {
+    map.picked = m;
+    renderDetail();
+    if (map.data) renderMapFacts();
+    drawMap();
   }
   function renderMapFacts() {
     const d = map.data;
@@ -1206,7 +1255,9 @@
     $("mapDistance").textContent = dest && bob ? `${Math.round(Math.hypot(dest.x - bob.x, dest.z - bob.z))} m` : "—";
     $("mapFromHome").textContent = d.home && bob ? `${Math.round(Math.hypot(d.home.x - bob.x, d.home.z - bob.z))} m` : "—";
     $("mapRoute").textContent = d.path.length ? `${d.path.length} waypoints planned` : dest ? "Planning…" : "No route";
-    if (!map.picked) $("mapInfo").textContent = bob ? `CobbleBob at ${Math.round(bob.x)}, ${Math.round(bob.y)}, ${Math.round(bob.z)}. Tap a marker for details.` : "CobbleBob is offline.";
+    $("mapInfo").textContent = map.note || (bob ? `CobbleBob at ${Math.round(bob.x)}, ${Math.round(bob.y)}, ${Math.round(bob.z)}. Tap a marker for details.` : "CobbleBob is offline.");
+    $("mapFitRoute").disabled = !bob;
+    $("mapFitHome").disabled = !d.home;
   }
   function zoom(factor, at) {
     const rect = canvas.getBoundingClientRect();
@@ -1220,13 +1271,57 @@
   }
   function setFollow(on) {
     map.follow = on;
+    if (on) map.note = null;
     $("mapFollow").setAttribute("aria-pressed", String(on));
     if (on && map.data?.bob) { map.cx = map.data.bob.x; map.cz = map.data.bob.z; drawMap(); }
   }
+  // Frames a set of world points, leaving room for markers at the edges.
+  function fit(points, note) {
+    const rect = canvas.getBoundingClientRect();
+    if (!points.length || !rect.width) return;
+    const xs = points.map((p) => p[0]), zs = points.map((p) => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    const pad = 36;
+    const span = Math.max((maxX - minX) / Math.max(1, rect.width - pad * 2), (maxZ - minZ) / Math.max(1, rect.height - pad * 2));
+    setFollow(false);
+    map.scale = span > 0 ? Math.max(0.25, Math.min(8, 1 / span)) : 6;
+    map.cx = (minX + maxX) / 2; map.cz = (minZ + maxZ) / 2;
+    map.note = note;
+    drawMap();
+    if (map.data) renderMapFacts();
+  }
+  const HOME_AREA = 96;
+  $("mapFitRoute").addEventListener("click", () => {
+    const d = map.data;
+    if (!d?.bob) return;
+    const points = [[d.bob.x, d.bob.z]];
+    if (d.destination) points.push([d.destination.x, d.destination.z], ...d.path);
+    fit(points, d.destination ? `Showing CobbleBob and his destination (${Math.round(Math.hypot(d.destination.x - d.bob.x, d.destination.z - d.bob.z))} m away).` : "CobbleBob has no destination right now.");
+  });
+  $("mapFitHome").addEventListener("click", () => {
+    const d = map.data;
+    if (!d?.home) return;
+    const near = (m) => Math.hypot(m.x - d.home.x, m.z - d.home.z) <= HOME_AREA;
+    const around = [...d.chests, ...d.locations, ...(d.build ? [d.build] : []), ...(d.bob ? [d.bob] : [])].filter(near);
+    fit([[d.home.x, d.home.z], [d.home.x - 16, d.home.z - 16], [d.home.x + 16, d.home.z + 16], ...around.map((m) => [m.x, m.z])],
+      `Home and ${around.length} nearby ${around.length === 1 ? "marker" : "markers"} within ${HOME_AREA} m.`);
+  });
+  const mapCard = canvas.closest(".map-card");
+  function setExpanded(on) {
+    mapCard.classList.toggle("expanded", on);
+    document.body.classList.toggle("map-open", on);
+    $("mapExpand").setAttribute("aria-pressed", String(on));
+    $("mapExpand").textContent = on ? "Close" : "Expand";
+    requestAnimationFrame(drawMap);
+  }
+  $("mapExpand").addEventListener("click", () => setExpanded(!mapCard.classList.contains("expanded")));
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && mapCard.classList.contains("expanded")) setExpanded(false); });
+  $("mapDetailClose").addEventListener("click", () => pick(null));
+  $("mapDetailCenter").addEventListener("click", () => { const m = map.picked; if (!m) return; setFollow(m.type === "bob"); map.cx = m.x; map.cz = m.z; drawMap(); });
   $("mapZoomIn").addEventListener("click", () => zoom(1.6));
   $("mapZoomOut").addEventListener("click", () => zoom(1 / 1.6));
   $("mapFollow").addEventListener("click", () => setFollow(!map.follow));
-  $("mapHome").addEventListener("click", () => { if (!map.data?.home) return; setFollow(false); map.cx = map.data.home.x; map.cz = map.data.home.z; drawMap(); });
+  $("mapHome").addEventListener("click", () => { if (!map.data?.home) return; setFollow(false); map.note = null; map.cx = map.data.home.x; map.cz = map.data.home.z; drawMap(); renderMapFacts(); });
   canvas.addEventListener("wheel", (event) => { event.preventDefault(); const rect = canvas.getBoundingClientRect(); zoom(event.deltaY < 0 ? 1.25 : 0.8, [event.clientX - rect.left, event.clientY - rect.top]); }, { passive: false });
   canvas.addEventListener("pointerdown", (event) => { map.drag = { x: event.clientX, y: event.clientY, cx: map.cx, cz: map.cz, moved: false }; canvas.setPointerCapture(event.pointerId); });
   canvas.addEventListener("pointermove", (event) => {
@@ -1234,7 +1329,7 @@
     if (!drag) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-    if (!drag.moved) { drag.moved = true; setFollow(false); }
+    if (!drag.moved) { drag.moved = true; setFollow(false); map.note = null; }
     map.cx = drag.cx - dx / map.scale; map.cz = drag.cz - dy / map.scale;
     drawMap();
   });
@@ -1250,9 +1345,7 @@
       const distance = Math.hypot(x - px, y - py);
       if (distance < bestDistance) { best = m; bestDistance = distance; }
     }
-    map.picked = best;
-    $("mapInfo").textContent = best ? describeMarker(best) : "Tap a marker for details.";
-    drawMap();
+    pick(best);
   });
   document.querySelectorAll("#mapLegend [data-layer]").forEach((box) => box.addEventListener("change", () => { map.layers[box.dataset.layer] = box.checked; drawMap(); }));
   if (typeof ResizeObserver === "function") new ResizeObserver(() => drawMap()).observe(canvas);

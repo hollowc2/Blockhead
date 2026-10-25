@@ -235,11 +235,29 @@
           </div>
           <p class="map-north" aria-hidden="true">N ↑</p>
         </div>
+        <div class="map-actions">
+          <button id="mapFitRoute" class="ghost-btn" type="button">Fit Bob + destination</button>
+          <button id="mapFitHome" class="ghost-btn" type="button">Fit home area</button>
+          <button id="mapExpand" class="ghost-btn" type="button" aria-pressed="false">Expand</button>
+        </div>
         <p id="mapInfo" class="sub" role="status">Loading the map…</p>
+        <section id="mapDetail" class="map-detail" aria-live="polite" hidden>
+          <header>
+            <span id="mapDetailKind" class="map-kind"></span>
+            <h3 id="mapDetailTitle"></h3>
+            <button id="mapDetailClose" class="icon-btn small" type="button" aria-label="Close details">×</button>
+          </header>
+          <p id="mapDetailDepth" class="map-depth" hidden></p>
+          <dl id="mapDetailFacts" class="grid2 plain"></dl>
+          <div class="map-detail-actions">
+            <button id="mapDetailCenter" class="ghost-btn" type="button">Center here</button>
+          </div>
+        </section>
         <div class="legend" id="mapLegend">
           <label><input type="checkbox" data-layer="trail" checked><i class="lg lg-trail"></i>Walked</label>
           <label><input type="checkbox" data-layer="path" checked><i class="lg lg-path"></i>Planned route</label>
           <label><input type="checkbox" data-layer="resources" checked><i class="lg lg-res"></i>Resources</label>
+          <span class="legend-key"><i class="lg lg-res"></i>surface <i class="lg lg-res-shallow"></i>shallow <i class="lg lg-res-under"></i>underground</span>
           <label><input type="checkbox" data-layer="chests" checked><i class="lg lg-chest"></i>Chests</label>
           <label><input type="checkbox" data-layer="deaths" checked><i class="lg lg-death"></i>Deaths</label>
           <label><input type="checkbox" data-layer="locations" checked><i class="lg lg-spot"></i>Places</label>
