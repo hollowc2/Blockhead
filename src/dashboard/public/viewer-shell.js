@@ -308,7 +308,8 @@
     $("attention").replaceChildren(...attention.map(([severity, message]) => el("li", severity, message)));
     show("attention", attention.length > 0);
 
-    const working = Boolean(activity) || ["active", "running", "in_progress"].includes(s.task?.status);
+    const busy = Boolean(activity) && !/^(idle|standing by)$/i.test(activity);
+    const working = busy || ["active", "running", "in_progress"].includes(s.task?.status);
     const nowState = attention.some(([severity]) => severity === "high") ? "problem" : attention.length ? "warn" : working ? "active" : "idle";
     $("nowCard").dataset.state = nowState;
     $("nowState").textContent = { problem: "Needs attention", warn: "Heads up", active: "Working", idle: "Idle" }[nowState];
