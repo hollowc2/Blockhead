@@ -551,6 +551,7 @@
     commandButtons.forEach((button) => { button.disabled = !commandConnected || (commandBusy && button.dataset.command !== "stop"); });
     updateChatButtons();
     document.querySelectorAll(".job-btn").forEach((button) => { button.disabled = !reachable; });
+    document.querySelectorAll(".prep-btn").forEach((button) => { button.disabled = !commandConnected || commandBusy; });
   }
   function renderCommandReplies(entries) {
     const replies = entries.filter((entry) => entry.sender === "reply").slice(-4);
@@ -868,11 +869,34 @@
       keyed($("toolCondition"), `none:${why}`, () => list($("toolCondition"), [], `Tool condition unavailable ${why}.`, () => null));
       keyed($("supplies"), `none:${why}`, () => { const row = el("tr"); const cell = el("td", "sub", `Supplies unavailable ${why}.`); cell.colSpan = 4; row.append(cell); $("supplies").replaceChildren(row); });
       $("readyCount").textContent = "—";
+      $("readyCount").className = "count";
+      $("readyHeadline").hidden = $("readyActions").hidden = true;
+      $("readyTitle").textContent = "Ready to head out?";
       return;
     }
-    const ready = gear.readiness.filter((check) => check.ok).length;
-    $("readyCount").textContent = `${ready}/${gear.readiness.length}`;
-    keyed($("readiness"), JSON.stringify(gear.readiness), () => list($("readiness"), gear.readiness, "", (check) => {
+    // Judged for the job Bob is on or about to start; the general checklist only when no job is known.
+    const job = gear.jobReadiness || null;
+    const checks = job ? job.checks : gear.readiness;
+    const ready = checks.filter((check) => check.ok).length;
+    const status = job ? job.status : ready === checks.length ? "ready" : ready === 0 ? "not-ready" : "partial";
+    $("readyTitle").textContent = job ? (job.subject ? `Ready for ${job.subject.charAt(0).toLowerCase()}${job.subject.slice(1)}?` : "Ready for the next job?") : "Ready to head out?";
+    $("readyCount").textContent = `${ready}/${checks.length} ready`;
+    $("readyCount").className = `count ready-${status}`;
+    $("readyHeadline").hidden = !job;
+    if (job) {
+      $("readyHeadline").className = `ready-headline ready-${status}`;
+      $("readyHeadline").textContent = `${status === "ready" ? "✓" : status === "partial" ? "◐" : "✗"} ${job.headline}`;
+    }
+    $("readyActions").hidden = !job || job.actions.length === 0;
+    keyed($("readyActions"), JSON.stringify(job ? job.actions : []), () => $("readyActions").replaceChildren(...(job ? job.actions : []).map((action) => {
+      const button = el("button", "prep-btn", action.label);
+      button.type = "button";
+      button.title = `Ask Bob: “${action.command}”`;
+      button.disabled = !commandConnected || commandBusy;
+      button.addEventListener("click", () => { void sendCommand(action.command); });
+      return button;
+    })));
+    keyed($("readiness"), JSON.stringify(checks), () => list($("readiness"), checks, "", (check) => {
       const row = el("li", check.ok ? "ok" : "bad");
       row.append(el("span", "tick", check.ok ? "✓" : "✗"), el("span", "", check.label), el("b", "mono", check.detail));
       return row;

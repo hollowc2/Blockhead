@@ -420,3 +420,36 @@ test("the private shell serves the owner API and the public shell never does", a
     publicShell.stop();
   }
 });
+
+test("readiness is phrased for the upcoming job", async () => {
+  const { jobReadiness } = await import("./gear.js");
+  const checks = [
+    { key: "health", label: "Health", ok: true, detail: "20 / 20" },
+    { key: "food", label: "Food carried", ok: true, detail: "10 (need 6)" },
+    { key: "space", label: "Free slots", ok: false, detail: "1 of 36 (need 6)" },
+    { key: "pickaxe", label: "Pickaxe", ok: false, detail: "iron pickaxe · 5%", item: "iron_pickaxe" },
+    { key: "axe", label: "Axe", ok: false, detail: "none carried" },
+    { key: "weapon", label: "Weapon", ok: true, detail: "stone sword · 90%" },
+    { key: "torches", label: "Torches carried", ok: true, detail: "20 (need 16)" },
+    { key: "armor", label: "Armor worn", ok: false, detail: "0 of 4 pieces" },
+  ];
+  const mining = jobReadiness("mining", checks);
+  assert.equal(mining.headline, "Mining preparation: unload inventory and replace pickaxe.");
+  assert.equal(mining.status, "partial");
+  assert.deepEqual(mining.actions.map((a) => a.command), ["store everything you're carrying in the home chest", "get a new iron pickaxe"]);
+  assert.equal(jobReadiness("gathering", checks).actions.find((a) => a.key === "axe")?.label, "Make an axe");
+  assert.ok(!mining.checks.some((c) => c.key === "armor"), "armor is not a mining requirement");
+  assert.equal(jobReadiness("building", checks.map((c) => ({ ...c, ok: true }))).headline, "Building preparation: ready to go.");
+  assert.equal(jobReadiness("building", checks.map((c) => ({ ...c, ok: c.key !== "health" })).filter((c) => c.key !== "food" && c.key !== "space")).status, "not-ready");
+});
+
+test("the upcoming job comes from real work, not chores", async () => {
+  const { upcomingJob } = await import("./gear.js");
+  const task = (type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ type, parameters, status: "queued", priority: 70, ...extra });
+  assert.deepEqual(upcomingJob(task("collect_resource", { resource: "iron_ore" }), [], false), { job: "mining", subject: "Mining iron ore" });
+  assert.deepEqual(upcomingJob(task("collect_resource", { resource: "oak_log" }), [], false), { job: "gathering", subject: "Gathering oak log" });
+  // A preparation chore in progress defers to the job queued behind it.
+  assert.equal(upcomingJob(task("store_items"), [task("travel_to"), task("go_home", {}, { heldAt: "x" })], false)?.job, "travelling");
+  assert.equal(upcomingJob(null, [task("eat")], true)?.job, "building");
+  assert.equal(upcomingJob(null, [], false), null);
+});

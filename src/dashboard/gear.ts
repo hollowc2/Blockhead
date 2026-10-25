@@ -21,7 +21,109 @@ export interface ItemCondition {
 
 /** `stored` is null until a home chest has been opened: unknown, not zero. */
 export interface SupplyLine { key: string; label: string; carried: number; stored: number | null; target: number | null }
-export interface ReadinessCheck { key: string; label: string; ok: boolean; detail: string }
+/** `item` names the tool a tool check judged, when one is carried. */
+export interface ReadinessCheck { key: string; label: string; ok: boolean; detail: string; item?: string }
+
+/** The kind of work Bob is about to do; readiness is judged for that job, not a generic expedition. */
+export type ReadinessJob = "building" | "mining" | "gathering" | "travelling";
+/** A preparation step the owner can ask for; `command` is sent through the normal owner command channel. */
+export interface PreparationAction { key: string; label: string; command: string }
+export interface JobReadiness {
+  job: ReadinessJob;
+  /** What the job is, e.g. "Gathering oak log"; null when only the kind is known. */
+  subject: string | null;
+  status: "ready" | "partial" | "not-ready";
+  /** Plain result, e.g. "Mining preparation: replace pickaxe and unload inventory." */
+  headline: string;
+  checks: readonly ReadinessCheck[];
+  actions: readonly PreparationAction[];
+}
+
+const JOB_CHECKS: Record<ReadinessJob, readonly string[]> = {
+  mining: ["health", "food", "space", "pickaxe", "torches", "weapon"],
+  gathering: ["health", "food", "space", "axe", "weapon"],
+  building: ["health", "food", "space"],
+  travelling: ["health", "food", "weapon", "armor", "space"],
+};
+const JOB_NOUN: Record<ReadinessJob, string> = { mining: "Mining", gathering: "Gathering", building: "Building", travelling: "Travel" };
+
+/** A worn tool is replaced at its own tier; a missing one starts at stone. */
+const replacement = (check: ReadinessCheck, family: string): string => {
+  const tier = check.item?.match(/^([a-z]+)_/)?.[1];
+  return `${tier !== undefined && tier !== "wooden" && tier !== "golden" ? tier : "stone"} ${family}`;
+};
+/**
+ * What to do about each failed check: a short verb phrase and an owner
+ * command worded so the command model picks the matching tool
+ * (eat, ensure_item, store_items, equip_best).
+ */
+const FIXES: Record<string, { phrase: (check: ReadinessCheck) => string; command: (check: ReadinessCheck) => string }> = {
+  health: { phrase: () => "heal up", command: () => "eat some food to heal up" },
+  food: { phrase: () => "pack food", command: () => `get ${EXPEDITION_FOOD_RESERVE} bread` },
+  space: { phrase: () => "unload inventory", command: () => "store everything you're carrying in the home chest" },
+  pickaxe: { phrase: (c) => c.item ? "replace pickaxe" : "make a pickaxe", command: (c) => `get a new ${replacement(c, "pickaxe")}` },
+  axe: { phrase: (c) => c.item ? "replace axe" : "make an axe", command: (c) => `get a new ${replacement(c, "axe")}` },
+  weapon: { phrase: (c) => c.item ? "replace weapon" : "make a sword", command: (c) => `get a new ${replacement(c, "sword")}` },
+  torches: { phrase: () => "pack torches", command: () => "get 16 torches" },
+  armor: { phrase: () => "put on armor", command: () => "equip your best armor" },
+};
+
+const joinPhrases = (parts: string[]): string => parts.length <= 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+
+/** Narrow the general checklist to the job at hand and phrase the outcome plainly. */
+export function jobReadiness(job: ReadinessJob, readiness: readonly ReadinessCheck[], subject: string | null = null): JobReadiness {
+  const checks = JOB_CHECKS[job].map((key) => readiness.find((check) => check.key === key)).filter((check): check is ReadinessCheck => check !== undefined);
+  const failed = checks.filter((check) => !check.ok);
+  const status = failed.length === 0 ? "ready" : failed.length === checks.length ? "not-ready" : "partial";
+  const phrases = failed.map((check) => FIXES[check.key]?.phrase(check) ?? check.label.toLowerCase());
+  const headline = `${JOB_NOUN[job]} preparation: ${failed.length === 0 ? "ready to go" : joinPhrases(phrases)}.`;
+  const actions = failed.flatMap((check) => {
+    const fix = FIXES[check.key];
+    return fix ? [{ key: check.key, label: fix.phrase(check).replace(/^./, (c) => c.toUpperCase()), command: fix.command(check) }] : [];
+  });
+  return { job, subject, status, headline, checks, actions };
+}
+
+interface TaskLike { type: string; parameters: Record<string, unknown>; status?: string; heldAt?: string; priority?: number }
+const MINED = /ore$|^(?:cobblestone|stone|cobbled_deepslate|deepslate|coal|raw_(?:iron|copper|gold)|iron_ingot|copper_ingot|gold_ingot|diamond|emerald|redstone|lapis_lazuli|obsidian|andesite|diorite|granite|tuff|calcite|flint|gravel)$/;
+const words = (name: unknown): string => String(name ?? "").replace(/^minecraft:/, "").replace(/_/g, " ").trim();
+
+/** Which kind of work a task is, with a short subject; null for chores that aren't a job (eating, storing, crafting). */
+export function jobForTask(task: TaskLike): { job: ReadinessJob; subject: string } | null {
+  const p = task.parameters ?? {};
+  switch (task.type) {
+    case "collect_resource": {
+      const resource = String(p.resource ?? "").replace(/^minecraft:/, "");
+      return MINED.test(resource) ? { job: "mining", subject: `Mining ${words(resource)}` } : { job: "gathering", subject: `Gathering ${words(resource)}` };
+    }
+    case "stockpile_maintenance":
+      return p.kind === "fuel" || p.kind === "torches" ? { job: "mining", subject: `Restocking ${words(p.kind)}` } : { job: "gathering", subject: `Restocking ${words(p.kind)}` };
+    case "gather_food": case "hunt":
+      return { job: "gathering", subject: "Gathering food" };
+    case "travel_to": case "explore": case "go_home": case "death_recovery": case "recover_death_items":
+      return { job: "travelling", subject: task.type === "go_home" ? "Travelling home" : task.type === "explore" ? "Exploring" : task.type === "travel_to" ? "Travelling" : "Recovering dropped items" };
+    case "build_base": case "build_design": case "build_structure": case "build_project_acquire": case "build_project_slice": case "build_project_verify": case "light_home": case "create_storage":
+      return { job: "building", subject: "Building" };
+    case "develop_land": case "world_project_acquire": case "world_project_slice": case "world_project_verify": case "world_project_return": case "world_project_deposit": case "world_project_replace_tool":
+      return { job: "building", subject: "Working on the land" };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The job readiness is judged for: the active task when it is real work,
+ * otherwise the next queued job that isn't held by the owner (highest
+ * priority first), otherwise an open build project.
+ */
+export function upcomingJob(active: TaskLike | null, queued: readonly TaskLike[], building: boolean): { job: ReadinessJob; subject: string } | null {
+  const now = active === null ? null : jobForTask(active);
+  if (now !== null) return now;
+  const next = [...queued].filter((task) => task.heldAt === undefined && (task.status === undefined || task.status === "queued" || task.status === "paused"))
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    .map(jobForTask).find((job) => job !== null);
+  return next ?? (building ? { job: "building", subject: "Building" } : null);
+}
 
 export interface GearDetail {
   equipment: Record<typeof EQUIPMENT_SLOTS[number], ItemCondition | null>;
@@ -30,6 +132,8 @@ export interface GearDetail {
   slots: { used: number; free: number; total: number };
   supplies: readonly SupplyLine[];
   readiness: readonly ReadinessCheck[];
+  /** Readiness judged for the upcoming job; null when no job is known. */
+  jobReadiness?: JobReadiness | null;
   /** When a home chest was last read open; null when none has been. */
   storageSeenAt: string | null;
 }
@@ -108,7 +212,7 @@ export function projectGearDetail(input: GearInput): GearDetail {
     const item = best(pattern);
     if (item === null) return { key, label, ok: false, detail: "none carried" };
     const percent = item.durability?.percent ?? 100;
-    return { key, label, ok: percent >= EXPEDITION_MIN_TOOL_DURABILITY * 100, detail: `${item.name.replace(/_/g, " ")} · ${percent}%` };
+    return { key, label, ok: percent >= EXPEDITION_MIN_TOOL_DURABILITY * 100, detail: `${item.name.replace(/_/g, " ")} · ${percent}%`, item: item.name };
   };
   const food = supplies.find((supply) => supply.key === "food")!.carried;
   const torches = supplies.find((supply) => supply.key === "torches")!.carried;

@@ -31,7 +31,7 @@ import type { DashboardSnapshot } from "./types.js";
 import { EQUIPMENT_SLOTS, type EquipmentSummary } from "./types.js";
 import type { ViewerTelemetry } from "./viewer.js";
 import type { JobsSummary } from "./jobs.js";
-import type { GearDetail } from "./gear.js";
+import { jobReadiness, upcomingJob, type GearDetail } from "./gear.js";
 
 /**
  * Read-only inputs for the process-lifetime dashboard collector. Session
@@ -153,8 +153,15 @@ export class DashboardTelemetryCollector {
       story: this.source.story?.recent() ?? [],
       world: this.source.worldStats?.() ?? null,
       ...(this.source.jobs === undefined ? {} : { jobs: this.source.jobs() }),
-      ...(this.source.gear === undefined ? {} : { gear: connected ? safely(this.source.gear) : null }),
+      ...(this.source.gear === undefined ? {} : { gear: connected ? safely(() => this.gearForJob(this.source.gear!(), activeTask, buildProject !== null)) : null }),
     };
+  }
+
+  /** Judge readiness for the job Bob is on or about to start, when there is one. */
+  private gearForJob(gear: GearDetail | null, active: Parameters<typeof upcomingJob>[0], building: boolean): GearDetail | null {
+    if (gear === null) return null;
+    const job = upcomingJob(active, this.source.scheduler.queued ?? [], building);
+    return { ...gear, jobReadiness: job === null ? null : jobReadiness(job.job, gear.readiness, job.subject) };
   }
 }
 
