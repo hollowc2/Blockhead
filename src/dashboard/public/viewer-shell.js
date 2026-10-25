@@ -23,9 +23,94 @@
     if (name === "map") startMapPolling(); else stopMapPolling();
     try { localStorage.setItem("cobblebob.tab", name); } catch {}
   }
-  document.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.tabButton)));
+  document.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => {
+    const name = button.dataset.tabButton;
+    selectTab(name);
+    // On a phone, picking a tool means managing: shrink the world so the panel gets the screen.
+    if (name !== "live" && narrowScreen.matches && document.body.dataset.view !== "manage") {
+      setScreenLayout("manage");
+      window.scrollTo({ top: 0 });
+    }
+  }));
   let savedTab = null;
   try { savedTab = localStorage.getItem("cobblebob.tab"); } catch {}
+
+  // Phones and tablets get two layouts: Watch puts the world first, Manage
+  // shrinks it to a small preview. Desktop shows both side by side and ignores it.
+  const narrowScreen = window.matchMedia("(max-width: 1000px)");
+  function setScreenLayout(name) {
+    document.body.dataset.view = name;
+    document.querySelectorAll("#viewSwitch [data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === name)));
+    try { localStorage.setItem("cobblebob.view", name); } catch {}
+  }
+  let savedLayout = null;
+  try { savedLayout = localStorage.getItem("cobblebob.view"); } catch {}
+  setScreenLayout(savedLayout === "manage" ? "manage" : "watch");
+  document.querySelectorAll("#viewSwitch [data-view]").forEach((button) => button.addEventListener("click", () => {
+    setScreenLayout(button.dataset.view);
+    if (button.dataset.view === "watch") window.scrollTo({ top: 0 });
+  }));
+  $("stageExpand").addEventListener("click", () => { setScreenLayout("watch"); window.scrollTo({ top: 0 }); });
+
+  // Desktop sidebar width: drag the handle, use arrow keys on it, or double-click to reset.
+  const layoutGrid = document.querySelector(".layout"), panelResize = $("panelResize");
+  const PANEL_WIDTH_KEY = "cobblebob.panelWidth";
+  const panelBounds = () => [280, Math.max(320, Math.min(820, Math.round(layoutGrid.clientWidth * 0.6)))];
+  let panelWidth = null, preferredPanelWidth = null;
+  function setPanelWidth(px, remember) {
+    const [min, max] = panelBounds();
+    panelResize.setAttribute("aria-valuemin", String(min));
+    panelResize.setAttribute("aria-valuemax", String(max));
+    if (px === null) {
+      panelWidth = preferredPanelWidth = null;
+      layoutGrid.style.removeProperty("--panel-w");
+      panelResize.setAttribute("aria-valuenow", String(panel.offsetWidth));
+      try { localStorage.removeItem(PANEL_WIDTH_KEY); } catch {}
+      return;
+    }
+    panelWidth = Math.round(Math.min(max, Math.max(min, px)));
+    layoutGrid.style.setProperty("--panel-w", `${panelWidth}px`);
+    panelResize.setAttribute("aria-valuenow", String(panelWidth));
+    if (!remember) return;
+    preferredPanelWidth = panelWidth;
+    try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth)); } catch {}
+  }
+  {
+    let stored = null;
+    try { stored = Number(localStorage.getItem(PANEL_WIDTH_KEY)) || null; } catch {}
+    preferredPanelWidth = stored;
+    setPanelWidth(stored, false);
+  }
+  panelResize.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    panelResize.setPointerCapture(event.pointerId);
+    panelResize.classList.add("dragging");
+    document.body.classList.add("resizing");
+  });
+  panelResize.addEventListener("pointermove", (event) => {
+    if (!panelResize.hasPointerCapture(event.pointerId)) return;
+    setPanelWidth(panel.getBoundingClientRect().right - event.clientX - 8, false);
+  });
+  const endPanelDrag = () => {
+    if (!panelResize.classList.contains("dragging")) return;
+    panelResize.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    if (panelWidth !== null) setPanelWidth(panelWidth, true);
+  };
+  panelResize.addEventListener("pointerup", endPanelDrag);
+  panelResize.addEventListener("lostpointercapture", endPanelDrag);
+  panelResize.addEventListener("dblclick", () => setPanelWidth(null));
+  panelResize.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 64 : 16, current = panel.offsetWidth;
+    const [min, max] = panelBounds();
+    const next = { ArrowLeft: current + step, ArrowRight: current - step, Home: max, End: min }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    setPanelWidth(next, true);
+  });
+  // Fit the chosen width to the window, and restore it when the window grows back.
+  window.addEventListener("resize", () => { if (preferredPanelWidth !== null) setPanelWidth(preferredPanelWidth, false); });
 
   const itemName = (name) => name.replace(/^minecraft:/, "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   // Reuse the viewer's bundled Minecraft artwork, including the texture aliases

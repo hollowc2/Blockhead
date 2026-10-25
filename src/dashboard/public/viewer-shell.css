@@ -56,7 +56,23 @@ h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -.01em; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 #3ccf7e80; } 50% { box-shadow: 0 0 0 5px #3ccf7e00; } }
 
 /* Layout */
-.layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 0 20px 20px; min-height: 0; }
+.layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 8px var(--panel-w, 340px); gap: 16px; column-gap: 4px; padding: 0 20px 20px; min-height: 0; }
+
+/* Desktop sidebar resize handle: drag, arrow keys, or double-click to reset. */
+.panel-resize { position: relative; cursor: col-resize; touch-action: none; border-radius: 4px; }
+.panel-resize::after { content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 40px; transform: translate(-50%, -50%); border-radius: 2px; background: var(--line); transition: height .15s, background .15s; }
+.panel-resize:hover::after, .panel-resize:focus-visible::after, .panel-resize.dragging::after { height: 72px; background: var(--cyan); }
+.panel-resize:focus-visible { outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }
+
+/* Watch / Manage switch, phones and tablets only */
+.topbar-end { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.view-switch { display: none; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.view-switch button { padding: 6px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer; }
+.view-switch button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+.stage-expand { display: none; position: absolute; right: 8px; bottom: 8px; z-index: 3; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid #ffffff2f; background: #141b20d9; color: var(--text); font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); }
+.stage-expand svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Viewer stage */
 .stage { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #8fc3e6; min-height: 420px; box-shadow: 0 20px 60px #0006; }
@@ -299,16 +315,28 @@ dd.sub { margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .toast, .story li.fresh, .pill-ok .dot, .mind-state.thinking { animation: none; } }
 
 /* Public mode: the viewer is the whole story */
-body.public .layout { grid-template-columns: minmax(0, 1fr) 300px; }
+body.public .layout { grid-template-columns: minmax(0, 1fr) 8px var(--panel-w, 300px); }
 
 @media (min-width: 1001px) {
   body { height: 100vh; overflow: hidden; }
 }
 @media (max-width: 1000px) {
   .layout, body.public .layout { grid-template-columns: 1fr; }
-  .stage { height: 62vh; min-height: 340px; }
+  .panel-resize { display: none; }
+  .view-switch { display: flex; }
+  /* Watch: the world fills the first screen, between the top bar and the dock. */
+  .stage { height: calc(100svh - 70px - 20px); min-height: 300px; }
+  body:not(.public) .stage { height: calc(100svh - 70px - var(--dock-h, 132px) - 20px); }
   .panel { overflow: visible; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
   .foot, .tabs, .now { grid-column: 1 / -1; }
+  .tabs { background: var(--surface); box-shadow: 0 6px 16px -6px var(--bg); }
+  /* Manage: a small live preview; the selected panel gets the screen. */
+  body[data-view="manage"] .stage, body[data-view="manage"]:not(.public) .stage { height: 26svh; min-height: 150px; max-height: 240px; box-shadow: none; }
+  body[data-view="manage"] .stage-tools, body[data-view="manage"] .help, body[data-view="manage"] .stage-frame, body[data-view="manage"] .hud-top .chip:not(:has(#time)) { display: none; }
+  body[data-view="manage"] .hud-top { right: 12px; }
+  body[data-view="manage"] .stage-expand { display: inline-flex; }
+  body[data-view="manage"] .vitals { padding: 6px 8px; gap: 4px; }
+  body[data-view="manage"] .panel { grid-template-columns: 1fr; }
   /* Pinned to the viewport so tasks and Stop never need a scroll. */
   body:not(.public) { padding-bottom: calc(var(--dock-h, 132px) + 8px); }
   .dock { position: fixed; left: 0; right: 0; bottom: 0; border-radius: var(--radius) var(--radius) 0 0; border-width: 1px 0 0; padding: 10px 20px calc(10px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 24px #0008; }
@@ -327,6 +355,34 @@ body.public .layout { grid-template-columns: minmax(0, 1fr) 300px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .dock { padding-inline: 12px; gap: 6px; }
   .dock-actions button { font-size: .72rem; padding: 7px 4px; }
+  .view-switch button { padding: 6px 10px; }
+}
+@media (max-width: 400px) {
+  /* Keep the switch on one line; the dot and its colour still show the connection. */
+  .pill { padding: 8px; }
+  #connectionText { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .brand .mark { width: 32px; height: 32px; }
+}
+
+/* Touch screens: fingers need bigger targets than cursors. */
+@media (pointer: coarse) {
+  .icon-btn { width: 44px; height: 44px; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .icon-btn.small { width: 40px; height: 40px; font-size: 1.15rem; }
+  .hud-top { right: 220px; }
+  .stage-frame { top: 64px; }
+  .stage-frame, .stage-stop, .stage-expand { min-height: 44px; }
+  .view-switch button { min-height: 38px; }
+  .tabs button { padding: 12px 0; font-size: .8rem; }
+  .dock-actions button { min-height: 44px; }
+  .chat-form input { min-height: 44px; font-size: 1rem; }
+  .chat-form button { width: 48px; min-height: 44px; }
+  .chat-quick button, .filters button, .job-btn { min-height: 38px; padding-inline: 12px; }
+  .primary-btn, .ghost-btn { min-height: 44px; }
+  .link-btn { padding: 8px 0; }
+  .legend { gap: 4px 14px; }
+  .legend label { min-height: 36px; }
+  .legend input { width: 18px; height: 18px; }
 }
 
 /* Shared small controls */

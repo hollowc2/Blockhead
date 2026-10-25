@@ -20,7 +20,13 @@
         <p class="subtitle">Blockhead autonomous agent · live</p>
       </div>
     </div>
-    <div id="connection" class="pill pill-wait" role="status"><i class="dot"></i><span id="connectionText">Connecting…</span></div>
+    <div class="topbar-end">
+      <div id="viewSwitch" class="view-switch" role="group" aria-label="Screen layout">
+        <button type="button" data-view="watch" aria-pressed="true" title="The world fills the screen">Watch</button>
+        <button type="button" data-view="manage" aria-pressed="false" title="A small preview; the panel gets the screen">Manage</button>
+      </div>
+      <div id="connection" class="pill pill-wait" role="status"><i class="dot"></i><span id="connectionText">Connecting…</span></div>
+    </div>
   </header>
 
   <main class="layout">
@@ -67,7 +73,13 @@
       <div id="toasts" class="toasts" aria-live="polite"></div>
 
       <div id="offline" class="offline" hidden><div><strong>Viewer offline</strong><span id="offlineReason">Waiting for CobbleBob to reconnect…</span></div></div>
+
+      <button id="stageExpand" class="stage-expand" type="button" aria-label="Watch the world full size" title="Watch the world">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Watch
+      </button>
     </section>
+
+    <div id="panelResize" class="panel-resize" role="separator" aria-orientation="vertical" aria-controls="panel" aria-label="Resize side panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
     <aside class="panel" id="panel" data-active="live">
       <div id="staleBanner" class="stale-banner" role="alert" hidden><strong id="staleTitle">Showing last known state</strong><span id="staleDetail"></span></div>
