@@ -277,26 +277,57 @@
     const p = self.position;
     $("position").textContent = p ? `${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}` : "—";
 
-    setText("action", s.action?.label || s.background?.label, "Idle");
+    const activity = s.action?.label || s.background?.label;
+    setText("action", activity, "Idle");
     setText("goal", s.goal?.description, "No active goal"); badge("goalStatus", s.goal?.status);
     setText("goalStep", s.goal?.currentStep); show("goalStep", Boolean(s.goal?.currentStep));
     setText("task", s.task?.objective, "No active task"); badge("taskStatus", s.task?.status);
     const phase = s.task?.phase ? `Phase: ${s.task.phase}${s.task.attempts > 1 ? ` · attempt ${s.task.attempts}` : ""}` : null;
     setText("taskPhase", phase); show("taskPhase", Boolean(phase));
 
+    // Anything that needs the owner's eye leads the card, worst first.
+    const attention = [];
+    const stuck = ["failed", "blocked", "abandoned"];
     const build = s.buildProject;
     const world = s.worldProject;
+    const buildBlocker = build ? build.blocker || build.lastBlockingReason : world?.blocker;
+    if (buildBlocker) attention.push(["high", `Build stuck: ${buildBlocker}`]);
+    if (stuck.includes(s.goal?.status)) attention.push(["high", `Goal ${s.goal.status.replace(/_/g, " ")}${s.goal.description ? `: ${s.goal.description}` : ""}`]);
+    if (stuck.includes(s.task?.status)) attention.push(["high", `Task ${s.task.status.replace(/_/g, " ")}${s.task.objective ? `: ${s.task.objective}` : ""}`]);
+    if (typeof self.health === "number" && self.health <= 6) attention.push(["high", `Low health (${Math.round(self.health)} / 20)`]);
+    if (typeof self.hunger === "number" && self.hunger <= 6) attention.push(["mid", `Hungry (${Math.round(self.hunger)} / 20)`]);
+
+    const danger = s.danger;
+    // hostileCount covers every loaded mob, so lead with the nearest one.
+    const near = danger?.nearestHostile;
+    const level = !danger ? "none" : !near || near.distance >= 24 ? "low" : near.distance >= 12 ? "mid" : "high";
+    const threat = near ? `${near.type.replace(/_/g, " ")} ${Math.round(near.distance)} m away` : null;
+    if (level === "high") attention.push(["high", `Threat: ${threat}`]);
+    if (s.goal?.status === "paused" && !attention.length) attention.push(["mid", "Goal paused"]);
+    attention.sort((a, b) => (a[0] === "high" ? 0 : 1) - (b[0] === "high" ? 0 : 1));
+    $("attention").replaceChildren(...attention.map(([severity, message]) => el("li", severity, message)));
+    show("attention", attention.length > 0);
+
+    const working = Boolean(activity) || ["active", "running", "in_progress"].includes(s.task?.status);
+    const nowState = attention.some(([severity]) => severity === "high") ? "problem" : attention.length ? "warn" : working ? "active" : "idle";
+    $("nowCard").dataset.state = nowState;
+    $("nowState").textContent = { problem: "Needs attention", warn: "Heads up", active: "Working", idle: "Idle" }[nowState];
+    $("nowState").className = `now-state ${nowState}`;
+
     show("buildCard", Boolean(build || world));
+    $("buildCard").classList.toggle("stuck", Boolean(buildBlocker));
     if (build) {
       const total = build.totalOperations || 0, done = build.verifiedOperations || 0;
+      const pct = total ? Math.round((done / total) * 100) : 0;
       setText("buildName", (build.userGoal || build.structureType || "").replace(/_/g, " "));
-      $("buildBar").style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
-      const blocked = build.blocker || build.lastBlockingReason;
-      setText("buildDetail", `${build.phase?.label || build.status} · ${done}/${total} blocks${blocked ? ` · ${blocked}` : ""}`);
+      $("buildBar").style.width = `${pct}%`;
+      setText("buildPct", total ? `${pct}%` : "");
+      setText("buildDetail", `${build.phase?.label || build.status} · ${done}/${total} blocks`);
     } else if (world) {
       setText("buildName", String(world.kind).replace(/_/g, " "));
       $("buildBar").style.width = world.status === "completed" ? "100%" : "0%";
-      setText("buildDetail", `${world.phase?.label || world.status}${world.blocker ? ` · ${world.blocker}` : ""}`);
+      setText("buildPct", world.status === "completed" ? "Done" : "");
+      setText("buildDetail", text(world.phase?.label || world.status));
     }
 
     const llm = s.llmActivity || {};
@@ -307,17 +338,13 @@
     const meta = [llm.model, llm.lastLatencyMs ? `${(llm.lastLatencyMs / 1000).toFixed(1)}s` : null, llm.lastFailure ? `last failure: ${llm.lastFailure.kind}` : null].filter(Boolean);
     $("llmMeta").textContent = meta.join(" · ");
 
-    const danger = s.danger;
     const dangerEl = $("danger");
-    if (!danger) { dangerEl.textContent = "No threat data"; dangerEl.className = "strong"; $("dangerDetail").textContent = ""; }
-    else {
-      // hostileCount covers every loaded mob, so lead with the nearest one.
-      const near = danger.nearestHostile;
-      const level = !near || near.distance >= 24 ? "low" : near.distance >= 12 ? "mid" : "high";
-      dangerEl.textContent = near ? `${near.type.replace(/_/g, " ")} ${Math.round(near.distance)} m away` : "All clear";
-      dangerEl.className = `strong danger-${level}`;
-      $("dangerDetail").textContent = danger.hostileCount ? `${danger.hostileCount} hostile${danger.hostileCount === 1 ? "" : "s"} tracked · danger ${Math.round(danger.score * 100)}%` : "";
-    }
+    dangerEl.textContent = level === "none" ? "No threat data" : threat || "All clear";
+    dangerEl.className = `danger-chip danger-${level}`;
+    $("surroundingsCard").dataset.level = level;
+    const dangerDetail = danger?.hostileCount ? `${danger.hostileCount} hostile${danger.hostileCount === 1 ? "" : "s"} tracked · danger ${Math.round(danger.score * 100)}%` : "";
+    $("dangerDetail").textContent = dangerDetail;
+    show("dangerDetail", Boolean(dangerDetail) && level !== "low");
     setText("uptime", duration(s.process?.uptimeSeconds));
   }
 

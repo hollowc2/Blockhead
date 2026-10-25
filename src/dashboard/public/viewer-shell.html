@@ -85,32 +85,29 @@
         <button id="visitStory" class="link-btn" type="button">See everything that happened</button>
       </article>
 
-      <article class="card now" data-tab="live" data-private>
-        <h2>Now</h2>
+      <article id="nowCard" class="card now" data-tab="live" data-private>
+        <h2>Now <span id="nowState" class="now-state">Idle</span></h2>
         <p id="action" class="action">—</p>
-        <dl>
+        <ul id="attention" class="attention" aria-live="polite" hidden></ul>
+        <div id="buildCard" class="build" hidden>
+          <div class="build-head"><p id="buildName" class="strong">—</p><b id="buildPct" class="build-pct"></b></div>
+          <div class="progress"><i id="buildBar"></i></div>
+          <p id="buildDetail" class="sub">—</p>
+        </div>
+        <dl class="now-plan">
           <div><dt>Goal <em id="goalStatus" class="badge" hidden></em></dt><dd id="goal">—</dd><dd id="goalStep" class="sub" hidden></dd></div>
           <div><dt>Task <em id="taskStatus" class="badge" hidden></em></dt><dd id="task">—</dd><dd id="taskPhase" class="sub" hidden></dd></div>
         </dl>
+        <details class="why">
+          <summary><span>Why he's doing this</span><span id="llm" class="mind-state">—</span></summary>
+          <p id="rationale" class="quote">No decisions yet.</p>
+          <p id="llmMeta" class="sub mono"></p>
+        </details>
       </article>
 
-      <article id="buildCard" class="card" data-tab="live" data-private hidden>
-        <h2>Construction</h2>
-        <p id="buildName" class="strong">—</p>
-        <div class="progress"><i id="buildBar"></i></div>
-        <p id="buildDetail" class="sub">—</p>
-      </article>
-
-      <article class="card mind" data-tab="live" data-private>
-        <h2>Mind <span id="llm" class="mind-state">—</span></h2>
-        <p id="rationale" class="quote">No decisions yet.</p>
-        <p id="llmMeta" class="sub mono"></p>
-      </article>
-
-      <article class="card" data-tab="live" data-private>
-        <h2>Surroundings</h2>
-        <p id="danger" class="strong">—</p>
-        <p id="dangerDetail" class="sub"></p>
+      <article id="surroundingsCard" class="card quiet surroundings" data-tab="live" data-private>
+        <h2>Surroundings <span id="danger" class="danger-chip">—</span></h2>
+        <p id="dangerDetail" class="sub" hidden></p>
       </article>
 
       <article id="previewCard" class="card preview" data-tab="live" data-private data-on-demand hidden>
