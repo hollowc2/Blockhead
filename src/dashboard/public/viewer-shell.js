@@ -34,6 +34,7 @@
   const itemTextures = new Map();
   const slotTextures = { hand: "sword", "off-hand": "shield", head: "helmet", torso: "chestplate", legs: "leggings", feet: "boots" };
   let lastGearState = {};
+  let lastGearDetail = null;
   function itemIcon(name, slot, previous) {
     const key = name?.replace(/^minecraft:/, "");
     // These items use entity models rather than a flat inventory texture.
@@ -66,6 +67,7 @@
       if (/^(?:items|blocks)\/[a-z0-9_]+$/.test(texture)) itemTextures.set(item.name, `${texture}.png`);
     }
     renderGear(lastGearState);
+    if (lastGearDetail) renderGearDetail(lastGearDetail);
   }).catch(() => {}); // Labels and fallback icons remain useful if artwork fails.
 
   const equipmentRows = new Map();
@@ -633,6 +635,7 @@
     return node;
   }
   function renderGearDetail(gear) {
+    lastGearDetail = gear;
     for (const [slot, row] of equipmentRows) {
       let cond = row.querySelector(".cond");
       const item = gear?.equipment?.[slot];
@@ -660,7 +663,7 @@
       return row;
     })));
     $("suppliesSeen").textContent = gear.storageSeenAt ? `Carried versus stored in the home chests (chests last checked ${since(gear.storageSeenAt)}).` : "Carried versus stored. The home chests haven't been opened yet, so stored counts are unknown.";
-    keyed($("toolCondition"), JSON.stringify(gear.tools), () => list($("toolCondition"), gear.tools, "No spare tools or armor carried.", (item) => {
+    keyed($("toolCondition"), JSON.stringify([itemTextures.size, gear.tools]), () => list($("toolCondition"), gear.tools, "No spare tools or armor carried.", (item) => {
       const row = el("li");
       const label = el("span", "inventory-item");
       label.append(itemIcon(item.name), el("span", "item-label", `${itemName(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}`));
