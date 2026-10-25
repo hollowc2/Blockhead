@@ -59,6 +59,14 @@ rsync -a --delete \
   "$source_repo/" "$runtime_dir/"
 
 cd -- "$runtime_dir"
+# The rsync leaves the runtime's own .git alone; point its branch at the
+# commit just synced so `git log` there names what is actually deployed.
+if [ -d .git ]; then
+  git fetch -q "$source_repo" HEAD
+  git reset -q --soft FETCH_HEAD
+  git reset -q
+  printf 'Runtime now at %s\n' "$(git log -1 --format='%h %s')"
+fi
 ci_if_changed
 
 printf 'Restarting user service: %s\n' "$service"
