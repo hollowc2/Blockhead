@@ -344,6 +344,11 @@ export class BuildProjectManager {
     return this.projects.loadUnfinished().some(matches);
   }
 
+  /** Every active, paused, blocked or verifying project (the viewer's work trail). */
+  unfinishedProjects(): BuildProject[] {
+    return this.projects.loadUnfinished();
+  }
+
   getProject(projectId: string): BuildProject | null {
     return this.projects.get(projectId);
   }

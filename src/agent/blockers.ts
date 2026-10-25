@@ -107,6 +107,23 @@ export function describeBlocker(explanation: BlockerExplanation, subject?: strin
   return `${head}; missing ${gaps}${why}. I can ${verb} ${missing.length === 1 ? "it" : "them"}.`;
 }
 
+/** The short line for a work trail: "Missing 18 sand", "Can't make 18 glass". */
+export function blockerHeadline(explanation: BlockerExplanation): string {
+  const { need, missing } = explanation;
+  if (missing.length === 0) return need.count > 0 ? `Short of ${amount(need.count, need.item)}` : `Can't make ${label(need.item)}`;
+  return `Missing ${joinList(missing.map((gap) => (gap.via === "fuel" ? `${gap.count} coal or charcoal` : amount(gap.count, gap.item))))}`;
+}
+
+/** What "go ahead" would do, one line per gap: "Gather 18 sand", "Get 4 coal or charcoal for fuel". */
+export function blockerNextSteps(explanation: BlockerExplanation): string[] {
+  if (explanation.missing.length === 0) {
+    return explanation.canFix ? [`Get ${explanation.need.count > 0 ? amount(explanation.need.count, explanation.need.item) : `the ${label(explanation.need.item)}`}`] : [];
+  }
+  if (!explanation.canFix) return [`Stock ${joinList(explanation.missing.map((gap) => amount(gap.count, gap.item)))} yourself, then try again`];
+  return explanation.missing.map((gap) => gap.via === "fuel" ? `Get ${gap.count} coal or charcoal for fuel`
+    : `${gap.via === "hunt" ? "Hunt for" : "Gather"} ${amount(gap.count, gap.item)}`);
+}
+
 /** Read a blocker explanation out of a skill result's `data`, if it carries one. */
 export function blockerOf(data: unknown): BlockerExplanation | null {
   if (typeof data !== "object" || data === null || !("blocker" in data)) return null;
@@ -136,6 +153,8 @@ export interface OpenBlocker {
   /** The summary plus the offer, as said in chat. */
   message: string;
   openedAt: number;
+  /** The task that stopped (absent for offers re-adopted after a restart). */
+  taskId?: string;
 }
 
 export type BlockerChoice = "proceed" | "change_plan";
@@ -263,6 +282,12 @@ export class BlockerDesk {
     return this.open.get(`build:${projectId}`) ?? null;
   }
 
+  /** One open offer by id, or null once it was answered or the work moved on. */
+  byId(id: string): OpenBlocker | null {
+    for (const blocker of this.open.values()) if (blocker.id === id) return blocker;
+    return null;
+  }
+
   /** True when a bare "yes"/"go ahead" right now would answer an offer. */
   awaitingAnswer(): boolean {
     const latest = this.latest();
@@ -295,7 +320,7 @@ export class BlockerDesk {
     }
     const summary = describeBlocker(explanation, subject.kind === "build" ? subject.name : undefined);
     const offer = explanation.canFix ? 'Say "go ahead", or "change the plan".' : 'Say "change the plan", or stock it and say "try again".';
-    const blocker: OpenBlocker = { id: randomUUID(), subject, explanation, summary, message: `${summary} ${offer}`, openedAt: this.now() };
+    const blocker: OpenBlocker = { id: randomUUID(), subject, explanation, summary, message: `${summary} ${offer}`, openedAt: this.now(), taskId: task.id };
     const key = keyOf(subject);
     const previous = this.open.get(key);
     this.open.set(key, blocker);
@@ -317,10 +342,11 @@ export class BlockerDesk {
    *  - change_plan: a build is set aside (paused, resumable with "continue
    *    the house") and the owner goal waiting on it is cancelled so the
    *    queue moves on; an item task is simply dropped.
+   * `id` answers one specific offer (the viewer's work trail) instead.
    */
-  resolve(choice: BlockerChoice): string {
-    const blocker = this.latest();
-    if (blocker === null) return "Nothing is blocked right now.";
+  resolve(choice: BlockerChoice, id?: string): string {
+    const blocker = id === undefined ? this.latest() : this.byId(id);
+    if (blocker === null) return id === undefined ? "Nothing is blocked right now." : "That blocker already cleared.";
     this.close(keyOf(blocker.subject));
     const subject = blocker.subject;
     if (choice === "proceed") {

@@ -6,7 +6,7 @@ import type { StoryRepository, StoredStoryEntry } from "../memory/story.js";
  * gathered and deaths, plus the problems still open right now.
  */
 
-export interface UnresolvedProblem { kind: "task" | "goal" | "build" | "blocker" | "system"; title: string; detail: string | null; since: string | null }
+export interface UnresolvedProblem { kind: "task" | "goal" | "build" | "blocker" | "system"; title: string; detail: string | null; since: string | null; ref?: string }
 
 export interface HistorySummary {
   since: string | null;

@@ -7,7 +7,7 @@ import { MIGRATIONS } from "../memory/migrations.js";
 import { BuildProjectsRepository } from "../memory/build-projects.js";
 import { GoalsRepository } from "../memory/goals.js";
 import { TasksRepository } from "../memory/tasks.js";
-import { BlockerDesk, blockerOf, describeBlocker, explainPlan, parseBlockerAnswer, type BlockerExplanation } from "./blockers.js";
+import { BlockerDesk, blockerHeadline, blockerNextSteps, blockerOf, describeBlocker, explainPlan, parseBlockerAnswer, type BlockerExplanation } from "./blockers.js";
 import { BuildProjectManager } from "./build-projects.js";
 import { GoalManager } from "./goals.js";
 import { Scheduler } from "./scheduler.js";
@@ -251,6 +251,26 @@ test("an owner's shed build short of logs reruns the same task on go ahead", () 
 
     h.bus.emit("task.blocker", { task, blocker: { need: { item: "planks", count: 24 }, missing: [{ item: "log", count: 6, via: "gather" }], canFix: true } });
     assert.equal(h.desk.resolve("change_plan"), "OK, dropping that. What should I do instead?");
+  } finally {
+    h.db.close();
+  }
+});
+
+test("the viewer answers one exact offer by id, not just the newest", () => {
+  const h = harness();
+  try {
+    const craft = userTask("craft_item", "glass", 20);
+    h.bus.emit("task.blocker", { task: craft, blocker: glass });
+    h.advance(1000);
+    h.bus.emit("task.blocker", { task: userTask("craft_item", "torch", 8), blocker: { need: { item: "torch", count: 8 }, missing: [{ item: "coal", count: 2, via: "fuel" }], canFix: true } });
+    const older = h.desk.openBlockers().find((offer) => offer.taskId === craft.id)!;
+    assert.notEqual(h.desk.latest()?.id, older.id);
+    assert.equal(blockerHeadline(older.explanation), "Missing 18 sand");
+    assert.deepEqual(blockerNextSteps(older.explanation), ["Gather 18 sand"]);
+    assert.equal(h.desk.resolve("change_plan", older.id), "OK, dropping the 20 glass. What should I do instead?");
+    assert.equal(h.desk.byId(older.id), null);
+    assert.equal(h.desk.openBlockers().length, 1, "the other offer stays open");
+    assert.equal(h.desk.resolve("proceed", older.id), "That blocker already cleared.");
   } finally {
     h.db.close();
   }

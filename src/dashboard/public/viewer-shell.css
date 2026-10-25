@@ -386,6 +386,32 @@ h3 { margin: 0; font-size: .82rem; font-weight: 600; color: var(--text); }
 .steps li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .76rem; color: #cdd7de; }
 .steps li span { overflow-wrap: anywhere; min-width: 0; }
 .command .msg { max-width: 100%; font-size: .78rem; padding: 6px 9px; }
+/* Work trails: request -> goal -> build -> step -> blocker -> next steps */
+.trails { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.trail { padding: 8px 10px 8px 4px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid var(--line); min-width: 0; }
+.trail-running { border-left-color: var(--cyan); }
+.trail-paused, .trail-queued, .trail-waiting, .trail-pausing { border-left-color: var(--amber); }
+.trail-blocked, .trail-failed { border-left-color: var(--red); }
+.trail-done { border-left-color: var(--green); }
+.tchildren { list-style: none; margin: 0; padding: 0 0 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.tchildren:not(.root) { margin-top: 6px; border-left: 1px dashed var(--line); padding-left: 12px; }
+.tchildren.root { padding-left: 6px; }
+.tnode { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; border-radius: 8px; transition: background .3s, box-shadow .3s; }
+.tchildren:not(.root) > .tnode::before { content: ""; position: absolute; left: -12px; top: .7em; width: 9px; border-top: 1px dashed var(--line); }
+.tnode-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.tkind { flex: none; font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tnode-blocker > .job-head .tkind, .tnode-blocker > .job-head .job-title { color: var(--red); }
+.tnode-blocker { padding: 6px 8px; margin-left: -8px; background: #ef5a5a12; }
+.tnode-step > .job-head .job-title { font-weight: 500; color: #cdd7de; }
+.tnode-step > .job-head .tkind { color: var(--green); }
+.tnode .mini { max-width: 220px; }
+.tnode.focus { box-shadow: 0 0 0 2px var(--cyan); background: #2ee6f014; }
+.badge.next { background: #3ccf7e1f; color: var(--green); }
+.badge.needs_you, .badge.verifying, .badge.pausing, .badge.cancelling { background: #f2b84b1f; color: var(--amber); }
+.trail-history summary { cursor: pointer; font-size: .78rem; color: var(--muted); margin: 10px 0 6px; }
+.problem-link { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; letter-spacing: 0; text-transform: none; }
+.problem-link .problem-go { font-size: .68rem; font-weight: 600; color: var(--muted); }
+.problem-link:hover .problem-go { color: var(--cyan); text-decoration: underline; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .filters button { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: .72rem; cursor: pointer; }
 .filters button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); background: #2ee6f014; }

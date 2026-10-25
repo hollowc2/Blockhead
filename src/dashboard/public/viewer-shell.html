@@ -179,31 +179,21 @@
       </article>
 
       <article class="card" data-tab="jobs" data-private>
-        <h2>Your commands</h2>
-        <p class="sub">Tasks you sent from this page, followed until they finish.</p>
-        <ol id="jobCommands" class="commands-list"><li class="sub">No commands sent from the viewer yet.</li></ol>
-      </article>
-
-      <article class="card" data-tab="jobs" data-private>
-        <h2>Running now <span id="jobActiveCount" class="count"></span></h2>
-        <ul id="jobActive" class="jobs"><li class="sub">Nothing running.</li></ul>
-        <p id="jobStatus" class="sub" role="status" aria-live="polite"></p>
-      </article>
-
-      <article class="card" data-tab="jobs" data-private>
-        <h2>Goals <span id="jobGoalCount" class="count"></span></h2>
-        <ul id="jobGoals" class="jobs"><li class="sub">No goals.</li></ul>
-      </article>
-
-      <article class="card" data-tab="jobs" data-private>
-        <h2>Queue <span id="jobQueueCount" class="count"></span></h2>
-        <div class="filters" role="group" aria-label="Filter queue">
+        <h2>Work <span id="jobTrailCount" class="count"></span></h2>
+        <p class="sub">Each request with its goal, build, current step and whatever is blocking it.</p>
+        <div class="filters" role="group" aria-label="Filter work">
           <button type="button" data-filter="all" aria-pressed="true">All</button>
-          <button type="button" data-filter="queued" aria-pressed="false">Queued</button>
-          <button type="button" data-filter="paused" aria-pressed="false">Paused</button>
           <button type="button" data-filter="blocked" aria-pressed="false">Blocked</button>
+          <button type="button" data-filter="running" aria-pressed="false">Running</button>
+          <button type="button" data-filter="paused" aria-pressed="false">Paused</button>
+          <button type="button" data-filter="queued" aria-pressed="false">Queued</button>
         </div>
-        <ul id="jobQueue" class="jobs"><li class="sub">The queue is empty.</li></ul>
+        <p id="jobStatus" class="sub" role="status" aria-live="polite"></p>
+        <ol id="jobTrails" class="trails"><li class="sub">Nothing to do right now.</li></ol>
+        <details id="jobFinishedWrap" class="trail-history" hidden>
+          <summary>Finished requests <span id="jobFinishedCount" class="count"></span></summary>
+          <ol id="jobFinished" class="trails"></ol>
+        </details>
       </article>
 
       <article class="card map-card" data-tab="map" data-private>

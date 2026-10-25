@@ -12,7 +12,9 @@ import { GoalManager } from "../agent/goals.js";
 import { TaskPriority, TaskStatus } from "../agent/task.js";
 import { compileBuildingDesign } from "../building/compiler.js";
 import { simpleStructureDesign } from "../tools/base.js";
-import { CommandTracker, commandStatus, createJobControl, projectJobs } from "./jobs.js";
+import { CommandTracker, commandStatus, createJobControl, projectJobs, type TrailNode } from "./jobs.js";
+import type { OpenBlocker } from "../agent/blockers.js";
+import type { BuildProject } from "../memory/build-projects.js";
 import { itemCondition, projectGearDetail, storedContents } from "./gear.js";
 import { readHistory } from "./history.js";
 import { StoryFeed } from "./story.js";
@@ -99,6 +101,85 @@ test("a viewer command is followed to the work it started and how it ended", () 
   const reloaded = new CommandTracker({ bus: new EventBus(), db, scheduler, task: (id) => tasks.get(id), goals: () => goals, goal: (id) => goalsRepo.get(id), now: () => clock });
   assert.equal(reloaded.view()[0]?.status, "done", "tracked commands survive a restart");
   tracker.dispose();
+});
+
+function fakeProject(id: string, status: BuildProject["status"]): BuildProject {
+  return {
+    id, userGoal: "finish the house", structureType: "simple_house", source: "goal", status,
+    origin: { x: 10, y: 64, z: -4, dimension: "overworld" }, blueprint: { operations: [] }, shortages: [{ material: "glass", required: 18, available: 0 }],
+    verificationState: { verifiedOperations: 40, totalOperations: 120 }, createdAt: "2026-10-24T10:00:00.000Z", updatedAt: "2026-10-24T10:05:00.000Z",
+    lastError: "Need 18 glass for the house; missing 18 sand. I can gather it.",
+  } as unknown as BuildProject;
+}
+
+const sandOffer = (taskId?: string): OpenBlocker => ({
+  id: "offer-1", subject: { kind: "build", projectId: "p1", name: "the house" },
+  explanation: { need: { item: "glass", count: 18 }, missing: [{ item: "sand", count: 18, via: "gather" }], canFix: true },
+  summary: "Need 18 glass for the house; missing 18 sand. I can gather it.", message: "", openedAt: Date.parse("2026-10-24T10:06:00.000Z"),
+  ...(taskId === undefined ? {} : { taskId }),
+});
+
+function path(node: TrailNode): string[] {
+  return [node.title, ...(node.children[0] === undefined ? [] : path(node.children[0]))];
+}
+
+test("a request, its goal, build, blocked step, blocker and next step form one trail", () => {
+  const { db, bus, tasks, goalsRepo, scheduler, goals } = harness();
+  const tracker = new CommandTracker({ bus, db, scheduler, task: (id) => tasks.get(id), goals: () => goals, goal: (id) => goalsRepo.get(id) });
+  tracker.begin("finish the house");
+  const goal = goals.start({ description: "Finish house", source: "owner", successCriteria: [{ kind: "building_verified", target: "project", projectId: "p1" }] });
+  const acquire = scheduler.enqueue({ type: "build_project_acquire", priority: TaskPriority.FOREGROUND, source: "goal", objective: "Acquire 18 glass for simple_house.", parameters: { item: "glass" }, projectId: "p1" });
+  scheduler.claim();
+  scheduler.blockActive("Need 18 glass; missing 18 sand. I can gather it.");
+  scheduler.enqueue({ type: "collect_resource", priority: TaskPriority.BACKGROUND, source: "background", objective: "Gather oak logs", parameters: {} });
+  const jobs = projectJobs({ scheduler, goals, projects: () => [fakeProject("p1", "blocked")], blockers: () => [sandOffer(acquire.id)] }, tracker.view());
+
+  const [first, second] = jobs.trails;
+  assert.equal(jobs.trails.length, 2, "one trail for the request, one for Bob's own work");
+  assert.equal(first?.ref, `command:${tracker.view()[0]!.id}`);
+  assert.equal(first?.status, "blocked");
+  assert.deepEqual(path(first!.root), ["“finish the house”", "Finish house", "Build house", "Acquire 18 glass for simple_house.", "Missing 18 sand", "Gather 18 sand"]);
+  const build = first!.root.children[0]!.children[0]!;
+  assert.deepEqual(build.progress, { done: 40, total: 120 });
+  assert.deepEqual(build.actions, [], "the blocker below carries the build's next steps");
+  const blocker = build.children[0]!.children[0]!;
+  assert.equal(blocker.ref, "blocker:offer-1");
+  assert.deepEqual(blocker.actions.map((action) => action.action), ["proceed", "change_plan"]);
+  assert.equal(second?.owner, false);
+  assert.equal(goal.status, "active");
+  tracker.dispose();
+});
+
+test("work started outside the viewer still trails, and a build stuck without an offer explains itself", () => {
+  const { scheduler, goals } = harness();
+  const jobs = projectJobs({ scheduler, goals, projects: () => [fakeProject("p2", "blocked")], blockers: () => [] });
+  const trail = jobs.trails[0]!;
+  assert.equal(trail.ref, "build:p2");
+  assert.equal(trail.status, "blocked");
+  const stuck = trail.root.children[0]!;
+  assert.equal(stuck.kind, "blocker");
+  assert.equal(stuck.title, "Need 18 glass for the house");
+  assert.deepEqual(stuck.actions.map((action) => action.action), ["resume", "set_aside"]);
+  const orphan = projectJobs({ scheduler, goals, blockers: () => [{ ...sandOffer(), id: "offer-2", subject: { kind: "task", item: "glass", quantity: 18 } }] });
+  assert.equal(orphan.trails[0]?.ref, "blocker:offer-2", "an offer with nothing live left is its own trail");
+});
+
+test("job control answers one exact blocker offer and resumes or sets aside a build", async () => {
+  const { scheduler, goals } = harness();
+  const answered: string[] = [];
+  const control = createJobControl({
+    scheduler, goals,
+    blockers: { byId: (id) => id === "offer-1" ? sandOffer() : null, resolve: (choice, id) => { answered.push(`${choice}:${id}`); return "On it."; } },
+    builds: { resumeProject: (id) => id === "p1" ? scheduler.enqueue(gather) : null, setAside: (id) => id === "p1" },
+  });
+  assert.deepEqual(await control({ kind: "blocker", id: "offer-1", action: "proceed" }), { ok: true, answer: "On it." });
+  assert.deepEqual(answered, ["proceed:offer-1"]);
+  assert.equal((await control({ kind: "blocker", id: "gone", action: "change_plan" })).ok, false);
+  assert.equal((await control({ kind: "blocker", id: "offer-1", action: "pause" })).ok, false);
+  assert.equal((await control({ kind: "build", id: "p1", action: "resume" })).ok, true);
+  assert.equal(scheduler.active?.objective, gather.objective);
+  assert.equal((await control({ kind: "build", id: "p1", action: "set_aside" })).ok, true);
+  assert.equal((await control({ kind: "build", id: "nope", action: "resume" })).ok, false);
 });
 
 test("command status folds its steps, most urgent first", () => {

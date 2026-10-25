@@ -291,9 +291,9 @@
     const build = s.buildProject;
     const world = s.worldProject;
     const buildBlocker = build ? build.blocker || build.lastBlockingReason : world?.blocker;
-    if (buildBlocker) attention.push(["high", `Build stuck: ${buildBlocker}`]);
-    if (stuck.includes(s.goal?.status)) attention.push(["high", `Goal ${s.goal.status.replace(/_/g, " ")}${s.goal.description ? `: ${s.goal.description}` : ""}`]);
-    if (stuck.includes(s.task?.status)) attention.push(["high", `Task ${s.task.status.replace(/_/g, " ")}${s.task.objective ? `: ${s.task.objective}` : ""}`]);
+    if (buildBlocker) attention.push(["high", `Build stuck: ${buildBlocker}`, build ? `build:${build.id}` : null]);
+    if (stuck.includes(s.goal?.status)) attention.push(["high", `Goal ${s.goal.status.replace(/_/g, " ")}${s.goal.description ? `: ${s.goal.description}` : ""}`, `goal:${s.goal.id}`]);
+    if (stuck.includes(s.task?.status)) attention.push(["high", `Task ${s.task.status.replace(/_/g, " ")}${s.task.objective ? `: ${s.task.objective}` : ""}`, `task:${s.task.id}`]);
     if (typeof self.health === "number" && self.health <= 6) attention.push(["high", `Low health (${Math.round(self.health)} / 20)`]);
     if (typeof self.hunger === "number" && self.hunger <= 6) attention.push(["mid", `Hungry (${Math.round(self.hunger)} / 20)`]);
 
@@ -303,9 +303,14 @@
     const level = !danger ? "none" : !near || near.distance >= 24 ? "low" : near.distance >= 12 ? "mid" : "high";
     const threat = near ? `${near.type.replace(/_/g, " ")} ${Math.round(near.distance)} m away` : null;
     if (level === "high") attention.push(["high", `Threat: ${threat}`]);
-    if (s.goal?.status === "paused" && !attention.length) attention.push(["mid", "Goal paused"]);
+    if (s.goal?.status === "paused" && !attention.length) attention.push(["mid", "Goal paused", `goal:${s.goal.id}`]);
     attention.sort((a, b) => (a[0] === "high" ? 0 : 1) - (b[0] === "high" ? 0 : 1));
-    $("attention").replaceChildren(...attention.map(([severity, message]) => el("li", severity, message)));
+    keyed($("attention"), JSON.stringify(attention), () => $("attention").replaceChildren(...attention.map(([severity, message, ref]) => {
+      const row = el("li", severity);
+      if (!ref) { row.textContent = message; return row; }
+      row.append(problemLink(message, ref));
+      return row;
+    })));
     show("attention", attention.length > 0);
 
     const busy = Boolean(activity) && !/^(idle|standing by)$/i.test(activity);
@@ -538,22 +543,22 @@
     build();
   }
 
-  // ---- Jobs: live work with owner controls, and tracked commands ----
-  const SOURCE_LABEL = { user: "your task", goal: "goal step", owner: "your goal", background: "self-chosen", director: "self-chosen", maintenance: "upkeep", system: "system" };
-  const STATE_LABEL = { active: "running", queued: "queued", paused: "paused", blocked: "blocked" };
-  let queueFilter = "all", jobBusy = false;
+  // ---- Jobs: one work trail per request (command -> goal -> build -> step -> blocker -> next steps) ----
+  const KIND_LABEL = { command: "You asked", goal: "Goal", build: "Build", task: "Step", blocker: "Blocked", step: "Next" };
+  const CONFIRM = new Set(["cancel", "change_plan", "set_aside"]);
+  let trailFilter = "all", jobBusy = false, focusRef = null;
   document.querySelectorAll("[data-filter]").forEach((button) => button.addEventListener("click", () => {
-    queueFilter = button.dataset.filter;
+    trailFilter = button.dataset.filter;
     document.querySelectorAll("[data-filter]").forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
-    $("jobQueue").dataset.key = "";
+    $("jobTrails").dataset.key = "";
     renderJobs(lastState?.jobs);
   }));
-  async function jobAction(job, action) {
+  async function jobAction(target) {
     if (jobBusy) return;
     jobBusy = true;
     $("jobStatus").textContent = "Sending…";
     try {
-      const { ok, data } = await postJson("/api/job", { kind: job.kind, id: job.id, action });
+      const { ok, data } = await postJson("/api/job", { kind: target.kind, id: target.id, action: target.action });
       $("jobStatus").textContent = ok ? data.answer : data.error || "That didn't work.";
     } catch {
       $("jobStatus").textContent = "Couldn't reach CobbleBob.";
@@ -562,82 +567,128 @@
       void refresh();
     }
   }
-  function jobButton(job, label, action, kind = "") {
-    const button = el("button", `job-btn ${kind}`, label);
+  function actionButton(target) {
+    const button = el("button", `job-btn ${target.tone}`, target.label);
     button.type = "button";
     button.addEventListener("click", () => {
-      // Cancelling cannot be undone: the first press asks, the second acts.
-      if (action === "cancel" && button.dataset.armed !== "1") {
+      // Cancelling or dropping a plan cannot be undone: the first press asks, the second acts.
+      if (CONFIRM.has(target.action) && button.dataset.armed !== "1") {
         button.dataset.armed = "1";
-        button.textContent = "Confirm cancel";
-        setTimeout(() => { if (button.isConnected) { button.dataset.armed = ""; button.textContent = label; } }, 4000);
+        button.textContent = `Confirm: ${target.label.toLowerCase()}`;
+        setTimeout(() => { if (button.isConnected) { button.dataset.armed = ""; button.textContent = target.label; } }, 4000);
         return;
       }
-      void jobAction(job, action);
+      void jobAction(target);
     });
     return button;
   }
-  function jobRow(job) {
-    const row = el("li", `job job-${job.held ? "paused" : job.state}`);
+  const slug = (value) => String(value).replace(/[^a-z_]/gi, "_");
+  function trailNode(node) {
+    const row = el("li", `tnode tnode-${node.kind} st-${slug(node.status)}`);
+    row.dataset.ref = node.ref;
     const head = el("div", "job-head");
-    const status = job.stopping === "cancel" ? "cancelling" : job.stopping === "pause" ? "pausing" : job.held ? "paused by you" : STATE_LABEL[job.state];
-    head.append(el("span", "job-title", job.title), el("em", `badge ${job.held ? "paused" : job.state}`, status));
-    const meta = [job.kind === "goal" ? "goal" : words(job.type), SOURCE_LABEL[job.source] || job.source,
-      job.startedAt ? `started ${since(job.startedAt)}` : `added ${since(job.createdAt)}`];
-    const controllable = job.controls.pause || job.controls.resume || job.controls.cancel;
-    if (!controllable && job.priority >= 100) meta.push("safety reflex");
-    row.append(head, el("p", "sub", meta.filter(Boolean).join(" · ")));
-    if (job.detail) row.append(el("p", "job-detail", job.detail));
-    if (controllable) {
+    const title = el("span", "tnode-title");
+    title.append(el("span", "tkind", KIND_LABEL[node.kind] || node.kind), el("span", "job-title", node.title));
+    head.append(title, el("em", `badge ${slug(node.status)}`, words(node.status)));
+    row.append(head);
+    const meta = [...node.meta];
+    if (node.progress) {
+      const pct = node.progress.total ? Math.round((node.progress.done / node.progress.total) * 100) : 0;
+      const bar = el("div", "mini");
+      const fill = el("i");
+      fill.style.width = `${pct}%`;
+      bar.append(fill);
+      row.append(bar);
+      meta.push(`${node.progress.done}/${node.progress.total} blocks`);
+    }
+    if (meta.length) row.append(el("p", "sub", meta.join(" · ")));
+    if (node.detail) row.append(el("p", "job-detail", node.detail));
+    if (node.actions.length) {
       const actions = el("div", "job-actions");
-      if (job.controls.pause) actions.append(jobButton(job, "Pause", "pause"));
-      if (job.controls.resume) actions.append(jobButton(job, "Resume", "resume", "go"));
-      if (job.controls.cancel) actions.append(jobButton(job, "Cancel", "cancel", "danger"));
+      actions.append(...node.actions.map(actionButton));
       row.append(actions);
     }
+    if (node.children.length) {
+      const children = el("ul", "tchildren");
+      children.append(...node.children.map(trailNode));
+      row.append(children);
+    }
     return row;
+  }
+  function trailRow(trail) {
+    const row = el("li", `trail trail-${slug(trail.status)}${trail.owner ? " owner" : ""}`);
+    row.dataset.ref = trail.ref;
+    const top = el("ul", "tchildren root");
+    top.append(trailNode(trail.root));
+    row.append(top);
+    return row;
+  }
+  const matchesFilter = (trail) => trailFilter === "all" || trail.status === trailFilter;
+  function* walk(node) { yield node; for (const child of node.children) yield* walk(child); }
+  function findTrail(ref) {
+    for (const trail of lastState?.jobs?.trails || []) for (const node of walk(trail.root)) if (node.ref === ref) return { trail, node };
+    return null;
+  }
+  /** The ref to open for a problem on something: its own blocker when it has one. */
+  function problemRef(ref) {
+    const found = findTrail(ref);
+    if (!found) return ref;
+    for (const node of walk(found.node)) if (node.kind === "blocker") return node.ref;
+    return ref;
+  }
+  /** Open the Jobs tab on one exact node and its next steps. */
+  function openRef(ref) {
+    focusRef = ref;
+    selectTab("jobs");
+    const found = findTrail(ref);
+    // A filter that hides the target gives way to "All".
+    if (found && !found.trail.finished && !matchesFilter(found.trail)) document.querySelector('[data-filter="all"]').click();
+    $("jobTrails").dataset.key = "";
+    $("jobFinished").dataset.key = "";
+    renderJobs(lastState?.jobs);
+  }
+  function applyFocus() {
+    if (focusRef === null) return;
+    const ref = focusRef;
+    focusRef = null;
+    const target = [...document.querySelectorAll("#jobTrails [data-ref], #jobFinished [data-ref]")].find((node) => node.dataset.ref === ref);
+    if (!target) { $("jobStatus").textContent = "That has already cleared."; return; }
+    const details = target.closest("details");
+    if (details) details.open = true;
+    target.classList.add("focus");
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => target.classList.remove("focus"), 4000);
+  }
+  function renderJobs(jobs) {
+    if (!jobs) return;
+    const minute = Math.floor(Date.now() / 60000);
+    const trails = jobs.trails || [];
+    const live = trails.filter((trail) => !trail.finished);
+    const finished = trails.filter((trail) => trail.finished);
+    const shown = live.filter(matchesFilter);
+    keyed($("jobTrails"), JSON.stringify([shown, trailFilter, minute]), () => list($("jobTrails"), shown, trailFilter === "all" ? "Nothing to do right now." : `Nothing ${trailFilter}.`, trailRow));
+    $("jobTrailCount").textContent = live.length ? String(live.length) : "";
+    show("jobFinishedWrap", finished.length > 0);
+    $("jobFinishedCount").textContent = finished.length ? String(finished.length) : "";
+    keyed($("jobFinished"), JSON.stringify([finished, minute]), () => list($("jobFinished"), finished, "", trailRow));
+    renderLatestCommand((jobs.commands || [])[0]);
+    const trouble = live.some((trail) => trail.status === "blocked" || trail.status === "failed");
+    if (panel.dataset.active !== "jobs") $("jobsAlert").hidden = !trouble;
+    applyFocus();
+  }
+  /** A problem shown anywhere that opens its exact job (and next steps) in Jobs. */
+  function problemLink(label, ref, tag = "span") {
+    const button = el("button", "problem-link");
+    button.type = "button";
+    button.title = "Open in Jobs";
+    button.append(el(tag, "", label), el("span", "problem-go", "Open in Jobs ›"));
+    button.addEventListener("click", () => openRef(problemRef(ref)));
+    return button;
   }
   function list(root, items, empty, build) {
     root.replaceChildren(...(items.length ? items.map(build) : [el("li", "sub", empty)]));
   }
   const COMMAND_LABEL = { waiting: "waiting", answered: "answered", queued: "queued", running: "running", paused: "paused", blocked: "blocked", done: "done", failed: "failed", cancelled: "cancelled" };
-  function commandRow(command) {
-    const row = el("li", `command command-${command.status}`);
-    const head = el("div", "job-head");
-    head.append(el("span", "job-title", `“${command.text}”`), el("em", `badge ${command.status}`, COMMAND_LABEL[command.status] || command.status));
-    const timing = [`sent ${since(command.at)}`];
-    if (command.finishedAt) timing.push(`took ${span(Date.parse(command.finishedAt) - Date.parse(command.at))}`);
-    else if (["running", "queued", "paused", "blocked"].includes(command.status)) timing.push(`${span(Date.now() - Date.parse(command.at))} so far`);
-    row.append(head, el("p", "sub", timing.join(" · ")));
-    if (command.steps.length) {
-      const steps = el("ul", "steps");
-      for (const step of command.steps) {
-        const item = el("li");
-        item.append(el("span", "", step.title), el("em", `badge ${step.status}`, words(step.status)));
-        steps.append(item);
-      }
-      row.append(steps);
-    } else if (command.status === "waiting") row.append(el("p", "job-detail", "Waiting for CobbleBob to pick it up…"));
-    for (const reply of command.replies.slice(-2)) row.append(el("p", "msg msg-bob", reply));
-    return row;
-  }
-  function renderJobs(jobs) {
-    if (!jobs) return;
-    const minute = Math.floor(Date.now() / 60000);
-    const active = jobs.active ? [jobs.active] : [];
-    keyed($("jobActive"), JSON.stringify([active, minute]), () => list($("jobActive"), active, "Nothing running.", jobRow));
-    $("jobActiveCount").textContent = active.length ? "1" : "";
-    keyed($("jobGoals"), JSON.stringify([jobs.goals, minute]), () => list($("jobGoals"), jobs.goals, "No goals.", jobRow));
-    $("jobGoalCount").textContent = jobs.goals.length ? String(jobs.goals.length) : "";
-    const queue = jobs.tasks.filter((job) => queueFilter === "all" || (queueFilter === "paused" ? job.held || job.state === "paused" : job.state === queueFilter && !job.held));
-    keyed($("jobQueue"), JSON.stringify([queue, queueFilter, minute]), () => list($("jobQueue"), queue, queueFilter === "all" ? "The queue is empty." : `Nothing ${queueFilter}.`, jobRow));
-    $("jobQueueCount").textContent = jobs.tasks.length ? String(jobs.tasks.length) : "";
-    const commands = jobs.commands || [];
-    keyed($("jobCommands"), JSON.stringify([commands, minute]), () => list($("jobCommands"), commands, "No commands sent from the viewer yet.", commandRow));
-    renderLatestCommand(commands[0]);
-    const trouble = jobs.tasks.some((job) => job.state === "blocked") || commands.some((command) => command.status === "blocked" || command.status === "failed");
-    if (panel.dataset.active !== "jobs") $("jobsAlert").hidden = !trouble;
-  }
   function renderLatestCommand(command) {
     const root = $("commandLatest");
     root.hidden = !command;
@@ -645,9 +696,9 @@
     keyed(root, JSON.stringify([command.id, command.status, command.steps.length]), () => {
       const line = el("p", "sub");
       line.append(el("span", "", `Last task “${command.text.length > 40 ? `${command.text.slice(0, 39)}…` : command.text}”`), el("em", `badge ${command.status}`, COMMAND_LABEL[command.status] || command.status));
-      const open = el("button", "link-btn", "Track in Jobs");
+      const open = el("button", "link-btn", command.status === "blocked" ? "See blocker" : "Track in Jobs");
       open.type = "button";
-      open.addEventListener("click", () => selectTab("jobs"));
+      open.addEventListener("click", () => openRef(problemRef(`command:${command.id}`)));
       root.replaceChildren(line, open);
     });
   }
@@ -985,7 +1036,7 @@
   function problemRows(problems) {
     return problems.map((problem) => {
       const row = el("li", `problem problem-${problem.kind}`);
-      row.append(el("strong", "", problem.title));
+      row.append(problem.ref ? problemLink(problem.title, problem.ref, "strong") : el("strong", "", problem.title));
       const detail = [problem.detail, problem.since ? since(problem.since) : null].filter(Boolean).join(" · ");
       if (detail) row.append(el("span", "sub", detail));
       return row;

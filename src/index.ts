@@ -317,7 +317,7 @@ const viewerManager = new ViewerManager({
       try { deliverOwnerCommand(text); } catch (error) { commandTracker.discard(id); throw error; }
     } }),
     privateApi: {
-      job: createJobControl({ scheduler, goals }),
+      job: createJobControl({ scheduler, goals, blockers, builds: buildProjectManager }),
       preview: async (body) => {
         const result = await buildPreview(body);
         return result.ok ? { status: 200, body: { preview: result.preview } } : { status: result.status, body: { error: result.error } };
@@ -393,7 +393,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   story: storyFeed,
   worldStats: worldStats.current,
   viewer: () => viewerManager.telemetry(),
-  jobs: () => projectJobs({ scheduler, goals }, commandTracker.view()),
+  jobs: () => projectJobs({ scheduler, goals, projects: () => buildProjectManager.unfinishedProjects(), blockers: () => blockers.openBlockers() }, commandTracker.view()),
   gear: () => {
     const bot = session?.bot;
     if (bot === undefined || bot.entity === null || bot.entity === undefined) return null;
@@ -424,17 +424,17 @@ function unresolvedProblems(): UnresolvedProblem[] {
   if (deathManager.inDeathLoop) problems.push({ kind: "system", title: "Death-loop brake is on", detail: "Recovery trips are paused after repeated deaths at one spot.", since: null });
   if (client.healthState === "failing") problems.push({ kind: "system", title: "The language model is failing", detail: client.lastFailure?.error ?? null, since: client.lastFailure === null ? null : new Date(client.lastFailure.at).toISOString() });
   const offers = blockers.openBlockers();
-  for (const offer of offers) problems.push({ kind: "blocker", title: offer.summary, detail: "Say “go ahead”, or “change the plan”.", since: new Date(offer.openedAt).toISOString() });
+  for (const offer of offers) problems.push({ kind: "blocker", title: offer.summary, detail: "Open it in Jobs to go ahead or change the plan.", since: new Date(offer.openedAt).toISOString(), ref: `blocker:${offer.id}` });
   const project = buildProjectManager.currentProject()?.project ?? null;
   if (project !== null && project.status === "blocked" && !offers.some((offer) => offer.subject.kind === "build" && offer.subject.projectId === project.id)) {
-    problems.push({ kind: "build", title: `The ${(project.userGoal || project.structureType).replace(/_/g, " ").replace(/\.$/, "")} is blocked`, detail: project.lastError ?? null, since: project.updatedAt });
+    problems.push({ kind: "build", title: `The ${(project.userGoal || project.structureType).replace(/_/g, " ").replace(/\.$/, "")} is blocked`, detail: project.lastError ?? null, since: project.updatedAt, ref: `build:${project.id}` });
   }
   for (const task of scheduler.queued) {
-    if (task.status === TaskStatus.BLOCKED) problems.push({ kind: "task", title: task.objective, detail: task.lastError ?? "blocked", since: task.lastProgressAt ?? task.createdAt });
-    else if (task.heldAt !== undefined) problems.push({ kind: "task", title: task.objective, detail: "Paused by you; resume it from Jobs.", since: task.heldAt });
+    if (task.status === TaskStatus.BLOCKED) problems.push({ kind: "task", title: task.objective, detail: task.lastError ?? "blocked", since: task.lastProgressAt ?? task.createdAt, ref: `task:${task.id}` });
+    else if (task.heldAt !== undefined) problems.push({ kind: "task", title: task.objective, detail: "Paused by you; resume it from Jobs.", since: task.heldAt, ref: `task:${task.id}` });
   }
   const goal = goals.active();
-  if (goal?.pausedAt !== undefined) problems.push({ kind: "goal", title: goal.description, detail: "Goal paused by you.", since: goal.pausedAt });
+  if (goal?.pausedAt !== undefined) problems.push({ kind: "goal", title: goal.description, detail: "Goal paused by you.", since: goal.pausedAt, ref: `goal:${goal.id}` });
   return problems;
 }
 
