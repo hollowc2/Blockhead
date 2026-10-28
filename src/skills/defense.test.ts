@@ -8,7 +8,7 @@ import type { MinecraftConfig } from "../config/schema.js";
 import { EventBus } from "../events/bus.js";
 import type { SkillsRepository } from "../memory/skills.js";
 import type { TravelWaitOptions, TravelWaitResult } from "../minecraft/movement.js";
-import { deathSiteDanger } from "./death-recovery.js";
+import { deathSiteDanger, waitForClearSite } from "./death-recovery.js";
 import { DefenseRunner, perchHolds, retreatTarget, type DefenseActions } from "./defense.js";
 
 type Point = { x: number; y: number; z: number };
@@ -449,4 +449,25 @@ test("a perch is only trusted against mobs that cannot climb, shoot, or explode"
   assert.equal(perchHolds(["zombie", "creeper"], 10), false);
   assert.equal(perchHolds(["zombie"], 1), false, "needs two blocks");
   assert.equal(perchHolds([], 10), false);
+});
+
+test("a creeper only guards the death site when it is near the drops", () => {
+  // 2026-10-28 18:40: a creeper 12 blocks off ended the recovery at once and the iron kit despawned.
+  const site = { x: 0, y: 16, z: 0 };
+  assert.equal(deathSiteDanger(20, site, [{ type: "hostile", name: "creeper", position: { x: 12, y: 16, z: 0 } }]), null);
+  assert.match(deathSiteDanger(20, site, [{ type: "hostile", name: "creeper", position: { x: 5, y: 16, z: 0 } }]) ?? "", /creeper/);
+});
+
+test("a guarded death site is waited out until the drops are due to despawn", async () => {
+  let clock = 0;
+  const pause = async (ms: number) => { clock += ms; };
+  const now = () => clock;
+  // The skeleton wanders off after ten seconds.
+  assert.equal(await waitForClearSite(() => (clock < 10_000 ? "skeleton" : null), 60_000, () => true, pause, now), "clear");
+  // It never leaves: give up at the deadline, not before.
+  clock = 0;
+  assert.equal(await waitForClearSite(() => "skeleton", 60_000, () => true, pause, now), "expired");
+  assert.ok(clock >= 60_000);
+  // A pause (self-defense preempting) ends the wait as an interruption.
+  assert.equal(await waitForClearSite(() => "skeleton", 60_000, () => false, pause, now), "interrupted");
 });

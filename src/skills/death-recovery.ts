@@ -59,6 +59,17 @@ const DANGER_PROXIMITY = 4;
  * killed it.
  */
 const RANGED_GUARD_RADIUS = 16;
+/**
+ * A creeper only matters near the drops: one wandering 12 blocks off ended
+ * a recovery at once and the iron kit despawned (2026-10-28 18:40).
+ */
+const CREEPER_GUARD_RADIUS = 8;
+/** Dropped items despawn this long after the death. */
+const DROP_DESPAWN_MS = 5 * 60_000;
+/** Stop waiting this long before the despawn: the walk and the sweep need the time. */
+const DESPAWN_MARGIN_MS = 45_000;
+/** Poll cadence while waiting for a guarded site to clear. */
+const GUARD_POLL_MS = 2_000;
 /** Hostile mobs that shoot from range (drowned throw tridents). */
 const RANGED_MOB_NAMES: ReadonlySet<string> = new Set(["skeleton", "stray", "bogged", "pillager", "witch", "blaze", "ghast", "drowned"]);
 /**
@@ -205,32 +216,47 @@ export class DeathRecoveryRunner {
       return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
     }
 
-    let guarded: string | null = null;
-    const travel = await travelAndWait(bot, { x: params.x, y: params.y, z: params.z }, {
-      timeoutMs: RECOVERY_TRAVEL_TIMEOUT_MS,
-      shouldAbort: () => {
-        if (!signals.checkpoint()) return true;
-        guarded = deathSiteDanger(bot.health, params, Object.values(bot.entities));
-        return guarded !== null;
-      },
-    });
-    if (guarded !== null) {
-      logger.warn({ reason: guarded }, "death site is guarded; aborting recovery");
-      return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
-    }
-    if (travel.status === "aborted") {
-      return this.finish(params, data, signals, baseline, null, true, startedAt);
-    }
-    if (travel.status !== "arrived" && travel.status !== "already_there") {
-      const failure: RecoveryFailure =
-        travel.status === "timed_out" ? "timeout" : travel.status === "wrong_dimension" ? "wrong_dimension" : "path_unreachable";
-      return this.finish(params, data, signals, baseline, failure, false, startedAt);
-    }
-
-    // 4. A hostile mob camped on the drops is the textbook "too dangerous".
-    if (this.hostileMobNear(bot, DANGER_PROXIMITY)) {
-      logger.warn("hostile mob at the death site; aborting recovery");
-      return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
+    // A guarded site is waited out, not abandoned: drops last five minutes,
+    // and giving up on the first creeper or skeleton in sight lost two full
+    // kits in an hour, iron chestplate and shield included (2026-10-28).
+    const diedAt = Date.parse(this.opts.deaths.get(params.deathId)?.createdAt ?? "");
+    const giveUpAt = (Number.isFinite(diedAt) ? diedAt : startedAt) + DROP_DESPAWN_MS - DESPAWN_MARGIN_MS;
+    for (;;) {
+      let guarded: string | null = null;
+      const travel = await travelAndWait(bot, { x: params.x, y: params.y, z: params.z }, {
+        timeoutMs: RECOVERY_TRAVEL_TIMEOUT_MS,
+        shouldAbort: () => {
+          if (!signals.checkpoint()) return true;
+          guarded = deathSiteDanger(bot.health, params, Object.values(bot.entities));
+          return guarded !== null;
+        },
+      });
+      // 4. A hostile mob camped on the drops is the textbook "too dangerous".
+      const arrived = guarded === null && (travel.status === "arrived" || travel.status === "already_there");
+      if (arrived && this.hostileMobNear(bot, DANGER_PROXIMITY)) guarded = "hostile mob at the drops";
+      if (guarded === null) {
+        if (travel.status === "aborted") {
+          return this.finish(params, data, signals, baseline, null, true, startedAt);
+        }
+        if (!arrived) {
+          const failure: RecoveryFailure =
+            travel.status === "timed_out" ? "timeout" : travel.status === "wrong_dimension" ? "wrong_dimension" : "path_unreachable";
+          return this.finish(params, data, signals, baseline, failure, false, startedAt);
+        }
+        break;
+      }
+      logger.warn({ reason: guarded, secondsLeft: Math.round((giveUpAt - Date.now()) / 1000) }, "death site is guarded; waiting for it to clear");
+      const waited = await waitForClearSite(
+        () => deathSiteDanger(bot.health, params, Object.values(bot.entities)) ?? (this.hostileMobNear(bot, DANGER_PROXIMITY) ? "hostile mob at the drops" : null),
+        giveUpAt,
+        () => signals.checkpoint(),
+      );
+      if (waited === "interrupted") return this.finish(params, data, signals, baseline, null, true, startedAt);
+      if (waited === "expired") {
+        logger.warn({ reason: guarded }, "death site stayed guarded until the drops were due to despawn");
+        return this.finish(params, data, signals, baseline, "too_dangerous", false, startedAt);
+      }
+      logger.info("death site cleared; going back for the drops");
     }
 
     // 5. Scan the site and order the drops by item value (spec 26.1).
@@ -567,6 +593,26 @@ export function recentDeathNearby(
 }
 
 /**
+ * Poll `danger` until it clears ("clear"), `giveUpAt` passes ("expired"), or
+ * the task is paused ("interrupted"). The bot holds where it is meanwhile;
+ * the self-defense reflex preempts the task if the guard comes for it.
+ */
+export async function waitForClearSite(
+  danger: () => string | null,
+  giveUpAt: number,
+  checkpoint: () => boolean,
+  pause: (ms: number) => Promise<void> = sleep,
+  now: () => number = Date.now,
+): Promise<"clear" | "expired" | "interrupted"> {
+  for (;;) {
+    if (!checkpoint()) return "interrupted";
+    if (danger() === null) return "clear";
+    if (now() >= giveUpAt) return "expired";
+    await pause(GUARD_POLL_MS);
+  }
+}
+
+/**
  * Why walking to the death site is too dangerous right now, or null: the bot
  * is below the recovery health floor, or an archer stands within range of the
  * site.
@@ -582,7 +628,8 @@ export function deathSiteDanger(
     if (!isMobEntity(entity) || !HOSTILE_MOB_NAMES.has(entity.name ?? "")) continue;
     const distance = Math.hypot(entity.position.x - site.x, entity.position.y - site.y, entity.position.z - site.z);
     if (distance > RANGED_GUARD_RADIUS) continue;
-    if (RANGED_MOB_NAMES.has(entity.name ?? "") || entity.name === "creeper") return `${entity.name} within ${Math.round(distance)} blocks of the site`;
+    if (RANGED_MOB_NAMES.has(entity.name ?? "") || (entity.name === "creeper" && distance <= CREEPER_GUARD_RADIUS)) return `${entity.name} within ${Math.round(distance)} blocks of the site`;
+    if (entity.name === "creeper") continue;
     crowd += 1;
   }
   return crowd >= CROWD_GUARD_COUNT ? `${crowd} hostiles within ${RANGED_GUARD_RADIUS} blocks of the site` : null;
