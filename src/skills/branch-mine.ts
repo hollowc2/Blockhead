@@ -37,6 +37,15 @@ const STEP_TIMEOUT_MS = 6_000;
 const COLLECT_TIMEOUT_MS = 30_000;
 /** Below this health the miner stops and lets the caller head home. */
 const MIN_HEALTH = 10;
+/**
+ * Blocks the miner may lay where a step has no floor: filler first, then the
+ * cobblestone the stair itself yields. The ground under home was hollowed by
+ * old stairs and levelling cuts, and 143 runs in a day stopped on the first
+ * step with "no floor" and mined nothing (2026-10-27).
+ */
+const FLOOR_ITEMS = ["dirt", "coarse_dirt", "andesite", "diorite", "granite", "tuff", "cobbled_deepslate", "cobblestone"];
+/** Faces to place a floor block against, the one below first. */
+const FLOOR_FACES = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
 
 /** World actions the miner drives; injectable for tests. */
 export interface BranchMineActions {
@@ -46,6 +55,8 @@ export interface BranchMineActions {
   torch: (bot: Bot, floor: Block, at: Vec3, signal?: AbortSignal) => Promise<void>;
   /** Drop surplus junk (see `shedJunk`) so tunnel stone never crowds out the ore. */
   shed: (bot: Bot, protect: readonly string[], signal?: AbortSignal) => Promise<number>;
+  /** Lay a block at `at` (an open cell under a step); false when there is nothing to lay or lean it on. */
+  floor: (bot: Bot, at: Vec3, signal?: AbortSignal) => Promise<boolean>;
 }
 
 const DEFAULT_ACTIONS: BranchMineActions = {
@@ -67,6 +78,18 @@ const DEFAULT_ACTIONS: BranchMineActions = {
     await placeBlock(bot, floor, new Vec3(0, 1, 0), signal, at, "torch");
   },
   shed: (bot, protect, signal) => shedJunk(bot, protect, signal),
+  floor: async (bot, at, signal) => {
+    const item = FLOOR_ITEMS.map((name) => findItem(bot, name)).find((found) => found !== null) ?? null;
+    if (item === null) return false;
+    for (const face of FLOOR_FACES) {
+      const reference = bot.blockAt(at.plus(face));
+      if (reference === null || reference.boundingBox !== "block") continue;
+      await equipItem(bot, item, signal);
+      await placeBlock(bot, reference, face.scaled(-1), signal, at, item.name);
+      return true;
+    }
+    return false;
+  },
 };
 
 export interface BranchMineOptions {
@@ -135,8 +158,10 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
   if (feet0 === undefined) return { mined: 0, reason: "not spawned" };
   trail.push(feet0);
   o = { ...o, startY: feet0.y };
-  // Start down whichever way the first steps stay clear of water and lava.
-  let dir = DIRECTIONS.find((d) => stepCells(feet0, d, true).every((cell) => !cellTouchesLiquid(bot, cell) && !isLiquid(bot, cell))) ?? null;
+  // Start down whichever way the first steps stay clear of water and lava,
+  // preferring one that already has a floor to land on.
+  const dry = DIRECTIONS.filter((d) => stepCells(feet0, d, true).every((cell) => !cellTouchesLiquid(bot, cell) && !isLiquid(bot, cell)));
+  let dir = dry.find((d) => bot.blockAt(stepCells(feet0, d, true)[0]!.offset(0, -1, 0))?.boundingBox === "block") ?? dry[0] ?? null;
   if (dir === null) return { mined: 0, reason: "water or lava on every side" };
   logger.info({ from: feet0, dir, targetY: o.targetY, drop: o.drop }, "branch mine: digging down");
 
@@ -243,8 +268,7 @@ async function step(o: BranchMineOptions, dir: readonly [number, number], down: 
   if (feet === undefined) return "not spawned";
   const cells = stepCells(feet, dir, down);
   const floor = cells[0]!.offset(0, -1, 0);
-  const floorBlock = bot.blockAt(floor);
-  if (floorBlock === null || floorBlock.boundingBox !== "block") return "no floor (a cave or drop)";
+  if (bot.blockAt(floor)?.boundingBox !== "block" && !await layFloor(o, floor)) return "no floor (a cave or drop)";
   for (const cell of cells) {
     if (isLiquid(bot, cell) || cellTouchesLiquid(bot, cell)) return "water or lava beside the way";
     const block = bot.blockAt(cell);
@@ -261,6 +285,22 @@ async function step(o: BranchMineOptions, dir: readonly [number, number], down: 
   const target = cells[0]!;
   if (!await act(o).travel(bot, new Vec3(target.x + 0.5, target.y, target.z + 0.5), o.signal)) return "could not step";
   return null;
+}
+
+/** Close an open cell under a step with a carried block. */
+async function layFloor(o: BranchMineOptions, at: Vec3): Promise<boolean> {
+  const block = o.bot.blockAt(at);
+  if (block === null || isLiquid(o.bot, at)) return false;
+  try {
+    if (!await act(o).floor(o.bot, at, o.signal)) return false;
+  } catch (err) {
+    if (o.signal?.aborted === true) throw err;
+    o.logger.warn({ at, err: String(err) }, "branch mine: could not lay a floor");
+    return false;
+  }
+  const laid = o.bot.blockAt(at)?.boundingBox === "block";
+  if (laid) o.logger.info({ at }, "branch mine: laid a floor over a gap");
+  return laid;
 }
 
 /** Mine exposed ore within reach, skipping any that would open water or lava. */

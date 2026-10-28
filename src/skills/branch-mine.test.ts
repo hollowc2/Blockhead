@@ -52,6 +52,7 @@ function miner(start: Vec3, overrides: Record<string, string> = {}) {
     collect: async (_bot, targets) => { for (const t of targets) { w.dug.add(t.position.toString()); rawIron += 1; } },
     torch: async (_bot, _floor, at) => { torches.push(at.toString()); },
     shed: async () => 0,
+    floor: async (_bot, at) => { w.dug.delete(at.toString()); w.names.set(at.toString(), "cobblestone"); return true; },
   };
   return { bot, w, position, torches, actions, get rawIron() { return rawIron; } };
 }
@@ -130,4 +131,23 @@ test("cobblestone deep under the stair's top is dug through; near the top it is 
   const shallow = miner(new Vec3(0, 64, 0), { "(1, 63, 0)": "cobblestone" });
   await branchMine({ bot: shallow.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 60, tunnelLength: 0, deadline: Date.now() + 5_000, actions: shallow.actions });
   assert.ok(![...shallow.w.dug].includes("(1, 63, 0)"), "a block by the surface may be a build");
+});
+
+test("a step with no floor gets one laid instead of ending the run", async () => {
+  // 2026-10-27: the ground under home was hollow, and every iron run in a
+  // day stopped on the first step ("no floor") with nothing mined.
+  const hollow: Record<string, string> = {};
+  for (const [x, z] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) hollow[new Vec3(x, 62, z).toString()] = "air";
+  const m = miner(new Vec3(0, 64, 0), { ...hollow, "(6, 60, 1)": "iron_ore" });
+  const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 60, tunnelLength: 16, deadline: Date.now() + 10_000, actions: m.actions });
+  assert.equal(result.mined, 1, result.reason);
+  assert.equal(m.w.names.get("(1, 62, 0)"), "cobblestone", "laid the missing floor");
+});
+
+test("the stair starts the way that already has a floor", async () => {
+  const m = miner(new Vec3(0, 64, 0), { "(1, 62, 0)": "air" });
+  m.actions.floor = async () => false;
+  await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 62, tunnelLength: 0, deadline: Date.now() + 5_000, actions: m.actions });
+  assert.ok([...m.w.dug].includes("(0, 63, 1)"), "went south, where the floor was");
+  assert.equal(m.position.y, 64, "and walked back up");
 });
