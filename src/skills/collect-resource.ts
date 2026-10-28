@@ -16,7 +16,7 @@ import { countStoredItems, deliverCarried, describeDeliveryFailure, withdrawFrom
 import { shedJunk } from "../minecraft/primitives.js";
 import { craftPickaxeInField } from "./field-craft.js";
 import { travelHomeAndWait, travelAndWait } from "../minecraft/movement.js";
-import { branchMine, BRANCH_MINE_DEPTH } from "./branch-mine.js";
+import { branchMine, BRANCH_MINE_DEPTH, pickMineEntrance } from "./branch-mine.js";
 import { collectBlocks, findBlockNear, findBlocksNear, findBlocksNearPointRefined, findBlocksNearRefined, hasAirNeighbor, isRawLog, isTrunkBase } from "../minecraft/world.js";
 import { normalizeDimension, regionContains } from "../minecraft/protection.js";
 import { checkLavaEntry, digsNearHome, isStraightDownTarget, lavaAvoidanceRadius } from "../policy/safety.js";
@@ -104,6 +104,8 @@ const GATHER_RADIUS = 48;
 /** Tunnel length and time budget for one branch-mining run. */
 const BRANCH_TUNNEL_LENGTH = 48;
 const BRANCH_MINE_BUDGET_MS = 5 * 60_000;
+/** New stairs tried elsewhere when one meets a cave near the surface. */
+const BRANCH_MINE_RELOCATIONS = 2;
 /** Cave search radius for a branch-minable ore before digging for it instead. */
 const BRANCH_FIRST_RADIUS = 32;
 /** Nearest blocks handed to collectBlock in one pass. */
@@ -459,20 +461,32 @@ export class CollectResourceRunner {
     const depth = BRANCH_MINE_DEPTH[bare];
     if (depth !== undefined && abort === null && countItem(bot, carriedName) < quantity) {
       this.announce(`No more exposed ${stem} nearby; branch mining for it.`);
-      const branch = await branchMine({
-        bot,
-        logger: this.opts.logger,
-        isOre: (block) => blockMatchesResource(block, bare),
-        drop: carriedName,
-        target: quantity,
-        targetY: Math.min(depth, Math.floor(bot.entity?.position.y ?? depth) - 8),
-        tunnelLength: BRANCH_TUNNEL_LENGTH,
-        deadline: Date.now() + BRANCH_MINE_BUDGET_MS,
-        signal: this.signals?.signal,
-        shouldStop: () => this.stopped(),
-      });
-      data.gathered += branch.mined;
-      if (this.stopped()) return this.interrupted(data);
+      const deadline = Date.now() + BRANCH_MINE_BUDGET_MS;
+      for (let attempt = 0; attempt <= BRANCH_MINE_RELOCATIONS; attempt++) {
+        const branch = await branchMine({
+          bot,
+          logger: this.opts.logger,
+          isOre: (block) => blockMatchesResource(block, bare),
+          drop: carriedName,
+          target: quantity,
+          targetY: Math.min(depth, Math.floor(bot.entity?.position.y ?? depth) - 8),
+          tunnelLength: BRANCH_TUNNEL_LENGTH,
+          deadline,
+          signal: this.signals?.signal,
+          shouldStop: () => this.stopped(),
+        });
+        data.gathered += branch.mined;
+        if (this.stopped()) return this.interrupted(data);
+        // A stair that met a cave near the surface starts over on solid rock nearby.
+        if (branch.mined > 0 || !branch.reason.startsWith("stair blocked") || Date.now() > deadline) break;
+        const here = bot.entity?.position.floored();
+        const entrance = here === undefined ? null : pickMineEntrance((p) => bot.blockAt(p), here);
+        if (entrance === null) break;
+        this.opts.logger.info({ from: here, entrance, why: branch.reason }, "branch mine: moving the stair to solid rock");
+        const moved = await travelAndWait(bot, entrance.offset(0.5, 0, 0.5), { range: 1, timeoutMs: 60_000, signal: this.signals?.signal });
+        if (this.stopped()) return this.interrupted(data);
+        if (moved.status !== "arrived" && moved.status !== "already_there") break;
+      }
     }
 
     carried = countItem(bot, carriedName);

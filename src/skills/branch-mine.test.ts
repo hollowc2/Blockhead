@@ -4,7 +4,7 @@ import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import pino from "pino";
 import { Vec3 } from "vec3";
-import { branchMine, stepCells, type BranchMineActions } from "./branch-mine.js";
+import { branchMine, pickMineEntrance, stepCells, type BranchMineActions } from "./branch-mine.js";
 
 /** A solid stone world with a few overrides; dug cells become air. */
 function world(overrides: Record<string, string> = {}) {
@@ -180,4 +180,18 @@ test("the tunnel turns away from gravel that would fall into the bot's head cell
   const m = miner(new Vec3(0, 20, 0), { "(3, 22, 0)": "gravel" });
   await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 99, targetY: 20, tunnelLength: 6, deadline: Date.now() + 10_000, actions: m.actions });
   assert.ok(![...m.w.dug].includes("(3, 21, 0)"), "did not open the cell under the gravel");
+});
+
+test("a new mine entrance is picked over solid rock, not over the cave", () => {
+  // Surface at y=64 (stone below, air above); a cave under everything east and south.
+  const blockAt = (p: Vec3) => {
+    const caveUnder = (p.x > 4 || p.z > 4) && p.y >= 55 && p.y <= 60;
+    const solid = p.y < 64 && !caveUnder;
+    return { name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty" };
+  };
+  const entrance = pickMineEntrance(blockAt, new Vec3(0, 64, 0));
+  assert.ok(entrance !== null);
+  assert.equal(entrance.y, 64);
+  assert.ok(entrance.x <= 4 && entrance.z <= 4, `picked ${entrance}`);
+  assert.equal(Math.abs(entrance.x) + Math.abs(entrance.z) >= 16, true);
 });

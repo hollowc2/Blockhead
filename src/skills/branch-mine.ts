@@ -137,6 +137,42 @@ export interface BranchMineResult {
   reason: string;
 }
 
+/** How far a new stair moves when the ground under the last one is hollow. */
+const ENTRANCE_SHIFT = 16;
+/** Solid cells under a mine entrance before it counts as rock, not a cave roof. */
+const ENTRANCE_SOLID_DEPTH = 6;
+/** Feet heights searched around the start for the entrance's ground. */
+const ENTRANCE_SEARCH_DY = 10;
+
+/**
+ * A spot about 16 blocks out with solid rock under it, to start a stair
+ * where the last one met a cave: home sits on a cavern, and every stair from
+ * it either stopped at once or bridged down into mobs (2026-10-28).
+ */
+export function pickMineEntrance(blockAt: (p: Vec3) => { name: string; boundingBox: string } | null, from: Vec3): Vec3 | null {
+  const solid = (p: Vec3): boolean => {
+    const block = blockAt(p);
+    return block !== null && block.boundingBox === "block" && !/water|lava|_leaves$|_log$/.test(block.name);
+  };
+  const open = (p: Vec3): boolean => {
+    const block = blockAt(p);
+    return block !== null && block.boundingBox !== "block" && !/water|lava/.test(block.name);
+  };
+  for (const [dx, dz] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]] as const) {
+    const x = from.x + dx * ENTRANCE_SHIFT;
+    const z = from.z + dz * ENTRANCE_SHIFT;
+    for (let y = from.y + ENTRANCE_SEARCH_DY; y >= from.y - ENTRANCE_SEARCH_DY; y--) {
+      const feet = new Vec3(x, y, z);
+      if (!open(feet) || !open(feet.offset(0, 1, 0)) || !solid(feet.offset(0, -1, 0))) continue;
+      let rock = true;
+      for (let d = 2; d <= ENTRANCE_SOLID_DEPTH + 1 && rock; d++) rock = solid(feet.offset(0, -d, 0));
+      if (rock) return feet;
+      break;
+    }
+  }
+  return null;
+}
+
 /** Cells a step from `feet` toward `dir` must open: the landing cell, head room, and one above while stepping down. */
 export function stepCells(feet: { x: number; y: number; z: number }, dir: readonly [number, number], down: boolean): Vec3[] {
   const x = feet.x + dir[0];
