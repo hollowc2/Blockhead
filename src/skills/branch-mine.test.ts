@@ -161,3 +161,23 @@ test("a stair blocked near its depth tunnels from there instead of climbing home
   const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 16, tunnelLength: 16, deadline: Date.now() + 10_000, actions: m.actions });
   assert.equal(result.mined, 1, result.reason);
 });
+
+test("no floor is laid into an open cave; the stair goes around it", async () => {
+  // 2026-10-28 19:41: bridging down through the cavern under home led into a skeleton and two zombies.
+  const cave: Record<string, string> = {};
+  for (let x = -4; x <= 4; x++) for (let z = -4; z <= 4; z++) for (let y = 58; y <= 62; y++) cave[new Vec3(x, y, z).toString()] = "air";
+  const m = miner(new Vec3(0, 64, 0), cave);
+  let laid = 0;
+  const floor = m.actions.floor;
+  m.actions.floor = async (bot, at, signal) => { laid += 1; return floor(bot, at, signal); };
+  await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 60, tunnelLength: 0, deadline: Date.now() + 5_000, actions: m.actions });
+  assert.equal(laid, 0, "never bridged into the cave");
+  assert.equal(m.position.y, 64, "stayed on the rock above it");
+});
+
+test("the tunnel turns away from gravel that would fall into the bot's head cell", async () => {
+  // 2026-10-28 18:40: suffocated under gravel in its own tunnel at y=15.
+  const m = miner(new Vec3(0, 20, 0), { "(3, 22, 0)": "gravel" });
+  await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 99, targetY: 20, tunnelLength: 6, deadline: Date.now() + 10_000, actions: m.actions });
+  assert.ok(![...m.w.dug].includes("(3, 21, 0)"), "did not open the cell under the gravel");
+});

@@ -50,6 +50,14 @@ const FLOOR_ITEMS = ["dirt", "coarse_dirt", "andesite", "diorite", "granite", "t
  * country, and climbed 44 steps home with nothing (2026-10-28 17:47).
  */
 const STAIR_SETTLE_RANGE = 24;
+/**
+ * Open cells (of the 26 around a missing floor) past which the gap is a cave,
+ * not a hole: bridging down through the cavern under home took the bot into
+ * a skeleton and two zombies, unarmored (2026-10-28 19:41).
+ */
+const CAVE_OPEN_CELLS = 8;
+/** Blocks that fall into the opening when the cell under them is dug. */
+const FALLING = /^(gravel|sand|red_sand|suspicious_sand|suspicious_gravel|[a-z_]+_concrete_powder)$/;
 /** Faces to place a floor block against, the one below first. */
 const FLOOR_FACES = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
 
@@ -279,6 +287,9 @@ async function step(o: BranchMineOptions, dir: readonly [number, number], down: 
   const cells = stepCells(feet, dir, down);
   const floor = cells[0]!.offset(0, -1, 0);
   if (bot.blockAt(floor)?.boundingBox !== "block" && !await layFloor(o, floor)) return "no floor (a cave or drop)";
+  // Gravel over the opening pours into the bot's head cell: a tunnel through
+  // a gravel seam at y=15 buried and suffocated it in full kit (2026-10-28 18:40).
+  if (FALLING.test(bot.blockAt(cells[cells.length - 1]!.offset(0, 1, 0))?.name ?? "")) return "loose gravel or sand overhead";
   for (const cell of cells) {
     if (isLiquid(bot, cell) || cellTouchesLiquid(bot, cell)) return "water or lava beside the way";
     const block = bot.blockAt(cell);
@@ -301,6 +312,7 @@ async function step(o: BranchMineOptions, dir: readonly [number, number], down: 
 async function layFloor(o: BranchMineOptions, at: Vec3): Promise<boolean> {
   const block = o.bot.blockAt(at);
   if (block === null || isLiquid(o.bot, at)) return false;
+  if (openCellsAround(o.bot, at) > CAVE_OPEN_CELLS) return false;
   try {
     if (!await act(o).floor(o.bot, at, o.signal)) return false;
   } catch (err) {
@@ -311,6 +323,16 @@ async function layFloor(o: BranchMineOptions, at: Vec3): Promise<boolean> {
   const laid = o.bot.blockAt(at)?.boundingBox === "block";
   if (laid) o.logger.info({ at }, "branch mine: laid a floor over a gap");
   return laid;
+}
+
+/** Non-solid cells among the 26 around `at` (unloaded counts as open). */
+function openCellsAround(bot: Bot, at: Vec3): number {
+  let open = 0;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+    if (dx === 0 && dy === 0 && dz === 0) continue;
+    if (bot.blockAt(at.offset(dx, dy, dz))?.boundingBox !== "block") open += 1;
+  }
+  return open;
 }
 
 /** Mine exposed ore within reach, skipping any that would open water or lava. */
