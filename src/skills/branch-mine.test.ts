@@ -151,3 +151,13 @@ test("the stair starts the way that already has a floor", async () => {
   assert.ok([...m.w.dug].includes("(0, 63, 1)"), "went south, where the floor was");
   assert.equal(m.position.y, 64, "and walked back up");
 });
+
+test("a stair blocked near its depth tunnels from there instead of climbing home empty", async () => {
+  // 2026-10-28 17:47: a cave at y=33 stopped the stair on its way to 16.
+  const cave: Record<string, string> = { "(8, 38, 1)": "iron_ore" };
+  for (let x = -10; x <= 10; x++) for (let z = -10; z <= 10; z++) for (let y = 30; y <= 36; y++) cave[new Vec3(x, y, z).toString()] = "air";
+  const m = miner(new Vec3(0, 40, 0), cave);
+  m.actions.floor = async () => false;
+  const result = await branchMine({ bot: m.bot, logger: pino({ level: "silent" }), isOre: isIron, drop: "raw_iron", target: 1, targetY: 16, tunnelLength: 16, deadline: Date.now() + 10_000, actions: m.actions });
+  assert.equal(result.mined, 1, result.reason);
+});

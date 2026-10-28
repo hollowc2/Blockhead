@@ -44,6 +44,12 @@ const MIN_HEALTH = 10;
  * step with "no floor" and mined nothing (2026-10-27).
  */
 const FLOOR_ITEMS = ["dirt", "coarse_dirt", "andesite", "diorite", "granite", "tuff", "cobbled_deepslate", "cobblestone"];
+/**
+ * A stair blocked this close above its target depth tunnels from where it
+ * stands: one stopped by a cave at y=33 on its way to 16, already in iron
+ * country, and climbed 44 steps home with nothing (2026-10-28 17:47).
+ */
+const STAIR_SETTLE_RANGE = 24;
 /** Faces to place a floor block against, the one below first. */
 const FLOOR_FACES = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
 
@@ -172,7 +178,11 @@ export async function branchMine(o: BranchMineOptions): Promise<BranchMineResult
     const stepped = await step(o, dir, true);
     if (stepped !== null) {
       const turned = await turn(o, dir, true);
-      if (turned === null) return done(`stair blocked: ${stepped}`);
+      if (turned === null) {
+        if ((bot.entity?.position.y ?? Infinity) > o.targetY + STAIR_SETTLE_RANGE) return done(`stair blocked: ${stepped}`);
+        logger.info({ at: bot.entity?.position.floored(), why: stepped }, "branch mine: stair blocked near depth; tunnelling here");
+        break;
+      }
       dir = turned;
     }
     trail.push(bot.entity!.position.floored());
