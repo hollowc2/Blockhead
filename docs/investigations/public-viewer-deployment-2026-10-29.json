@@ -1,0 +1,140 @@
+{
+  "recorded_at": "2026-10-29T21:28:54.954152+00:00",
+  "host": "maia",
+  "runtime_commit": "87ec52c7e3c58c2b9e98ff4ece2ae0164873d8d9",
+  "runtime_path": "/home/corey/.local/share/blockhead-runtime",
+  "backup_path": "/home/corey/.local/share/blockhead-backups/public-viewer-rules-only-20261029",
+  "application_backup_path": "/home/corey/.local/share/blockhead-backups/public-viewer-d0516bf-20261029T212432Z",
+  "backup_archive_sha256": "696b655a3692e67c3e42cf8e1292fbc79f7eeaa4aaf2cef41fe07919998af07b",
+  "database_backup_sha256": "63a434dc8c3f0b98022f959966c752c30898e1409b1bf1a63cd9890ef13d664a",
+  "database_backup_integrity": "ok",
+  "config_sha256": "a9ecd96f68b4642852051b5c5ffacfb6589f4427876cd7a13bc7751c7816eb47",
+  "operator_secret_mode": "0o600",
+  "operator_dropin_sha256": "af072d9a504d0facb288b48bb4c98bcb4cafd34b7f2af28dbe7dad3601d19d08",
+  "unit_sha256": "e624ad913507e8d005a12678d5c9601c71787ccbfb902f210ea3b5992e7f5d4b",
+  "services": {
+    "blockhead.service": {
+      "ActiveState": "active",
+      "MainPID": "370151",
+      "NRestarts": "0"
+    },
+    "minecraft-server.service": {
+      "ActiveState": "active",
+      "MainPID": "43017",
+      "NRestarts": "0"
+    },
+    "llama-server.service": {
+      "ActiveState": "active",
+      "MainPID": "988",
+      "NRestarts": "0"
+    },
+    "aegis.service": {
+      "ActiveState": "active",
+      "MainPID": "186413",
+      "NRestarts": "0"
+    }
+  },
+  "health": 20,
+  "viewer_resources": {
+    "pending": 0,
+    "total": 0,
+    "public": 0,
+    "chunks": {
+      "queued": 0,
+      "running": 0,
+      "peakQueued": 1
+    },
+    "peakBufferedBytes": 4177,
+    "slowDisconnects": 0
+  },
+  "model_queue": {
+    "queued": 0,
+    "running": 0,
+    "publicQueued": 0,
+    "publicRunning": 0
+  },
+  "journal_counts": {
+    "structured": 65,
+    "warnings": 0,
+    "errors": 0
+  },
+  "firewall_explicit_settings": {
+    "ENFORCEMENT_MODE": "monitor",
+    "REDACT_PROMPTS_IN_LOGS": "false"
+  },
+  "restore_procedure": "python3 /home/corey/.local/share/blockhead-backups/public-viewer-d0516bf-20261029T212432Z/rollback.py",
+  "state_preserved": true,
+  "smoke": {
+    "operator_missing": 401,
+    "operator_bad": 401,
+    "operator_origin": 403,
+    "operator_metadata": 403,
+    "operator_valid": 200,
+    "public_deny/command": 404,
+    "public_deny/public-interactions": 404,
+    "public_deny/api/command": 404,
+    "public_deny/api/map": 404,
+    "public_deny/status": 404,
+    "http_8155/health": 200,
+    "http_3000/": 200,
+    "http_3001/": 200,
+    "http_3003/": 200,
+    "http_3003/viewer-shell.js": 200,
+    "http_3003/viewer/": 200,
+    "public_state_connected": true,
+    "gestures_disabled": true,
+    "other_services_unchanged": true,
+    "actual_bot_processes": 1,
+    "operator_secret_mode": "0600",
+    "runtime_commit": "87ec52c7e3c58c2b9e98ff4ece2ae0164873d8d9"
+  },
+  "viewer_wire": {
+    "externalWssConnected": true,
+    "versionReceived": true,
+    "geometryChunkReceived": true,
+    "blockEntityMetadataAbsent": true,
+    "route_note": "Zeus through existing HTTPS hostname; not an off-tailnet probe."
+  },
+  "public_question": {
+    "http": 200,
+    "answerKind": "rules",
+    "answerPresent": true,
+    "durationMs": 9,
+    "firewallClassifier": "cascade2",
+    "firewallReady": true
+  },
+  "tests": {
+    "local_pass": 1006,
+    "target_pass": 1006,
+    "target_duration_ms": 37721.658388,
+    "typecheck": "passed locally and on Maia",
+    "locked_install": "npm ci with postinstall/native modules succeeded on Maia",
+    "production_audit": {
+      "moderate": 12,
+      "high": 0,
+      "critical": 0,
+      "reviewed_root_advisory": "GHSA-w5hq-g745-h8pq"
+    }
+  },
+  "public_flags": {
+    "viewer": true,
+    "questions": true,
+    "actions": false,
+    "model_questions": false
+  },
+  "authorization": "User explicitly requested commit, push and deploy after local implementation.",
+  "network_changes": false,
+  "first_attempt": {
+    "commit": "d0516bff8a90e4ce3a041f2ecdf2c6e65b4a9240",
+    "outcome": "rolled back after populated-world viewer snapshot hit packet queue limit; public listener closed during correction",
+    "fix_commit": "729d15da1d0366089c443dc5ab21b90f464c13a3",
+    "persistent_progress_restored": false
+  },
+  "remaining_launch_gates": [
+    "owner-only tailnet ACLs",
+    "offline Minecraft ingress/firewall isolation (wildcard bind observed; sudo firewall read unavailable)",
+    "Funnel forwarding-address trust under spoofed headers",
+    "Aegis enforcement, prompt retention and backend cancellation before model Q&A",
+    "bounded application log retention and isolated paired SQLite/world restoration rehearsal"
+  ]
+}

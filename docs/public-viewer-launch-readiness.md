@@ -1,5 +1,13 @@
 # Public viewer launch readiness — 2026-10-29
 
+**Deployment update:** the user subsequently authorized commit, push and deploy.
+Maia now runs `87ec52c` with the security repairs, viewer improvements and a
+populated-world startup correction. Public Q&A is rules-based; model answers
+and gestures are disabled. See the [deployment receipt](public-viewer-deployment.md)
+for current live evidence and rollback instructions. The assessment below records
+the earlier local validation; its statements about unobserved deployment state
+are superseded by that receipt. The remaining launch gates still apply.
+
 **Recommendation: not ready for a new public launch until the deployment checks
 below are evidenced.** The local candidate implements the verified security
 repairs and viewer improvements and passes isolated validation. This is not a
