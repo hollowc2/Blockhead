@@ -111,3 +111,29 @@ test("safety interrupts (bot task changes) do not cut off a question waiting on 
     assert.equal(records.at(-1)!.answeredBy, "model");
   });
 });
+
+test("disable and shutdown abort model work and report cancellation instead of a successful fallback", async () => {
+  for (const mode of ["disable", "shutdown"]) {
+    let begun!: () => void;
+    const started = new Promise<void>(resolve => { begun = resolve; });
+    let signal!: AbortSignal;
+    const records: Record<string, unknown>[] = [];
+    const interactions = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: false }, facts: () => facts,
+      gestures: new PublicActionController({ session: () => null, safe: () => false, tryRun: () => null }),
+      log: r => records.push(r),
+      modelAnswer: async (_q, _f, abortSignal) => { signal = abortSignal; begun(); return new Promise((_resolve, reject) => abortSignal.addEventListener("abort", () => reject(abortSignal.reason), { once: true })); },
+    });
+    const server = createServer((req, res) => { void interactions.handle("question", req, res); });
+    const port = await listen(server);
+    try {
+      const result = ask(port, "health"); await started;
+      if (mode === "disable") interactions.configure({ questions_enabled: false, actions_enabled: false }); else interactions.shutdown();
+      assert(signal.aborted);
+      assert.equal((await result).status, 503);
+      assert.equal(records[0]!.reason, "cancelled");
+      assert.equal(records[0]!.outcome, "refused");
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal((interactions.diagnostics() as { modelOutstanding: number }).modelOutstanding, 0);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+});

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PublicInteractions } from "./public-interactions.js";
 import { createServer } from "node:net";
 import type { Bot } from "mineflayer";
@@ -22,53 +23,70 @@ export interface PrismarineAdapterOptions {
   logger?: Pick<Logger, "info" | "warn">;
 }
 
-/**
- * Production adapter: the read-only viewer server on `port + 1` (loopback),
- * the full shell on `port` for the tailnet, and optionally the public shell.
- */
-export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterOptions): ViewerAdapter {
-  return {
+/** The public status shell survives bot sessions; renderer and private shell are session scoped. */
+export interface PrismarineViewerAdapter extends ViewerAdapter {
+  startPublicShell(options: { port: number; dashboardPort: number }): Promise<void>;
+  close(): void;
+  diagnostics(): unknown;
+}
+export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterOptions): PrismarineViewerAdapter {
+  let publicShell: ViewerShellServer | null = null;
+  let publicStart: Promise<void> | null = null;
+  let viewerSession = randomUUID();
+  let closed = false;
+  let publicReady = false;
+  const handles = new Set<{ close(): void }>();
+  let activeViewer: ReadOnlyViewerServer | null = null;
+  const adapter: PrismarineViewerAdapter = {
+    async startPublicShell(options) {
+      if (closed || !adapterOptions.publicViewer) return;
+      if (publicStart) return publicStart;
+      const port = adapterOptions.publicViewer.port;
+      if ([options.port, options.port + 1, options.dashboardPort].includes(port)) throw new Error("public viewer port must be separate");
+      const shell = new ViewerShellServer({ host: "127.0.0.1", port, viewerPort: options.port + 1, statsPort: options.dashboardPort, mode: "public",
+        publicState: async () => {
+          const state = await adapterOptions.publicState() as Record<string, unknown>;
+          return { ...state, viewer: { ...(state.viewer as object), session: viewerSession } };
+        }, publicInteractions: adapterOptions.publicInteractions, logger: adapterOptions.logger,
+      });
+      publicShell = shell;
+      publicStart = shell.start().then(() => { publicReady = true; if (closed) shell.stop(); }).catch((error: unknown) => { shell.stop(); if (publicShell === shell) { publicShell = null; publicStart = null; publicReady = false; } throw error; });
+      return publicStart;
+    },
     async start(bot: Bot, options) {
+      if (closed) throw new Error("viewer adapter closed");
+      await adapter.startPublicShell(options);
       const viewerPort = options.port + 1;
-      const publicPort = adapterOptions.publicViewer?.port;
+      viewerSession = randomUUID();
       await assertPortAvailable(options.port, adapterOptions.host);
       await assertPortAvailable(viewerPort, "127.0.0.1");
-      if (publicPort !== undefined) await assertPortAvailable(publicPort, "127.0.0.1");
-
-      const viewer = new ReadOnlyViewerServer(bot, {
-        host: "127.0.0.1",
-        port: viewerPort,
-        viewDistance: options.viewDistance,
+      const viewer = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port: viewerPort, viewDistance: options.viewDistance,
         maxPublicConnections: adapterOptions.publicViewer?.maxConnections ?? 0,
-        maxConnections: (adapterOptions.publicViewer?.maxConnections ?? 0) + 4,
-        logger: adapterOptions.logger,
+        maxConnections: (adapterOptions.publicViewer?.maxConnections ?? 0) + 4, logger: adapterOptions.logger,
       });
-      await viewer.start();
-      const shells: ViewerShellServer[] = [
-        new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort, chat: adapterOptions.chat, command: adapterOptions.command, privateApi: adapterOptions.privateApi, logger: adapterOptions.logger }),
-      ];
-      if (publicPort !== undefined) {
-        shells.push(new ViewerShellServer({
-          host: "127.0.0.1",
-          port: publicPort,
-          viewerPort,
-          statsPort: options.dashboardPort,
-          mode: "public",
-          publicState: adapterOptions.publicState,
-          publicInteractions: adapterOptions.publicInteractions,
-          logger: adapterOptions.logger,
-        }));
-      }
-      try {
-        for (const shell of shells) await shell.start();
-      } catch (error) {
-        for (const shell of shells) shell.stop();
-        viewer.close();
-        throw error;
-      }
-      return { close: () => { for (const shell of shells) shell.stop(); viewer.close(); } };
+      const shell = new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort,
+        chat: adapterOptions.chat, command: adapterOptions.command, privateApi: adapterOptions.privateApi, logger: adapterOptions.logger,
+      });
+      try { await viewer.start(); await shell.start(); }
+      catch (error) { shell.stop(); viewer.close(); throw error; }
+      activeViewer = viewer;
+      let stopped = false;
+      const handle = { close: () => {
+        if (stopped) return; stopped = true;
+        handles.delete(handle); shell.stop(); viewer.close(); if (activeViewer === viewer) activeViewer = null; adapterOptions.publicInteractions?.cancelAll(); viewerSession = randomUUID();
+      } };
+      if (closed) handle.close(); else handles.add(handle);
+      return handle;
+    },
+    diagnostics() { return activeViewer ? { ...activeViewer.diagnostics(), ...activeViewer.resources() } : { pending: 0, total: 0, public: 0 }; },
+    close() {
+      closed = true;
+      for (const handle of handles) handle.close();
+      if (publicReady) publicShell?.stop();
+      publicShell = null;
     },
   };
+  return adapter;
 }
 
 function assertPortAvailable(port: number, host: string): Promise<void> {

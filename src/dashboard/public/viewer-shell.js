@@ -1,3 +1,4 @@
+import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
 (() => {
   const $ = (id) => document.getElementById(id);
   const text = (value, fallback = "—") => value === null || value === undefined || value === "" ? fallback : String(value);
@@ -291,7 +292,11 @@
     const wanted = savedTab ?? panel.dataset.active;
     savedTab = null;
     selectTab(allowed.includes(wanted) ? wanted : "live");
-    if (!isPublic) checkVisit();
+    if (!isPublic) { checkVisit(); viewerSession.setMode("3d"); }
+    else {
+      $("firstHelp").hidden = helpDismissed;
+      $("viewerHelp").setAttribute("aria-expanded", String(!helpDismissed));
+    }
   }
 
   // Minecraft-style icon row: 10 icons, each worth 2 points.
@@ -353,7 +358,7 @@
     }
   }
 
-  function render(s) {
+  function render(s, requestStarted = Date.now()) {
     applyMode(Boolean(s.public));
     const connected = s.connection?.connected === true;
     reachable = true; botLive = connected; lastReceivedAt = Date.now();
@@ -362,7 +367,8 @@
     if (s.public) {
       const i = s.interactions || {};
       publicWhy = { questions: connected ? i.questionsReason ?? null : "offline", actions: connected ? i.actionsReason ?? null : "offline" };
-      sharedUntil = { questions: Date.now() + (i.questionsCooldownMs || 0), actions: Date.now() + (i.actionsCooldownMs || 0) };
+      helloSharedUntil = retryUntil(requestStarted, Date.now(), i.helloCooldownMs);
+      sharedUntil = { questions: retryUntil(requestStarted, Date.now(), i.questionsCooldownMs), actions: retryUntil(requestStarted, Date.now(), i.actionsCooldownMs) };
       renderPublicStatus(s.status, connected);
     }
     updatePublicButtons();
@@ -384,11 +390,8 @@
     setText("dimension", self.dimension?.replace(/^minecraft:/, "").replace(/_/g, " "));
     setText("time", self.timePhase);
     $("timeIcon").className = `time-icon ${self.timePhase || ""}`;
-    setText("viewerStatus", s.viewer?.status);
-
-    const viewerDown = !connected || s.viewer?.status === "failed" || s.viewer?.status === "stopped";
-    show("offline", viewerDown);
-    $("offlineReason").textContent = !connected ? "Waiting for CobbleBob to reconnect…" : "The 3D viewer is not running right now.";
+    viewerSession.update({ reachable: true, connected, running: s.viewer?.status === "running", session: s.viewer?.session ?? "unknown" });
+    setText("viewerStatus", viewerSession.state);
 
     if (s.public) {
       setText("healthPublic", typeof self.health === "number" ? `${self.health} / 20` : null);
@@ -482,8 +485,11 @@
   // Each poll gets a deadline, and only the newest answer counts: a slow
   // response that lands after a newer one is dropped, never rendered.
   const STATE_DEADLINE_MS = 4000, STALE_AFTER_MS = 5000;
-  let refreshSeq = 0, appliedSeq = 0;
+  let refreshSeq = 0, appliedSeq = 0, refreshing = false;
   async function refresh() {
+    if (refreshing || document.hidden) return;
+    refreshing = true;
+    const requestStarted = Date.now();
     const seq = ++refreshSeq;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), STATE_DEADLINE_MS);
@@ -493,21 +499,20 @@
       const state = await response.json();
       if (seq < appliedSeq) return;
       appliedSeq = seq;
-      render(state);
+      render(state, requestStarted);
     } catch {
       // A newer poll already answered; this one's failure says nothing new.
       if (seq < appliedSeq) return;
       markUnreachable();
     } finally {
-      clearTimeout(timer);
+      clearTimeout(timer); refreshing = false;
     }
   }
   function markUnreachable() {
     reachable = false; botLive = false;
     renderGear({});
     if (mode === false) renderGearDetail(null);
-    show("offline", true);
-    $("offlineReason").textContent = "Lost connection to the dashboard. Reconnecting…";
+    viewerSession.update({ reachable: false, connected: false, running: false, session: lastState?.viewer?.session ?? "unknown" });
     publicAvailable = { questions: false, actions: false };
     publicWhy = { questions: "unreachable", actions: "unreachable" };
     updatePublicButtons();
@@ -524,7 +529,60 @@
   }
   // The viewer's recenter hotkey listens inside the iframe, so it only fired
   // after clicking the 3D view; forward R (and the button) into the frame.
-  const viewerFrame = document.querySelector(".stage iframe");
+  let viewerFrame = document.querySelector(".stage iframe");
+  let rememberedMode = "3d", helpDismissed = false;
+  try { rememberedMode = localStorage.getItem("cobblebob.mode") === "lightweight" ? "lightweight" : "3d"; helpDismissed = localStorage.getItem("cobblebob.help") === "dismissed"; } catch {}
+  const VIEWER_COPY = {
+    loading: ["Loading viewer", "Checking Bob's status…"], connecting: ["Connecting to 3D", "Reserving a viewing seat…"],
+    "loading-world": ["Loading the world", "Connected to 3D. Waiting for the first rendered scene…"],
+    connected: ["Watching live", "The first scene is visible; nearby terrain may still be loading."], reconnecting: ["3D disconnected", "Retrying a few times with a short pause. Status and stories remain available."],
+    capacity: ["All viewing seats are in use", "Stay for status and stories, or try lightweight. We will retry a few times with a short pause."],
+    unavailable: ["3D temporarily unavailable", "You can retry 3D or use lightweight. The status feed has its own connection."],
+    offline: ["Bob is offline", "Waiting for Bob to reconnect to Minecraft. Status and stories remain available."],
+    "webgl-failed": ["3D graphics unavailable", "Your browser could not draw the world. Try reopening 3D or use lightweight."],
+    paused: ["3D paused · seat released", "Status and stories are still available. Reopen 3D when you are ready."],
+    background: ["3D seat released", "The tab was hidden for a minute. We will reconnect when you return."],
+    lightweight: ["Lightweight view", "No 3D seat is in use. Status, stories and questions are available below."],
+  };
+  const viewerSession = new ViewerSession({
+    mode: rememberedMode, origin: window.location.origin,
+    token: frameToken, random: Math.random, schedule: (run, ms) => setTimeout(run, ms), cancel: timer => clearTimeout(timer),
+    mount(token) {
+      const replacement = viewerFrame.cloneNode(false);
+      replacement.removeAttribute("src"); viewerFrame.replaceWith(replacement); viewerFrame = replacement;
+      viewerFrame.addEventListener("load", sendView);
+      viewerFrame.src = `/viewer/?visit=${token}`;
+      return viewerFrame.contentWindow;
+    },
+    release() { viewerFrame.removeAttribute("src"); viewerFrame.src = "about:blank"; },
+    changed(state) {
+      const copy = VIEWER_COPY[state] || VIEWER_COPY.unavailable;
+      setText("viewerHeading", copy[0]); setText("offlineReason", copy[1]);
+      show("offline", state !== "connected"); setText("viewerStatus", state);
+      document.body.classList.toggle("lightweight", viewerSession.mode === "lightweight" && mode === true);
+      $("mode3d").setAttribute("aria-pressed", String(viewerSession.mode === "3d"));
+      $("modeLight").setAttribute("aria-pressed", String(viewerSession.mode === "lightweight"));
+      $("pause3d").disabled = viewerSession.mode !== "3d" || ["paused", "background", "offline"].includes(state);
+      $("retry3d").disabled = ["connecting", "loading-world", "offline", "lightweight"].includes(state);
+      $("retry3d").textContent = state === "paused" ? "Reopen 3D" : "Retry 3D";
+      for (const id of ["findBob", "povToggle", "followToggle"]) $(id).disabled = state !== "connected";
+    },
+  });
+  const chooseMode = value => { viewerSession.setMode(value); try { localStorage.setItem("cobblebob.mode", value); } catch {} };
+  $("mode3d").addEventListener("click", () => chooseMode("3d"));
+  $("modeLight").addEventListener("click", () => chooseMode("lightweight"));
+  $("fallbackLight").addEventListener("click", () => chooseMode("lightweight"));
+  $("pause3d").addEventListener("click", () => viewerSession.pause());
+  $("retry3d").addEventListener("click", () => viewerSession.retry());
+  const setHelp = dismissed => { helpDismissed = dismissed; $("firstHelp").hidden = dismissed; $("viewerHelp").setAttribute("aria-expanded", String(!dismissed)); try { localStorage.setItem("cobblebob.help", dismissed ? "dismissed" : "open"); } catch {} };
+  $("dismissHelp").addEventListener("click", () => setHelp(true));
+  $("viewerHelp").addEventListener("click", () => setHelp(!helpDismissed));
+  window.addEventListener("message", event => viewerSession.message(event.source, event.origin, event.data));
+  window.addEventListener("pagehide", () => viewerSession.stop(), { once: true });
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) { viewerSession.visibility(false); stopMapPolling(); }
+    else { await refresh(); viewerSession.visibility(true); if (panel.dataset.active === "map") startMapPolling(); }
+  });
   // Camera modes (orbit, eyes, follow) live in the frame's camera; the shell
   // owns the mode and pushes it in, including after the frame reloads.
   const viewButtons = { eyes: $("povToggle"), follow: $("followToggle") };
@@ -660,6 +718,7 @@
   // Why each feature is off, and until when it is cooling down: shared (from state) or this visitor's own (from a refusal).
   let publicWhy = { questions: "offline", actions: "offline" };
   let sharedUntil = { questions: 0, actions: 0 }, ownUntil = { questions: 0, actions: 0 };
+  let helloUntil = 0, helloSharedUntil = 0;
   let publicActivity = "offline";
   const publicButtons = [...document.querySelectorAll("#publicActions button")];
   const ACTIVITY = {
@@ -705,35 +764,59 @@
   function updatePublicButtons() {
     const notes = { questions: publicNote("questions"), actions: publicNote("actions") };
     const cooling = (feature) => Math.max(ownUntil[feature], sharedUntil[feature]) > Date.now();
-    $("publicAsk").disabled = publicBusy || !publicAvailable.questions || cooling("questions");
-    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions || cooling("actions"); });
+    $("publicAsk").disabled = publicBusy || !publicAvailable.questions || ["busy", "disabled", "offline", "unreachable"].includes(publicWhy.questions) || cooling("questions");
+    document.querySelectorAll("#publicSuggestions button").forEach(button => { button.disabled = $("publicAsk").disabled; });
+    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions || cooling("actions") || button.dataset.action === "hello" && Math.max(helloUntil, helloSharedUntil) > Date.now(); if (button.dataset.action === "hello") button.textContent = Math.max(helloUntil, helloSharedUntil) > Date.now() ? `Hello (${span(Math.max(helloUntil, helloSharedUntil) - Date.now())})` : "Say hello"; });
     // Only explain once the page knows it is public; the private shell never shows these.
     for (const [feature, id] of [["questions", "questionNote"], ["actions", "actionNote"]]) {
-      const note = mode === true && !publicBusy ? notes[feature] : null;
+      const note = mode === true ? publicBusy ? "A public request is pending. Please wait for the result." : notes[feature] : null;
       setText(id, note); show(id, Boolean(note));
       $(id).dataset.why = note ? publicWhy[feature] ?? "cooldown" : "";
     }
   }
   async function publicSubmit(feature, body) {
-    if (publicBusy || !(feature === "question" ? publicAvailable.questions : publicAvailable.actions)) return;
+    const key = feature === "question" ? "questions" : "actions";
+    if (publicBusy || !publicAvailable[key] || Math.max(ownUntil[key], sharedUntil[key]) > Date.now()) return;
+    if (feature === "question" && (!body.question.trim() || [...body.question].length > 200)) return;
+    const requestStarted = Date.now();
     publicBusy = true; updatePublicButtons();
     // Model answers may take the server's full 45 s (plus up to 5 s reading the
     // body); actions settle within its 8 s deadline. Wait a little past each.
     const asking = feature === "question";
     $("publicReply").textContent = asking ? "Bob is thinking…" : "Sending…";
     $("publicReply").classList.toggle("thinking", asking);
+    let historyRow;
+    if (asking) {
+      historyRow = el("li", "public-turn");
+      historyRow.append(el("p", "question-text", body.question), el("p", "answer-text", "Waiting for Bob…"));
+      $("publicHistory").append(historyRow);
+      while ($("publicHistory").children.length > 8) $("publicHistory").firstElementChild.remove();
+    }
+    const settle = message => { $("publicReply").textContent = message; if (historyRow) historyRow.lastElementChild.textContent = message; };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), asking ? 52_000 : 9_500);
     try {
       const response = await fetch(`/api/public/${feature}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const result = await response.json();
-      if (typeof result.retryAfterMs === "number") ownUntil[feature === "question" ? "questions" : "actions"] = Date.now() + result.retryAfterMs;
-      $("publicReply").textContent = result.text || "Public interaction unavailable.";
-    } catch { $("publicReply").textContent = feature === "action" ? "Delivery could not be confirmed." : controller.signal.aborted ? "Bob took too long to answer. Try again later." : "Couldn't reach Bob. Try again later."; }
+      if (typeof result.retryAfterMs === "number") {
+        const until = retryUntil(requestStarted, Date.now(), result.retryAfterMs);
+        ownUntil[key] = Math.max(ownUntil[key], until);
+      }
+      if (typeof result.helloRetryAfterMs === "number") helloUntil = retryUntil(requestStarted, Date.now(), result.helloRetryAfterMs);
+      const label = result.answerKind === "rules" ? "Basic status: Bob can't answer freely right now. " : result.answerKind === "refusal" ? "Bob declined this question. " : "";
+      settle(label + (result.text || "Public interaction unavailable."));
+      if (asking && response.ok && result.code === "ok" && result.answerKind !== "refusal" && $("publicQuestion").value === body.question) $("publicQuestion").value = "";
+    } catch { settle(feature === "action" ? "Delivery could not be confirmed." : controller.signal.aborted ? "Bob took too long to answer. Try again later." : "Couldn't reach Bob. Try again later."); }
     finally { clearTimeout(timer); $("publicReply").classList.remove("thinking"); publicBusy = false; updatePublicButtons(); }
   }
   $("publicQuestionForm").addEventListener("submit", event => { event.preventDefault(); void publicSubmit("question", { question: $("publicQuestion").value }); });
-  publicButtons.forEach(button => button.addEventListener("click", () => { void publicSubmit("action", { action: button.dataset.action }); }));
+  document.querySelectorAll("#publicSuggestions button").forEach(button => button.addEventListener("click", () => {
+    if ($("publicQuestion").value.trim()) { $("publicReply").textContent = "Your draft is still in the question box. Send or clear it before choosing a suggestion."; return; }
+    $("publicQuestion").value = button.textContent;
+    void publicSubmit("question", { question: button.textContent });
+  }));
+  $("clearPublicHistory").addEventListener("click", () => $("publicHistory").replaceChildren());
+  publicButtons.forEach(button => button.addEventListener("click", () => { if (button.dataset.action === "hello" && Math.max(helloUntil, helloSharedUntil) > Date.now()) return; void publicSubmit("action", { action: button.dataset.action }); }));
 
   // ---- Shared helpers for the owner-only panels ----
   let lastState = null;
@@ -1622,9 +1705,10 @@
   }
   $("historyLoad").addEventListener("click", () => { void loadHistory(); });
 
-  refresh(); setInterval(refresh, 1000);
+  void refresh(); setInterval(() => { if (!document.hidden) void refresh(); }, 1000);
   setInterval(() => {
     // Silence counts as a lost connection even while requests hang unanswered.
+    if (document.hidden) return;
     if (reachable && lastReceivedAt !== null && Date.now() - lastReceivedAt > STALE_AFTER_MS) markUnreachable();
     else if (!reachable || !botLive) renderFreshness();
   }, 1000);

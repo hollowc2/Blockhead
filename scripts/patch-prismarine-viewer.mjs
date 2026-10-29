@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createViewerEquipment } from "./viewer-equipment.mjs";
 import { installViewerDroppedItems } from "./viewer-dropped-items.mjs";
+import { installViewerLifecycle } from "./viewer-lifecycle.mjs";
 import { installViewerPreview } from "./viewer-preview.mjs";
 
 const files = [
@@ -201,6 +202,20 @@ export function patchMineflayerCrafting(source, path = "mineflayer inventory plu
   return patched;
 }
 
+export function patchViewerLifecycle(source, path = "viewer client") {
+  if (source.includes("const bobLifecycle=")) return source;
+  const hooks = [
+    ['o=i(8007)({path:window.location.pathname+"socket.io"});', 'o=i(8007)({path:window.location.pathname+"socket.io",reconnection:false});const bobLifecycle=(' + installViewerLifecycle.toString() + ')(o,window);'],
+    ['const l=new THREE.WebGLRenderer;', 'const l=(()=>{try{return new THREE.WebGLRenderer}catch(error){bobLifecycle.webgl();throw error}})();bobLifecycle.attach(l);'],
+    ['l.render(u.scene,u.camera)', 'document.hidden||(l.render(u.scene,u.camera),bobLifecycle.frame(u))'],
+  ];
+  for (const [legacy, modern] of hooks) {
+    if (source.split(legacy).length !== 2) throw new Error(`Unexpected lifecycle hook in ${path}; refusing to patch`);
+    source = source.replace(legacy, modern);
+  }
+  return source;
+}
+
 export async function patchPrismarineViewer() {
   for (const file of files) {
     const source = await readFile(file.path, "utf8");
@@ -213,13 +228,13 @@ export async function patchPrismarineViewer() {
     if (patched !== source) await writeFile(path, patched);
   }
   const clientSource = await readFile(viewerClient, "utf8");
-  const patchedClient = patchViewerEquipment(patchViewerCamera(
+  const patchedClient = patchViewerLifecycle(patchViewerEquipment(patchViewerCamera(
     patchViewerRecenterHotkey(
       patchViewerClient(clientSource, fileURLToPath(viewerClient)),
       fileURLToPath(viewerClient),
     ),
     fileURLToPath(viewerClient),
-  ), fileURLToPath(viewerClient));
+  ), fileURLToPath(viewerClient)), fileURLToPath(viewerClient));
   if (patchedClient !== clientSource) await writeFile(viewerClient, patchedClient);
 
   const mineflayerSource = await readFile(mineflayerInventory, "utf8");

@@ -6,6 +6,8 @@ import type { Logger } from "pino";
 import { WebSocketServer, WebSocket, type WebSocket as WebSocketType } from "ws";
 import type { DashboardSnapshot } from "./types.js";
 
+import { requestTarget } from "./http-guard.js";
+
 const BASE_HEADERS = { "x-content-type-options": "nosniff", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } as const;
 
 const SNAPSHOT_INTERVAL_MS = 500;
@@ -38,11 +40,14 @@ export class DashboardServer {
     if (this.server !== null) return;
 
     const server = createServer((request, response) => {
-      void this.handleHttpRequest(request, response);
+      void this.handleHttpRequest(request, response).catch(() => this.sendJson(response, 500, { error: "unavailable" }));
     });
+    server.on("clientError", (_error, socket) => socket.destroy());
     this.server = server;
     server.on("upgrade", (request, socket, head) => {
-      const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+      const target = requestTarget(request.url);
+      if (!target) { socket.destroy(); return; }
+      const pathname = target.pathname;
       if (request.method !== "GET" || pathname !== "/ws") {
         socket.destroy();
         return;
@@ -82,7 +87,9 @@ export class DashboardServer {
   }
 
   private async handleHttpRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    const target = requestTarget(request.url);
+    if (!target) { this.sendJson(response, 400, { error: "invalid target" }); return; }
+    const pathname = target.pathname;
     if (request.method !== "GET") {
       this.sendJson(response, 405, { error: "method not allowed" }, { allow: "GET" });
       return;
@@ -161,6 +168,8 @@ export class DashboardServer {
   }
 
   private sendJson(response: ServerResponse, status: number, body: unknown, extraHeaders: Record<string, string> = {}): void {
+    if (response.destroyed || response.writableEnded) return;
+    if (response.headersSent) { response.destroy(); return; }
     response.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...extraHeaders });
     response.end(JSON.stringify(body));
   }

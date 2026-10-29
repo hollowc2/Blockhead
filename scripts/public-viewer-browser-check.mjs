@@ -1,0 +1,84 @@
+/** Optional Firefox BiDi fixture UI regression. See docs/public-viewer-experience.md. */
+import WebSocket from "ws";
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const target = new URL(process.argv[2]);
+if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1') throw Error('Use an isolated loopback fixture only');
+const ws = new WebSocket(`ws://127.0.0.1:${Number(process.argv[3] ?? 9223)}/session`);
+ws.on("error", () => { process.exitCode = 1; });
+let id = 0; const pending = new Map(); const errors = [];
+ws.on('message', raw => { const m = JSON.parse(raw); if (m.id) { const p = pending.get(m.id); if (!p) return; pending.delete(m.id); if (m.type === 'error') p.reject(Error(JSON.stringify(m))); else p.resolve(m.result); } else if (m.method === 'log.entryAdded' && m.params.level === 'error') { if (errors.length < 50) errors.push(m.params.text); } });
+const command = (method, params = {}) => new Promise((resolve,reject) => { const n=++id; pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params})); });
+(async()=>{
+ await new Promise((r,j)=>{ws.once('open',r);ws.once('error',j)});
+ await command('session.new',{capabilities:{alwaysMatch:{acceptInsecureCerts:false}}}).catch(async()=>{await command('session.end');return command('session.new',{capabilities:{alwaysMatch:{}}});});
+ const tree=await command('browsingContext.getTree'); const context=tree.contexts[0].context;
+ await command('session.subscribe',{events:['log.entryAdded']});
+ const evaluate=async expression=>{ const r=await command('script.evaluate',{expression:'JSON.stringify('+expression+')',target:{context},awaitPromise:true}); if(r.type==='exception')throw Error(JSON.stringify(r));return r.result.value === undefined || r.result.value === "undefined" ? undefined : JSON.parse(r.result.value); };
+ const waitFor=async expression=>{for(let n=0;n<80;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,100));}throw Error('UI wait: '+expression);};
+ await command('browsingContext.setViewport',{context,viewport:{width:1440,height:1000},devicePixelRatio:1});
+ await command('browsingContext.navigate',{context,url:process.argv[2],wait:'complete'});
+ await waitFor('document.getElementById("connectionText").textContent === "Online"');
+ const initial=await evaluate('({status:document.getElementById("viewerStatus").textContent,body:document.body.className,frame:document.querySelector("iframe").getAttribute("src"),ask:document.getElementById("publicAsk").disabled})');
+ console.log('initial',initial,'errors',errors);
+ await evaluate('document.getElementById("modeLight").click()');
+ assert.equal(await evaluate('document.querySelector("iframe").getAttribute("src")'),'about:blank');
+ assert.equal(await evaluate('document.body.classList.contains("lightweight")'),true);
+ await evaluate('(()=>{document.getElementById("publicQuestion").value="health";document.getElementById("publicQuestion").focus();return true})()');
+ await command("input.performActions", {context, actions:[{type:"key",id:"keyboard",actions:[{type:"keyDown",value:"\uE007"},{type:"keyUp",value:"\uE007"}]}]});
+ await waitFor('document.getElementById("publicHistory").textContent.includes("health") && !document.getElementById("publicReply").classList.contains("thinking")');
+ console.log('normal question', await evaluate('({answer:document.getElementById("publicReply").textContent,input:document.getElementById("publicQuestion").value})'));
+ await evaluate('(()=>{window.fixtureFetch=window.fetch;window.fetch=async(url,options)=>String(url).includes("/api/public/question")?new Response(JSON.stringify({code:"ok",text:"<img src=x onerror=alert(1)>",answerKind:"model"}),{status:200}):window.fixtureFetch(url,options);return true})()');
+ // Release the per-visitor successful cooldown in the UI by advancing its local clock in the fixture.
+ await evaluate('(()=>{window.fixtureNow=Date.now;Date.now=()=>window.fixtureNow()+120000;return true})()');
+ for(let n=0;n<10;n++){
+  await waitFor('!document.getElementById("publicAsk").disabled');
+  await evaluate('(()=>{document.getElementById("publicQuestion").value="<b>visitor '+n+'</b>";document.getElementById("publicQuestionForm").requestSubmit();return true})()');
+  await waitFor('!document.getElementById("publicReply").classList.contains("thinking")');
+ }
+ assert.equal(await evaluate('document.getElementById("publicHistory").children.length'),8);
+ assert.equal(await evaluate('document.querySelectorAll("#publicHistory img,#publicHistory b").length'),0);
+ await evaluate('(()=>{window.fetch=async(url,options)=>String(url).includes("/api/public/question")?new Response(JSON.stringify({code:"limited",text:"Please wait.",retryAfterMs:0}),{status:429}):window.fixtureFetch(url,options);document.getElementById("publicQuestion").value="preserved draft";document.getElementById("publicQuestionForm").requestSubmit();return true})()');
+ await waitFor('document.getElementById("publicReply").textContent === "Please wait."');
+ assert.equal(await evaluate('document.getElementById("publicQuestion").value'),'preserved draft');
+ await waitFor('!document.getElementById("publicAsk").disabled');
+ await evaluate('(()=>{window.fetch=async(url,options)=>String(url).includes("/api/public/question")?new Response(JSON.stringify({code:"ok",text:"Ask about my public status instead.",answerKind:"refusal"}),{status:200}):window.fixtureFetch(url,options);document.getElementById("publicQuestionForm").requestSubmit();return true})()');
+ await waitFor('document.getElementById("publicReply").textContent.includes("Bob declined")');
+ assert.equal(await evaluate('document.getElementById("publicQuestion").value'),'preserved draft');
+ await evaluate(`(()=>{window.fixturePolicy="busy";window.fetch=async(url,options)=>{
+   if(String(url)==="/api/state") {const result=await window.fixtureFetch(url,options),state=await result.json();
+     if(window.fixturePolicy==="unavailable")throw Error("fixture unavailable");
+     if(window.fixturePolicy==="offline")state.connection.connected=false;
+     if(window.fixturePolicy==="busy")state.interactions={...state.interactions,questions:false,questionsReason:"busy"};
+     if(window.fixturePolicy==="disabled")state.interactions={...state.interactions,questions:false,questionsReason:"disabled"};
+     return new Response(JSON.stringify(state),{status:200});}
+   if(String(url).includes("/api/public/question"))return new Promise(resolve=>{window.fixtureFinish=()=>resolve(new Response(JSON.stringify({code:"cancelled",text:"Public interaction unavailable."}),{status:503}));});
+   return window.fixtureFetch(url,options);
+ };return true})()`);
+ await waitFor('document.getElementById("publicAsk").disabled && document.getElementById("questionNote").textContent.includes("another viewer")');
+ await evaluate('window.fixturePolicy="normal"');await waitFor('!document.getElementById("publicAsk").disabled');
+ await evaluate('(()=>{document.getElementById("publicQuestionForm").requestSubmit();return true})()');
+ await waitFor('document.getElementById("publicReply").classList.contains("thinking")');
+ await evaluate('window.fixturePolicy="disabled"');
+ await waitFor('document.getElementById("questionNote").textContent.includes("pending")');
+ await evaluate('window.fixtureFinish()');
+ await waitFor('!document.getElementById("publicReply").classList.contains("thinking") && document.getElementById("questionNote").textContent.includes("switched off")');
+ assert.equal(await evaluate('document.getElementById("publicQuestion").value'),'preserved draft');
+ await evaluate('window.fixturePolicy="offline"');
+ await waitFor('document.getElementById("connectionText").textContent.includes("Offline") && document.getElementById("publicAsk").disabled');
+ await evaluate('window.fixturePolicy="unavailable"');
+ await waitFor('document.getElementById("connectionText").textContent.includes("Reconnecting") && document.getElementById("publicAsk").disabled');
+ await evaluate('(()=>{window.fixturePolicy="normal";window.fetch=window.fixtureFetch;return true})()');
+ await waitFor('document.getElementById("connectionText").textContent === "Online" && !document.getElementById("publicAsk").disabled');
+ await evaluate('document.getElementById("clearPublicHistory").click()');
+ assert.equal(await evaluate('document.getElementById("publicHistory").children.length'),0);
+ const desktop=await command('browsingContext.captureScreenshot',{context});fs.writeFileSync('/tmp/blockhead-desktop.png',Buffer.from(desktop.data,'base64'));
+ await command('browsingContext.setViewport',{context,viewport:{width:390,height:844},devicePixelRatio:1});
+ await evaluate('document.getElementById("publicQuestion").focus()');
+ assert(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'));
+ const mobile=await command('browsingContext.captureScreenshot',{context});fs.writeFileSync('/tmp/blockhead-mobile.png',Buffer.from(mobile.data,'base64'));
+ console.log('mobile',await evaluate('({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,active:document.activeElement.id,frame:document.querySelector("iframe").getAttribute("src")})'));
+ console.log('browser errors',errors);
+ fs.writeFileSync('/tmp/blockhead-browser-results.json',JSON.stringify({initial,historyBound:8,htmlInert:true,draftPreserved:true,refusalClassified:true,busyDisabled:true,operatorDisableDuringPending:true,offlineRecovery:true,apiFailureRecovery:true,mobileWidth:390,noOverflow:true,errors},null,2));
+ await command('session.end'); ws.close();
+})().catch(async error=>{console.error(error);await command("session.end").catch(()=>{});ws.close();process.exitCode=1;});

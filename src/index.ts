@@ -301,7 +301,7 @@ if (publicModel?.enabled && !publicModelClient) logger.error("model_questions.ba
 const publicInteractions: PublicInteractions = new PublicInteractions({
   config: config.dashboard?.public_viewer.interactions ?? { questions_enabled: false, actions_enabled: false },
   gestures: publicGestures,
-  ...(publicModelClient ? { modelAnswer: (question: string, facts: PublicFacts) => answerWithModel(messages => publicModelClient.complete(messages), facts, question) } : {}),
+  ...(publicModelClient ? { modelAnswer: (question: string, facts: PublicFacts, signal: AbortSignal, deadline: number) => answerWithModel(messages => publicModelClient.complete(messages, { signal, deadline, priority: "public" }), facts, question, signal) } : {}),
   facts: () => ({
     connected: connectionState.state === "READY" && !!session?.bot.entity,
     health: session?.bot.health ?? null, hunger: session?.bot.food ?? null, time: state.timePhase,
@@ -316,40 +316,41 @@ const viewerCommand = createViewerCommand({ deliver: (text) => {
   const id = commandTracker.begin(text);
   try { deliverOwnerCommand(text); } catch (error) { commandTracker.discard(id); throw error; }
 } });
+const viewerAdapter = createPrismarineViewerAdapter({
+  host: config.dashboard?.viewer_host ?? "127.0.0.1",
+  publicViewer: config.dashboard?.public_viewer?.enabled === true
+    ? { port: config.dashboard.public_viewer.port, maxConnections: config.dashboard.public_viewer.max_connections }
+    : null,
+  // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
+  publicInteractions,
+  publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
+  // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
+  chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
+  command: viewerCommand,
+  privateApi: {
+    job: createJobControl({ scheduler, goals, blockers, builds: buildProjectManager }),
+    preview: async (body) => {
+      const result = await buildPreview(body);
+      return result.ok ? { status: 200, body: { preview: result.preview, changes: result.changes } } : { status: result.status, body: { error: result.error } };
+    },
+    previewStart: createPreviewStart({ preview: (body) => buildPreview(body), send: viewerCommand }),
+    history: async (since) => ({ status: 200, body: readHistory(storyStore, since, unresolvedProblems()) }),
+    map: async () => {
+      const project = buildProjectManager.currentProject()?.project ?? null;
+      return { status: 200, body: readOwnerMap({
+        db, worldId: state.worldId, bot: session?.bot ?? null, routes: session?.routes ?? null,
+        build: project === null ? null : { ...project.origin, label: `Build: ${(project.userGoal || project.structureType).replace(/_/g, " ")}` },
+      }) };
+    },
+  },
+  logger,
+});
 const viewerManager = new ViewerManager({
   enabled: config.dashboard?.viewer_enabled ?? false,
   port: config.dashboard?.viewer_port ?? 3001,
   distance: config.dashboard?.viewer_distance ?? 6,
   dashboardPort: config.dashboard?.port ?? 3000,
-  adapter: createPrismarineViewerAdapter({
-    host: config.dashboard?.viewer_host ?? "127.0.0.1",
-    publicViewer: config.dashboard?.public_viewer?.enabled === true
-      ? { port: config.dashboard.public_viewer.port, maxConnections: config.dashboard.public_viewer.max_connections }
-      : null,
-    // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
-    publicInteractions,
-    publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
-    // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
-    chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
-    command: viewerCommand,
-    privateApi: {
-      job: createJobControl({ scheduler, goals, blockers, builds: buildProjectManager }),
-      preview: async (body) => {
-        const result = await buildPreview(body);
-        return result.ok ? { status: 200, body: { preview: result.preview, changes: result.changes } } : { status: result.status, body: { error: result.error } };
-      },
-      previewStart: createPreviewStart({ preview: (body) => buildPreview(body), send: viewerCommand }),
-      history: async (since) => ({ status: 200, body: readHistory(storyStore, since, unresolvedProblems()) }),
-      map: async () => {
-        const project = buildProjectManager.currentProject()?.project ?? null;
-        return { status: 200, body: readOwnerMap({
-          db, worldId: state.worldId, bot: session?.bot ?? null, routes: session?.routes ?? null,
-          build: project === null ? null : { ...project.origin, label: `Build: ${(project.userGoal || project.structureType).replace(/_/g, " ")}` },
-        }) };
-      },
-    },
-    logger,
-  }),
+  adapter: viewerAdapter,
   logger,
 });
 
@@ -476,6 +477,7 @@ if (shouldEnableTui(config, detectStdoutIsTty())) {
 }
 
 statusServer = new StatusServer({
+  operatorToken: process.env.BLOCKHEAD_OPERATOR_TOKEN,
   host: config.status?.host ?? "127.0.0.1",
   port: config.status?.port ?? 8155,
   logger,
@@ -501,6 +503,8 @@ statusServer = new StatusServer({
       // Private loopback GET only. Never pass these observations to public facts/state.
       status: () => ({
         ...(publicInteractions.diagnostics() as Record<string, unknown>),
+        modelQueue: client.queueState,
+        viewer: viewerAdapter.diagnostics(),
         admission: publicAdmission(session?.bot ?? null, true),
         physical: session ? assessPublicPhysicalState(session.bot, config.policy?.health_retreat_threshold ?? 8, true) : null,
         threats: session ? assessPublicThreatState(session.bot) : null,
@@ -529,6 +533,10 @@ dashboardServer = startDashboard({
   logger,
   snapshot: () => dashboardTelemetry.snapshot(),
 });
+
+// Keep the redacted status/Q&A shell available before the first bot connection and between sessions.
+void viewerAdapter.startPublicShell({ port: config.dashboard?.viewer_port ?? 3001, dashboardPort: config.dashboard?.port ?? 3000 })
+  .catch((error: unknown) => logger.warn({ err: String(error) }, "public viewer shell unavailable"));
 
 process.on("exit", () => {
   taskOutcomes.dispose();
@@ -575,8 +583,10 @@ const shutdownCoordinator = new ShutdownCoordinator({
         run: () => {
           // No new task may start while the active one drains: settling it
           // would otherwise claim the next queued task.
+          publicInteractions.shutdown();
           scheduler.halt();
           viewerManager.stop();
+          viewerAdapter.close();
           if (active !== null) {
             viewerManager.stopFor(active.bot);
             active.background.stop();

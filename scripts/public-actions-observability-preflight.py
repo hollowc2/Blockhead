@@ -7,6 +7,7 @@ service changes, database checkpoint operations or remote file writes.
 import datetime
 import hashlib
 import json
+import os
 import pathlib
 import socket
 import sqlite3
@@ -19,7 +20,11 @@ def digest(path):
 
 
 def get(port, path):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=8) as response:
+    headers = {}
+    if path == "/public-interactions":
+        headers["Authorization"] = "Bearer " + os.environ["BLOCKHEAD_OPERATOR_TOKEN"]
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers)
+    with urllib.request.urlopen(request, timeout=8) as response:
         return json.load(response)
 
 

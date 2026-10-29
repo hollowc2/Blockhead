@@ -1,3 +1,4 @@
+import { modelQueue, type CompletionOptions } from "./request-queue.js";
 import { z } from "zod";
 import { ChatCompletionSchema } from "./schemas.js";
 
@@ -20,7 +21,7 @@ export interface LlmClientOptions {
 
 const MODEL_ID_PENDING = "local-model";
 const ModelsSchema = z.object({ data: z.array(z.object({ id: z.string().min(1) })).min(1) });
-let requestTail: Promise<void> = Promise.resolve();
+
 
 export class LlamaClient {
   private readonly baseUrl: string;
@@ -87,29 +88,29 @@ export class LlamaClient {
     this._lastFailure = { at: this.now(), ...failure };
   }
 
-  async complete(messages: LlmMessage[]): Promise<string> {
-    // llama.cpp is a single local model. Serialize requests process-wide so a
-    // chat command cannot interleave with an autonomous decision.
-    let release!: () => void;
-    const turn = new Promise<void>((resolve) => { release = resolve; });
-    const previous = requestTail;
-    requestTail = requestTail.then(() => turn);
-    await previous;
+  get queueState(): ReturnType<typeof modelQueue.stats> { return modelQueue.stats(); }
+
+  async complete(messages: LlmMessage[], options: CompletionOptions = {}): Promise<string> {
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+    const timer = options.deadline !== undefined ? setTimeout(() => controller.abort(new DOMException("deadline exceeded", "TimeoutError")), Math.max(0, options.deadline - Date.now())) : undefined;
     try {
-      return await this.completeSerialized(messages);
-    } finally {
-      release();
-    }
+      if (options.deadline !== undefined && options.deadline <= Date.now()) controller.abort(new DOMException("deadline exceeded", "TimeoutError"));
+      return await modelQueue.add(() => this.completeSerialized(messages, signal), signal, options.priority === "public");
+    } finally { clearTimeout(timer); }
   }
 
-  private async completeSerialized(messages: LlmMessage[]): Promise<string> {
+  private async completeSerialized(messages: LlmMessage[], signal: AbortSignal): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await this.chatOnce(messages);
+        signal.throwIfAborted();
+        const response = await this.chatOnce(messages, signal);
+        signal.throwIfAborted();
         this.noteSuccess();
         return response;
       } catch (err) {
+        signal.throwIfAborted();
         lastError = err;
         const error = err instanceof Error ? err : new Error(String(err));
         const kind = error.name === "AbortError"
@@ -122,7 +123,7 @@ export class LlamaClient {
         this.onFailure?.({ kind, attempt: attempt + 1, error: error.message });
         if (attempt < this.maxRetries && isRetryable(error)) {
           const base = Math.min(5000, 250 * 2 ** attempt);
-          await this.sleep(Math.round(base * (0.75 + this.random() * 0.5)));
+          await abortable(this.sleep(Math.round(base * (0.75 + this.random() * 0.5))), signal);
         } else if (attempt < this.maxRetries) {
           break;
         }
@@ -131,16 +132,17 @@ export class LlamaClient {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  private async chatOnce(messages: LlmMessage[]): Promise<string> {
+  private async chatOnce(messages: LlmMessage[], parent: AbortSignal): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const model = await this.resolveModelId(controller);
+      const signal = AbortSignal.any([controller.signal, parent]);
+      const model = await this.resolveModelId(signal);
       const res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 512, stream: false, chat_template_kwargs: { enable_thinking: false } }),
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) throw new Error(`llama.cpp returned HTTP ${res.status}`);
       const data = ChatCompletionSchema.parse(await res.json());
@@ -150,9 +152,9 @@ export class LlamaClient {
     }
   }
 
-  private async resolveModelId(controller: AbortController): Promise<string> {
+  private async resolveModelId(signal: AbortSignal): Promise<string> {
     if (this.modelId !== null) return this.modelId;
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", signal: controller.signal });
+    const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", signal });
     if (!res.ok) throw new Error(`llama.cpp /v1/models returned HTTP ${res.status}`);
     const parsed = ModelsSchema.parse(await res.json());
     this.modelId = parsed.data[0]!.id;
@@ -170,4 +172,11 @@ function isRetryable(error: Error): boolean {
   if (match === null) return false;
   const status = Number(match[1]);
   return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => { abort = () => reject(signal.reason); signal.addEventListener("abort", abort, { once: true }); });
+  try { return await Promise.race([work, cancelled]); } finally { signal.removeEventListener("abort", abort); }
 }

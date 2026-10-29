@@ -132,8 +132,7 @@ test("public shell 404s everything outside the viewer allowlist and never reache
     ];
     for (const [method, path] of denied) {
       const result = await send(env.port, method, path, {}, method === "POST" ? "go home" : undefined);
-      assert.equal(result.status, 404, `${method} ${path} → ${result.status}`);
-      assert.equal(result.body, "not found");
+      assert.equal(result.status, path.includes("..") || path.includes("%2e") ? 400 : 404, `${method} ${path} → ${result.status}`);
     }
     assert.equal(env.stats.seen.length, 0, "public shell must never proxy to the dashboard");
     assert.equal(env.viewer.seen.length, 0);

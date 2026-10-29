@@ -298,11 +298,11 @@ export const MinecraftConfigSchema = z.object({
               enabled: z.boolean().default(false),
               base_url: z.string().url().default("http://127.0.0.1:8000"),
               request_timeout_ms: z.number().int().positive().default(40_000),
-            }).default({}),
-          }).default({}).refine(value => !(value.questions_enabled || value.actions_enabled) || !!value.allowed_origin, "allowed_origin is required"),
+            }).prefault({}),
+          }).prefault({}).refine(value => !(value.questions_enabled || value.actions_enabled) || !!value.allowed_origin, "allowed_origin is required"),
           max_connections: z.number().int().positive().max(32).default(6),
         })
-        .default({}),
+        .prefault({}),
     })
     .optional(),
   tui: z

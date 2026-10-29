@@ -75,8 +75,8 @@ test("does not serve unknown static paths", async () => {
   try {
     for (const path of ["/dashboard.json", "/public/index.html", "/../package.json", "/%2e%2e/package.json"]) {
       const response = await http(port, "GET", path);
-      assert.equal(response.status, 404, path);
-      assert.deepEqual(JSON.parse(response.body), { error: "not found" });
+      assert.equal(response.status, path.endsWith("package.json") ? 400 : 404, path);
+      assert.deepEqual(JSON.parse(response.body), { error: path.endsWith("package.json") ? "invalid target" : "not found" });
     }
   } finally { server.stop(); }
 });

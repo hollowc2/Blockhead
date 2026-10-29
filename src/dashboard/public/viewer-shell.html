@@ -25,13 +25,19 @@
         <button type="button" data-view="watch" aria-pressed="true" title="The world fills the screen">Watch</button>
         <button type="button" data-view="manage" aria-pressed="false" title="A small preview; the panel gets the screen">Manage</button>
       </div>
+      <div class="viewer-choices" data-public hidden role="group" aria-label="Viewing mode">
+        <button id="mode3d" type="button" aria-pressed="true">3D view</button>
+        <button id="modeLight" type="button" aria-pressed="false">Lightweight</button>
+        <button id="pause3d" type="button">Pause 3D</button>
+        <button id="viewerHelp" type="button" aria-expanded="true" aria-controls="firstHelp">Help</button>
+      </div>
       <div id="connection" class="pill pill-wait" role="status"><i class="dot"></i><span id="connectionText">Connecting…</span></div>
     </div>
   </header>
 
   <main class="layout">
     <section class="stage" id="stage">
-      <iframe title="CobbleBob Minecraft viewer" src="/viewer/"></iframe>
+      <iframe title="CobbleBob Minecraft viewer"></iframe>
 
       <div class="hud hud-top" data-live="bot">
         <div id="dayChip" class="chip chip-day" hidden><span id="dayCount">Day —</span></div>
@@ -73,7 +79,7 @@
 
       <div id="toasts" class="toasts" aria-live="polite"></div>
 
-      <div id="offline" class="offline" hidden><div><strong>Viewer offline</strong><span id="offlineReason">Waiting for CobbleBob to reconnect…</span></div></div>
+      <div id="offline" class="offline" role="status"><div><strong id="viewerHeading">Loading viewer</strong><span id="offlineReason">Checking Bob's status…</span><div class="recovery-actions"><button id="retry3d" type="button">Retry 3D</button><button id="fallbackLight" type="button" data-public hidden>Use lightweight view</button></div></div></div>
 
       <button id="stageExpand" class="stage-expand" type="button" aria-label="Watch the world full size" title="Watch the world">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Watch
@@ -179,6 +185,11 @@
         </form>
       </article>
 
+      <article id="firstHelp" class="card" data-tab="live" data-public hidden>
+        <h2>Meet CobbleBob <button id="dismissHelp" class="link-btn" type="button">Dismiss</button></h2>
+        <p class="sub">Bob is an autonomous Minecraft companion, gathering, building and surviving. Ask about his health, time or general activity. Gestures open only when he is idle and safe; he may be busy or refuse.</p>
+        <p class="sub">Drag with one finger to orbit; pinch to zoom and use two fingers to pan. Find Bob recenters the camera. Lightweight uses no 3D seat. Hidden tabs release their seat after a minute; visible watchers can keep watching without clicking.</p>
+      </article>
       <article id="statusCard" class="card spectate" data-tab="live" data-public hidden data-live="bot" data-activity="offline">
         <h2>Right now</h2>
         <div class="spectate-head">
@@ -193,17 +204,20 @@
 
       <article class="card" data-tab="live" data-public hidden>
         <h2>Ask CobbleBob</h2>
-        <p class="sub">Read-only answers about Bob's public status. Simple actions work while Bob is idle. Shared cooldowns apply.</p>
+        <p class="sub">Answers about Bob's public status. Gestures are available only when Bob is idle and safe. Shared cooldowns apply.</p>
+        <ol id="publicHistory" class="public-history" aria-label="This tab’s questions and answers"></ol>
+        <button id="clearPublicHistory" type="button" class="link-btn">Clear history</button>
+        <div id="publicSuggestions" class="chat-quick"><button type="button">How is your health?</button><button type="button">What time is it?</button><button type="button">What are you doing?</button></div>
         <form id="publicQuestionForm" class="chat-form" autocomplete="off">
-          <input id="publicQuestion" type="text" maxlength="200" placeholder="What are you doing?" aria-label="Public question" required>
-          <button id="publicAsk" type="submit" disabled>Ask</button>
+          <input id="publicQuestion" type="text" maxlength="200" placeholder="What are you doing?" aria-label="Public question" aria-describedby="questionNote" required>
+          <button id="publicAsk" aria-describedby="questionNote" type="submit" disabled>Ask</button>
         </form>
         <p id="questionNote" class="avail-note" hidden></p>
-        <div id="publicActions" class="chat-quick">
-          <button type="button" data-action="hello" disabled>Say hello</button>
-          <button type="button" data-action="wave" disabled>Wave</button>
-          <button type="button" data-action="look_left" disabled>Look left</button>
-          <button type="button" data-action="look_right" disabled>Look right</button>
+        <div id="publicActions" class="chat-quick" aria-describedby="actionNote" role="group" aria-label="Public gestures">
+          <button type="button" aria-describedby="actionNote" data-action="hello" disabled>Say hello</button>
+          <button type="button" aria-describedby="actionNote" data-action="wave" disabled>Wave</button>
+          <button type="button" aria-describedby="actionNote" data-action="look_left" disabled>Look left</button>
+          <button type="button" aria-describedby="actionNote" data-action="look_right" disabled>Look right</button>
         </div>
         <p id="actionNote" class="avail-note" hidden></p>
         <p id="publicReply" class="sub" role="status" aria-live="polite">Public interactions are unavailable.</p>
@@ -371,6 +385,6 @@
       </section>
     </aside>
   </main>
-  <script src="/viewer-shell.js" defer></script>
+  <script type="module" src="/viewer-shell.js"></script>
 </body>
 </html>

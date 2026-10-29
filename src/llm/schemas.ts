@@ -10,7 +10,7 @@ export const AgentDecisionSchema = z.object({
     z.object({
       type: z.literal("tool"),
       tool: z.string(),
-      arguments: z.record(z.unknown()),
+      arguments: z.record(z.string(), z.unknown()),
     }),
     z.object({
       type: z.literal("respond"),

@@ -1,0 +1,5 @@
+# PROPOSED ONLY. Install only as part of the separately authorized candidate rollout.
+# User-service drop-in: ~/.config/systemd/user/blockhead.service.d/operator.conf
+# Install the secret file first with owner-only (0600) permissions; do not sync it from Git.
+[Service]
+EnvironmentFile=%h/.config/blockhead/operator.env

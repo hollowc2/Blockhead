@@ -1,6 +1,6 @@
 import type { LlmMessage } from "../llm/client.js";
 import { cleanAnswer } from "./viewer-chat.js";
-import type { PublicFacts } from "./public-chat.js";
+import { publicFacts, type PublicFacts } from "./public-chat.js";
 
 /**
  * Model-backed public Q&A. Anyone on the web can ask, so every call goes
@@ -28,7 +28,7 @@ export type PublicModelAnswer =
 
 export function buildPublicChatMessages(facts: PublicFacts, question: string): LlmMessage[] {
   return [
-    { role: "system", content: `${PUBLIC_MODEL_CHAT_SYSTEM_PROMPT}\n\nFacts:\n${JSON.stringify(facts)}` },
+    { role: "system", content: `${PUBLIC_MODEL_CHAT_SYSTEM_PROMPT}\n\nFacts:\n${JSON.stringify(publicFacts(facts))}` },
     { role: "user", content: question },
   ];
 }
@@ -42,11 +42,15 @@ export async function answerWithModel(
   complete: (messages: LlmMessage[]) => Promise<string>,
   facts: PublicFacts,
   question: string,
+  signal?: AbortSignal,
 ): Promise<PublicModelAnswer> {
   try {
+    signal?.throwIfAborted();
     const text = cleanAnswer(await complete(buildPublicChatMessages(facts, question)));
+    signal?.throwIfAborted();
     return text ? { kind: "answer", text } : { kind: "unavailable" };
   } catch (error) {
+    signal?.throwIfAborted();
     return isFirewallBlock(error) ? { kind: "blocked" } : { kind: "unavailable" };
   }
 }

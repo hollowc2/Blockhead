@@ -176,11 +176,11 @@ test("limiter wait reports the time until the next slot without consuming one", 
 test("availability explains disabled, busy and shared cooldowns, and refusals carry the visitor's wait", async () => {
   const f = fixture(), port = await listen(f.server);
   try {
-    assert.deepEqual(f.interactions.availability(), { questions: true, actions: true, questionsReason: null, actionsReason: null, questionsCooldownMs: 0, actionsCooldownMs: 0 });
+    assert.deepEqual(f.interactions.availability(), { questions: true, actions: true, questionsReason: null, actionsReason: null, questionsCooldownMs: 0, actionsCooldownMs: 0, helloCooldownMs: 0 });
     const ok = await send(port, "/action", '{"action":"wave"}');
     assert.equal(ok.status, 200); assert.equal(JSON.parse(ok.body).retryAfterMs, 10_000);
     const state = f.interactions.availability();
-    assert.equal(state.actionsReason, "cooldown"); assert.equal(state.actionsCooldownMs, 5000); assert.equal(state.actions, true);
+    assert.equal(state.actionsReason, "cooldown"); assert.equal(state.actionsCooldownMs, 5000); assert.equal(state.actions, false);
     const limited = await send(port, "/action", '{"action":"wave"}');
     assert.equal(limited.status, 429); assert.equal(JSON.parse(limited.body).retryAfterMs, 10_000); assert.equal(limited.retry, "10");
     f.interactions.configure({ questions_enabled: false, actions_enabled: true });
@@ -188,4 +188,20 @@ test("availability explains disabled, busy and shared cooldowns, and refusals ca
   } finally { await close(f.server); }
   const busy = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true }, gestures: new PublicActionController({ session: () => null, safe: () => true, tryRun: () => null }), facts: () => ({ connected: true, health: 20, hunger: 20, activity: "working", time: "day", actions: false }) });
   assert.equal(busy.availability().actionsReason, "busy"); assert.equal(busy.availability().actions, false);
+});
+
+test("hello-only cooldown never blocks unrelated gestures and safe response classifications match outcomes", async () => {
+  const f = fixture(), port = await listen(f.server);
+  try {
+    const hello = JSON.parse((await send(port, "/action", '{"action":"hello"}')).body);
+    assert.equal(hello.helloRetryAfterMs, 30_000);
+    f.advance(11_000);
+    const onlyHello = JSON.parse((await send(port, "/action", '{"action":"hello"}')).body);
+    assert.equal(onlyHello.helloRetryAfterMs, 19_000);
+    assert.equal(onlyHello.retryAfterMs, undefined);
+    assert.equal(f.interactions.availability().actions, true);
+    assert.equal((await send(port, "/action", '{"action":"wave"}')).status, 200);
+    const reply = JSON.parse((await send(port, "/question", '{"question":"health"}')).body);
+    assert.equal(reply.answerKind, "rules");
+  } finally { await close(f.server); }
 });

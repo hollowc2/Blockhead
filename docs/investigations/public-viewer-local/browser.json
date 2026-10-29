@@ -1,0 +1,19 @@
+{
+  "initial": {
+    "status": "lightweight",
+    "body": "public lightweight",
+    "frame": null,
+    "ask": false
+  },
+  "historyBound": 8,
+  "htmlInert": true,
+  "draftPreserved": true,
+  "refusalClassified": true,
+  "busyDisabled": true,
+  "operatorDisableDuringPending": true,
+  "offlineRecovery": true,
+  "apiFailureRecovery": true,
+  "mobileWidth": 390,
+  "noOverflow": true,
+  "errors": []
+}

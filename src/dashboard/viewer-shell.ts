@@ -6,10 +6,11 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
 import type { ViewerChatResult } from "./viewer-chat.js";
-import { clientAddress, PUBLIC_VIEWER_HEADER, RateLimiter, SHELL_SECURITY_HEADERS, VIEWER_SECURITY_HEADERS, VIEWER_WORKER_SECURITY_HEADERS } from "./http-guard.js";
+import { addressKey, requestTarget, VIEWER_ADDRESS_HEADER, clientAddress, PUBLIC_VIEWER_HEADER, RateLimiter, SHELL_SECURITY_HEADERS, VIEWER_SECURITY_HEADERS, VIEWER_WORKER_SECURITY_HEADERS } from "./http-guard.js";
 
 const SHELL_HTML = fileURLToPath(new URL("./public/viewer-shell.html", import.meta.url));
 const SHELL_CSS = fileURLToPath(new URL("./public/viewer-shell.css", import.meta.url));
+const SESSION_JS = fileURLToPath(new URL("./public/viewer-session.mjs", import.meta.url));
 const SHELL_JS = fileURLToPath(new URL("./public/viewer-shell.js", import.meta.url));
 
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
@@ -98,6 +99,7 @@ export class ViewerShellServer {
   private readonly handshakeLimiter: RateLimiter;
   private readonly socketsByIp = new Map<string, number>();
   private openSockets = 0;
+  private readonly tunnels = new Set<Duplex>();
 
   constructor(private readonly options: ViewerShellOptions) {
     this.isPublic = options.mode === "public";
@@ -112,10 +114,13 @@ export class ViewerShellServer {
       const handler = this.isPublic ? this.handlePublic(request, response) : this.handle(request, response);
       void handler.catch(() => this.sendText(response, 500, "server error"));
     });
+    server.maxConnections = 128;
+    server.maxHeadersCount = 64;
     server.requestTimeout = 30_000;
     server.headersTimeout = 10_000;
     server.on("clientError", (_error, socket) => socket.destroy());
     server.on("upgrade", (request, socket, head) => {
+      if (!requestTarget(request.url)) { socket.destroy(); return; }
       if (this.isPublic) this.handlePublicUpgrade(request, socket, head);
       else this.handleUpgrade(request, socket, head);
     });
@@ -141,13 +146,17 @@ export class ViewerShellServer {
   stop(): void {
     const server = this.server;
     this.server = null;
-    if (this.isPublic) this.options.publicInteractions?.cancel();
+    if (this.isPublic) this.options.publicInteractions?.cancelAll();
+    for (const socket of this.tunnels) socket.destroy();
+    this.tunnels.clear();
     server?.close();
     server?.closeAllConnections();
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    const target = requestTarget(request.url);
+    if (!target) { this.sendText(response, 400, "invalid target"); return; }
+    const pathname = target.pathname;
     if (isViewerSocketPath(pathname) && (request.method === "GET" || request.method === "POST")) {
       const targetPath = pathname.startsWith("/viewer/")
         ? viewerTargetPath(request.url ?? pathname)
@@ -202,9 +211,10 @@ export class ViewerShellServer {
 
   /** Public allowlist: shell page, viewer bundle, viewer socket, redacted state. Anything else is 404. */
   private async handlePublic(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const ip = clientAddress(request, true);
+    const ip = addressKey(clientAddress(request, true));
     if (!this.httpLimiter.take(ip)) { response.setHeader("retry-after", "30"); this.sendText(response, 429, "too many requests"); return; }
-    const url = new URL(request.url ?? "/", "http://localhost");
+    const url = requestTarget(request.url);
+    if (!url) { this.sendText(response, 400, "invalid target"); return; }
     const pathname = url.pathname;
 
     if ((pathname === "/api/public/question" || pathname === "/api/public/action") && this.options.publicInteractions) {
@@ -233,6 +243,7 @@ export class ViewerShellServer {
     if (pathname === "/api/state" && this.options.publicState !== undefined) {
       try {
         const body = JSON.stringify(await this.options.publicState());
+        if (response.destroyed || response.writableEnded || response.headersSent) return;
         response.writeHead(200, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store" });
         response.end(body);
       } catch {
@@ -294,6 +305,7 @@ export class ViewerShellServer {
   }
 
   private sendJson(response: ServerResponse, status: number, body: unknown): void {
+    if (response.destroyed || response.writableEnded) return;
     if (response.headersSent) { response.destroy(); return; }
     response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store" });
     response.end(JSON.stringify(body));
@@ -302,12 +314,14 @@ export class ViewerShellServer {
   private async serveShellAsset(pathname: string, response: ServerResponse): Promise<boolean> {
     if (pathname === "/") await this.sendFile(response, SHELL_HTML, "text/html; charset=utf-8");
     else if (pathname === "/viewer-shell.css") await this.sendFile(response, SHELL_CSS, "text/css; charset=utf-8");
+    else if (pathname === "/viewer-session.mjs") await this.sendFile(response, SESSION_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/viewer-shell.js") await this.sendFile(response, SHELL_JS, "text/javascript; charset=utf-8");
     else return false;
     return true;
   }
 
   private sendText(response: ServerResponse, status: number, body: string): void {
+    if (response.destroyed || response.writableEnded) return;
     if (response.headersSent) { response.destroy(); return; }
     response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
     response.end(body);
@@ -316,6 +330,7 @@ export class ViewerShellServer {
   private async sendFile(response: ServerResponse, path: string, contentType: string): Promise<void> {
     try {
       const body = await readFile(path);
+      if (response.destroyed || response.writableEnded || response.headersSent) return;
       response.writeHead(200, { ...SHELL_SECURITY_HEADERS, "content-type": contentType, "cache-control": "no-store" });
       response.end(body);
     } catch (error) {
@@ -326,8 +341,9 @@ export class ViewerShellServer {
 
   private proxy(request: IncomingMessage, response: ServerResponse, port: number, path: string): void {
     const headers: IncomingHttpHeaders = this.isPublic
-      ? { ...pick(request.headers, PUBLIC_FORWARD_HEADERS), [PUBLIC_VIEWER_HEADER]: "1" }
+      ? { ...pick(request.headers, PUBLIC_FORWARD_HEADERS), [PUBLIC_VIEWER_HEADER]: "1", [VIEWER_ADDRESS_HEADER]: addressKey(clientAddress(request, true)) }
       : { ...request.headers };
+    if (!this.isPublic) { delete headers[PUBLIC_VIEWER_HEADER]; delete headers[VIEWER_ADDRESS_HEADER]; }
     const upstream = httpRequest({
       hostname: "127.0.0.1",
       port,
@@ -339,21 +355,25 @@ export class ViewerShellServer {
       const passed = this.isPublic
         ? { ...pick(upstreamResponse.headers, PUBLIC_RESPONSE_HEADERS), ...(path === "/worker.js" ? VIEWER_WORKER_SECURITY_HEADERS : VIEWER_SECURITY_HEADERS) }
         : upstreamResponse.headers;
+      if (response.destroyed || response.writableEnded) { upstreamResponse.destroy(); return; }
       response.writeHead(upstreamResponse.statusCode ?? 502, { ...passed, "cache-control": "no-store" });
       upstreamResponse.pipe(response);
     });
     upstream.once("timeout", () => upstream.destroy(new Error("upstream timeout")));
     upstream.once("error", (error) => {
-      this.options.logger?.warn({ err: String(error), port, path }, "viewer shell proxy failed");
+      this.options.logger?.warn({ err: String(error), port, path: path.split("?")[0] }, "viewer shell proxy failed");
       if (!response.headersSent) this.sendText(response, 502, "upstream unavailable");
       else response.destroy();
     });
     request.once("aborted", () => upstream.destroy());
+    response.once("close", () => upstream.destroy());
     request.pipe(upstream);
   }
 
   private handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    const target = requestTarget(request.url);
+    if (!target) { socket.destroy(); return; }
+    const pathname = target.pathname;
     const viewerSocket = pathname === "/viewer/socket.io" || pathname.startsWith("/viewer/socket.io/");
     const directSocket = pathname === "/socket.io" || pathname.startsWith("/socket.io/");
     if (!viewerSocket && !directSocket) {
@@ -361,12 +381,15 @@ export class ViewerShellServer {
       return;
     }
     const upstreamPath = viewerSocket ? (request.url ?? pathname).slice("/viewer".length) : (request.url ?? pathname);
-    this.tunnel(socket, head, upstreamPath, request.headers);
+    const headers = { ...request.headers };
+    delete headers[PUBLIC_VIEWER_HEADER]; delete headers[VIEWER_ADDRESS_HEADER];
+    this.tunnel(socket, head, upstreamPath, headers);
   }
 
   private handlePublicUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const url = new URL(request.url ?? "/", "http://localhost");
-    const ip = clientAddress(request, true);
+    const url = requestTarget(request.url);
+    if (!url) { socket.destroy(); return; }
+    const ip = addressKey(clientAddress(request, true));
     const valid = isViewerSocketPath(url.pathname) && request.method === "GET" &&
       String(request.headers.upgrade).toLowerCase() === "websocket" &&
       url.searchParams.get("EIO") === "4" && url.searchParams.get("transport") === "websocket";
@@ -384,11 +407,13 @@ export class ViewerShellServer {
       if (remaining <= 0) this.socketsByIp.delete(ip);
       else this.socketsByIp.set(ip, remaining);
     });
-    const headers = { ...pick(request.headers, PUBLIC_UPGRADE_HEADERS), [PUBLIC_VIEWER_HEADER]: "1" };
+    const headers = { ...pick(request.headers, PUBLIC_UPGRADE_HEADERS), [PUBLIC_VIEWER_HEADER]: "1", [VIEWER_ADDRESS_HEADER]: ip };
     this.tunnel(socket, head, `/socket.io/${url.search}`, headers);
   }
 
   private tunnel(socket: Duplex, head: Buffer, upstreamPath: string, headers: IncomingHttpHeaders): void {
+    this.tunnels.add(socket);
+    socket.once("close", () => this.tunnels.delete(socket));
     const upstream = connectTcp(this.options.viewerPort, "127.0.0.1", () => {
       const target = `GET ${upstreamPath} HTTP/1.1\r\n` +
         Object.entries({ ...headers, host: `127.0.0.1:${this.options.viewerPort}` })
@@ -398,6 +423,7 @@ export class ViewerShellServer {
       if (head.length > 0) upstream.write(head);
       socket.pipe(upstream).pipe(socket);
     });
+    upstream.setTimeout(65_000, () => upstream.destroy());
     upstream.once("error", () => socket.destroy());
     upstream.once("close", () => socket.destroy());
     socket.once("error", () => upstream.destroy());

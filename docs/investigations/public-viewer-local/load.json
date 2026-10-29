@@ -1,0 +1,114 @@
+{
+  "recordedAt": "2026-10-29T17:25:22.138Z",
+  "isolated": true,
+  "workload": "12 simultaneous public websocket clients into 6 seats, 4 reserved private seats, 20 API reads, 3 reconnect rounds of 6 polling/upgrading clients, one mocked held inference with queued abandoned public and owner work",
+  "durationMs": 2608,
+  "publicBurst": {
+    "admitted": 6,
+    "refused": 6
+  },
+  "saturated": {
+    "pending": 0,
+    "total": 10,
+    "public": 6
+  },
+  "peakBotListeners": {
+    "blockUpdate": 1,
+    "chunkColumnLoad": 1,
+    "chunkColumnUnload": 1,
+    "heldItemChanged": 1,
+    "spawn": 1,
+    "entityUpdate": 1,
+    "move": 1,
+    "entitySpawn": 1,
+    "entityMoved": 1,
+    "entityGone": 1
+  },
+  "buffersAndChunks": {
+    "chunks": {
+      "queued": 0,
+      "running": 0,
+      "peakQueued": 9
+    },
+    "peakBufferedBytes": 25516,
+    "slowDisconnects": 0
+  },
+  "totalAdmittedIncludingReconnects": 28,
+  "totalRefused": 6,
+  "rounds": [
+    {
+      "round": 0,
+      "pending": 0,
+      "total": 0,
+      "public": 0,
+      "moveListeners": 0,
+      "inventoryListeners": 0
+    },
+    {
+      "round": 1,
+      "pending": 0,
+      "total": 0,
+      "public": 0,
+      "moveListeners": 0,
+      "inventoryListeners": 0
+    },
+    {
+      "round": 2,
+      "pending": 0,
+      "total": 0,
+      "public": 0,
+      "moveListeners": 0,
+      "inventoryListeners": 0
+    }
+  ],
+  "api": {
+    "requests": 20,
+    "maxMs": 29.02,
+    "p95Ms": 5.54
+  },
+  "eventLoop": {
+    "p99Ms": 17.58,
+    "maxMs": 22.54
+  },
+  "memory": {
+    "beforeRssMiB": 126.14,
+    "peakRssMiB": 162.85,
+    "afterRssMiB": 162.85
+  },
+  "publicChunkPackets": 112,
+  "maxChunkPacketBytes": 12743,
+  "model": {
+    "queued": {
+      "queued": 1,
+      "running": 1,
+      "publicQueued": 1,
+      "publicRunning": 0
+    },
+    "peakQueue": {
+      "queued": 2,
+      "running": 1,
+      "publicQueued": 1,
+      "publicRunning": 0
+    },
+    "after": {
+      "queued": 0,
+      "running": 0,
+      "publicQueued": 0,
+      "publicRunning": 0
+    },
+    "abandonedInferenceStarts": 0
+  },
+  "finalSeats": {
+    "pending": 0,
+    "total": 0,
+    "public": 0
+  },
+  "finalMoveListeners": 0,
+  "finalInventoryListeners": 0,
+  "thresholds": {
+    "apiMaxMs": 1000,
+    "cleanupMs": 1000,
+    "eventLoopP99Ms": 250
+  },
+  "limitations": "Flat shared synthetic chunk and fake stationary bot. Loopback proxy and mocked inference; no real game churn, external edge, GPU/model work, bandwidth limits or production sizing guarantee. OS RSS includes runtime/module caches and is not a leak slope."
+}
