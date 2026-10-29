@@ -383,6 +383,10 @@ export class ReadOnlyViewerServer {
     this.subscriptions.on(bot, "move", botPosition);
 
     const botView = new Proxy(bot, { get: (target, property) => {
+      // WorldView emits the entire entity snapshot synchronously. A populated
+      // world can fill a healthy connection's packet queue before I/O can run.
+      // Attach its live listeners now, then send that snapshot in paced batches.
+      if (property === "entities") return {};
       if (property === "on") return (event: string, listener: Function) => { this.subscriptions.on(bot, event, listener); return botView; };
       if (property === "removeListener") return (event: string, listener: Function) => { this.subscriptions.off(bot, event, listener); return botView; };
       return Reflect.get(target, property);
@@ -407,6 +411,26 @@ export class ReadOnlyViewerServer {
     botEquipment();
     void worldView.init(bot.entity.position).catch(() => socket.disconnect(true));
     botPosition();
+    const sendInitialEntities = async (): Promise<void> => {
+      const deadline = Date.now() + 5000;
+      let count = 0;
+      for (const id in bot.entities) {
+        if (closed) return;
+        const entity = bot.entities[id];
+        if (!entity || entity === bot.entity) continue;
+        emit("entity", { id: entity.id, name: entity.name, pos: entity.position, width: entity.width, height: entity.height, username: entity.username });
+        if (++count % 32 !== 0) continue;
+        // Yield for both WebSocket writes and the next polling request. Do not
+        // retain an extra per-viewer copy of the world's entities or an unbounded
+        // queue while waiting for a slow or abandoned receiver.
+        do {
+          await new Promise(resolve => setTimeout(resolve, 4));
+          if (closed) return;
+          if (Date.now() >= deadline) { this.slowDisconnects++; socket.disconnect(true); return; }
+        } while (socket.conn.writeBuffer.length > 0);
+      }
+    };
+    void sendInitialEntities().catch(() => socket.disconnect(true));
   }
 
   resources(): { chunks: ReturnType<ChunkQueue["stats"]>; peakBufferedBytes: number; slowDisconnects: number } {

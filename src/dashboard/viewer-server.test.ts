@@ -303,6 +303,33 @@ test("an abandoned polling consumer is disconnected before buffers and bot subsc
   } finally { server.close(); }
 });
 
+for (const transport of ["websocket", "polling"]) test(`a populated world delivers its initial entities and geometry over ${transport}`, { timeout: 8000 }, async () => {
+  const bot = fakeBot(), port = await freePort();
+  for (let id = 1; id <= 600; id++) bot.entities[id] = { id, name: "cow", position: new Vec3(100, 64, 200), width: 1, height: 1 } as never;
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = connect(`http://127.0.0.1:${port}`, { transports: [transport], reconnection: false, extraHeaders: { "x-blockhead-public": "1" } });
+  const entities = new Set<number>();
+  const complete = new Promise<void>((resolve, reject) => {
+    let chunk = false;
+    const check = (): void => { if (chunk && entities.size === 600) resolve(); };
+    socket.on("entity", payload => { entities.add(payload.id); check(); });
+    socket.on("loadChunk", () => { chunk = true; check(); });
+    socket.on("disconnect", reason => reject(new Error(`initial world disconnected: ${reason}`)));
+    socket.on("connect_error", reject);
+  });
+  try {
+    await complete;
+    assert.equal(socket.connected, true);
+    assert.equal(server.resources().slowDisconnects, 0);
+    assert(server.resources().peakBufferedBytes < 4 * 1024 * 1024);
+  } finally {
+    socket.close(); server.close();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(bot.listenerCount("entitySpawn"), 0);
+  }
+});
+
 test("public wire chunks are cached geometry; private chunks retain NBT and world updates invalidate the cache", async () => {
   const bot = fakeBot(), port = await freePort();
   const Chunk = createRequire(import.meta.url)("prismarine-chunk")("1.20.1");
