@@ -2,6 +2,8 @@
 
 Prepared 2026-10-29 under [implementation prompt 05](implementation-prompts/05-public-gesture-validation.md).
 
+**Rollout update (2026-10-29 20:52 PDT):** after the user approved items A–C, A and B were completed on Maia. The bot runs `5eb20ae`, and the observer is installed with 22/22 hooks; its dry run reported `ready: true`. Actions are still off. Item C, the supervised window, did **not** run: the session's permission classifier blocked the command that enables actions. No gesture has been invoked, and acceptance remains unverified. See the [rollout receipt](investigations/public-gestures-2026-10-30-rollout.json).
+
 **Gestures remain disabled. No live gesture effect has been accepted.** This
 package contains an implemented, locally qualified candidate: admission and
 cancellation repairs, honest visitor feedback, and an independent server-side

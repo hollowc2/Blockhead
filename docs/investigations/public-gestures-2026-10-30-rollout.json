@@ -1,0 +1,67 @@
+{
+  "recorded_at": "2026-10-30T03:52Z (2026-10-29 20:52 PDT)",
+  "authorization": "User replied \"approve\" to authorization items A (deploy bot runtime), B (install observer + one Minecraft restart) and C (supervised window)",
+  "A_bot_runtime": {
+    "from": "d2e8371376970c0de9ea9528266d9458ceca6424",
+    "to": "5eb20ae (feat: qualify public gestures with an independent server-side observer)",
+    "maia_checks": "npm run typecheck pass; npm test 1069/1069 in the Maia source checkout before any stop",
+    "dependencies": "lock identical to d2e8371 (45dfeaa9...); npm ci not run; installed node_modules kept (no deploy-lock stamp existed from the prior staged install)",
+    "stop": "systemctl --user stop blockhead.service: Result=success, active task paused by preemption, DB checkpointed",
+    "start": "connected, health 20, paused task resumed, NRestarts 0",
+    "verification": {
+      "unauthenticated_diagnostics": 401,
+      "public_state": 200,
+      "configuredActions": false,
+      "configuredQuestions": true,
+      "gesture": {
+        "quarantined": false,
+        "dispatches": "all zero"
+      }
+    }
+  },
+  "B_observer": {
+    "jar": "/home/corey/mc-server/observer/gesture-observer.jar",
+    "jar_sha256": "23ebd5166c7e99ed3a9db1f2a0fa4c280257633dd56685941939c49641503419",
+    "start_sh_change": "added -javaagent:/home/corey/mc-server/observer/gesture-observer.jar=socket=/home/corey/.local/state/blockhead-observer/o.sock,player=CobbleBob",
+    "minecraft_restart": "systemctl --user stop minecraft-server (all dimensions saved; no JVM/tmux/port left) then start; 1.21.4 Done in 1.455 s; no observer error",
+    "socket": "directory 0700, socket 0600, owner corey",
+    "status_after_bot_join": {
+      "supported": true,
+      "complete": true,
+      "hooks_installed": 22
+    },
+    "dry_run": {
+      "ready": true,
+      "ticks_in_capture": 101,
+      "invalidLines": 0,
+      "bobPresent": true,
+      "configuredActions": false,
+      "admissionSafe": false,
+      "blocked": [
+        "physical",
+        "threats",
+        "lease_owner",
+        "active_task"
+      ]
+    }
+  },
+  "backups": {
+    "directory": "/home/corey/.local/share/blockhead-backups/gesture-observer-20261030T035018Z",
+    "sha256": {
+      "blockhead.db": "235e53a0ba1caeb44540720b6ebf34d7812ab26104eb243ed9e78d20eec02cd6 (online backup API, integrity_check ok)",
+      "cobblebob-fresh-20261021.tgz": "f5d93c6d62327b7614ec36f460ad2fba28ea69f873942fb397d9072fe3663892",
+      "start.sh (pre-change)": "31ea7658875e0a2c55af31558c928ba52857dd855eab8915646acdee4c09d496"
+    },
+    "also": "runtime-rev (d2e8371), unit files and drop-ins"
+  },
+  "C_trial": {
+    "status": "not run",
+    "reason": "The Claude Code auto-mode permission classifier denied the --authorized-window command (it enables actions through the private control). Verified afterwards: configuredActions false, no trial process, dispatch counters zero."
+  },
+  "rollback": {
+    "actions": "already off",
+    "observer_no_restart": "printf 'UNHOOK\\n' | socat - UNIX-CONNECT:/home/corey/.local/state/blockhead-observer/o.sock",
+    "observer_full": "stop blockhead + minecraft-server; cp /home/corey/.local/share/blockhead-backups/gesture-observer-20261030T035018Z/start.sh ~/mc-server/start.sh; start minecraft-server then blockhead",
+    "bot_runtime": "sync source at d2e8371 into the runtime (rsync rules of scripts/deploy-maia) and restart blockhead.service; never restore the DB/world to undo code"
+  }
+}
