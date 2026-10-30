@@ -55,8 +55,23 @@
     "also": "runtime-rev (d2e8371), unit files and drop-ins"
   },
   "C_trial": {
-    "status": "not run",
-    "reason": "The Claude Code auto-mode permission classifier denied the --authorized-window command (it enables actions through the private control). Verified afterwards: configuredActions false, no trial process, dispatch counters zero."
+    "status": "run by the user from this session (`!` command) after the classifier blocked the agent",
+    "command": "tsx scripts/gesture-trial.ts --observer-socket /home/corey/.local/state/blockhead-observer/o.sock --origin https://maia.tailceb694.ts.net --out <backup dir>/trial.json --authorized-window --window-seconds 600 --capture-wait-seconds 60",
+    "actions_enabled": "2026-10-30T14:08:56.434Z",
+    "actions_disabled": "2026-10-30T14:18:56.583Z",
+    "enabledMs": 600140,
+    "stop": "window_expired",
+    "disabledVerified": true,
+    "requests_sent": 0,
+    "results": [],
+    "after": {
+      "configuredActions": false,
+      "configuredQuestions": true,
+      "quarantined": false,
+      "dispatches": "all zero",
+      "services": "blockhead and minecraft-server active, NRestarts 0"
+    },
+    "meaning": "No eligible moment (all admission gates passing with no cooldown) occurred in 10 minutes, consistent with the read-only sample (0/60). No gesture was dispatched; acceptance remains unverified. This is the designed outcome, not a pass."
   },
   "rollback": {
     "actions": "already off",
