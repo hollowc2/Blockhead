@@ -15,3 +15,20 @@ The prompts authorize local implementation and isolated validation. They do not 
 Do not run multiple prompts concurrently against shared files. In particular, security and viewer work both affect the viewer shell, public interactions, and tests. Complete and validate security work before building the viewer changes on top of it.
 
 At the end of each prompt, report the changes, tests actually run, remaining uncertainties, and any blocker. Distinguish local proof from observations of deployed behavior.
+
+## Separate follow-up prompts after the October 29 rollout
+
+These are additional work instructions, outside the original 01 → 03 sequence.
+Run them only when separately invoked. Writing these prompts did not execute
+them or authorize new live changes.
+
+4. [04-public-model-answer-enablement.md](04-public-model-answer-enablement.md) —
+   implement and verify Aegis enforcement, visitor-text privacy and backend
+   cancellation, then prepare a bounded public model-Q&A enablement.
+5. [05-public-gesture-validation.md](05-public-gesture-validation.md) — qualify
+   admission/cancellation and independent Minecraft effect observation, then
+   prepare a supervised gesture trial with actions disabled afterward.
+
+Execute these follow-ups sequentially when both are requested: they share public
+interaction code, configuration and deployment documentation. Each prompt is
+self-contained and can also be invoked independently.
