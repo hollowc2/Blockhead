@@ -1,5 +1,8 @@
 # Public model answers through Aegis — enablement package (2026-10-29)
 
+> **Deployed later the same evening:** see the [deployment receipt](public-model-answer-deployment-2026-10-29.md).
+> The text below is the pre-deployment package and decision.
+
 **Decision: the candidate meets the enablement criteria locally and on an
 isolated real stack. It is ready for a bounded, authorized trial. Public model
 answers stay disabled until that trial is authorized and its staged Aegis checks

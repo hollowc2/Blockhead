@@ -1,0 +1,153 @@
+{
+  "recorded_at": "2026-10-30T02:35Z",
+  "host": "maia",
+  "authorization": "User instructed to proceed with the prepared enablement package (steps 1-5); live-page guard/abandon probes not included.",
+  "aegis": {
+    "from": "ec36ec9b2632ca990a95f043579588a78631a839",
+    "to": "26e0fcc921e311604ed7d0583cae14a3c970988c",
+    "MainPID": "376813",
+    "NRestarts": "0",
+    "backup": "~/.local/share/aegis-backups/public-enforce-20261030T014319Z",
+    "backup_sha256": {
+      "runtime-before.tar": "0e63593cd918c17b9ca1b2f26534aeee2899df56fc82597e4e337001402518ef",
+      "aegis_audit.db": "6660f8b31ee61872c0fe8faf82b87939bf4d051adb342e53bbb5a24bf7eb6fbd",
+      "aegis.service": "8709f2b3e0ddecf18530ce0d69a1365171bda3713fe7349700cfcc11d10d9743",
+      "aegis.env": "6be5076929735dab3d96d2198d0e52964f48dfec351f41f167ef0ff343355e6f"
+    },
+    "installed_sha256": {
+      "public-enforce.env": "64a94b45b2081f37923040b0fd9f41a8d0799d1c6229a51d9a11c0c327176c70",
+      "public-enforce.conf": "c75ff1b2048e73a11bec461aa57722a36c12365faf54bdd86e5e53775aaf752a"
+    },
+    "uv_lock_sha256": "0eddf8e16f64692a526d9c191aa63294e9a19f9794333185e308247b575fa277",
+    "modes": {
+      "aegis_audit.db": "600",
+      "logs": "700",
+      "public-enforce.env": "600"
+    },
+    "readiness": {
+      "ready": true,
+      "enforcement": "enforce",
+      "classifier": "cascade2",
+      "classifier_loaded": true,
+      "scan_roles": [
+        "user"
+      ],
+      "backend_stream": true,
+      "cancel_on_disconnect": true,
+      "audit_prompt_text": false,
+      "audit_retention_days": 7,
+      "backend_inflight": 0
+    },
+    "probes": {
+      "benign": {
+        "http": 200,
+        "seconds": 2.78,
+        "enforcement_header": "enforce"
+      },
+      "guard_positive": {
+        "http": 403,
+        "seconds": 0.015,
+        "code": "prompt_injection_detected",
+        "audit": "block/n.a."
+      },
+      "abort_1_5s": {
+        "aegis_inflight_zero_s": 0.14,
+        "llama_cancel_logged_after_abort_s": 0.09,
+        "llama_slot_released_after_abort_s": 0.12
+      },
+      "audit_new_rows": 3,
+      "audit_new_rows_redacted": 3
+    }
+  },
+  "blockhead": {
+    "from": "87ec52c7e3c58c2b9e98ff4ece2ae0164873d8d9",
+    "to": "d2e8371376970c0de9ea9528266d9458ceca6424",
+    "MainPID": "379774",
+    "NRestarts": "0",
+    "bot_processes": "1 (tsx wrapper + node child)",
+    "staged_release": "~/.local/share/blockhead-releases/public-model-d2e8371",
+    "staged_checks": {
+      "node": "v26.7.0",
+      "typecheck": "passed",
+      "tests": "1032/1032",
+      "audit": {
+        "moderate": 12,
+        "high": 0,
+        "critical": 0
+      }
+    },
+    "backup": "~/.local/share/blockhead-backups/public-model-20261030T021355Z",
+    "backup_sha256": {
+      "blockhead.db": "2369f7b30a99e13ba972edeca039835c4bbdf408573036a3afc5fe0c5f0305e7",
+      "minecraft-before.yaml": "a9ecd96f68b4642852051b5c5ffacfb6589f4427876cd7a13bc7751c7816eb47"
+    },
+    "db_backup_integrity": "ok",
+    "config_after_sha256": "4e7a05497abd222455d219ebcc6c57036c465486d1fd138e2b54bb62deb983af",
+    "config_change": "model_questions comment + enabled false->true (2 lines)",
+    "flags": {
+      "viewer": true,
+      "questions": true,
+      "actions": false,
+      "model_questions": true,
+      "model_base_url": "http://127.0.0.1:8000",
+      "llm_base_url": "http://127.0.0.1:8080"
+    },
+    "deviation": "first config edit failed on a comment line; bot stopped ~2.5 min until corrected script ran; config was unchanged in between",
+    "post_start": {
+      "connected": true,
+      "health": 20,
+      "journal_warnings": 0,
+      "startup_log": "public model firewall ready",
+      "modelFirewall": {
+        "state": "ready",
+        "revision": "26e0fcc",
+        "probeFailures": 0
+      }
+    }
+  },
+  "trial": {
+    "benign_questions": [
+      {
+        "http": 200,
+        "answerKind": "model",
+        "seconds": 1.78,
+        "chars": 109
+      },
+      {
+        "http": 200,
+        "answerKind": "model",
+        "seconds": 1.55,
+        "chars": 99
+      },
+      {
+        "http": 200,
+        "answerKind": "model",
+        "seconds": 1.46,
+        "chars": 85
+      }
+    ],
+    "records": "each question: model_settled + accepted record, same requestId, fixed fields only",
+    "after": {
+      "modelOutcomes": {
+        "answer": 3
+      },
+      "modelOutstanding": 0,
+      "settleFailures": 0,
+      "aegis_backend_inflight": 0,
+      "blockhead_restarts": 0,
+      "journal_warnings": 0
+    },
+    "not_performed": [
+      "live-page guard-positive probe",
+      "live-page abandoned-tab probe"
+    ],
+    "pending": "owner/autonomous model call on new code not yet observed (bot running deterministic background work)"
+  },
+  "unchanged": {
+    "minecraft-server.service": "43017",
+    "llama-server.service": "988",
+    "journald": "untouched",
+    "network": "unchanged",
+    "gestures": "disabled"
+  }
+}

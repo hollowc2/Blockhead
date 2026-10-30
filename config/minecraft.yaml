@@ -39,8 +39,8 @@ dashboard:
       # Public questions answered by the LLM, always through Aegis-ML on
       # loopback (never llama-server directly). Off: rules-based answers.
       model_questions:
-        # Keep off until Aegis enforcement and prompt retention are verified.
-        enabled: false
+        # Needs an enforcing Aegis (aegis.readiness/1); see docs/public-model-answer-enablement.md.
+        enabled: true
         base_url: http://127.0.0.1:8000
         request_timeout_ms: 40000
 
