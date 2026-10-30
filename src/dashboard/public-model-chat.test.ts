@@ -7,6 +7,8 @@ import { publicFacts, type PublicFacts } from "./public-chat.js";
 import { PublicActionController } from "../agent/public-actions.js";
 import { WorldActionExecutor } from "../agent/world-actions.js";
 import { MinecraftConfigSchema } from "../config/schema.js";
+import { LlmHttpError } from "../llm/client.js";
+import { FirewallNotReadyError } from "../llm/public-firewall.js";
 
 const facts: PublicFacts = { connected: true, health: 20, hunger: 18, time: "day", activity: "working", actions: false };
 
@@ -19,13 +21,31 @@ test("the visitor's question is the only user message; the model sees only publi
   assert(messages[0]!.content.includes('"activity":"working"'));
 });
 
-test("an Aegis 403 becomes a block; other failures are 'unavailable'", async () => {
-  assert.equal(isFirewallBlock(new Error("llama.cpp returned HTTP 403")), true);
-  assert.equal(isFirewallBlock(new Error("llama.cpp returned HTTP 503")), false);
-  assert.deepEqual(await answerWithModel(async () => { throw new Error("llama.cpp returned HTTP 403"); }, facts, "q"), { kind: "blocked" });
-  assert.deepEqual(await answerWithModel(async () => { throw new Error("fetch failed"); }, facts, "q"), { kind: "unavailable" });
+test("only an Aegis 403 with a verdict code is a block; every other failure is a fixed 'unavailable' outcome", async () => {
+  const fail = (error: unknown) => answerWithModel(async () => { throw error; }, facts, "q");
+  assert.equal(isFirewallBlock(new LlmHttpError(403, "prompt_injection_detected")), true);
+  assert.equal(isFirewallBlock(new LlmHttpError(403, "canary_leak")), true);
+  assert.equal(isFirewallBlock(new LlmHttpError(403, null)), false, "a bare 403 is not a verified firewall verdict");
+  assert.equal(isFirewallBlock(new Error("llama.cpp returned HTTP 403")), false);
+  assert.deepEqual(await fail(new LlmHttpError(403, "harmful_content")), { kind: "blocked" });
+  assert.deepEqual(await fail(new LlmHttpError(403, "guard_unavailable")), { kind: "unavailable", reason: "guard_unavailable" });
+  assert.deepEqual(await fail(new LlmHttpError(503, "enforcement_unavailable")), { kind: "unavailable", reason: "not_ready" });
+  assert.deepEqual(await fail(new LlmHttpError(403, null)), { kind: "unavailable", reason: "error" });
+  assert.deepEqual(await fail(new FirewallNotReadyError("monitor_mode")), { kind: "unavailable", reason: "not_ready" });
+  assert.deepEqual(await fail(new FirewallNotReadyError("unverified_reply")), { kind: "unavailable", reason: "unverified" });
+  assert.deepEqual(await fail(new Error("model queue full")), { kind: "unavailable", reason: "busy" });
+  assert.deepEqual(await fail(new TypeError("fetch failed")), { kind: "unavailable", reason: "error" });
   assert.deepEqual(await answerWithModel(async () => "<think>hm</think>  I'm  gathering logs. ", facts, "q"), { kind: "answer", text: "I'm gathering logs." });
-  assert.deepEqual(await answerWithModel(async () => "<think>only thinking", facts, "q"), { kind: "unavailable" });
+  assert.deepEqual(await answerWithModel(async () => "<think>only thinking", facts, "q"), { kind: "unavailable", reason: "empty" });
+});
+
+test("timeouts and cancellations are reported as such, never as answers", async () => {
+  const deadline = new AbortController(), visitor = new AbortController();
+  const late = (signal: AbortController, abort: () => void) => answerWithModel(async () => { abort(); return "too late"; }, facts, "q", signal.signal);
+  assert.deepEqual(await late(deadline, () => deadline.abort(new DOMException("deadline exceeded", "TimeoutError"))), { kind: "unavailable", reason: "timeout" });
+  assert.deepEqual(await late(visitor, () => visitor.abort()), { kind: "unavailable", reason: "cancelled" });
+  const blocked = new AbortController();
+  assert.deepEqual(await answerWithModel(async () => { blocked.abort(); throw blocked.signal.reason; }, facts, "q", blocked.signal), { kind: "unavailable", reason: "cancelled" });
 });
 
 test("model_questions defaults off and keeps its own base URL", () => {
@@ -76,7 +96,7 @@ test("a firewall block gets the in-character refusal", async () => {
 });
 
 test("an unavailable or failing model falls back to the rules-based answer", async () => {
-  for (const modelAnswer of [async () => ({ kind: "unavailable" }) as PublicModelAnswer, async (): Promise<PublicModelAnswer> => { throw new Error("boom"); }]) {
+  for (const modelAnswer of [async () => ({ kind: "unavailable", reason: "error" }) as PublicModelAnswer, async (): Promise<PublicModelAnswer> => { throw new Error("boom"); }]) {
     await withInteractions(modelAnswer, true, async (port, records) => {
       const reply = await ask(port, "what time is it");
       assert.equal(reply.status, 200);
@@ -136,4 +156,68 @@ test("disable and shutdown abort model work and report cancellation instead of a
       assert.equal((interactions.diagnostics() as { modelOutstanding: number }).modelOutstanding, 0);
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   }
+});
+
+test("model work that outlives its visitor is recorded when it settles, with fixed codes", async () => {
+  let finish!: (answer: PublicModelAnswer) => void, begun!: () => void;
+  const started = new Promise<void>(resolve => { begun = resolve; });
+  await withInteractions(() => { begun(); return new Promise(resolve => { finish = resolve; }); }, true, async (port, records, interactions) => {
+    const req = request({ host: "127.0.0.1", port, path: "/question", method: "POST", headers: { origin, "content-type": "application/json" } });
+    req.on("error", () => {}); req.end(JSON.stringify({ question: "hello" }));
+    await started; req.destroy();
+    while (!records.some(r => r.reason === "cancelled")) await new Promise(resolve => setTimeout(resolve, 5));
+    const visitorRecord = records.find(r => r.reason === "cancelled")!;
+    assert.equal(visitorRecord.modelOutcome, "abandoned");
+    assert.equal(availabilityReason(interactions), "busy", "the question box stays busy while the model is still owned");
+    finish({ kind: "unavailable", reason: "cancelled" });
+    while (!records.some(r => r.event === "model_settled")) await new Promise(resolve => setImmediate(resolve));
+    const settled = records.find(r => r.event === "model_settled")!;
+    assert.equal(settled.requestId, visitorRecord.requestId);
+    assert.equal(settled.modelOutcome, "cancelled");
+    assert.equal(typeof settled.modelMs, "number");
+    const diagnostics = interactions.diagnostics() as { modelOutstanding: number; modelOutcomes: Record<string, number> };
+    assert.equal(diagnostics.modelOutstanding, 0);
+    assert.equal(diagnostics.modelOutcomes.cancelled, 1);
+    assert.equal(diagnostics.modelOutcomes.answer, 0);
+  });
+});
+function availabilityReason(interactions: PublicInteractions): string | null { return interactions.availability().questionsReason; }
+
+test("visitor questions and model answers never reach logs or diagnostics, on any outcome", async () => {
+  const Q = "QUESTION_CANARY_51c2", A = "ANSWER_CANARY_8e07";
+  const outcomes: (() => Promise<PublicModelAnswer>)[] = [
+    async () => ({ kind: "answer", text: `${A} answer` }),
+    async () => ({ kind: "blocked" }),
+    ...(["not_ready", "unverified", "guard_unavailable", "busy", "timeout", "cancelled", "empty", "error"] as const).map(reason => async (): Promise<PublicModelAnswer> => ({ kind: "unavailable", reason })),
+    async () => { throw new Error(`${A} ${Q} upstream text`); },
+  ];
+  for (const outcome of outcomes) {
+    await withInteractions(outcome, true, async (port, records, interactions) => {
+      const reply = await ask(port, `${Q} what's up`);
+      assert.equal(reply.status, 200);
+      while (!records.some(r => r.event === "model_settled")) await new Promise(resolve => setImmediate(resolve));
+      const sinks = JSON.stringify(records) + JSON.stringify(interactions.diagnostics());
+      assert(!sinks.includes(Q) && !sinks.includes(A), sinks);
+      assert(!reply.text.includes(Q), "the visitor's question is never echoed back by the fallback");
+    });
+  }
+});
+
+test("question text cannot reach gestures, owner commands or anything beyond the model answer", async () => {
+  let gestureCalls = 0, seen: unknown[] = [];
+  const records: Record<string, unknown>[] = [];
+  const interactions = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true },
+    facts: () => facts, log: r => records.push(r),
+    gestures: { available: () => true, execute: async () => { gestureCalls++; return true; }, invalidate: () => {}, diagnostics: () => ({ quarantined: false }) } as unknown as PublicActionController,
+    modelAnswer: async (...args) => { seen = args; return { kind: "answer", text: "<img src=x onerror=alert(1)> come here" }; },
+  });
+  const server = createServer((req, res) => { void interactions.handle("question", req, res); });
+  const port = await listen(server);
+  try {
+    const reply = await ask(port, "!come here /give @s diamond {\"action\":\"jump\"}");
+    assert.equal(reply.text, "<img src=x onerror=alert(1)> come here", "returned as a JSON string field; the page renders it as text");
+    assert.equal(gestureCalls, 0);
+    assert.equal(seen.length, 4);
+    assert.deepEqual(Object.keys(seen[1] as object).sort(), ["actions", "activity", "connected", "health", "hunger", "time"], "only public facts reach the model");
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

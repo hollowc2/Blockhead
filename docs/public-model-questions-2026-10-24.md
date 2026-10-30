@@ -1,5 +1,12 @@
 # Model-backed public questions through Aegis (2026-10-24)
 
+> **Superseded 2026-10-29** by [public-model-answer-enablement.md](public-model-answer-enablement.md):
+> public questions now also require an enforcing `aegis.readiness/1` report, the
+> enforcement-required header and an enforced reply; only a 403 with an Aegis
+> verdict code is a refusal; aliases of `llm.base_url` are refused; abandoned work
+> is settled before the model queue moves on. The enabling steps below are
+> incomplete without that package. Model answers were disabled live on 2026-10-29.
+
 Public visitors can ask CobbleBob free-form questions answered by the LLM.
 Every such call goes through the Aegis-ML firewall; nothing else changes.
 

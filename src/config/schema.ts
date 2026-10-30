@@ -292,7 +292,9 @@ export const MinecraftConfigSchema = z.object({
             /**
              * Model-backed answers to public questions. The base URL must be the
              * Aegis firewall in front of llama.cpp, never llama.cpp itself; owner
-             * and autonomous calls keep using llm.base_url, unfiltered.
+             * and autonomous calls keep using llm.base_url, unfiltered. Each
+             * question first needs an enforcing aegis.readiness/1 report (see
+             * llm/public-firewall.ts); otherwise answers stay rules-based.
              */
             model_questions: z.object({
               enabled: z.boolean().default(false),

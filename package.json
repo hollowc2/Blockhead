@@ -14,7 +14,7 @@
     "test": "tsx --test src/**/*.test.ts",
     "creative:smoke": "tsx scripts/creative-smoke.ts",
     "llm": "llama-server -m /mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf --host 127.0.0.1 --port 8080 -c 8192 -ngl 99 --jinja",
-    "test:public": "tsx --test src/dashboard/*.test.ts src/status/*.test.ts src/llm/client.test.ts src/llm/request-queue.test.ts src/agent/public-*.test.ts",
+    "test:public": "tsx --test src/dashboard/*.test.ts src/status/*.test.ts src/llm/client.test.ts src/llm/request-queue.test.ts src/llm/public-*.test.ts src/agent/public-*.test.ts",
     "check": "npm run typecheck && npm test && git diff --check",
     "audit:production": "node scripts/audit-production.mjs",
     "validate:public": "tsx scripts/validate-public-viewer.ts"

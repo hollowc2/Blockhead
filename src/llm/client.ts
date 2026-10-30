@@ -1,6 +1,7 @@
 import { modelQueue, type CompletionOptions } from "./request-queue.js";
 import { z } from "zod";
 import { ChatCompletionSchema } from "./schemas.js";
+import { readBounded } from "./public-firewall.js";
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
@@ -14,9 +15,34 @@ export interface LlmClientOptions {
   maxRetries: number;
   onFailure?: (failure: { kind: "timeout" | "http_error" | "network_error"; attempt: number; error: string }) => void;
   fetchImpl?: typeof fetch;
+  /** Extra request headers (the public client requires Aegis enforcement with one). */
+  headers?: Record<string, string>;
+  /** Largest response body read; larger replies fail as errors. Unbounded when absent. */
+  maxResponseBytes?: number;
+  /** Gate for a firewalled client; see PublicFirewall. */
+  guard?: CompletionGuard;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
+}
+
+/**
+ * Hooks for a client whose requests must pass a firewall. *before* runs while
+ * holding model ownership, right before any request; *verify* checks each
+ * completion reply; *settle* runs, still holding ownership, after a request
+ * was abandoned mid-flight, so queued work never overlaps it.
+ */
+export interface CompletionGuard {
+  before(signal: AbortSignal): Promise<void>;
+  verify(headers: Headers): void;
+  settle(): Promise<boolean>;
+}
+
+/** A non-2xx reply. *code* is the reply's error.code when it is a short fixed identifier. */
+export class LlmHttpError extends Error {
+  constructor(readonly status: number, readonly code: string | null, what = "llama.cpp returned") {
+    super(`${what} HTTP ${status}`);
+  }
 }
 
 const MODEL_ID_PENDING = "local-model";
@@ -29,6 +55,9 @@ export class LlamaClient {
   private readonly maxRetries: number;
   private readonly onFailure?: LlmClientOptions["onFailure"];
   private readonly fetchImpl: typeof fetch;
+  private readonly headers: Record<string, string>;
+  private readonly maxResponseBytes: number | undefined;
+  private readonly guard: CompletionGuard | undefined;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly random: () => number;
@@ -43,6 +72,9 @@ export class LlamaClient {
     this.maxRetries = options.maxRetries;
     this.onFailure = options.onFailure;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.headers = options.headers ?? {};
+    this.maxResponseBytes = options.maxResponseBytes;
+    this.guard = options.guard;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = options.random ?? Math.random;
@@ -63,9 +95,9 @@ export class LlamaClient {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", signal: controller.signal });
+        const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", redirect: "error", headers: this.headers, signal: controller.signal });
         if (!res.ok) return false;
-        ModelsSchema.parse(await res.json());
+        ModelsSchema.parse(await this.json(res));
         return true;
       } finally {
         clearTimeout(timer);
@@ -101,11 +133,22 @@ export class LlamaClient {
   }
 
   private async completeSerialized(messages: LlmMessage[], signal: AbortSignal): Promise<string> {
+    const transport = { abandoned: false };
+    try {
+      await this.guard?.before(signal);
+      return await this.attempts(messages, signal, transport);
+    } finally {
+      // Still owning the model: abandoned work must be gone before the next job.
+      if (transport.abandoned && this.guard) await this.guard.settle();
+    }
+  }
+
+  private async attempts(messages: LlmMessage[], signal: AbortSignal, transport: { abandoned: boolean }): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         signal.throwIfAborted();
-        const response = await this.chatOnce(messages, signal);
+        const response = await this.chatOnce(messages, signal, transport);
         signal.throwIfAborted();
         this.noteSuccess();
         return response;
@@ -132,21 +175,28 @@ export class LlamaClient {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  private async chatOnce(messages: LlmMessage[], parent: AbortSignal): Promise<string> {
+  private async chatOnce(messages: LlmMessage[], parent: AbortSignal, transport: { abandoned: boolean }): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const signal = AbortSignal.any([controller.signal, parent]);
     try {
-      const signal = AbortSignal.any([controller.signal, parent]);
       const model = await this.resolveModelId(signal);
       const res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // Redirects are errors: a request never follows one off its configured endpoint.
+        redirect: "error",
+        headers: { ...this.headers, "content-type": "application/json" },
         body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 512, stream: false, chat_template_kwargs: { enable_thinking: false } }),
         signal,
       });
-      if (!res.ok) throw new Error(`llama.cpp returned HTTP ${res.status}`);
-      const data = ChatCompletionSchema.parse(await res.json());
+      if (!res.ok) throw await this.httpError(res, "llama.cpp returned");
+      try { this.guard?.verify(res.headers); } catch (error) { await res.body?.cancel().catch(() => undefined); throw error; }
+      const data = ChatCompletionSchema.parse(await this.json(res));
       return data.choices[0]!.message.content;
+    } catch (error) {
+      // A request cut off by its deadline or caller may still be running upstream.
+      if (signal.aborted) transport.abandoned = true;
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -154,11 +204,26 @@ export class LlamaClient {
 
   private async resolveModelId(signal: AbortSignal): Promise<string> {
     if (this.modelId !== null) return this.modelId;
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", signal });
-    if (!res.ok) throw new Error(`llama.cpp /v1/models returned HTTP ${res.status}`);
-    const parsed = ModelsSchema.parse(await res.json());
+    const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, { method: "GET", redirect: "error", headers: this.headers, signal });
+    if (!res.ok) throw await this.httpError(res, "llama.cpp /v1/models returned");
+    const parsed = ModelsSchema.parse(await this.json(res));
     this.modelId = parsed.data[0]!.id;
     return this.modelId;
+  }
+
+  private async json(res: Response): Promise<unknown> {
+    return this.maxResponseBytes === undefined ? res.json() : JSON.parse(await readBounded(res, this.maxResponseBytes));
+  }
+
+  /** Only a short fixed error.code is kept from the body, never its message text. */
+  private async httpError(res: Response, what: string): Promise<LlmHttpError> {
+    let code: string | null = null;
+    try {
+      const body = JSON.parse(await readBounded(res, 4096)) as { error?: { code?: unknown } };
+      const value = body?.error?.code;
+      if (typeof value === "string" && /^[a-z_]{1,48}$/.test(value)) code = value;
+    } catch { await res.body?.cancel().catch(() => undefined); }
+    return new LlmHttpError(res.status, code, what);
   }
 }
 

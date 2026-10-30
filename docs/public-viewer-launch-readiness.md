@@ -1,5 +1,9 @@
 # Public viewer launch readiness — 2026-10-29
 
+**Model Q&A follow-up:** the firewall-enforcement, retention and cancellation
+gates for model answers are addressed (locally and on an isolated stack, not
+live) in [public-model-answer-enablement.md](public-model-answer-enablement.md).
+
 **Deployment update:** the user subsequently authorized commit, push and deploy.
 Maia now runs `87ec52c` with the security repairs, viewer improvements and a
 populated-world startup correction. Public Q&A is rules-based; model answers

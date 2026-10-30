@@ -3,8 +3,6 @@ import { assessPublicAdmission, type AdmissionCheck } from "./agent/public-actio
 import { PublicProtocolObservations } from "./agent/public-protocol-observations.js";
 import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
 import { PublicInteractions } from "./dashboard/public-interactions.js";
-import { answerWithModel } from "./dashboard/public-model-chat.js";
-import type { PublicFacts } from "./dashboard/public-chat.js";
 import { homedir } from "node:os";
 import type { Bot } from "mineflayer";
 import { loadConfig } from "./config/load.js";
@@ -61,6 +59,7 @@ import { OrganizeStorageRunner } from "./skills/organize-storage.js";
 import { BaseBuilderRunner } from "./skills/base.js";
 import { StockpileManager } from "./agent/maintenance.js";
 import { LlamaClient } from "./llm/client.js";
+import { createPublicModel } from "./llm/public-model.js";
 import { DecisionMaker } from "./llm/decider.js";
 import { DebugLog } from "./llm/debug-log.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -288,20 +287,27 @@ const publicGestures = new PublicActionController({
 });
 // Public model answers go through the Aegis firewall on their own base URL.
 // Owner and autonomous calls above keep using llm.base_url, unfiltered.
-const publicModel = config.dashboard?.public_viewer.interactions.model_questions;
-const publicModelClient = publicModel?.enabled && publicModel.base_url.replace(/\/+$/, "") !== llm.base_url.replace(/\/+$/, "")
-  ? new LlamaClient({
-    baseUrl: publicModel.base_url,
-    timeoutMs: publicModel.request_timeout_ms,
-    maxRetries: 0,
-    onFailure: (failure) => debugLog.write({ event: `public_llm_${failure.kind}`, ...failure }),
+// See llm/public-model.ts for the enforcement, redirect, retry and settlement rules.
+const publicModelConfig = config.dashboard?.public_viewer.interactions.model_questions;
+const publicModel = publicModelConfig?.enabled
+  ? createPublicModel({
+    baseUrl: publicModelConfig.base_url,
+    directBaseUrl: llm.base_url,
+    timeoutMs: publicModelConfig.request_timeout_ms,
+    onFailure: (failure) => debugLog.write({ event: `public_llm_${failure.kind}`, attempt: failure.attempt }),
   })
   : null;
-if (publicModel?.enabled && !publicModelClient) logger.error("model_questions.base_url must point at the Aegis firewall, not llm.base_url; public questions stay rules-based");
+if (publicModelConfig?.enabled && !publicModel) logger.error("model_questions.base_url must point at the Aegis firewall, not llm.base_url or an alias of it; public questions stay rules-based");
+if (publicModel) {
+  void publicModel.firewall.ensureReady().then(
+    () => logger.info({ firewall: publicModel.firewall.status() }, "public model firewall ready"),
+    () => logger.warn({ firewall: publicModel.firewall.status() }, "public model firewall not ready; public questions stay rules-based until it is"),
+  );
+}
 const publicInteractions: PublicInteractions = new PublicInteractions({
   config: config.dashboard?.public_viewer.interactions ?? { questions_enabled: false, actions_enabled: false },
   gestures: publicGestures,
-  ...(publicModelClient ? { modelAnswer: (question: string, facts: PublicFacts, signal: AbortSignal, deadline: number) => answerWithModel(messages => publicModelClient.complete(messages, { signal, deadline, priority: "public" }), facts, question, signal) } : {}),
+  ...(publicModel ? { modelAnswer: publicModel.answer, modelStatus: () => publicModel.firewall.status() } : {}),
   facts: () => ({
     connected: connectionState.state === "READY" && !!session?.bot.entity,
     health: session?.bot.health ?? null, hunger: session?.bot.food ?? null, time: state.timePhase,

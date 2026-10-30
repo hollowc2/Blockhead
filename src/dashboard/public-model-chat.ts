@@ -1,4 +1,5 @@
-import type { LlmMessage } from "../llm/client.js";
+import { LlmHttpError, type LlmMessage } from "../llm/client.js";
+import { FIREWALL_BLOCK_CODES, FirewallNotReadyError } from "../llm/public-firewall.js";
 import { cleanAnswer } from "./viewer-chat.js";
 import { publicFacts, type PublicFacts } from "./public-chat.js";
 
@@ -21,10 +22,16 @@ export const PUBLIC_MODEL_CHAT_SYSTEM_PROMPT = [
 
 export const BLOCKED_ANSWER = "I can't help with that one. Ask me what I'm up to instead!";
 
+/**
+ * Why a public question got no model answer. Fixed codes for logs and
+ * diagnostics: never visitor text, model text or upstream error messages.
+ * "timeout" and "cancelled" are never presented as answers.
+ */
+export type PublicModelOutcome = "not_ready" | "unverified" | "guard_unavailable" | "busy" | "timeout" | "cancelled" | "empty" | "error";
 export type PublicModelAnswer =
   | { kind: "answer"; text: string }
   | { kind: "blocked" }
-  | { kind: "unavailable" };
+  | { kind: "unavailable"; reason: PublicModelOutcome };
 
 export function buildPublicChatMessages(facts: PublicFacts, question: string): LlmMessage[] {
   return [
@@ -33,9 +40,19 @@ export function buildPublicChatMessages(facts: PublicFacts, question: string): L
   ];
 }
 
-/** Aegis answers a flagged request (or a leaked canary) with HTTP 403. */
+/** Only a 403 carrying one of Aegis's verdict codes is a verified firewall block. */
 export function isFirewallBlock(error: unknown): boolean {
-  return error instanceof Error && /\bHTTP 403\b/.test(error.message);
+  return error instanceof LlmHttpError && error.status === 403 && error.code !== null && FIREWALL_BLOCK_CODES.has(error.code);
+}
+
+function failure(error: unknown, signal?: AbortSignal): PublicModelOutcome {
+  if (signal?.aborted) return signal.reason instanceof DOMException && signal.reason.name === "TimeoutError" ? "timeout" : "cancelled";
+  if (error instanceof FirewallNotReadyError) return error.reason === "unverified_reply" ? "unverified" : "not_ready";
+  if (error instanceof LlmHttpError && error.code === "enforcement_unavailable") return "not_ready";
+  if (error instanceof LlmHttpError && error.code === "guard_unavailable") return "guard_unavailable";
+  if (error instanceof DOMException && error.name === "TimeoutError") return "timeout";
+  if (error instanceof Error && error.message === "model queue full") return "busy";
+  return "error";
 }
 
 export async function answerWithModel(
@@ -47,10 +64,9 @@ export async function answerWithModel(
   try {
     signal?.throwIfAborted();
     const text = cleanAnswer(await complete(buildPublicChatMessages(facts, question)));
-    signal?.throwIfAborted();
-    return text ? { kind: "answer", text } : { kind: "unavailable" };
+    if (signal?.aborted) return { kind: "unavailable", reason: failure(undefined, signal) };
+    return text ? { kind: "answer", text } : { kind: "unavailable", reason: "empty" };
   } catch (error) {
-    signal?.throwIfAborted();
-    return isFirewallBlock(error) ? { kind: "blocked" } : { kind: "unavailable" };
+    return isFirewallBlock(error) ? { kind: "blocked" } : { kind: "unavailable", reason: failure(error, signal) };
   }
 }

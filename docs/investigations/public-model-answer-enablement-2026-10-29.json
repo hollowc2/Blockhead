@@ -1,0 +1,574 @@
+{
+  "recorded_at": "2026-10-29",
+  "scope": "Local source changes plus an isolated Zeus stack. No live Aegis, Blockhead, llama-server, Minecraft, network or config change. Model Q&A remains disabled live.",
+  "classification": {
+    "observed_live_read_only": "maia, 2026-10-29",
+    "isolated": "zeus loopback ports 18000-18002/18080, torn down after the run",
+    "source": "tests in both repositories"
+  },
+  "live_read_only_maia": {
+    "aegis_runtime": {
+      "path": "~/.local/share/aegis-runtime",
+      "commit": "ec36ec9b2632ca990a95f043579588a78631a839",
+      "worktree_clean": true,
+      "uv_lock_sha256": "0eddf8e16f64692a526d9c191aa63294e9a19f9794333185e308247b575fa277",
+      "pyproject_sha256": "f95b517ca5314b565b3e02290f3f868868e7b5e473ec3255be67a3447af8927f",
+      "python": "3.13.13",
+      "fastapi": "0.115.14",
+      "starlette": "0.46.2",
+      "httpx": "0.28.1",
+      "uvicorn": "0.52.0"
+    },
+    "aegis_service": {
+      "unit": "~/.config/systemd/user/aegis.service (no drop-ins)",
+      "EnvironmentFile": "~/.config/aegis/aegis.env (mode 0600, not printed)",
+      "runtime_dotenv_present": false,
+      "MainPID": "186413",
+      "NRestarts": "0",
+      "started": "2026-10-24 19:47:35 PDT"
+    },
+    "aegis_effective_allowlisted": {
+      "HOST": "127.0.0.1",
+      "PORT": "8000",
+      "WORKERS": "1",
+      "BACKEND_URL": "http://127.0.0.1:8080/v1/chat/completions",
+      "BACKEND_TIMEOUT": "60",
+      "CLASSIFIER_TYPE": "cascade2",
+      "ONNX2_USE_INT8": "true",
+      "SCAN_ROLES": "user",
+      "ENFORCEMENT_MODE": "monitor",
+      "REDACT_PROMPTS_IN_LOGS": "false",
+      "AUDIT_RETENTION_DAYS": "30",
+      "RATE_LIMIT_PER_MINUTE": "60",
+      "LOG_LEVEL": "INFO",
+      "ADMIN_TOKEN_set": true
+    },
+    "configuration_precedence": "process environment (EnvironmentFile) overrides a .env in the working directory (pydantic-settings); none present. systemd reads multiple EnvironmentFile= in order, later wins.",
+    "aegis_health": {
+      "status": "ok",
+      "classifier": "cascade2",
+      "classifier_loaded": true,
+      "readiness_endpoint": "absent in ec36ec9"
+    },
+    "aegis_audit_db": {
+      "rows": 10,
+      "input_text_redacted": 0,
+      "verdicts": {
+        "allow": 6,
+        "would_block": 4
+      },
+      "mode": "0644",
+      "dir_mode": "0755",
+      "note": "existing unredacted rows: separate remediation, not deleted"
+    },
+    "public_prompt_marker_counts": {
+      "llama-server journal": 0,
+      "aegis journal": 0,
+      "blockhead journal": 0,
+      "logs/blockhead.log": 0,
+      "logs/blockhead-debug.jsonl": 0,
+      "logs/blockhead-console.log": 0,
+      "public_llm_debug_events": 0
+    },
+    "blockhead_log_files": {
+      "blockhead.log_bytes": 597389904,
+      "blockhead-debug.jsonl_bytes": 105116166,
+      "mode": "0644"
+    },
+    "journal_disk_usage": "40M",
+    "llama_server": {
+      "release": "b11425 (commit e117148a4)",
+      "args": "-c 8192 -ngl 99 --jinja (default 4 slots, unified KV)",
+      "MainPID": "988"
+    },
+    "blockhead_flags": {
+      "questions_enabled": true,
+      "actions_enabled": false,
+      "model_questions.enabled": false,
+      "model_questions.base_url": "http://127.0.0.1:8000",
+      "llm.base_url": "http://127.0.0.1:8080"
+    }
+  },
+  "isolated_stack": {
+    "host": "zeus (Ryzen 7 1700, CPU inference)",
+    "llama_server": {
+      "binary": "Maia's b11425 release copied without libggml-cuda",
+      "sha256": "7474703426ad43990ddcc5cb6eb67035fe9b3255f949655ae67cdda7f07227bc",
+      "model": "/mnt/Models/Qwen/Qwen3.5-9B-Q5_K_M.gguf",
+      "args": "-c 8192 -ngl 0 --jinja -t 8",
+      "slots": 4,
+      "throughput": "~12 tok/s prompt, ~4 tok/s generation"
+    },
+    "aegis_candidate": {
+      "base": "4b46205 + uncommitted branch public-enforcement",
+      "classifier": "cascade2 INT8",
+      "settings": "ENFORCEMENT_MODE=enforce SCAN_ROLES=user REDACT_PROMPTS_IN_LOGS=true AUDIT_RETENTION_DAYS=7 INPUT_GUARD_TIMEOUT=5 LOG_LEVEL=INFO",
+      "python": "3.12.13 (Maia: 3.13.13); same uv.lock"
+    },
+    "aegis_monitor": "candidate code, ENFORCEMENT_MODE=monitor, sklearn",
+    "aegis_baseline": "ec36ec9 (git archive), enforce, sklearn",
+    "run1_backend_stream_false": {
+      "recorded_at": "2026-10-30T01:19:36.152Z",
+      "stack": "isolated",
+      "node": "v26.11.1",
+      "note": "Durations in ms. No question/answer text recorded; synthetic questions are fixed in the script.",
+      "benign": {
+        "outcome": "answer",
+        "ms": 20727,
+        "answerChars": 111,
+        "backendLaunches": 1,
+        "firewall": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323176206,
+          "revision": "candidate",
+          "instance": "81b8720e87c140d689163d3a5951b271",
+          "probes": 1,
+          "probeFailures": 0,
+          "settles": 0,
+          "settleFailures": 0,
+          "maxSettleMs": 0
+        }
+      },
+      "guard_positive": {
+        "outcome": "blocked",
+        "ms": 7,
+        "answerChars": 0,
+        "backendLaunches": 0
+      },
+      "not_ready": {
+        "direct_backend_alias": {
+          "createPublicModel": true,
+          "sameEndpoint": true
+        },
+        "direct_backend_as_firewall": "http_status",
+        "monitor_mode": {
+          "outcome": "unavailable:not_ready",
+          "ms": 2,
+          "answerChars": 0,
+          "reason": "monitor_mode"
+        },
+        "monitor_required_header": {
+          "status": 503,
+          "code": "enforcement_unavailable"
+        },
+        "baseline_firewall": {
+          "outcome": "unavailable:not_ready",
+          "ms": 2,
+          "answerChars": 0,
+          "reason": "http_status"
+        },
+        "backendLaunches": 0
+      },
+      "cancel_generating": {
+        "questionOutcome": "unavailable:cancelled",
+        "questionReturnedAfterAbortMs": 258,
+        "generatingForMsBeforeAbort": 8000,
+        "firewallInflightZeroAfterAbortMs": 209,
+        "backendSlotReleasedAfterAbortMs": 5341,
+        "backendReleasesWhileCancelling": 1,
+        "ownerStartedAfterAbortMs": 259,
+        "ownerQueuedBeforeAbortMs": 0,
+        "backendLaunches": 2,
+        "settle": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323205410,
+          "revision": "candidate",
+          "instance": "81b8720e87c140d689163d3a5951b271",
+          "probes": 3,
+          "probeFailures": 0,
+          "settles": 1,
+          "settleFailures": 0,
+          "maxSettleMs": 255
+        }
+      },
+      "cancel_queued": {
+        "outcome": "unavailable:cancelled",
+        "ms": 501,
+        "answerChars": 0,
+        "backendLaunches": 1,
+        "expectedLaunches": 1,
+        "queue": {
+          "queued": 0,
+          "running": 0,
+          "publicQueued": 0,
+          "publicRunning": 0
+        }
+      },
+      "transport_timeout": {
+        "outcome": "unavailable:error",
+        "ms": 6261,
+        "answerChars": 0,
+        "settles": 1,
+        "settleFailures": 0,
+        "backendLaunches": 1,
+        "slotIdleAfterReturnMs": 22585
+      },
+      "owner_behind_public": {
+        "publicOutcome": "answer",
+        "publicMs": 24102,
+        "ownerWaitAndRunMs": 24835
+      },
+      "baseline_cancel": {
+        "backendSlotIdleAfterAbortMs": 2,
+        "abortedAt": 157172
+      },
+      "candidate_raw_cancel": {
+        "backendSlotIdleAfterAbortMs": 20039,
+        "abortedAt": 165282
+      },
+      "final": {
+        "firewall": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323270325,
+          "revision": "candidate",
+          "instance": "81b8720e87c140d689163d3a5951b271",
+          "probes": 4,
+          "probeFailures": 0,
+          "settles": 1,
+          "settleFailures": 0,
+          "maxSettleMs": 255
+        },
+        "queue": {
+          "queued": 0,
+          "running": 0,
+          "publicQueued": 0,
+          "publicRunning": 0
+        },
+        "firewallInflight": 0,
+        "busySlots": 0
+      },
+      "duration_ms": 185324
+    },
+    "run2_backend_stream_true": {
+      "recorded_at": "2026-10-30T01:30:22.163Z",
+      "stack": "isolated",
+      "node": "v26.11.1",
+      "note": "Durations in ms. No question/answer text recorded; synthetic questions are fixed in the script.",
+      "benign": {
+        "outcome": "answer",
+        "ms": 20633,
+        "answerChars": 116,
+        "backendLaunches": 1,
+        "firewall": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323822216,
+          "revision": "candidate",
+          "instance": "2e67e9f120204bacbde5165084c3a643",
+          "probes": 1,
+          "probeFailures": 0,
+          "settles": 0,
+          "settleFailures": 0,
+          "maxSettleMs": 0
+        }
+      },
+      "guard_positive": {
+        "outcome": "blocked",
+        "ms": 6,
+        "answerChars": 0,
+        "backendLaunches": 0
+      },
+      "not_ready": {
+        "direct_backend_alias": {
+          "createPublicModel": true,
+          "sameEndpoint": true
+        },
+        "direct_backend_as_firewall": "http_status",
+        "monitor_mode": {
+          "outcome": "unavailable:not_ready",
+          "ms": 2,
+          "answerChars": 0,
+          "reason": "monitor_mode"
+        },
+        "monitor_required_header": {
+          "status": 503,
+          "code": "enforcement_unavailable"
+        },
+        "baseline_firewall": {
+          "outcome": "unavailable:not_ready",
+          "ms": 2,
+          "answerChars": 0,
+          "reason": "http_status"
+        },
+        "backendLaunches": 0
+      },
+      "cancel_generating": {
+        "questionOutcome": "unavailable:cancelled",
+        "questionReturnedAfterAbortMs": 256,
+        "generatingForMsBeforeAbort": 8000,
+        "firewallInflightZeroAfterAbortMs": 209,
+        "backendSlotReleasedAfterAbortMs": 4444,
+        "backendReleasesWhileCancelling": 1,
+        "ownerStartedAfterAbortMs": 257,
+        "ownerQueuedBeforeAbortMs": 0,
+        "backendLaunches": 2,
+        "settle": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323851217,
+          "revision": "candidate",
+          "instance": "2e67e9f120204bacbde5165084c3a643",
+          "probes": 3,
+          "probeFailures": 0,
+          "settles": 1,
+          "settleFailures": 0,
+          "maxSettleMs": 254
+        }
+      },
+      "cancel_queued": {
+        "outcome": "unavailable:cancelled",
+        "ms": 500,
+        "answerChars": 0,
+        "backendLaunches": 1,
+        "expectedLaunches": 1,
+        "queue": {
+          "queued": 0,
+          "running": 0,
+          "publicQueued": 0,
+          "publicRunning": 0
+        }
+      },
+      "transport_timeout": {
+        "outcome": "unavailable:error",
+        "ms": 6262,
+        "answerChars": 0,
+        "settles": 1,
+        "settleFailures": 0,
+        "backendLaunches": 1,
+        "slotIdleAfterReturnMs": 6317
+      },
+      "owner_behind_public": {
+        "publicOutcome": "answer",
+        "publicMs": 20280,
+        "ownerWaitAndRunMs": 20834
+      },
+      "baseline_cancel": [
+        {
+          "valid": true,
+          "abortAfterMs": 2000,
+          "slotIdleAfterAbortMs": 20076,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 3500,
+          "slotIdleAfterAbortMs": 18023,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 5000,
+          "slotIdleAfterAbortMs": 15220,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 6500,
+          "slotIdleAfterAbortMs": 14013,
+          "backendCancelLogged": false
+        }
+      ],
+      "direct_backend_raw_cancel": [
+        {
+          "valid": true,
+          "abortAfterMs": 2000,
+          "slotIdleAfterAbortMs": 22376,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 3500,
+          "slotIdleAfterAbortMs": 7624,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 5000,
+          "slotIdleAfterAbortMs": 3358,
+          "backendCancelLogged": false
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 6500,
+          "slotIdleAfterAbortMs": 3038,
+          "backendCancelLogged": false
+        }
+      ],
+      "candidate_raw_cancel": [
+        {
+          "valid": true,
+          "abortAfterMs": 2000,
+          "slotIdleAfterAbortMs": 13024,
+          "backendCancelLogged": true
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 3500,
+          "slotIdleAfterAbortMs": 11221,
+          "backendCancelLogged": true
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 5000,
+          "slotIdleAfterAbortMs": 9797,
+          "backendCancelLogged": true
+        },
+        {
+          "valid": true,
+          "abortAfterMs": 6500,
+          "slotIdleAfterAbortMs": 7677,
+          "backendCancelLogged": true
+        }
+      ],
+      "final": {
+        "firewall": {
+          "state": "ready",
+          "reason": null,
+          "checkedAt": 1793323897496,
+          "revision": "candidate",
+          "instance": "2e67e9f120204bacbde5165084c3a643",
+          "probes": 4,
+          "probeFailures": 0,
+          "settles": 1,
+          "settleFailures": 0,
+          "maxSettleMs": 254
+        },
+        "queue": {
+          "queued": 0,
+          "running": 0,
+          "publicQueued": 0,
+          "publicRunning": 0
+        },
+        "firewallInflight": 0,
+        "busySlots": 0
+      },
+      "duration_ms": 293386
+    },
+    "manual_disconnect_trials": {
+      "direct_llama_non_stream_abort_8s_or_2s": [
+        {
+          "idle_after_abort_s": 20.42,
+          "cancel_logged": false
+        },
+        {
+          "idle_after_abort_s": 0.16,
+          "cancel_logged": true
+        },
+        {
+          "idle_after_abort_s": 25.88,
+          "cancel_logged": false
+        }
+      ],
+      "candidate_non_stream_abort": [
+        {
+          "idle_after_abort_s": 19.44,
+          "cancel_logged": false
+        },
+        {
+          "idle_after_abort_s": 16.04,
+          "cancel_logged": false
+        },
+        {
+          "idle_after_abort_s": 23.25,
+          "cancel_logged": false
+        }
+      ],
+      "direct_llama_stream_abort_8_8_2_0.5s": [
+        {
+          "idle_after_abort_s": 2.98,
+          "cancel_logged": true
+        },
+        {
+          "idle_after_abort_s": 0.48,
+          "cancel_logged": true
+        },
+        {
+          "idle_after_abort_s": 0.37,
+          "cancel_logged": true
+        },
+        {
+          "idle_after_abort_s": 0.32,
+          "cancel_logged": true
+        }
+      ],
+      "candidate_stream_curl_abort_4s": {
+        "cancel_logged_after_launch_s": 4.0,
+        "release_after_launch_s": 12.56,
+        "n_tokens_at_release": 252,
+        "interpretation": "cancel applied at the abort; slot finished the in-progress prompt-evaluation batch (full prompt re-evaluated: hybrid model plus per-request canary defeat prefix reuse)"
+      }
+    },
+    "audit_db_after_runs": {
+      "rows": 21,
+      "unredacted": 0,
+      "verdicts": {
+        "allow/allow": 4,
+        "allow/cancelled": 15,
+        "block/n.a.": 2
+      }
+    },
+    "candidate_log_question_marker_count": 0,
+    "interpretation": {
+      "run1": "Aegis closed its upstream within ~0.25 s of every disconnect, but llama-server finished non-streamed requests (2 of 3 public aborts ran 20-23 s)",
+      "run2": "with BACKEND_STREAM=true llama-server logged cancel on every Aegis-cancelled request (4/4 raw, plus scenario aborts); baseline ec36ec9 0/4 and direct non-stream 0/4",
+      "residual": "slot stays busy until its current prompt batch ends: up to ~9-13 s on Zeus CPU; Maia GPU prompt rate (~585 tok/s) implies ~0.5 s, not observed"
+    }
+  },
+  "tests": {
+    "blockhead": {
+      "commands": [
+        "npm run typecheck",
+        "npm test",
+        "npm run audit:production",
+        "git diff --check"
+      ],
+      "tests": 1032,
+      "pass": 1032,
+      "fail": 0,
+      "duration_s": 35.9,
+      "audit": {
+        "moderate": 12,
+        "high": 0,
+        "critical": 0,
+        "reviewed": "GHSA-w5hq-g745-h8pq"
+      },
+      "node": "v26.11.1"
+    },
+    "aegis": {
+      "commands": [
+        "uv run pytest tests/",
+        "uv run ruff check app tests",
+        "git diff --check"
+      ],
+      "baseline": "118 passed, 18 skipped",
+      "final": "142 passed, 18 skipped",
+      "ruff_app_tests": "clean",
+      "mypy": "not run: fails before checking on numpy stubs in the local venv (pre-existing)",
+      "dependency_changes": "none (uv.lock unchanged)"
+    }
+  },
+  "candidate_file_sha256": {
+    "aegis/app/api/routes.py": "7ac498b7dda6927c25da9ff2dd5fc567953224275bd1ead1b6c1a745e0a0795b",
+    "aegis/app/proxy/llm_proxy.py": "7c3da14f5b9e839c0384848588a36f6412be718ce025d1835951a6bd668b8a0c",
+    "aegis/app/main.py": "894304e21a7362d7dbffabcf31c271f64dafb9bf38f1fc1142e1c2e09433ac82",
+    "aegis/app/config.py": "a48c5f717197808cdfb8b10e923e6f45f0961e21f6c874d6e213650ad4bf8a8e",
+    "aegis/app/models/schemas.py": "ac50cfe30ec248689b6a39343f09b779c762135adfd57715ce03b6c2dabb70cc",
+    "aegis/app/guardrails/input_guard.py": "bf68c800c98f072a64ca1ce78feb1d90fe2ed9e47a87092a2052db792a11352e",
+    "aegis/app/guardrails/output_guard.py": "353be54a9ce2ffd7242948978b1f4d9f9ef94796add7c489e28ee0d2eefea026",
+    "aegis/deploy/public-enforce.conf": "c75ff1b2048e73a11bec461aa57722a36c12365faf54bdd86e5e53775aaf752a",
+    "aegis/deploy/public-enforce.env": "64a94b45b2081f37923040b0fd9f41a8d0799d1c6229a51d9a11c0c327176c70",
+    "aegis/tests/test_enforcement.py": "ef76e1c861561e54107e701100c5556f4a60767088aac57b0fa55382b46e8ffb",
+    "blockhead/src/llm/client.ts": "a9cce68bde9d3aa1a3183c75de55c09cb6d6ae3b0a0daf6197a66b13de89bf53",
+    "blockhead/src/llm/public-firewall.ts": "657a6f8b5c3a8e9401b77fa0a9fa4c18e54a3484569da2d0469cfc66c49350f0",
+    "blockhead/src/llm/public-model.ts": "7cf64d5f7e784cbacab31fb2332e9d3ef85e6fcdbc03a9e3640edb138965e373",
+    "blockhead/src/dashboard/public-model-chat.ts": "949a0a88cd2dc62a8c4656860fae8875a5ae53d1d7841d36ac48c955bc76344d",
+    "blockhead/src/dashboard/public-interactions.ts": "d17c77319f9207ad1eaa68ea68f4f2e9ecc3cc380f59d662343f33c12b3a3bd5",
+    "blockhead/src/index.ts": "eb2c370dc38e1e8410101f4f53509622d6f02a7fda141595b5f731b69633f91c",
+    "blockhead/src/config/schema.ts": "e1b6ae17bf245d31049f36d92d0c1deb11026e46ba28f7440a7c676457af66d3",
+    "blockhead/scripts/validate-public-model-stack.ts": "2cfe970bcdff1fcaa05d7e6fefc6faa0eb6cbb44c045a167a8afd0f3a8a7ea01",
+    "blockhead/package-lock.json": "45dfeaa92099ad161bf4677bed453c4957b1b9b82858c1e3a8aa39ebeafe5db9"
+  }
+}

@@ -60,6 +60,9 @@ service, Funnel setting, credentials or gesture flags were changed.
   Firewall blocks remain refusals; network errors remain basic status fallback.
   Backend computation may continue after its HTTP connection aborts: verify with
   the real firewall/backend before offering model Q&A to a larger audience.
+  (Verified 2026-10-29: llama-server b11425 usually finishes a closed non-streamed
+  request; see [public-model-answer-enablement.md](public-model-answer-enablement.md)
+  for the streaming fix and settlement.)
 
 ## Dependency review (registry audit during this work)
 
