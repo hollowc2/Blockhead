@@ -66,11 +66,12 @@ showed `modelOutcomes.answer: 3` and no other outcomes, `modelOutstanding: 0`,
 or abandoned-tab probe was sent through the live public page; those weren't
 explicitly included in the authorization.
 
-Not yet observed: an owner or autonomous model call on the new code. For more
-than 13 minutes after the restart, the bot ran deterministic background work
-(`upgrade_equipment` branch mining) that doesn't use the model. Its LLM client
-reported zero failures. The owner path is unchanged in code and covered by
-tests, but the live observation is pending.
+Owner/autonomous path: for the first ~24 minutes the bot ran deterministic
+background work (`upgrade_equipment` branch mining) that doesn't use the model.
+Then, at 02:40–02:41 UTC, it made two director decisions with results directly
+against `llm.base_url`. Its LLM client was `ok` with 0 consecutive failures; the
+service had 0 restarts and 0 warning journal records; Aegis was ready with no
+open backend requests.
 
 ## Stop conditions, disable and rollback
 

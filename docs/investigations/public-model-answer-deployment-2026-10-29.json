@@ -141,7 +141,19 @@
       "live-page guard-positive probe",
       "live-page abandoned-tab probe"
     ],
-    "pending": "owner/autonomous model call on new code not yet observed (bot running deterministic background work)"
+    "owner_autonomous_path": {
+      "observed": "2026-10-30T02:40:42Z-02:41:02Z",
+      "events": [
+        "director_decision",
+        "agent_decision_result",
+        "director_decision",
+        "agent_decision_result"
+      ],
+      "llm_state": "ok",
+      "consecutiveFailures": 0,
+      "blockhead_restarts": 0,
+      "journal_warnings": 0
+    }
   },
   "unchanged": {
     "minecraft-server.service": "43017",
