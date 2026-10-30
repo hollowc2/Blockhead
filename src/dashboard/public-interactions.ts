@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { PUBLIC_ACTIONS, type PublicActionController } from "../agent/public-actions.js";
+import { PUBLIC_ACTIONS, type GestureDispatch, type PublicActionController } from "../agent/public-actions.js";
 import { answerPublicQuestion, publicFacts, type PublicFacts } from "./public-chat.js";
 import { BLOCKED_ANSWER, type PublicModelAnswer, type PublicModelOutcome } from "./public-model-chat.js";
 import { clientAddress, addressKey, SHELL_SECURITY_HEADERS } from "./http-guard.js";
@@ -53,7 +53,18 @@ export interface PublicAvailability {
 }
 
 export type PublicResultCode = "ok" | "unavailable" | "cancelled" | "invalid" | "too_large" | "body_timeout" | "limited" | "capacity" | "origin" | "content_type" | "disabled" | "unconfirmed" | "action_timeout";
-export interface PublicInteractionResponse { code: PublicResultCode; text: string; retryAfterMs?: number; helloRetryAfterMs?: number; answerKind?: "model" | "rules" | "refusal" }
+/**
+ * Whether the gesture was handed to Bob's game client. "sent" is a local
+ * dispatch, never an independently observed Minecraft effect.
+ */
+export type ActionDelivery = "sent" | "not_sent" | "uncertain";
+export const ACTION_TEXT = {
+  sent: "Sent to Bob's game client. Minecraft hasn't independently confirmed it.",
+  interrupted: "Sent, but Bob was interrupted right after. It may or may not have shown in the game.",
+  uncertain: "Delivery could not be confirmed. Gestures are paused until an operator checks.",
+  refused: "Bob couldn't do that right now. Nothing was sent.",
+} as const;
+export interface PublicInteractionResponse { code: PublicResultCode; text: string; retryAfterMs?: number; helloRetryAfterMs?: number; answerKind?: "model" | "rules" | "refusal"; delivery?: ActionDelivery }
 class Refusal extends Error { constructor(readonly status: number, readonly code: PublicResultCode) { super(code); } }
 async function readJson(request: IncomingMessage, signal: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -121,7 +132,7 @@ export class PublicInteractions {
     else waits.push(this.limiter.wait(`action:${ip}`, 1, 10_000), this.limiter.wait("action:global", 1, 5000), action === "hello" ? this.limiter.wait("action:hello", 1, 30_000) : 0);
     return Math.max(...waits);
   }
-  diagnostics(): unknown { return { ...this.availability(), configuredActions: this.actions, modelQuestions: !!this.options.modelAnswer, modelOutcomes: { ...this.modelOutcomes }, ...(this.options.modelStatus ? { modelFirewall: this.options.modelStatus() } : {}), gesture: this.options.gestures.diagnostics(), ...this.counters, modelOutstanding: this.modelWork.size, inFlight: this.active.size, questionsInFlight: [...this.active.values()].filter(feature => feature === "question").length, actionsInFlight: [...this.active.values()].filter(feature => feature === "action").length }; }
+  diagnostics(): unknown { return { ...this.availability(), configuredActions: this.actions, configuredQuestions: this.questions, modelQuestions: !!this.options.modelAnswer, modelOutcomes: { ...this.modelOutcomes }, ...(this.options.modelStatus ? { modelFirewall: this.options.modelStatus() } : {}), gesture: this.options.gestures.diagnostics(), ...this.counters, modelOutstanding: this.modelWork.size, inFlight: this.active.size, questionsInFlight: [...this.active.values()].filter(feature => feature === "question").length, actionsInFlight: [...this.active.values()].filter(feature => feature === "action").length }; }
   configure(raw: unknown): unknown {
     const config = settingsSchema.parse(raw);
     if ((config.questions_enabled || config.actions_enabled) && !this.options.config.allowed_origin) throw new Error("origin required");
@@ -141,7 +152,7 @@ export class PublicInteractions {
     request.once("aborted", disconnect); response.once("close", disconnect);
     const deadline = Date.now() + (feature === "question" && this.options.modelAnswer ? PUBLIC_LIMITS.modelDeadlineMs : PUBLIC_LIMITS.deadlineMs);
     const timer = setTimeout(() => controller.abort(new DOMException("deadline exceeded", "TimeoutError")), deadline - Date.now());
-    let actionId: string | undefined;
+    let actionId: string | undefined, dispatch: GestureDispatch | undefined;
     let answeredBy: "rules" | "model" | "firewall" | undefined;
     let modelOutcome: string | undefined;
     let retryAfterMs: number | undefined, ip = "unknown";
@@ -188,8 +199,11 @@ export class PublicInteractions {
         if (!this.options.gestures.available()) throw new Refusal(503, "unavailable");
         if (this.retryAfter("action", ip, actionId) > 0) throw new Refusal(429, "limited");
         if (!this.limiter.take(`action:${ip}`, 1, 10_000) || !this.limiter.take("action:global", 1, 5000) || (actionId === "hello" && !this.limiter.take("action:hello", 1, 30_000))) throw new Refusal(429, "limited");
-        if (!await this.options.gestures.execute(parsed.data.action, controller.signal)) throw new Refusal(503, this.options.gestures.diagnostics().quarantined ? "action_timeout" : "unconfirmed");
-        text = "Done!";
+        dispatch = await this.options.gestures.execute(parsed.data.action, controller.signal);
+        if (dispatch === "refused") throw new Refusal(503, "unavailable");
+        if (dispatch === "uncertain") throw new Refusal(503, "action_timeout");
+        if (dispatch === "interrupted") throw new Refusal(503, "unconfirmed");
+        text = ACTION_TEXT.sent;
       }
       if (controller.signal.aborted) throw new Refusal(503, "cancelled");
       code = "ok"; status = 200;
@@ -200,18 +214,20 @@ export class PublicInteractions {
     } catch (error) {
       if (error instanceof Refusal) { status = error.status; code = error.code; }
       if (status === 429) { const wait = this.retryAfter(feature, ip); if (wait > 0) retryAfterMs = Math.max(1000, wait); }
-      text = status === 429 ? "Please wait before trying again. Shared public limits apply." : (code === "unconfirmed" || code === "action_timeout") ? "Delivery could not be confirmed." : status === 400 ? "Invalid request." : "Public interaction unavailable.";
+      text = status === 429 ? "Please wait before trying again. Shared public limits apply."
+        : dispatch === "interrupted" || dispatch === "dispatched" ? ACTION_TEXT.interrupted : dispatch === "uncertain" ? ACTION_TEXT.uncertain : dispatch === "refused" ? ACTION_TEXT.refused
+        : status === 400 ? "Invalid request." : "Public interaction unavailable.";
     } finally {
       clearTimeout(timer); request.off("aborted", disconnect); response.off("close", disconnect);
       if (admitted) this.active.delete(controller);
       if (ownsQuestion) this.questionBusy = false;
       this.counters[status === 200 ? "accepted" : "rejected"]++;
       if (code === "body_timeout" || code === "action_timeout" || controller.signal.aborted) this.counters.timeout++;
-      this.options.log?.({ time: new Date().toISOString(), requestId: id, feature, action: actionId, answeredBy, modelOutcome, outcome: status === 200 ? "accepted" : "refused", durationMs: Date.now() - started, reason: code });
+      this.options.log?.({ time: new Date().toISOString(), requestId: id, feature, action: actionId, dispatch, answeredBy, modelOutcome, outcome: status === 200 ? "accepted" : "refused", durationMs: Date.now() - started, reason: code });
     }
     if (!response.destroyed) {
       response.writeHead(status, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store", ...(status === 429 ? { "retry-after": String(Math.ceil((retryAfterMs ?? 30_000) / 1000)) } : {}), ...(status !== 200 ? { connection: "close" } : {}) });
-      const result: PublicInteractionResponse = { ...(status === 200 && feature === "question" ? { answerKind: answeredBy === "model" ? "model" as const : answeredBy === "firewall" ? "refusal" as const : "rules" as const } : {}), ...(actionId === "hello" ? { helloRetryAfterMs: this.limiter.wait("action:hello", 1, 30_000) } : {}), code, text: [...text].slice(0, 500).join(""), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
+      const result: PublicInteractionResponse = { ...(status === 200 && feature === "question" ? { answerKind: answeredBy === "model" ? "model" as const : answeredBy === "firewall" ? "refusal" as const : "rules" as const } : {}), ...(actionId === "hello" ? { helloRetryAfterMs: this.limiter.wait("action:hello", 1, 30_000) } : {}), ...(feature === "action" ? { delivery: dispatch === undefined || dispatch === "refused" ? "not_sent" as const : dispatch === "uncertain" ? "uncertain" as const : "sent" as const } : {}), code, text: [...text].slice(0, 500).join(""), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
       response.end(JSON.stringify(result));
     }
   }

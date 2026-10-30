@@ -195,6 +195,9 @@ dd.sub { margin-top: 2px; }
 .msg-pending::after { content: "…"; animation: blink 1.2s steps(4, end) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes blink { from { width: 0; } to { width: 1.2em; } }
 #publicReply.thinking { color: var(--cyan); }
+/* Gesture delivery: "sent" is local dispatch only, so it stays neutral rather than a success green. */
+#publicReply[data-delivery="uncertain"] { color: var(--amber); }
+#publicReply[data-delivery="not_sent"] { color: var(--muted); }
 .chat-quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-quick button { padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; cursor: pointer; }
 .chat-quick button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }

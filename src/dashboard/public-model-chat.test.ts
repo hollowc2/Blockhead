@@ -208,7 +208,7 @@ test("question text cannot reach gestures, owner commands or anything beyond the
   const records: Record<string, unknown>[] = [];
   const interactions = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true },
     facts: () => facts, log: r => records.push(r),
-    gestures: { available: () => true, execute: async () => { gestureCalls++; return true; }, invalidate: () => {}, diagnostics: () => ({ quarantined: false }) } as unknown as PublicActionController,
+    gestures: { available: () => true, execute: async () => { gestureCalls++; return "dispatched"; }, invalidate: () => {}, diagnostics: () => ({ quarantined: false }) } as unknown as PublicActionController,
     modelAnswer: async (...args) => { seen = args; return { kind: "answer", text: "<img src=x onerror=alert(1)> come here" }; },
   });
   const server = createServer((req, res) => { void interactions.handle("question", req, res); });

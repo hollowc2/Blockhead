@@ -1,0 +1,196 @@
+{
+  "recorded_at": "2026-10-29",
+  "source_base": "15487ee522ec8d62b9fff57bc997a0cba8c06125 (working-tree candidate on top; not committed by this task)",
+  "deployed_runtime_observed": "d2e8371376970c0de9ea9528266d9458ceca6424 on Maia (src/scripts/package files identical to the base)",
+  "package_lock_sha256": "45dfeaa92099ad161bf4677bed453c4957b1b9b82858c1e3a8aa39ebeafe5db9",
+  "package_json_sha256": "6ea625ce2fc966e0d7fe323784704250c2ac1ab1e4b02068838e8b1c4765fe51",
+  "dependency_changes": "none",
+  "db_schema_changes": "none",
+  "config_changes": "none (config/minecraft.yaml untouched; startup default for actions stays false)",
+  "files": {
+    "scripts/gesture-observer-qualify.ts": {
+      "base": null,
+      "candidate": "164ce5f4df1b2f050d8967bb2735b46cdd455971477b1ea5c3d57befbce386c9"
+    },
+    "scripts/gesture-trial.ts": {
+      "base": null,
+      "candidate": "1ebb49aa530c6564886c578221d333f0341f4672678d9bbd4bc097a07054fa08"
+    },
+    "scripts/public-gesture-browser-check.mjs": {
+      "base": null,
+      "candidate": "69ae920d1936b44853a6a75d3a5914a7ee753668b9344684f7599338c8191b99"
+    },
+    "scripts/public-viewer-fixture.ts": {
+      "base": "95b35d036324df05b1b73198dbb97847442577c25402a507d998192058ae5f85",
+      "candidate": "324e0cfac951c85497935c6e1b7a504811bae51b9e60bd67f289217e6f21ceb3"
+    },
+    "src/agent/public-action-admission.test.ts": {
+      "base": "0be448169eec645aa1712b1bb570be23693d46000476bec33eaad811d3e5c225",
+      "candidate": "6b781e24dc5e9b87f119a38d73c4b3f9602a63549c1f372a42fc411326c75559"
+    },
+    "src/agent/public-action-safety.test.ts": {
+      "base": "fa593e5f4a1898e7ee635bb79e51b1359ff155d82d7ca976b796d2c1c825ed13",
+      "candidate": "ed90dd1a995c9530e3cffafd53d68327da7d674f89d557e50e214eac3e5673ca"
+    },
+    "src/agent/public-action-safety.ts": {
+      "base": "047c8aa77172276240d828b121e4dd6c0522b93f4a67ad4d9da5bd350c957ecb",
+      "candidate": "62a6cdb554d6fc3eb4bc01bc4b7b4b9b730e240c655feb9988398f2c2c60190c"
+    },
+    "src/agent/public-actions.fixture.ts": {
+      "base": null,
+      "candidate": "8c37a50212a7acad6e159e3143b05ef4eb236c148c3ed7aa9a7256ca25e533e3"
+    },
+    "src/agent/public-actions.test.ts": {
+      "base": "35129afc4c536f653dfbbb89ce5b14fcb9a50bfc514eb3576ac5c55d4496e239",
+      "candidate": "23063f058a8bc4cef54a86cfa57d922b9000d29770235a10695d8b6dc68f95ad"
+    },
+    "src/agent/public-actions.ts": {
+      "base": "308b1fcd4a6a83a3fbcc390a49264ba0f3ecabd4d34e88fa60fe3dca317a0a0a",
+      "candidate": "63f1b58d30e885ecf2b1f1e78d12e12c9966411eac5bde10b99108c35d928f9b"
+    },
+    "src/agent/public-admission-wiring.test.ts": {
+      "base": null,
+      "candidate": "aa72a431e23b3c6eeb2a553414ead31d20e2a9c8a056534987bbf68f488bbb16"
+    },
+    "src/agent/public-admission-wiring.ts": {
+      "base": null,
+      "candidate": "7da7f777a3e9bed22959967e25c76b6e898ddb42f30dbe6f8091ef69eb4826ad"
+    },
+    "src/dashboard/public-gesture-http.test.ts": {
+      "base": null,
+      "candidate": "7784d0c80e1a801e760f191ebeaec1e6ae1d4599dcc93edc490e91860d52f4bb"
+    },
+    "src/dashboard/public-interactions.test.ts": {
+      "base": "3bf27acdec7b6a09f155992a8d24f9ca928a3a64cc70dd36594edeb3d7e4a7db",
+      "candidate": "ce228ac6672149336feb4a434b0d0bf43fd0c7064077abae3ff49d2cb6d8af98"
+    },
+    "src/dashboard/public-interactions.ts": {
+      "base": "d17c77319f9207ad1eaa68ea68f4f2e9ecc3cc380f59d662343f33c12b3a3bd5",
+      "candidate": "c5fb42eb054fc752cf65a7ab9efe75322f04a223b150034e0bc384fcd86ca50d"
+    },
+    "src/dashboard/public-model-chat.test.ts": {
+      "base": "b22c75cd368bd443a621fc74a5cfd49bcb091764edeeb0342b46fb4f326a10ac",
+      "candidate": "7b8e809d4b5dbed13e7344e21375e0a8c9ecd8bb90d2a3b81c9f0594379b4da4"
+    },
+    "src/dashboard/public/viewer-shell.css": {
+      "base": "d06a1ddd2b68362adf62f130c81fe746e28033548563f166446f215211f2f4f5",
+      "candidate": "229e667b89a316416ec153cf9600247b48f605d858cd6bcddd2de8811004844f"
+    },
+    "src/dashboard/public/viewer-shell.js": {
+      "base": "773febfbaca64ba85516bf582cdd21bc44b9b4e259c51d2ba35aaa24f8b4b66e",
+      "candidate": "2605bcab8c0540adc16073c6ce0d321e84bb4dfe672fdfb3dcf4446f2d5df1a3"
+    },
+    "src/index.ts": {
+      "base": "eb2c370dc38e1e8410101f4f53509622d6f02a7fda141595b5f731b69633f91c",
+      "candidate": "f518d9fb271801c3344a994f9afdeb775192e1adb84606ffc74009f750987f95"
+    },
+    "src/observer/gesture-collector.test.ts": {
+      "base": null,
+      "candidate": "3b6e70ff87f0609f6f1b1588ee996ac33e40b8b0dececce0437912f03dc331ef"
+    },
+    "src/observer/gesture-collector.ts": {
+      "base": null,
+      "candidate": "dbdb611501bb91322b8acfdf2e2bb33431cea504e3a9642013b0cd00a2b83af6"
+    },
+    "src/observer/gesture-evaluator.test.ts": {
+      "base": null,
+      "candidate": "6c58f53ea25ae87d08ce2df85eee603bf57eab4deff7e962af5e7a28bc9a7c5d"
+    },
+    "src/observer/gesture-evaluator.ts": {
+      "base": null,
+      "candidate": "158c13fec5fc9314974e2f9f2aab5f07f2a24030e0d33cff71a394128fc7ec78"
+    },
+    "src/observer/gesture-records.ts": {
+      "base": null,
+      "candidate": "3051511787a0f4c5ffa8a1b60bc82701ce64f48e108c1d8a3f74f0f342f3abe3"
+    },
+    "src/observer/gesture-trial.test.ts": {
+      "base": null,
+      "candidate": "632029a46f8d8090a6bfa172d5feaffe03a2483abfb136d89b55637d21f9bd24"
+    },
+    "src/observer/gesture-trial.ts": {
+      "base": null,
+      "candidate": "2f5975afd2239d1246d9da149820b7cc6806d610e13324431869a465e1dfc25d"
+    },
+    "tools/gesture-observer/.gitignore": {
+      "base": null,
+      "candidate": "181314065df2f2fdaf920b1a8b5311daa216a2d6489a06ada5b49cc514d89417"
+    },
+    "tools/gesture-observer/build.sh": {
+      "base": null,
+      "candidate": "1b944f69a0762729a25a04aa0c05bf8539831c2279be246cf87bfca21e9d26b9"
+    },
+    "tools/gesture-observer/src/main/java/blockhead/observer/Agent.java": {
+      "base": null,
+      "candidate": "8d952b5a1633b0437fd923306878fc4d89914e6b130ca646174aa261f45ffbe4"
+    },
+    "tools/gesture-observer/src/main/java/blockhead/observer/ClassPatcher.java": {
+      "base": null,
+      "candidate": "361bbe6f2ba621cdf67e82a0b2508fca1b34334411d7a9a8db2e37a43d6354a1"
+    },
+    "tools/gesture-observer/src/main/java/blockhead/observer/Hooks.java": {
+      "base": null,
+      "candidate": "cf2ab8ec77ff129dfbc4d2c9a5ffe6bf195bfc9f7f87e4e9cc5bceb888fd7d4a"
+    },
+    "tools/gesture-observer/src/main/java/blockhead/observer/Recorder.java": {
+      "base": null,
+      "candidate": "ec0e2264668d6a8788b9b171a8614141b78cd3affc1500e9774f07329105e026"
+    },
+    "tools/gesture-observer/src/test/java/blockhead/observer/Fixture.java": {
+      "base": null,
+      "candidate": "e8cb7e49fd8b668a7bc72f65c4f2030297de0a194077c4c631181b0bc9dfc36f"
+    },
+    "tools/gesture-observer/src/test/java/blockhead/observer/SelfTest.java": {
+      "base": null,
+      "candidate": "8fd1178e3f2a92bd3991a36f970dd0d2efcb5eb0e6dc774228c3ccfc4393072e"
+    }
+  },
+  "bot_runtime_delta": [
+    "src/agent/public-action-safety.ts",
+    "src/agent/public-actions.ts",
+    "src/agent/public-admission-wiring.ts",
+    "src/dashboard/public-interactions.ts",
+    "src/dashboard/public/viewer-shell.css",
+    "src/dashboard/public/viewer-shell.js",
+    "src/index.ts",
+    "src/observer/gesture-collector.ts",
+    "src/observer/gesture-evaluator.ts",
+    "src/observer/gesture-records.ts",
+    "src/observer/gesture-trial.ts"
+  ],
+  "observer": {
+    "source": "tools/gesture-observer",
+    "build": "tools/gesture-observer/build.sh <out> (javac --release 21, no dependencies; sorted entries, fixed timestamp)",
+    "javac_used": "OpenJDK 21.0.12.1 (Zulu) on zeus",
+    "jar_sha256": "23ebd5166c7e99ed3a9db1f2a0fa4c280257633dd56685941939c49641503419",
+    "reproducible": "two clean builds produced identical bytes",
+    "target_runtime": "Temurin 25.0.4.1+1 (Maia ~/mc-server/java); Java 21 classfiles",
+    "target_server": {
+      "version": "1.21.4",
+      "protocol": 769,
+      "server_jar_sha256": "1066970b09e9c671844572291c4a871cc1ac2b85838bf7004fa0e778e10f1358",
+      "nested_jar_sha256": "de9538d2497c8f4174805f3fcedb8ade3060446aa203f351b820ea5bd04adbf4",
+      "mappings": "server.txt sha1 0b1e60cc509cfb0172573ae56b436c29febbc187"
+    },
+    "hooks": 22
+  },
+  "validation": {
+    "typecheck": "npm run typecheck: pass",
+    "tests": "npm test: 1069 tests, 1069 pass, 0 fail (previous receipt: 1006)",
+    "focused": "tsx --test src/agent/public-*.test.ts src/dashboard/public-*.test.ts src/observer/*.test.ts: pass",
+    "diff_check": "git diff --check: pass",
+    "audit": "npm run audit:production: passes under the documented UUID exception (12 moderate, 0 high/critical)",
+    "observer_selftest": "134/134 on Java 21 and on Maia's Java 25 runtime copy",
+    "local_qualification": "docs/investigations/public-gestures-2026-10-29-local-qualification.json (qualified, reproduced twice)",
+    "browser": "docs/investigations/public-gestures-2026-10-29-browser.json",
+    "production_windows": "docs/investigations/public-gestures-2026-10-29-production-windows.json (read-only)"
+  },
+  "not_performed": [
+    "commit, push or deploy",
+    "observer installation or JVM attachment on Maia",
+    "Minecraft or bot restart",
+    "enabling public actions or any live gesture",
+    "production game commands or a second player in production",
+    "network, Funnel, firewall or service changes"
+  ]
+}

@@ -5,6 +5,7 @@ import { PublicInteractions, InteractionLimiter, interactionAddress, questionSch
 import { answerPublicQuestion, publicFacts } from "./public-chat.js";
 import { PublicActionController } from "../agent/public-actions.js";
 import { WorldActionExecutor } from "../agent/world-actions.js";
+import { fakeGestureBot } from "../agent/public-actions.fixture.js";
 import { ViewerShellServer } from "./viewer-shell.js";
 import { clientAddress } from "./http-guard.js";
 import type { IncomingMessage } from "node:http";
@@ -21,7 +22,9 @@ async function listen(server: Server): Promise<number> {
 function fixture() {
   let now = 0; const effects: string[] = [], records: unknown[] = [];
   const executor = new WorldActionExecutor();
-  const bot = { entity: { yaw: 1, pitch: 0.2 }, chat: (s: string) => { effects.push(s); }, swingArm: () => { effects.push("wave"); }, look: async () => { effects.push("look"); } };
+  const bot = fakeGestureBot();
+  bot.chat = (s: string) => { effects.push(s); }; bot.swingArm = () => { effects.push("wave"); };
+  const look = bot.look; bot.look = async (...args) => { effects.push("look"); await look(...args); };
   const gestures = new PublicActionController({ session: () => bot, safe: () => true, tryRun: (signal, action) => executor.tryRun("public", signal, action) });
   const interactions = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true }, gestures, facts: () => ({ connected: true, health: 19.7, hunger: 18, activity: "idle", time: "day", actions: true, secret: "PRIVATE_CANARY" }), now: () => now, log: r => records.push(r) });
   const server = createServer((req, res) => { void interactions.handle(req.url === "/action" ? "action" : "question", req, res); });

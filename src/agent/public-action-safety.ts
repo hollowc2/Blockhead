@@ -12,6 +12,16 @@ export function bindPublicSafetyInterrupts(bus: EventBus, cancel: () => void): v
     bus.on(event, cancel);
   }
 }
+/**
+ * Session-scoped: any owner chat preempts public gestures, including messages
+ * that go to the LLM decision path, which emits no `chat.command` until it
+ * creates a task. Returns the unbind function.
+ */
+export function bindPublicOwnerChatInterrupt(bot: Pick<Bot, "on" | "off">, owner: string, cancel: () => void): () => void {
+  const onChat = (username: string): void => { if (username === owner) cancel(); };
+  bot.on("chat", onChat);
+  return () => { bot.off("chat", onChat); };
+}
 /** Fresh Mineflayer facts only. Missing safety observations refuse admission. */
 export function safePublicPhysicalState(bot: Bot, retreat: number): boolean {
   try { return assessPublicPhysicalState(bot, retreat).safe; } catch { return false; }
@@ -21,6 +31,8 @@ export function assessPublicPhysicalState(bot: Bot, retreat: number, collectAll 
     const entity = bot.entity as typeof bot.entity & { isInWater?: boolean; isInLava?: boolean };
     return assessPublicAdmission([
       ["entity", () => entity != null],
+      // Health can read as positive for a moment after a death packet; Mineflayer's own flag must agree.
+      ["alive", () => (bot as Bot & { isAlive?: boolean }).isAlive === true],
       ["grounded", () => entity.onGround === true],
       ["dry", () => entity.isInWater === false && entity.isInLava === false],
       ["orientation", () => Number.isFinite(entity.yaw) && Number.isFinite(entity.pitch)],

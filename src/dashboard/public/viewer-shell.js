@@ -784,6 +784,8 @@ import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
     // body); actions settle within its 8 s deadline. Wait a little past each.
     const asking = feature === "question";
     $("publicReply").textContent = asking ? "Bob is thinking…" : "Sending…";
+    // Actions: "sent" is a local dispatch, not a Minecraft confirmation; the server's text says which.
+    $("publicReply").dataset.delivery = asking ? "" : "pending";
     $("publicReply").classList.toggle("thinking", asking);
     let historyRow;
     if (asking) {
@@ -805,8 +807,12 @@ import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
       if (typeof result.helloRetryAfterMs === "number") helloUntil = retryUntil(requestStarted, Date.now(), result.helloRetryAfterMs);
       const label = result.answerKind === "rules" ? "Basic status: Bob can't answer freely right now. " : result.answerKind === "refusal" ? "Bob declined this question. " : "";
       settle(label + (result.text || "Public interaction unavailable."));
+      if (!asking) $("publicReply").dataset.delivery = ["sent", "not_sent", "uncertain"].includes(result.delivery) ? result.delivery : "uncertain";
       if (asking && response.ok && result.code === "ok" && result.answerKind !== "refusal" && $("publicQuestion").value === body.question) $("publicQuestion").value = "";
-    } catch { settle(feature === "action" ? "Delivery could not be confirmed." : controller.signal.aborted ? "Bob took too long to answer. Try again later." : "Couldn't reach Bob. Try again later."); }
+    } catch {
+      // Lost response: never retried automatically; the visitor only learns it is unconfirmed.
+      if (!asking) $("publicReply").dataset.delivery = "uncertain";
+      settle(feature === "action" ? "Delivery could not be confirmed." : controller.signal.aborted ? "Bob took too long to answer. Try again later." : "Couldn't reach Bob. Try again later."); }
     finally { clearTimeout(timer); $("publicReply").classList.remove("thinking"); publicBusy = false; updatePublicButtons(); }
   }
   $("publicQuestionForm").addEventListener("submit", event => { event.preventDefault(); void publicSubmit("question", { question: $("publicQuestion").value }); });

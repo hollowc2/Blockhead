@@ -8,6 +8,12 @@ import { ReadOnlyViewerServer } from "../src/dashboard/viewer-server.js";
 import { ViewerShellServer } from "../src/dashboard/viewer-shell.js";
 import { PublicInteractions } from "../src/dashboard/public-interactions.js";
 import { PublicActionController } from "../src/agent/public-actions.js";
+import { fakeGestureBot } from "../src/agent/public-actions.fixture.js";
+import { WorldActionExecutor } from "../src/agent/world-actions.js";
+
+// FIXTURE_GESTURES=1 enables gestures against an in-memory fake bot (no Minecraft) for UI checks.
+const gestureMode = process.env.FIXTURE_GESTURES === "1";
+const gestureBot = fakeGestureBot(), gestureLease = new WorldActionExecutor();
 
 const require = createRequire(import.meta.url);
 const Chunk = require("prismarine-chunk")("1.21.4");
@@ -29,9 +35,11 @@ const viewerPort = await port(), shellPort = await port();
 const viewer = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port: viewerPort, viewDistance: 2, maxPublicConnections: 6, maxConnections: 10 });
 let now = 0;
 const interactions = new PublicInteractions({
-  config: { allowed_origin: `http://127.0.0.1:${shellPort}`, questions_enabled: true, actions_enabled: false },
-  gestures: new PublicActionController({ session: () => null, safe: () => false, tryRun: () => null }),
-  facts: () => ({ connected: true, health: 20, hunger: 18, time: "day", activity: "resting", actions: false }),
+  config: { allowed_origin: `http://127.0.0.1:${shellPort}`, questions_enabled: true, actions_enabled: gestureMode },
+  gestures: gestureMode
+    ? new PublicActionController({ session: () => gestureBot, safe: () => true, tryRun: (signal, action) => gestureLease.tryRun("public-gesture", signal, action) })
+    : new PublicActionController({ session: () => null, safe: () => false, tryRun: () => null }),
+  facts: () => ({ connected: true, health: 20, hunger: 18, time: "day", activity: "resting", actions: gestureMode }),
   now: () => now += 31_000, // Fixture only: lets local UI checks exercise multiple answers without waiting.
 });
 const shell = new ViewerShellServer({ host: "127.0.0.1", port: shellPort, viewerPort, statsPort: 1, mode: "public", publicInteractions: interactions,
@@ -42,5 +50,5 @@ const shell = new ViewerShellServer({ host: "127.0.0.1", port: shellPort, viewer
     inventory: { totalItems: 16, items: [{ name: "oak_log", count: 16 }] }, equipment: null, interactions: interactions.availability() }),
 });
 await viewer.start(); await shell.start();
-console.log(JSON.stringify({ url: `http://127.0.0.1:${shellPort}`, fixture: true }));
+console.log(JSON.stringify({ url: `http://127.0.0.1:${shellPort}`, fixture: true, gestures: gestureMode }));
 for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { shell.stop(); viewer.close(); process.exit(0); });

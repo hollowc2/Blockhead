@@ -1,5 +1,5 @@
-import { assessPublicPhysicalState, assessPublicThreatState, bindPublicSafetyInterrupts, PublicSafetyObservations, safePublicPhysicalState, safePublicThreatState } from "./agent/public-action-safety.js";
-import { assessPublicAdmission, type AdmissionCheck } from "./agent/public-action-admission.js";
+import { assessPublicPhysicalState, assessPublicThreatState, bindPublicOwnerChatInterrupt, bindPublicSafetyInterrupts, PublicSafetyObservations } from "./agent/public-action-safety.js";
+import { createPublicAdmission } from "./agent/public-admission-wiring.js";
 import { PublicProtocolObservations } from "./agent/public-protocol-observations.js";
 import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
 import { PublicInteractions } from "./dashboard/public-interactions.js";
@@ -259,27 +259,17 @@ const processStartedAt = Date.now();
 let statusServer: StatusServer | null = null;
 let dashboardServer: ReturnType<typeof startDashboard> = null;
 const redactedViewerState = cachedPublicState((): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot());
-function publicAdmission(candidate: GestureBot | null, collectAll = false) {
-  const live = session;
-  return assessPublicAdmission([
-    ["session", () => live !== null && candidate !== null && live.bot === candidate && connectionState.state === "READY"],
-    ["physical", () => safePublicPhysicalState(live!.bot, config.policy?.health_retreat_threshold ?? 8)],
-    ["freshness", () => live!.publicSafety.fresh()],
-    ["threats", () => safePublicThreatState(live!.bot)],
-    ["death_loop", () => !deathManager.inDeathLoop],
-    ["scheduler", () => !scheduler.isHalted],
-    ["projects", () => buildProjectManager.currentProjectForBackground() === null],
-    ["lease_waiters", () => scheduler.worldActionDiagnostics.pending === 0],
-    ["lease_owner", () => scheduler.worldActionOwner === null || scheduler.worldActionOwner === "public-gesture"],
-    ["active_task", () => scheduler.active === null],
-    ["queued_tasks", () => scheduler.queued.length === 0],
-    ["interrupt", () => !scheduler.interruptPending],
-    ["background", () => !live!.background.publicWorkPending],
-    ["decision", () => !decider.activity.thinking],
-    ["goal", () => goals.active() === null],
-    ["bootstrap", () => currentBootstrap !== null && !currentBootstrap.isRunning && currentBootstrap.completedStage === BootstrapStage.NORMAL_OPERATION],
-  ] satisfies AdmissionCheck[], collectAll);
-}
+const publicAdmission = createPublicAdmission({
+  session: () => session,
+  connectionReady: () => connectionState.state === "READY",
+  retreatHealth: () => config.policy?.health_retreat_threshold ?? 8,
+  inDeathLoop: () => deathManager.inDeathLoop,
+  scheduler,
+  currentProject: () => buildProjectManager.currentProjectForBackground(),
+  decisionThinking: () => decider.activity.thinking,
+  activeGoal: () => goals.active(),
+  bootstrapComplete: () => currentBootstrap !== null && !currentBootstrap.isRunning && currentBootstrap.completedStage === BootstrapStage.NORMAL_OPERATION,
+});
 const publicGestures = new PublicActionController({
   session: () => session?.bot ?? null,
   safe: (candidate: GestureBot): boolean => publicAdmission(candidate).safe,
@@ -847,6 +837,7 @@ const developLand = new DevelopLandRunner({ bot, state, logger, reservedCells: (
   bot.once("end", () => breathWatch.detach());
   bot.on("end", () => publicInteractions.cancel());
   bot.on("death", () => publicInteractions.cancel());
+  bindPublicOwnerChatInterrupt(bot, config.agent?.owner ?? "Corey", () => publicInteractions.cancel());
   const routes = new RouteTracker(bot);
   session = { bot, background, hostile, publicSafety, publicProtocol, maintenance, dispatcher, selfDefense, nightShelter, workSafety, routes };
   currentBootstrap = bootstrap;

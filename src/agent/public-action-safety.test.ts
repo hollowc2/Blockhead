@@ -109,7 +109,7 @@ test("threat movement and stale observations between reservation and execution p
       if (interrupt === "owner") bus.emit("chat.command", { from: "owner", command: "wait here" });
       if (interrupt === "survival") bus.emit("hunger.low", { food: 8 });
       if (interrupt === "night") bus.emit("time.night", { time: "night" });
-      assert.equal(await result, false, `${action}/${interrupt}`);
+      assert.equal(await result, "refused", `${action}/${interrupt}`);
       assert.deepEqual(effects, []); assert.equal(executor.pendingCount, 0); assert.equal(executor.activeOwner, null);
       observations.detach();
     }

@@ -6,6 +6,7 @@ import { assessPublicAdmission, type AdmissionCheck, type AdmissionGate } from "
 import { assessPublicPhysicalState, assessPublicThreatState, safePublicPhysicalState, safePublicThreatState } from "./public-action-safety.js";
 import { PublicActionController, PUBLIC_ACTIONS } from "./public-actions.js";
 import { WorldActionExecutor } from "./world-actions.js";
+import { fakeGestureBot } from "./public-actions.fixture.js";
 
 const names: AdmissionGate[] = ["session", "physical", "freshness", "threats", "death_loop", "scheduler", "projects", "lease_waiters", "lease_owner", "active_task", "queued_tasks", "interrupt", "background", "decision", "goal", "bootstrap"];
 test("all named gates refuse every action and diagnostics report multiple independent blockers", async () => {
@@ -15,10 +16,10 @@ test("all named gates refuse every action and diagnostics report multiple indepe
     const report = assessPublicAdmission(checks, true);
     assert.equal(report.checks[blocked], "blocked");
     assert.equal(report.safe, false);
-    const bot = { entity: { yaw: 0, pitch: 0 }, chat: () => effects++, swingArm: () => effects++, look: async () => { effects++; } };
+    const bot = fakeGestureBot({ push: () => effects++ } as unknown as unknown[]);
     const executor = new WorldActionExecutor();
     const controller = new PublicActionController({ session: () => bot, safe: () => assessPublicAdmission(checks).safe, tryRun: (signal, run) => executor.tryRun("public", signal, run) });
-    for (const action of PUBLIC_ACTIONS) assert.equal(await controller.execute(action, new AbortController().signal), false);
+    for (const action of PUBLIC_ACTIONS) assert.equal(await controller.execute(action, new AbortController().signal), "refused");
     assert.equal(effects, 0); assert.equal(executor.activeOwner, null); assert.equal(executor.pendingCount, 0);
   }
   const report = assessPublicAdmission([["physical", () => false], ["threats", () => false]], true);
@@ -41,7 +42,7 @@ test("a gate changing after reservation refuses every gesture at the final safet
   for (const changed of names) for (const action of PUBLIC_ACTIONS) {
     let blocked: AdmissionGate | null = null, effects = 0;
     const checks: AdmissionCheck[] = names.map(name => [name, () => name !== blocked]);
-    const bot = { entity: { yaw: 0, pitch: 0.2 }, chat: () => effects++, swingArm: () => effects++, look: async () => { effects++; } };
+    const bot = fakeGestureBot({ push: () => effects++ } as unknown as unknown[]);
     const executor = new WorldActionExecutor();
     const controller = new PublicActionController({ session: () => bot, safe: () => assessPublicAdmission(checks).safe,
       tryRun: (signal, run) => executor.tryRun("public", signal, async lease => { await Promise.resolve(); return run(lease); }) });
@@ -49,13 +50,13 @@ test("a gate changing after reservation refuses every gesture at the final safet
     const work = controller.execute(action, new AbortController().signal);
     blocked = changed;
     assert.equal(assessPublicAdmission(checks, true).checks[changed], "blocked");
-    assert.equal(await work, false, `${changed}/${action}`);
+    assert.equal(await work, "refused", `${changed}/${action}`);
     assert.equal(effects, 0); assert.equal(executor.activeOwner, null);
   }
 });
 
 function physicalBot(): Bot {
-  return { entity: { id: 1, onGround: true, isInWater: false, isInLava: false, yaw: 0, pitch: 0.2, velocity: new Vec3(0, 0, 0), position: new Vec3(0, 64, 0) },
+  return { isAlive: true, entity: { id: 1, onGround: true, isInWater: false, isInLava: false, yaw: 0, pitch: 0.2, velocity: new Vec3(0, 0, 0), position: new Vec3(0, 64, 0) },
     entities: {}, health: 20, food: 20, isSleeping: false, usingHeldItem: false, autoEat: { isEating: false },
     controlState: { forward: false }, pathfinder: { isMoving: () => false, isMining: () => false, isBuilding: () => false, goal: null },
     blockAt: () => ({ boundingBox: "empty" }),

@@ -1,0 +1,179 @@
+{
+  "command": "FIXTURE_GESTURES=1 npx tsx scripts/public-viewer-fixture.ts; firefox --headless --no-remote --profile <new scratch profile> --remote-debugging-port 9224; node scripts/public-gesture-browser-check.mjs <fixture-url> 9224 <out>",
+  "browser": "Mozilla Firefox 158.0.1",
+  "fixture": "In-memory fake bot via fakeGestureBot; real PublicInteractions/controller for the sent path; fetch/state substitution for refusal, uncertain, interrupted, lost, cooldown, busy and disabled",
+  "results": {
+    "idle": {
+      "reply": "Public interactions are unavailable.",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello"
+    },
+    "keyboard": {
+      "tabbedTo": "wave",
+      "native": true,
+      "describedBy": "actionNote"
+    },
+    "sent": {
+      "reply": "Sent to Bob's game client. Minecraft hasn't independently confirmed it.",
+      "delivery": "sent",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello"
+    },
+    "submitting": {
+      "reply": "Sending\u2026",
+      "delivery": "pending",
+      "note": "A public request is pending. Please wait for the result.",
+      "disabled": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "hello": "Say hello"
+    },
+    "refused": {
+      "reply": "Bob couldn't do that right now. Nothing was sent.",
+      "delivery": "not_sent",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello",
+      "posts": 1
+    },
+    "uncertain": {
+      "reply": "Delivery could not be confirmed. Gestures are paused until an operator checks.",
+      "delivery": "uncertain",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello",
+      "posts": 1
+    },
+    "interrupted": {
+      "reply": "Sent, but Bob was interrupted right after. It may or may not have shown in the game.",
+      "delivery": "sent",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello",
+      "posts": 1
+    },
+    "lost": {
+      "reply": "Delivery could not be confirmed.",
+      "delivery": "uncertain",
+      "note": null,
+      "disabled": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "hello": "Say hello",
+      "posts": 1
+    },
+    "cooldown": {
+      "reply": "Please wait before trying again. Shared public limits apply.",
+      "delivery": "not_sent",
+      "note": "You can try again in 9s.",
+      "disabled": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "hello": "Say hello"
+    },
+    "helloCooldown": {
+      "reply": "Please wait before trying again. Shared public limits apply.",
+      "delivery": "not_sent",
+      "note": "You can try again in 9s.",
+      "disabled": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "hello": "Hello (25s)"
+    },
+    "busy": {
+      "reply": "Please wait before trying again. Shared public limits apply.",
+      "delivery": "not_sent",
+      "note": "Bob isn't free right now: he's thinking or keeping an eye out. Actions open when he's idle and safe.",
+      "disabled": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "hello": "Say hello"
+    },
+    "disabled": {
+      "reply": "Please wait before trying again. Shared public limits apply.",
+      "delivery": "not_sent",
+      "note": "Actions are switched off right now.",
+      "disabled": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "hello": "Say hello"
+    },
+    "mobile": {
+      "scrollWidth": 378,
+      "clientWidth": 378,
+      "buttons": [
+        {
+          "left": 33,
+          "right": 104,
+          "height": 44
+        },
+        {
+          "left": 110,
+          "right": 163,
+          "height": 44
+        },
+        {
+          "left": 169,
+          "right": 239,
+          "height": 44
+        },
+        {
+          "left": 245,
+          "right": 323,
+          "height": 44
+        }
+      ],
+      "note": "Actions are switched off right now."
+    },
+    "consoleErrors": []
+  },
+  "limitations": [
+    "Synthetic WebDriver BiDi Enter/Space reached the focused button (keydown/keyup observed) but headless Firefox did not fire native activation; keyboard reachability (Tab order, native <button>) is verified, keyboard activation is not automated",
+    "No real phone, Safari, touch or screen reader; 390 px viewport only"
+  ]
+}

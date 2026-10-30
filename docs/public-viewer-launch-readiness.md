@@ -4,6 +4,8 @@
 gates for model answers are addressed (locally and on an isolated stack, not
 live) in [public-model-answer-enablement.md](public-model-answer-enablement.md).
 
+**Gesture follow-up:** admission, cancellation and feedback repairs plus an independent server-side effect observer are implemented and locally qualified in [public-gesture-enablement.md](public-gesture-enablement.md). Gestures remain disabled and no live acceptance exists.
+
 **Deployment update:** the user subsequently authorized commit, push and deploy.
 Maia now runs `87ec52c` with the security repairs, viewer improvements and a
 populated-world startup correction. Public Q&A is rules-based; model answers

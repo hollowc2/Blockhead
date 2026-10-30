@@ -1,0 +1,938 @@
+{
+  "recorded_at": "2026-10-30T03:28:38Z/2026-10-30T03:38:34Z (UTC; 2026-10-29 PDT)",
+  "method": "Read-only: 60 authenticated loopback GET /public-interactions on Maia at 10 s intervals (operator token read on Maia only); fields reduced to gate names before leaving Maia. No configure, command, gesture or game action.",
+  "runtime": "d2e8371376970c0de9ea9528266d9458ceca6424 (code identical to 15487ee), configuredActions false throughout",
+  "samples": 60,
+  "errors": 0,
+  "eligible": 0,
+  "blocked_counts": {
+    "active_task": 59,
+    "lease_owner": 59,
+    "physical": 51,
+    "threats": 60,
+    "background": 4,
+    "queued_tasks": 1,
+    "lease_waiters": 3
+  },
+  "physical_blockers": {
+    "path_goal": 38,
+    "path_moving": 35,
+    "stationary": 29,
+    "grounded": 16,
+    "digging": 10,
+    "path_building": 1,
+    "eating": 1,
+    "combat_target": 1,
+    "path_mining": 1
+  },
+  "threat_reasons": {
+    "unreviewed_mob:enderman": 60
+  },
+  "fresh": 59,
+  "quarantined": [
+    false
+  ],
+  "samples_detail": [
+    {
+      "i": 0,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 1,
+      "safe": false,
+      "blocked": [
+        "background",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 2,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 3,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 4,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 5,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 6,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 7,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 8,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 9,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 10,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 11,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 12,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 13,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 14,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 15,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 16,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 17,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging",
+        "grounded",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 18,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 19,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 20,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 21,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 22,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 23,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 24,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 25,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 26,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 27,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 28,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_building",
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 29,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 30,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 31,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 32,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "threats"
+      ],
+      "physical": [],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 33,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 34,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 35,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 36,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 37,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "eating",
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 38,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 39,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 40,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 41,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 42,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 43,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 44,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 45,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "queued_tasks",
+        "threats"
+      ],
+      "physical": [
+        "combat_target",
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 46,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 47,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 48,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 49,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "background",
+        "lease_owner",
+        "lease_waiters",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "grounded",
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 50,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "background",
+        "lease_owner",
+        "lease_waiters",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging",
+        "path_goal",
+        "path_mining",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 51,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "background",
+        "lease_owner",
+        "lease_waiters",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving",
+        "stationary"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 52,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal",
+        "path_moving"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 53,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 54,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 55,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "path_goal"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 56,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 57,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 58,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    },
+    {
+      "i": 59,
+      "safe": false,
+      "blocked": [
+        "active_task",
+        "lease_owner",
+        "physical",
+        "threats"
+      ],
+      "physical": [
+        "digging"
+      ],
+      "threat": "unreviewed_mob"
+    }
+  ],
+  "conclusion": "Normal operation provided no eligible window in this 10-minute sample: an autonomous task held the world lease in 59/60 samples and a loaded enderman triggered the all-actions refusal in 60/60. Short sample; not a rate estimate."
+}

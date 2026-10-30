@@ -1,5 +1,7 @@
 # Anonymous public Q&A and simple commands
 
+**2026-10-29 note:** flags, model-queue assumptions and deployment claims below are historical and partly superseded by later receipts. For the current gesture admission, dispatch semantics and the independent observer, see [public-gesture-enablement.md](public-gesture-enablement.md). Actions remain disabled.
+
 Status: deployed on Maia; deterministic Q&A enabled privately in memory. The approved food-readiness and threat-admission repairs are deployed. Original re-arm tasks completed; subsequent autonomous work and recovery are preserved. Actions remain disabled: no eligible gesture window was established, and loaded endermen conservatively block public turns. Both configured startup defaults remain false; the exact HTTPS origin is configured. Model-backed Q&A remains unavailable. Network exposure is unchanged.
 
 Latest follow-up: the enderman gate remains in force for **all four actions**.

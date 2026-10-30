@@ -1,5 +1,7 @@
 # Independent effect observation preparation
 
+**2026-10-29 update:** this design contract is now implemented and locally qualified (server-side observer `tools/gesture-observer`, evaluator `src/observer`). See [public-gesture-enablement.md](../public-gesture-enablement.md). The "no observer is ready" status below described 2026-10-20. Nothing has been installed on Maia, and the rules below still apply.
+
 Status: design only; no independent observer is ready. No instrumentation,
 packet interception, JVM attachment, extra player, console command or game
 connection was installed or used. The four-file candidate remains diagnostic.

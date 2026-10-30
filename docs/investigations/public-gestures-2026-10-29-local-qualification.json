@@ -1,0 +1,632 @@
+{
+  "recordedAt": "2026-10-30T03:39:30.750Z",
+  "node": "v26.11.1",
+  "rules": {
+    "baselineTicks": 20,
+    "settleMs": 1000,
+    "postTicks": 40,
+    "expectedYawDeg": {
+      "look_left": -45,
+      "look_right": 45
+    },
+    "yawToleranceDeg": 0.01,
+    "pitchToleranceDeg": 0.001,
+    "positionTolerance": 0.001,
+    "changeEpsilonDeg": 0.001
+  },
+  "hashes": {
+    "serverJar": "1066970b09e9c671844572291c4a871cc1ac2b85838bf7004fa0e778e10f1358",
+    "agentJar": "23ebd5166c7e99ed3a9db1f2a0fa4c280257633dd56685941939c49641503419"
+  },
+  "serverStartSeconds": 8.466999327,
+  "statusBeforeLogin": {
+    "v": 1,
+    "run": "0c14dfd4-9335-44dc-8d1e-e607c8346fab",
+    "seq": 0,
+    "tick": 1,
+    "ms": 1793331579214,
+    "type": "status",
+    "agent": "1",
+    "mc": "1.21.4",
+    "supported": true,
+    "complete": false,
+    "unhooked": false,
+    "failure": null,
+    "hooks": {
+      "tick": "installed",
+      "login": "installed",
+      "respawn": "installed",
+      "disconnect": "not_loaded",
+      "death": "installed",
+      "inbound": "installed",
+      "chat": "installed",
+      "swing": "installed",
+      "broadcast": "installed",
+      "broadcast_self": "installed",
+      "attack": "installed",
+      "interact": "installed",
+      "use_item": "installed",
+      "use_item_on": "installed",
+      "block_action": "installed",
+      "destroy_block": "installed",
+      "drop_selected": "installed",
+      "drop_stack": "installed",
+      "open_menu": "installed",
+      "hurt": "installed",
+      "teleport": "not_loaded",
+      "force_rotation": "installed"
+    }
+  },
+  "statusAfterLogin": {
+    "v": 1,
+    "run": "0c14dfd4-9335-44dc-8d1e-e607c8346fab",
+    "seq": 0,
+    "tick": 80,
+    "ms": 1793331583152,
+    "type": "status",
+    "agent": "1",
+    "mc": "1.21.4",
+    "supported": true,
+    "complete": true,
+    "unhooked": false,
+    "failure": null,
+    "hooks": {
+      "tick": "installed",
+      "login": "installed",
+      "respawn": "installed",
+      "disconnect": "installed",
+      "death": "installed",
+      "inbound": "installed",
+      "chat": "installed",
+      "swing": "installed",
+      "broadcast": "installed",
+      "broadcast_self": "installed",
+      "attack": "installed",
+      "interact": "installed",
+      "use_item": "installed",
+      "use_item_on": "installed",
+      "block_action": "installed",
+      "destroy_block": "installed",
+      "drop_selected": "installed",
+      "drop_stack": "installed",
+      "open_menu": "installed",
+      "hurt": "installed",
+      "teleport": "installed",
+      "force_rotation": "installed"
+    }
+  },
+  "unhook": {
+    "status": {
+      "v": 1,
+      "run": "0c14dfd4-9335-44dc-8d1e-e607c8346fab",
+      "seq": 0,
+      "tick": 1017,
+      "ms": 1793331630072,
+      "type": "status",
+      "agent": "1",
+      "mc": "1.21.4",
+      "supported": true,
+      "complete": false,
+      "unhooked": true,
+      "failure": null,
+      "hooks": {
+        "tick": "removed",
+        "login": "removed",
+        "respawn": "removed",
+        "disconnect": "removed",
+        "death": "removed",
+        "inbound": "removed",
+        "chat": "removed",
+        "swing": "removed",
+        "broadcast": "removed",
+        "broadcast_self": "removed",
+        "attack": "removed",
+        "interact": "removed",
+        "use_item": "removed",
+        "use_item_on": "removed",
+        "block_action": "removed",
+        "destroy_block": "removed",
+        "drop_selected": "removed",
+        "drop_stack": "removed",
+        "open_menu": "removed",
+        "hurt": "removed",
+        "teleport": "removed",
+        "force_rotation": "removed"
+      }
+    },
+    "ticksAfterUnhook": 0,
+    "recordsAfterUnhook": 2
+  },
+  "armedStatus": {
+    "v": 1,
+    "run": "0c14dfd4-9335-44dc-8d1e-e607c8346fab",
+    "seq": 0,
+    "tick": 80,
+    "ms": 1793331583155,
+    "type": "status",
+    "agent": "1",
+    "mc": "1.21.4",
+    "supported": true,
+    "complete": true,
+    "unhooked": false,
+    "failure": null,
+    "hooks": {
+      "tick": "installed",
+      "login": "installed",
+      "respawn": "installed",
+      "disconnect": "installed",
+      "death": "installed",
+      "inbound": "installed",
+      "chat": "installed",
+      "swing": "installed",
+      "broadcast": "installed",
+      "broadcast_self": "installed",
+      "attack": "installed",
+      "interact": "installed",
+      "use_item": "installed",
+      "use_item_on": "installed",
+      "block_action": "installed",
+      "destroy_block": "installed",
+      "drop_selected": "installed",
+      "drop_stack": "installed",
+      "open_menu": "installed",
+      "hurt": "installed",
+      "teleport": "installed",
+      "force_rotation": "installed"
+    }
+  },
+  "integrity": {
+    "invalidLines": 0,
+    "truncated": false,
+    "closedEarly": false
+  },
+  "recordCount": 998,
+  "end": {
+    "v": 1,
+    "run": "0c14dfd4-9335-44dc-8d1e-e607c8346fab",
+    "seq": 997,
+    "tick": 1007,
+    "ms": 1793331629468,
+    "type": "end",
+    "reason": "client",
+    "dropped": 0,
+    "faults": 0,
+    "hookCalls": 988,
+    "hookNanos": 116726491
+  },
+  "overhead": {
+    "hookCalls": 988,
+    "hookNanos": 116726491,
+    "meanNanosPerCall": 118144
+  },
+  "tickIntervalMs": {
+    "count": 926,
+    "mean": 49.98920086393088,
+    "max": 51
+  },
+  "quietPeriodNonAmbient": [],
+  "viewerCrossCheck": {
+    "animations": 2,
+    "offHand": 1,
+    "hello": 1
+  },
+  "evaluations": [
+    {
+      "name": "hello",
+      "expect": "pass",
+      "http": 200,
+      "code": "ok",
+      "action": "hello",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 21,
+        "postTicks": 40,
+        "chatPackets": 1,
+        "fixedHelloPackets": 1,
+        "chatEffects": 1,
+        "fixedHelloEffects": 1,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 0,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 0,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "pass",
+      "reasons": []
+    },
+    {
+      "name": "wave",
+      "expect": "pass",
+      "http": 200,
+      "code": "ok",
+      "action": "wave",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 1,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 1,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 1,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [
+          1
+        ],
+        "rotationChanges": 0,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 0,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "pass",
+      "reasons": []
+    },
+    {
+      "name": "look_left",
+      "expect": "pass",
+      "http": 200,
+      "code": "ok",
+      "action": "look_left",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 1,
+        "yawDeltaDeg": -45,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 1,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "pass",
+      "reasons": []
+    },
+    {
+      "name": "look_right",
+      "expect": "pass",
+      "http": 200,
+      "code": "ok",
+      "action": "look_right",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 21,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 1,
+        "yawDeltaDeg": 45,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 1,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "pass",
+      "reasons": []
+    },
+    {
+      "name": "absent_chat_with_http_success",
+      "expect": "not_pass",
+      "http": 200,
+      "code": "ok",
+      "action": "hello",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 0,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 0,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "fail",
+      "reasons": [
+        "effect_absent"
+      ]
+    },
+    {
+      "name": "off_hand_swing",
+      "expect": "not_pass",
+      "http": 200,
+      "code": "ok",
+      "action": "wave",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 1
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 1
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 1,
+          "other": 0
+        },
+        "recipients": [
+          1
+        ],
+        "rotationChanges": 0,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 0,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "fail",
+      "reasons": [
+        "off_hand_swing",
+        "effect_absent"
+      ]
+    },
+    {
+      "name": "prohibited_use_item",
+      "expect": "not_pass",
+      "http": 200,
+      "code": "ok",
+      "action": "wave",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 1,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 1,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 1,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [
+          1
+        ],
+        "rotationChanges": 0,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 0,
+        "prohibited": [
+          "ServerboundUseItemPacket",
+          "ServerboundPlayerActionPacket"
+        ],
+        "unknownPackets": 0
+      },
+      "outcome": "fail",
+      "reasons": [
+        "prohibited_packet"
+      ]
+    },
+    {
+      "name": "wrong_direction",
+      "expect": "not_pass",
+      "http": 200,
+      "code": "ok",
+      "action": "look_left",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 1,
+        "yawDeltaDeg": 45,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 1,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "fail",
+      "reasons": [
+        "wrong_turn"
+      ]
+    },
+    {
+      "name": "extra_turn",
+      "expect": "not_pass",
+      "http": 200,
+      "code": "ok",
+      "action": "look_right",
+      "delivery": "sent",
+      "evidence": {
+        "baselineTicks": 20,
+        "windowTicks": 20,
+        "postTicks": 40,
+        "chatPackets": 0,
+        "fixedHelloPackets": 0,
+        "chatEffects": 0,
+        "fixedHelloEffects": 0,
+        "swingPackets": {
+          "main": 0,
+          "off": 0
+        },
+        "swingCalls": {
+          "main": 0,
+          "off": 0
+        },
+        "broadcasts": {
+          "main": 0,
+          "off": 0,
+          "other": 0
+        },
+        "recipients": [],
+        "rotationChanges": 2,
+        "yawDeltaDeg": 0,
+        "pitchDeltaDeg": 0,
+        "maxPositionDelta": 0,
+        "rotationPackets": 2,
+        "prohibited": [],
+        "unknownPackets": 0
+      },
+      "outcome": "fail",
+      "reasons": [
+        "extra_turn"
+      ]
+    }
+  ],
+  "verdict": "qualified",
+  "serverExit": 0,
+  "verifyErrors": false,
+  "agentErrors": false,
+  "environment": {
+    "host": "zeus (local, disposable)",
+    "java_runtime": "Copy of Maia's ~/mc-server/java (Temurin 25.0.4.1+1), lib/modules sha256 22362b6124246bfa8eab3644bf52983bce9eb59cffa7ad6a3f2f27f15023b892",
+    "server_jar": "Official Mojang 1.21.4 server.jar (sha1 4707d00eb834b446575d89a61a11b5d548d8c001), byte-identical to Maia ~/mc-server/server.jar; nested server-1.21.4.jar sha256 de9538d2497c8f4174805f3fcedb8ade3060446aa203f351b820ea5bd04adbf4",
+    "world": "New flat peaceful scratch world on 127.0.0.1:25613, offline, disposable players QualBob (gestures) and QualViewer (tracking cross-check); no production save, config, port or model/action integration",
+    "client": "Real Mineflayer 4.39.0 via src/minecraft/bot.ts plugins; real PublicActionController + PublicInteractions HTTP handler + WorldActionExecutor; admission = physical + threats + freshness (no scheduler in the fixture)"
+  },
+  "command": "tsx scripts/gesture-observer-qualify.ts --java <maia-java>/bin/java --server-jar <server.jar> --agent <gesture-observer.jar> --workdir <scratch> --out <json> --port 25613",
+  "inert_check": {
+    "command": "... --mode inert --port 25612",
+    "result": {
+      "serverStarted": true,
+      "disabledLine": true,
+      "socketCreated": false
+    },
+    "verdict": "inert_ok",
+    "serverExit": 0,
+    "serverStartSeconds": 8.165500285
+  },
+  "repeat": {
+    "earlier_run_same_jar": "qualified with identical outcomes/reasons (overhead mean 120146 ns/call, tick interval mean 49.987 ms max 51 ms)"
+  },
+  "selftest": {
+    "command": "tools/gesture-observer/build.sh <out> && java -cp <out>/classes:<out>/test-classes blockhead.observer.SelfTest <nested server-1.21.4.jar>",
+    "java21": "PASS 134/134",
+    "java25_maia_runtime": "PASS 134/134"
+  },
+  "limitations": [
+    "Local flat world with two players and no mobs: overhead and tick timing are not Maia production load",
+    "hookCalls/hookNanos count only the tick and inbound hooks while armed; disarmed cost was not separately timed",
+    "Recipients were 1 because a second disposable player tracked Bob; production may have 0 tracked players (broadcast still performed and recorded)",
+    "Keyboard activation of gesture buttons was not automated (see browser evidence)"
+  ]
+}
