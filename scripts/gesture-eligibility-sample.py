@@ -50,7 +50,8 @@ def summarize(path):
         "only_threats_blocking": sum(1 for r in ok if r["blocked"] == ["threats"]),
         "still_samples": len(still), "still_eligible": len(still_eligible),
         "still_eligible_fraction": round(len(still_eligible) / len(still), 4) if still else None,
-        "still_threat": dict(collections.Counter(str(r.get("threatStill")) for r in still).most_common()),
+        "still_threat": dict(collections.Counter(f'{r.get("threatStill")}:{r.get("mobStill")}' for r in still).most_common()),
+        "still_only_threats_blocking": sum(1 for r in still if r.get("blockedStill") == ["threats"]),
         "eligible_times": [r["t"] for r in eligible][:50],
     }, indent=2))
 
@@ -85,7 +86,7 @@ with os.fdopen(fd, "a") as out:
                 # Hello/wave profile; absent on runtimes before the still profile existed.
                 "safeStill": still.get("safe") is True if still else None,
                 "blockedStill": sorted(k for k, v in (still.get("checks") or {}).items() if v != "pass"),
-                "threatStill": (d.get("threatsStill") or {}).get("reason"),
+                "threatStill": (d.get("threatsStill") or {}).get("reason"), "mobStill": (d.get("threatsStill") or {}).get("mob"),
                 "physical": sorted(k for k, v in ((d.get("physical") or {}).get("checks") or {}).items() if v != "pass"),
                 "threat": (d.get("threats") or {}).get("reason"), "mob": (d.get("threats") or {}).get("mob"),
                 "configuredActions": d.get("configuredActions"),
