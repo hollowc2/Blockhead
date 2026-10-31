@@ -179,7 +179,7 @@ test("limiter wait reports the time until the next slot without consuming one", 
 test("availability explains disabled, busy and shared cooldowns, and refusals carry the visitor's wait", async () => {
   const f = fixture(), port = await listen(f.server);
   try {
-    assert.deepEqual(f.interactions.availability(), { questions: true, actions: true, questionsReason: null, actionsReason: null, questionsCooldownMs: 0, actionsCooldownMs: 0, helloCooldownMs: 0 });
+    assert.deepEqual(f.interactions.availability(), { questions: true, actions: true, questionsReason: null, actionsReason: null, questionsCooldownMs: 0, actionsCooldownMs: 0, helloCooldownMs: 0, allowedActions: ["hello", "wave", "look_left", "look_right"] });
     const ok = await send(port, "/action", '{"action":"wave"}');
     assert.equal(ok.status, 200); assert.equal(JSON.parse(ok.body).retryAfterMs, 10_000);
     const state = f.interactions.availability();

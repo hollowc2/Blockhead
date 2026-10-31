@@ -6,6 +6,7 @@
  *   BLOCKHEAD_OPERATOR_TOKEN=... tsx scripts/gesture-trial.ts \
  *     --observer-socket <path> --origin <allowed_origin> --out <report.json> \
  *     [--public-url http://127.0.0.1:3003/api/public/action] [--window-seconds 600] [--capture-wait-seconds 60] \
+ *     [--actions hello,wave] \
  *     (--dry-run | --authorized-window)
  *
  * --dry-run checks observer health, a baseline and the private diagnostics,
@@ -16,7 +17,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { request } from "node:http";
-import type { PublicAction } from "../src/agent/public-actions.js";
+import { PUBLIC_ACTIONS, type PublicAction } from "../src/agent/public-actions.js";
 import { armObserver, observerStatus } from "../src/observer/gesture-collector.js";
 import { runGestureTrial, type TrialDiagnostics, type TrialIO } from "../src/observer/gesture-trial.js";
 
@@ -30,6 +31,8 @@ const token = process.env.BLOCKHEAD_OPERATOR_TOKEN ?? "";
 const socket = args.get("observer-socket"), origin = args.get("origin"), out = args.get("out");
 const publicUrl = new URL(args.get("public-url") ?? "http://127.0.0.1:3003/api/public/action");
 const windowSeconds = Number(args.get("window-seconds") ?? 600), captureWait = Number(args.get("capture-wait-seconds") ?? 60);
+const actions = (args.get("actions") ?? "hello,wave,look_left,look_right").split(",") as PublicAction[];
+if (actions.length === 0 || actions.some(a => !(PUBLIC_ACTIONS as readonly string[]).includes(a)) || new Set(actions).size !== actions.length) throw new Error("--actions: distinct subset of hello,wave,look_left,look_right");
 if (token.length < 32 || !socket || !origin || !out) throw new Error("needs BLOCKHEAD_OPERATOR_TOKEN, --observer-socket, --origin, --out");
 if (flags.size !== 1) throw new Error("choose exactly one of --dry-run or --authorized-window");
 if (publicUrl.hostname !== "127.0.0.1" || publicUrl.protocol !== "http:") throw new Error("public URL must be the loopback public shell");
@@ -56,7 +59,7 @@ async function diagnostics(): Promise<TrialDiagnostics> {
   return {
     configuredActions: d.configuredActions === true, questionsEnabled: d.configuredQuestions === true, actions: d.actions === true,
     actionsCooldownMs: Number(d.actionsCooldownMs ?? Infinity), helloCooldownMs: Number(d.helloCooldownMs ?? Infinity),
-    admissionSafe: d.admission?.safe === true, blocked: Object.entries(d.admission?.checks ?? {}).filter(([, v]) => v !== "pass").map(([k]) => k),
+    admissionSafe: d.admission?.safe === true, admissionStillSafe: d.admissionStill?.safe === true, blocked: Object.entries(d.admission?.checks ?? {}).filter(([, v]) => v !== "pass").map(([k]) => k),
     quarantined: d.gesture?.quarantined !== false, gestureActive: d.gesture?.active !== false,
     dispatches: { refused: 0, dispatched: 0, interrupted: 0, uncertain: 0, ...(d.gesture?.dispatches ?? {}) },
   };
@@ -99,9 +102,9 @@ if (flags.has("--dry-run")) {
     && integrity.invalidLines === 0 && !integrity.truncated && ticks.length >= 80 && bobPresent && !d.configuredActions && !d.quarantined;
   report = { mode: "dry-run", ready, observer: { supported: status.supported, complete: status.complete, unhooked: status.unhooked, hooks: status.hooks },
     capture: { ...integrity, records: capture.records.length, ticks: ticks.length, bobPresent },
-    diagnostics: { configuredActions: d.configuredActions, admissionSafe: d.admissionSafe, blocked: d.blocked, quarantined: d.quarantined } };
+    diagnostics: { configuredActions: d.configuredActions, admissionSafe: d.admissionSafe, admissionStillSafe: d.admissionStillSafe, blocked: d.blocked, quarantined: d.quarantined } };
 } else {
-  report = { mode: "authorized-window", windowSeconds, ...await runGestureTrial(io, { windowMs: windowSeconds * 1000, captureWaitMs: captureWait * 1000, signal: controller.signal }) };
+  report = { mode: "authorized-window", windowSeconds, ...await runGestureTrial(io, { windowMs: windowSeconds * 1000, captureWaitMs: captureWait * 1000, actions, signal: controller.signal }) };
 }
 writeFileSync(out, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
 log({ event: "report_written", out });

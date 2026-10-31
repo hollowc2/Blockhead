@@ -23,7 +23,7 @@ import { performance } from "node:perf_hooks";
 import type { Bot } from "mineflayer";
 import { createCobbleBob } from "../src/minecraft/bot.js";
 import type { MinecraftConfig } from "../src/config/schema.js";
-import { PublicActionController, type GestureBot, type PublicAction } from "../src/agent/public-actions.js";
+import { GESTURE_PROFILE, PublicActionController, type GestureBot, type PublicAction } from "../src/agent/public-actions.js";
 import { PublicSafetyObservations, safePublicPhysicalState, safePublicThreatState } from "../src/agent/public-action-safety.js";
 import { WorldActionExecutor } from "../src/agent/world-actions.js";
 import { PublicInteractions } from "../src/dashboard/public-interactions.js";
@@ -50,7 +50,8 @@ copyFileSync(serverJar, join(workdir, "server.jar"));
 writeFileSync(join(workdir, "eula.txt"), "eula=true\n");
 writeFileSync(join(workdir, "server.properties"), [
   "online-mode=false", `server-port=${port}`, "server-ip=127.0.0.1", "level-name=qualify-world", "level-type=minecraft\\:flat",
-  "difficulty=peaceful", "spawn-monsters=false", "spawn-protection=0", "generate-structures=false", "enable-rcon=false", "enable-query=false",
+  // Easy (not peaceful) so a summoned enderman persists; natural monster spawning stays off.
+  "difficulty=easy", "spawn-monsters=false", "spawn-protection=0", "generate-structures=false", "enable-rcon=false", "enable-query=false",
   "white-list=false", "max-players=4", "view-distance=4", "simulation-distance=4", "sync-chunk-writes=false", "enable-command-block=false",
 ].join("\n") + "\n");
 // Unix socket paths are limited to 108 bytes: use a short path relative to the scratch workdir.
@@ -101,7 +102,7 @@ try {
 
   // ---- the real controller and HTTP handler ----
   const executor = new WorldActionExecutor();
-  const safe = (): boolean => safePublicPhysicalState(bob, 8) && safePublicThreatState(bob) && safety.fresh();
+  const safe = (_bot: GestureBot, action: PublicAction): boolean => safePublicPhysicalState(bob, 8) && safePublicThreatState(bob, GESTURE_PROFILE[action]) && safety.fresh();
   const makeInteractions = () => {
     const gestures = new PublicActionController({ session: () => bob as unknown as GestureBot, safe, tryRun: (signal, action) => executor.tryRun("public-gesture", signal, action) });
     return { gestures, interactions: new PublicInteractions({ config: { allowed_origin: ORIGIN, questions_enabled: false, actions_enabled: true }, gestures,
@@ -127,7 +128,7 @@ try {
   const quietUntil = Date.now();
   async function trial(name: string, action: PublicAction, expect: "pass" | "not_pass", sabotage?: () => () => void) {
     current = makeInteractions();
-    await waitFor(() => current.gestures.available(), 30_000, `${name} admission`);
+    await waitFor(() => current.gestures.available(expect === "pass" ? action : undefined), 30_000, `${name} admission`);
     await sleep(GESTURE_RULES.baselineTicks * 50 + 300);
     const restore = sabotage?.();
     const sentAtMs = Date.now();
@@ -156,6 +157,22 @@ try {
     };
     return () => { bob.look = look; };
   });
+  // ---- enderman rule on the real entity path: far (hello/wave only), then near (nothing) ----
+  const serverConsole = (command: string) => mc.stdin.write(command + "\n");
+  const at = bob.entity.position;
+  serverConsole(`summon minecraft:enderman ${Math.floor(at.x) + 30} ${Math.floor(at.y)} ${Math.floor(at.z)} {NoAI:1b,PersistenceRequired:1b,Silent:1b}`);
+  await waitFor(() => Object.values(bob.entities).some(e => e.name === "enderman"), 10_000, "enderman loaded");
+  await sleep(1000);
+  const ender = { farAllowed: makeInteractions().gestures.allowed() as string[], nearAllowed: [] as string[] };
+  await trial("enderman_far_wave", "wave", "pass");
+  await trial("enderman_far_hello", "hello", "pass");
+  await trial("enderman_far_turn_refused", "look_left", "not_pass");
+  serverConsole(`tp @e[type=minecraft:enderman] ${Math.floor(at.x) + 6} ${Math.floor(at.y)} ${Math.floor(at.z)}`);
+  await waitFor(() => Object.values(bob.entities).some(e => e.name === "enderman" && e.position.distanceTo(bob.entity.position) < 10), 10_000, "enderman near");
+  await sleep(500);
+  ender.nearAllowed = makeInteractions().gestures.allowed();
+  serverConsole("kill @e[type=minecraft:enderman]");
+  result.enderman = ender;
   const integrity = await capture.stop();
   const records = capture.records;
   const end = records.find(r => r.type === "end");
@@ -184,7 +201,10 @@ try {
     quietPeriodNonAmbient: quiet.map(r => r.type === "effect" ? r.effect : r.type === "packet" ? r.kind : r.type),
     viewerCrossCheck: viewerSaw,
     evaluations,
-    verdict: evaluations.every(e => e.expect === "pass" ? e.outcome === "pass" : e.outcome !== "pass") ? "qualified" : "not_qualified",
+    verdict: evaluations.every(e => e.expect === "pass" ? e.outcome === "pass" : e.outcome !== "pass")
+      && (!result.enderman || (JSON.stringify((result.enderman as { farAllowed: string[] }).farAllowed) === '["hello","wave"]'
+        && (result.enderman as { nearAllowed: string[] }).nearAllowed.length === 0
+        && evaluations.find(e => e.name === "enderman_far_turn_refused")?.delivery === "not_sent")) ? "qualified" : "not_qualified",
   });
   http.close(); safety.detach(); bob.quit(); viewer.quit();
   await sleep(500);

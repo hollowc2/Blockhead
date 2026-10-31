@@ -1,6 +1,8 @@
 import type { WorldActionLease } from "./world-actions.js";
 export const PUBLIC_ACTIONS = ["hello", "wave", "look_left", "look_right"] as const;
 export type PublicAction = typeof PUBLIC_ACTIONS[number];
+/** Turns change gaze and get the strict threat policy; hello and wave do not. See public-action-safety.ts. */
+export const GESTURE_PROFILE: Record<PublicAction, "still" | "turn"> = { hello: "still", wave: "still", look_left: "turn", look_right: "turn" };
 /** The one fixed message *hello* sends. Never visitor-supplied. */
 export const PUBLIC_HELLO = "Hello, everyone!";
 /** Fixed effect budget: an unsettled primitive after this quarantines public actions. */
@@ -51,7 +53,7 @@ export class PublicActionController {
   private readonly counts: Record<GestureDispatch, number> = { refused: 0, dispatched: 0, interrupted: 0, uncertain: 0 };
   constructor(private readonly options: {
     session: () => GestureBot | null;
-    safe: (bot: GestureBot) => boolean;
+    safe: (bot: GestureBot, action: PublicAction) => boolean;
     tryRun: (signal: AbortSignal, action: (lease: WorldActionLease) => Promise<GestureDispatch>) => Promise<GestureDispatch> | null;
     budgetMs?: number;
   }) {}
@@ -64,9 +66,18 @@ export class PublicActionController {
     return { active: this.active, quarantined: this.quarantine !== null, quarantineCause: this.quarantine, dispatches: { ...this.counts } };
   }
   invalidate(): void { this.epoch++; }
-  available(): boolean {
+  /**
+   * Without an action: whether any gesture is admissible. The still profile is
+   * never stricter than the turn profile, so checking wave answers that.
+   */
+  available(action: PublicAction = "wave"): boolean {
     const bot = this.options.session();
-    return !this.active && this.quarantine === null && bot !== null && this.options.safe(bot);
+    return !this.active && this.quarantine === null && bot !== null && this.options.safe(bot, action);
+  }
+  /** The gestures admissible right now (empty while busy, quarantined or offline). */
+  allowed(): PublicAction[] {
+    if (!this.available()) return [];
+    return this.available("look_left") ? [...PUBLIC_ACTIONS] : PUBLIC_ACTIONS.filter(action => GESTURE_PROFILE[action] === "still");
   }
   async execute(action: PublicAction, signal: AbortSignal): Promise<GestureDispatch> {
     const outcome = await this.run(action, signal);
@@ -74,7 +85,7 @@ export class PublicActionController {
     return outcome;
   }
   private async run(action: PublicAction, signal: AbortSignal): Promise<GestureDispatch> {
-    if (!PUBLIC_ACTIONS.includes(action) || signal.aborted || !this.available()) return "refused";
+    if (!PUBLIC_ACTIONS.includes(action) || signal.aborted || !this.available(action)) return "refused";
     const bot = this.options.session()!;
     const epoch = this.epoch;
     const current = (): boolean => !signal.aborted && epoch === this.epoch && bot === this.options.session();
@@ -84,7 +95,7 @@ export class PublicActionController {
     const quarantine = (cause: QuarantineCause): void => { this.quarantine ??= cause; this.invalidate(); };
     try {
       const work = this.options.tryRun(signal, async (lease) => {
-        if (lease.signal.aborted || !current() || !this.options.safe(bot)) return "refused";
+        if (lease.signal.aborted || !current() || !this.options.safe(bot, action)) return "refused";
         // No asynchronous boundary between the last safety check and the start of the one fixed effect.
         started = true;
         let sent = true;

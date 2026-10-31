@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
-import { bindPublicSafetyInterrupts, PublicSafetyObservations, safePublicThreatState } from "./public-action-safety.js";
+import { assessPublicThreatState, bindPublicSafetyInterrupts, PublicSafetyObservations, safePublicThreatState } from "./public-action-safety.js";
 import { EventBus } from "../events/bus.js";
 import { nearestThreat } from "./self-defense.js";
 import { PublicActionController } from "./public-actions.js";
@@ -114,4 +114,23 @@ test("threat movement and stale observations between reservation and execution p
       observations.detach();
     }
   }
+});
+
+test("still profile: an enderman beyond the clearance with no positive flag does not block hello/wave; turns stay strict", () => {
+  const ender = (x: number, y = 64, metadata: Record<number, unknown> = {}) => ({ id: 7, name: "enderman", type: "hostile", isValid: true, metadata, position: new Vec3(x, y, 0) });
+  for (const [entity, still, reason] of [
+    [ender(16), false, "enderman_near"], [ender(16.01), true, "clear"], [ender(0, 64 + 16), false, "enderman_near"], [ender(12, 64 + 11), true, "clear"],
+    [ender(40, 64, { 17: true }), false, "enderman_agitated"], [ender(40, 64, { 18: true }), false, "enderman_agitated"],
+    [ender(40, 64, { 17: "true" }), true, "clear"], [{ ...ender(40), position: undefined }, false, "missing_position"],
+  ] as const) {
+    const bot = fixture([entity]);
+    assert.deepEqual(assessPublicThreatState(bot, "still").reason, reason, JSON.stringify(entity.position));
+    assert.equal(safePublicThreatState(bot, "still"), still);
+    assert.equal(safePublicThreatState(bot), false, "turn profile refuses any loaded enderman");
+    assert.equal(safePublicThreatState(bot, "turn"), false);
+  }
+  // The still profile changes nothing for other mobs.
+  assert.equal(safePublicThreatState(fixture([mob("witch", 300)]), "still"), false);
+  assert.equal(safePublicThreatState(fixture([mob("zombie", 3)]), "still"), false);
+  assert.equal(safePublicThreatState(fixture([ender(40), mob("zombie", 3)]), "still"), false);
 });

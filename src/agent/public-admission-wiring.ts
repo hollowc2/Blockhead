@@ -1,7 +1,7 @@
 import type { Bot } from "mineflayer";
 import { assessPublicAdmission, type AdmissionAssessment, type AdmissionCheck } from "./public-action-admission.js";
-import { safePublicPhysicalState, safePublicThreatState } from "./public-action-safety.js";
-import type { GestureBot } from "./public-actions.js";
+import { safePublicPhysicalState, safePublicThreatState, type ThreatProfile } from "./public-action-safety.js";
+import { GESTURE_PROFILE, type GestureBot, type PublicAction } from "./public-actions.js";
 import type { Scheduler } from "./scheduler.js";
 
 /** The live objects public admission reads. index.ts passes the real ones; tests pass a real scheduler/lease. */
@@ -18,6 +18,11 @@ export interface PublicAdmissionSources {
   bootstrapComplete: () => boolean;
 }
 
+/** The controller's per-action safety check: each gesture under its own threat profile. */
+export function gestureSafety(admission: ReturnType<typeof createPublicAdmission>): (bot: GestureBot, action: PublicAction) => boolean {
+  return (bot, action) => admission(bot, false, GESTURE_PROFILE[action]).safe;
+}
+
 /** Owner of the world lease while a public gesture runs; see Scheduler.tryPublicWorldAction. */
 export const PUBLIC_GESTURE_OWNER = "public-gesture";
 
@@ -26,14 +31,15 @@ export const PUBLIC_GESTURE_OWNER = "public-gesture";
  * the lease) and private diagnostics call this same function, so a diagnostic
  * pass cannot disagree with what execution would decide at the same instant.
  */
-export function createPublicAdmission(src: PublicAdmissionSources): (candidate: GestureBot | null, collectAll?: boolean) => AdmissionAssessment {
-  return (candidate, collectAll = false) => {
+export function createPublicAdmission(src: PublicAdmissionSources): (candidate: GestureBot | null, collectAll?: boolean, profile?: ThreatProfile) => AdmissionAssessment {
+  // Without a profile the strict turn policy applies.
+  return (candidate, collectAll = false, profile = "turn") => {
     const live = src.session();
     return assessPublicAdmission([
       ["session", () => live !== null && candidate !== null && (live.bot as unknown) === candidate && src.connectionReady()],
       ["physical", () => safePublicPhysicalState(live!.bot, src.retreatHealth())],
       ["freshness", () => live!.publicSafety.fresh()],
-      ["threats", () => safePublicThreatState(live!.bot)],
+      ["threats", () => safePublicThreatState(live!.bot, profile)],
       ["death_loop", () => !src.inDeathLoop()],
       ["scheduler", () => !src.scheduler.isHalted],
       ["projects", () => src.currentProject() === null],

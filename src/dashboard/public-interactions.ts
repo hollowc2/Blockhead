@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { PUBLIC_ACTIONS, type GestureDispatch, type PublicActionController } from "../agent/public-actions.js";
+import { PUBLIC_ACTIONS, type GestureDispatch, type PublicAction, type PublicActionController } from "../agent/public-actions.js";
 import { answerPublicQuestion, publicFacts, type PublicFacts } from "./public-chat.js";
 import { BLOCKED_ANSWER, type PublicModelAnswer, type PublicModelOutcome } from "./public-model-chat.js";
 import { clientAddress, addressKey, SHELL_SECURITY_HEADERS } from "./http-guard.js";
@@ -50,6 +50,8 @@ export interface PublicAvailability {
   questionsCooldownMs: number;
   actionsCooldownMs: number;
   helloCooldownMs: number;
+  /** Gestures admissible right now; turns can be refused while hello and wave are allowed. */
+  allowedActions: PublicAction[];
 }
 
 export type PublicResultCode = "ok" | "unavailable" | "cancelled" | "invalid" | "too_large" | "body_timeout" | "limited" | "capacity" | "origin" | "content_type" | "disabled" | "unconfirmed" | "action_timeout";
@@ -123,6 +125,7 @@ export class PublicInteractions {
     return {
       questions: questionsReason === null, actions: actionsReason === null,
       questionsReason, actionsReason, questionsCooldownMs, actionsCooldownMs, helloCooldownMs: this.limiter.wait("action:hello", 1, 30_000),
+      allowedActions: actionsReason === null || actionsReason === "cooldown" ? this.options.gestures.allowed() : [],
     };
   }
   /** The longest wait among every limit *feature* passes through for this address. */
@@ -196,7 +199,7 @@ export class PublicInteractions {
       } else {
         const parsed = actionSchema.safeParse(raw); if (!parsed.success) throw new Refusal(400, "invalid");
         actionId = parsed.data.action;
-        if (!this.options.gestures.available()) throw new Refusal(503, "unavailable");
+        if (!this.options.gestures.available(actionId as PublicAction)) throw new Refusal(503, "unavailable");
         if (this.retryAfter("action", ip, actionId) > 0) throw new Refusal(429, "limited");
         if (!this.limiter.take(`action:${ip}`, 1, 10_000) || !this.limiter.take("action:global", 1, 5000) || (actionId === "hello" && !this.limiter.take("action:hello", 1, 30_000))) throw new Refusal(429, "limited");
         dispatch = await this.options.gestures.execute(parsed.data.action, controller.signal);

@@ -128,3 +128,22 @@ test("disabling actions and shutdown refuse before any effect", async () => {
     assert.deepEqual(f.effects, []);
   } finally { await close(f.server); }
 });
+
+test("with turns refused (still-only threat state), wave is sent, a turn sends nothing, and availability lists only hello and wave", async () => {
+  const effects: unknown[] = [], executor = new WorldActionExecutor(), bot = fakeGestureBot(effects);
+  const gestures = new PublicActionController({ session: () => bot, safe: (_bot, action) => action === "hello" || action === "wave", tryRun: (signal, action) => executor.tryRun("public", signal, action) });
+  let now = 0;
+  const interactions = new PublicInteractions({ config: { allowed_origin: origin, questions_enabled: true, actions_enabled: true }, gestures,
+    facts: () => ({ connected: true, health: 20, hunger: 20, activity: "idle", time: "day", actions: true }), now: () => now });
+  const server = createServer((req, res) => { void interactions.handle("action", req, res); });
+  const port = await listen(server);
+  try {
+    assert.deepEqual(interactions.availability().allowedActions, ["hello", "wave"]);
+    assert.equal(interactions.availability().actions, true);
+    const turn = await post(port, "look_left");
+    assert.equal(turn.status, 503); assert.equal(turn.body.delivery, "not_sent"); assert.equal(effects.length, 0);
+    now += 60_001;
+    assert.equal((await post(port, "wave")).body.delivery, "sent");
+    assert.deepEqual(effects, [["swing", "right"]]);
+  } finally { await close(server); }
+});

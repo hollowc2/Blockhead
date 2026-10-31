@@ -368,6 +368,8 @@ import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
       const i = s.interactions || {};
       publicWhy = { questions: connected ? i.questionsReason ?? null : "offline", actions: connected ? i.actionsReason ?? null : "offline" };
       helloSharedUntil = retryUntil(requestStarted, Date.now(), i.helloCooldownMs);
+      // Turns can be refused while hello and wave stay open (stricter threat policy).
+      allowedActions = Array.isArray(i.allowedActions) ? i.allowedActions : null;
       sharedUntil = { questions: retryUntil(requestStarted, Date.now(), i.questionsCooldownMs), actions: retryUntil(requestStarted, Date.now(), i.actionsCooldownMs) };
       renderPublicStatus(s.status, connected);
     }
@@ -718,7 +720,7 @@ import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
   // Why each feature is off, and until when it is cooling down: shared (from state) or this visitor's own (from a refusal).
   let publicWhy = { questions: "offline", actions: "offline" };
   let sharedUntil = { questions: 0, actions: 0 }, ownUntil = { questions: 0, actions: 0 };
-  let helloUntil = 0, helloSharedUntil = 0;
+  let helloUntil = 0, helloSharedUntil = 0, allowedActions = null;
   let publicActivity = "offline";
   const publicButtons = [...document.querySelectorAll("#publicActions button")];
   const ACTIVITY = {
@@ -763,10 +765,12 @@ import { ViewerSession, retryUntil, frameToken } from "./viewer-session.mjs";
   }
   function updatePublicButtons() {
     const notes = { questions: publicNote("questions"), actions: publicNote("actions") };
+    if (notes.actions === null && publicAvailable.actions && allowedActions !== null && allowedActions.length > 0 && allowedActions.length < publicButtons.length)
+      notes.actions = "Turning isn't available right now. Hello and wave are.";
     const cooling = (feature) => Math.max(ownUntil[feature], sharedUntil[feature]) > Date.now();
     $("publicAsk").disabled = publicBusy || !publicAvailable.questions || ["busy", "disabled", "offline", "unreachable"].includes(publicWhy.questions) || cooling("questions");
     document.querySelectorAll("#publicSuggestions button").forEach(button => { button.disabled = $("publicAsk").disabled; });
-    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions || cooling("actions") || button.dataset.action === "hello" && Math.max(helloUntil, helloSharedUntil) > Date.now(); if (button.dataset.action === "hello") button.textContent = Math.max(helloUntil, helloSharedUntil) > Date.now() ? `Hello (${span(Math.max(helloUntil, helloSharedUntil) - Date.now())})` : "Say hello"; });
+    publicButtons.forEach(button => { button.disabled = publicBusy || !publicAvailable.actions || cooling("actions") || (allowedActions !== null && !allowedActions.includes(button.dataset.action)) || button.dataset.action === "hello" && Math.max(helloUntil, helloSharedUntil) > Date.now(); if (button.dataset.action === "hello") button.textContent = Math.max(helloUntil, helloSharedUntil) > Date.now() ? `Hello (${span(Math.max(helloUntil, helloSharedUntil) - Date.now())})` : "Say hello"; });
     // Only explain once the page knows it is public; the private shell never shows these.
     for (const [feature, id] of [["questions", "questionNote"], ["actions", "actionNote"]]) {
       const note = mode === true ? publicBusy ? "A public request is pending. Please wait for the result." : notes[feature] : null;

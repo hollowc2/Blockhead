@@ -1,4 +1,4 @@
-import { PUBLIC_ACTIONS, type PublicAction } from "../agent/public-actions.js";
+import { GESTURE_PROFILE, PUBLIC_ACTIONS, type PublicAction } from "../agent/public-actions.js";
 import type { Capture, CaptureIntegrity } from "./gesture-collector.js";
 import { evaluateGesture, GESTURE_RULES, type GestureEvaluation, type GestureRequest } from "./gesture-evaluator.js";
 import type { StatusRecord } from "./gesture-records.js";
@@ -10,7 +10,10 @@ export interface TrialDiagnostics {
   actions: boolean;
   actionsCooldownMs: number;
   helloCooldownMs: number;
+  /** Strict turn profile. */
   admissionSafe: boolean;
+  /** Still profile, used by hello and wave. */
+  admissionStillSafe: boolean;
   blocked: string[];
   quarantined: boolean;
   gestureActive: boolean;
@@ -100,7 +103,8 @@ export async function runGestureTrial(io: TrialIO, options: TrialOptions): Promi
             const d = await io.diagnostics();
             if (d.quarantined) { report.stop = "quarantined"; return report; }
             if (effects(d.dispatches) !== effects(expected)) { report.stop = "other_visitor"; return report; }
-            if (d.admissionSafe && d.actions && d.actionsCooldownMs === 0 && (action !== "hello" || d.helloCooldownMs === 0)) { eligible = d; break; }
+            const admitted = GESTURE_PROFILE[action] === "still" ? d.admissionStillSafe : d.admissionSafe;
+            if (admitted && d.actions && d.actionsCooldownMs === 0 && (action !== "hello" || d.helloCooldownMs === 0)) { eligible = d; break; }
             await io.sleep(500);
           }
           if (!eligible) { await capture.stop(); continue; }

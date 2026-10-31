@@ -8,7 +8,7 @@ import { MIGRATIONS } from "../memory/migrations.js";
 import { TasksRepository } from "../memory/tasks.js";
 import { Scheduler } from "./scheduler.js";
 import { TaskPriority, type NewTask } from "./task.js";
-import { createPublicAdmission, PUBLIC_GESTURE_OWNER } from "./public-admission-wiring.js";
+import { createPublicAdmission, gestureSafety, PUBLIC_GESTURE_OWNER } from "./public-admission-wiring.js";
 import { bindPublicOwnerChatInterrupt, bindPublicSafetyInterrupts } from "./public-action-safety.js";
 import { PublicActionController, PUBLIC_ACTIONS, type GestureBot } from "./public-actions.js";
 import { fakeGestureBot } from "./public-actions.fixture.js";
@@ -41,7 +41,7 @@ function wiring(options: { manualTicks?: boolean } = {}) {
   });
   const controller = new PublicActionController({
     session: () => (live?.bot as unknown as GestureBot) ?? null,
-    safe: candidate => admission(candidate).safe,
+    safe: gestureSafety(admission),
     tryRun: (signal, action) => scheduler.tryPublicWorldAction(signal, action),
   });
   let cancels = 0;
@@ -75,7 +75,7 @@ test("every live blocker, set through the real scheduler/lease where one exists,
     ["session", w => { w.flags.ready = false; }],
     ["physical", w => { (w.bot as unknown as { isAlive: boolean }).isAlive = false; }],
     ["freshness", w => { w.flags.fresh = false; }],
-    ["threats", w => { (w.bot.entities as Record<number, unknown>)[9] = { id: 9, name: "enderman", type: "hostile", isValid: true, position: new Vec3(60, 20, 60) }; }],
+    ["threats", w => { (w.bot.entities as Record<number, unknown>)[9] = { id: 9, name: "witch", type: "hostile", isValid: true, position: new Vec3(60, 20, 60) }; }],
     ["death_loop", w => { w.flags.deathLoop = true; }],
     ["scheduler", w => { w.scheduler.halt(); }],
     ["projects", w => { w.flags.project = { project: { status: "paused" } }; }],
@@ -114,14 +114,38 @@ test("a lease waiter and a pending interrupt block admission through the real sc
   w.db.close();
 });
 
-test("the enderman refusal applies to all four gestures at any loaded distance; false metadata does not prove calm", async () => {
-  for (const [x, metadata] of [[2, { 17: false, 18: false }], [120, {}], [-90, { 17: false }]] as const) {
+test("turns are refused for any loaded enderman; hello and wave only when one is near, flagged or unlocated", async () => {
+  const endermanAt = (w: ReturnType<typeof wiring>, x: number | null, metadata: Record<number, unknown> = {}) => {
+    (w.bot.entities as Record<number, unknown>)[9] = { id: 9, name: "enderman", type: "hostile", isValid: true, metadata, position: x === null ? new Vec3(NaN, 64, 0) : new Vec3(x, 64, 0) };
+  };
+  const cases: [string, number | null, Record<number, unknown>, readonly string[]][] = [
+    ["far, unflagged", 120, {}, ["hello", "wave"]],
+    ["far, false flags (prove nothing, refuse nothing extra)", 17, { 17: false, 18: false }, ["hello", "wave"]],
+    ["at the clearance", 16, {}, []],
+    ["near", 2, { 17: false, 18: false }, []],
+    ["far but creepy", 90, { 17: true }, []],
+    ["far but stared at", 90, { 18: true }, []],
+    ["position unknown", null, {}, []],
+  ];
+  for (const [name, x, metadata, allowed] of cases) {
     const w = wiring();
-    (w.bot.entities as Record<number, unknown>)[9] = { id: 9, name: "enderman", type: "hostile", isValid: true, metadata, position: new Vec3(x, 64, 0) };
-    for (const action of PUBLIC_ACTIONS) assert.equal(await w.controller.execute(action, new AbortController().signal), "refused");
-    assert.deepEqual(w.effects, []);
+    endermanAt(w, x, metadata);
+    assert.deepEqual(w.controller.allowed(), allowed, name);
+    for (const action of PUBLIC_ACTIONS) {
+      const expected = allowed.includes(action) ? "dispatched" : "refused";
+      assert.equal(await w.controller.execute(action, new AbortController().signal), expected, `${name}/${action}`);
+    }
+    assert.equal(w.effects.length, allowed.length, name);
+    // Diagnostics keep reporting the strict turn profile by default.
+    assert.equal(diagnose(w).checks.threats, "blocked", name);
+    assert.equal(w.admission(w.bot as unknown as GestureBot, true, "still").checks.threats, allowed.length > 0 ? "pass" : "blocked", name);
     w.db.close();
   }
+  // Any other unreviewed hostile still refuses all four, at any loaded distance.
+  const w = wiring();
+  (w.bot.entities as Record<number, unknown>)[9] = { id: 9, name: "witch", type: "hostile", isValid: true, position: new Vec3(200, 64, 0) };
+  assert.deepEqual(w.controller.allowed(), []);
+  w.db.close();
 });
 
 test("owner chat on any path and survival/task events preempt a reserved gesture before its effect", async () => {

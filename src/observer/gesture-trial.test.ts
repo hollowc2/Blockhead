@@ -11,7 +11,7 @@ class World {
   now = 1_000_000; tick = 100; yaw = 10;
   captures: { records: ObserverRecord[]; open: boolean; seq: number }[] = [];
   dispatches = { refused: 0, dispatched: 0, interrupted: 0, uncertain: 0 };
-  configuredActions = false; questions = true; safe = true; complete = true;
+  configuredActions = false; questions = true; safe = true; complete = true; endermanLoaded = false;
   requests: PublicAction[] = []; settings: [boolean, boolean][] = [];
   dropEffect: PublicAction | null = null; lose: PublicAction | null = null; visitorAt: number | null = null; failDisableOnce = false;
   push(fields: Record<string, unknown>) {
@@ -37,7 +37,7 @@ class World {
         return { ready: Promise.resolve(c.records[0] as StatusRecord), records: c.records, stop, closed: new Promise(() => undefined) } satisfies Capture;
       },
       diagnostics: async (): Promise<TrialDiagnostics> => ({ configuredActions: this.configuredActions, questionsEnabled: this.questions, actions: this.configuredActions && this.safe,
-        actionsCooldownMs: 0, helloCooldownMs: 0, admissionSafe: this.safe, blocked: this.safe ? [] : ["active_task"], quarantined: false, gestureActive: false, dispatches: { ...this.dispatches } }),
+        actionsCooldownMs: 0, helloCooldownMs: 0, admissionSafe: this.safe && !this.endermanLoaded, admissionStillSafe: this.safe, blocked: this.safe ? [] : ["active_task"], quarantined: false, gestureActive: false, dispatches: { ...this.dispatches } }),
       setActions: async (actions, questions) => {
         if (!actions && this.failDisableOnce) { this.failDisableOnce = false; throw new Error("socket"); }
         this.settings.push([actions, questions]); this.configuredActions = actions; this.questions = questions;
@@ -117,4 +117,14 @@ test("actions already on before the trial is a preflight failure, then turned of
   const report = await runGestureTrial(w.io(), options);
   assert.equal(report.stop, "preflight_failed"); assert.deepEqual(w.requests, []);
   assert.equal(w.configuredActions, false); assert.equal(w.questions, true);
+});
+
+test("each gesture waits for its own profile: with an enderman loaded, hello and wave can run while turns wait out the window", async () => {
+  const w = new World(); w.endermanLoaded = true;
+  const report = await runGestureTrial(w.io(), { windowMs: 60_000, captureWaitMs: 20_000 });
+  assert.deepEqual(w.requests, ["hello", "wave"]);
+  assert.deepEqual(report.results.map(r => r.outcome), ["pass", "pass"]);
+  assert.equal(report.stop, "window_expired"); assert.equal(w.configuredActions, false);
+  const subset = new World(); subset.endermanLoaded = true;
+  assert.equal((await runGestureTrial(subset.io(), { ...options, actions: ["hello", "wave"] })).stop, "completed");
 });

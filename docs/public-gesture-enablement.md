@@ -115,7 +115,7 @@ Named gaps before any live trial:
 | session | same READY bot object | `public-admission-wiring.test.ts` (connection) |
 | physical | entity, **alive**, grounded, dry, finite orientation, stationary, health > retreat, food > emergency, awake, unmounted, no item use/eating/digging/window/combat target/controls/path movement/mining/building/goal | `public-actions.test.ts`, `public-action-admission.test.ts` |
 | freshness | server `time` ≤ 2.5 s and physics ≤ 250 ms; reset on death/respawn/end | `public-action-safety.test.ts` |
-| threats | live registry scan; reviewed mobs with reflex geometry and solid-cover ray; any unreviewed hostile (enderman included, at any loaded distance; false/missing metadata proves nothing) refuses | wiring and safety tests |
+| threats | live registry scan; reviewed mobs with reflex geometry and solid-cover ray; any unreviewed hostile refuses at any loaded distance (false/missing metadata proves nothing). **Proposed 2026-10-31:** for hello/wave an enderman refuses only within 16 blocks, if unlocated, or with a positive flag; see the section below | wiring and safety tests |
 | death_loop, scheduler (halted), projects (incl. paused), goal, bootstrap, decision, background | process objects | wiring test, one case each |
 | lease_owner, lease_waiters, active_task, queued_tasks, interrupt | real scheduler/lease | wiring tests using `runWorldAction`, `enqueue`, `claim`, `requestPause` |
 
@@ -454,6 +454,39 @@ persistent availability and its monitoring. Prerequisites:
 - a decision on whether the observer stays installed (periodic armed sampling)
   or is removed. Without independent observation, persistent gestures remain
   dispatch-only and must be described that way to visitors.
+
+## Enderman rule for hello and wave (2026-10-31 proposal, not deployed)
+
+**Why.** The 24-hour sample (first 69 samples) found an enderman loaded in every sample. In 30 % of samples it was the *only* blocker; Bob was otherwise idle and safe. The all-actions refusal makes gestures permanently unavailable in this world.
+
+**Rule (local candidate):**
+- **Turns:** unchanged. Any loaded enderman refuses them, because a turn moves Bob's gaze and can enter an enderman's stare cone.
+- **`hello` and `wave`:** a loaded enderman refuses them only if it is within **16 blocks** (3D, inclusive), has no finite position, or reports a positive `creepy` (17) or `stared_at` (18) flag.
+- **Everything else:** unchanged. Any other unreviewed hostile still refuses all four at any loaded distance, and every other gate applies.
+
+**Reasoning, from the 2026-10-20 enderman review.** Chat and a main-hand swing involve no look, entity interaction or item use, so they cannot provoke an enderman. The residual risk is an enderman that is *already* angry; the client cannot see that state. That risk exists whether or not a visitor waves:
+- Inside 16 blocks (the server's squared-distance-256 threshold), an angry enderman walks in and strikes, so the gesture is refused there.
+- Beyond 16 blocks it must first teleport toward its target. Damage, hostile detection and owner work still preempt any gesture, and the gesture holds the world lease for at most one tick.
+- False or missing flags still prove nothing. Only a positive flag is used, and only to refuse.
+
+**Implementation.**
+- `ThreatProfile` (`turn` | `still`) in `public-action-safety.ts`, and `GESTURE_PROFILE` in `public-actions.ts`.
+- `gestureSafety` in the admission wiring (shared by `index.ts` and the tests).
+- The controller checks the action's own profile before reservation and inside the lease.
+- Private diagnostics add `admissionStill` and `threatsStill`; `admission` stays the strict profile.
+- Public availability adds `allowedActions`. The page disables only the turn buttons and says "Turning isn't available right now. Hello and wave are."
+- The trial runner waits on each gesture's own profile and accepts `--actions hello,wave`. The sampler records `safeStill`.
+
+**Evidence** ([enderman rule](investigations/public-gestures-2026-10-31-enderman-rule.json)), all local:
+- Tests: 1,072 pass.
+- Real 1.21.4 server, NoAI enderman at 30 blocks: allowed `[hello, wave]`; both passed independent evaluation; `look_left` was refused, `not_sent`.
+- Same enderman at 6 blocks: nothing allowed.
+- The original nine qualification scenarios reproduce.
+- Browser: turn buttons disabled with the note above.
+
+How often hello/wave would be eligible on Maia is unknown until the diagnostics are deployed.
+
+**Approval needed (D):** deploy this runtime change to `blockhead.service`, with one bot restart; actions stay off. Then let the sampler measure `safeStill`. If hello and wave are eligible at a usable rate, run a supervised window with `--actions hello,wave`; turns stay blocked by any loaded enderman.
 
 ## Superseded conclusions
 

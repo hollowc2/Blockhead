@@ -1,7 +1,7 @@
 import { assessPublicPhysicalState, assessPublicThreatState, bindPublicOwnerChatInterrupt, bindPublicSafetyInterrupts, PublicSafetyObservations } from "./agent/public-action-safety.js";
-import { createPublicAdmission } from "./agent/public-admission-wiring.js";
+import { createPublicAdmission, gestureSafety } from "./agent/public-admission-wiring.js";
 import { PublicProtocolObservations } from "./agent/public-protocol-observations.js";
-import { PublicActionController, type GestureBot } from "./agent/public-actions.js";
+import { PublicActionController } from "./agent/public-actions.js";
 import { PublicInteractions } from "./dashboard/public-interactions.js";
 import { homedir } from "node:os";
 import type { Bot } from "mineflayer";
@@ -272,7 +272,7 @@ const publicAdmission = createPublicAdmission({
 });
 const publicGestures = new PublicActionController({
   session: () => session?.bot ?? null,
-  safe: (candidate: GestureBot): boolean => publicAdmission(candidate).safe,
+  safe: gestureSafety(publicAdmission),
   tryRun: (signal, action) => scheduler.tryPublicWorldAction(signal, action),
 });
 // Public model answers go through the Aegis firewall on their own base URL.
@@ -502,8 +502,11 @@ statusServer = new StatusServer({
         modelQueue: client.queueState,
         viewer: viewerAdapter.diagnostics(),
         admission: publicAdmission(session?.bot ?? null, true),
+        // Hello and wave use the still threat profile; `admission` above is the strict turn profile.
+        admissionStill: publicAdmission(session?.bot ?? null, true, "still"),
         physical: session ? assessPublicPhysicalState(session.bot, config.policy?.health_retreat_threshold ?? 8, true) : null,
         threats: session ? assessPublicThreatState(session.bot) : null,
+        threatsStill: session ? assessPublicThreatState(session.bot, "still") : null,
         freshness: session?.publicSafety.diagnostics() ?? null,
         protocol: session?.publicProtocol.snapshot() ?? null,
       }),

@@ -66,15 +66,32 @@ function finitePosition(value: { x: number; y: number; z: number } | null | unde
   return value != null && [value.x, value.y, value.z].every(Number.isFinite);
 }
 
+/**
+ * Threat policy per gesture kind (docs/public-gesture-enablement.md, "Enderman
+ * rule for hello and wave"). Turns move Bob's gaze, which can provoke an
+ * enderman, so any loaded enderman refuses them. Hello and wave never change
+ * gaze; for them a loaded enderman refuses only when it is close, its position
+ * is unknown, or it shows a positive aggression flag. False or missing flags
+ * still prove nothing: an enderman beyond the clearance may already be angry,
+ * and that danger exists with or without the gesture.
+ */
+export type ThreatProfile = "turn" | "still";
+/** The server's own teleport-toward threshold (squared distance 256): closer, an angry enderman walks in and strikes. */
+export const STILL_ENDERMAN_CLEARANCE = 16;
 /** Live registry scan, never the spawn counter or cached dashboard danger. */
-export function safePublicThreatState(bot: Bot): boolean {
-  return assessPublicThreatState(bot).safe;
+export function safePublicThreatState(bot: Bot, profile: ThreatProfile = "turn"): boolean {
+  return assessPublicThreatState(bot, profile).safe;
 }
-export type PublicThreatAssessment = { safe: boolean; reason: "clear" | "missing_state" | "unknown_entity" | "unreviewed_mob" | "missing_position" | "unknown_visibility" | "exposed_threat" | "observation_error"; mob?: string };
-export function assessPublicThreatState(bot: Bot): PublicThreatAssessment {
-  try { return scanPublicThreatState(bot); } catch { return { safe: false, reason: "observation_error" }; }
+export type PublicThreatAssessment = { safe: boolean; reason: "clear" | "missing_state" | "unknown_entity" | "unreviewed_mob" | "missing_position" | "unknown_visibility" | "exposed_threat" | "enderman_near" | "enderman_agitated" | "observation_error"; mob?: string };
+export function assessPublicThreatState(bot: Bot, profile: ThreatProfile = "turn"): PublicThreatAssessment {
+  try { return scanPublicThreatState(bot, profile); } catch { return { safe: false, reason: "observation_error" }; }
 }
-function scanPublicThreatState(bot: Bot): PublicThreatAssessment {
+/** 1.21.4 enderman metadata: 17 creepy (has a target), 18 stared_at. Only a positive value is informative. */
+function endermanAgitated(entity: { metadata?: unknown }): boolean {
+  const metadata = entity.metadata as Record<number, unknown> | undefined;
+  return metadata?.[17] === true || metadata?.[18] === true;
+}
+function scanPublicThreatState(bot: Bot, profile: ThreatProfile): PublicThreatAssessment {
   const self = bot.entity?.position;
   if (!finitePosition(self) || bot.entities == null || typeof bot.blockAt !== "function") return { safe: false, reason: "missing_state" };
   for (const entity of Object.values(bot.entities)) {
@@ -84,6 +101,12 @@ function scanPublicThreatState(bot: Bot): PublicThreatAssessment {
     if (typeof mob.health === "number" && Number.isFinite(mob.health) && mob.health <= 0) continue;
     const name = canonicalMobName(entity);
     if (entity.type !== "hostile" && !HOSTILE_MOB_NAMES.has(name)) continue;
+    if (name === "enderman" && profile === "still") {
+      if (!finitePosition(entity.position)) return { safe: false, reason: "missing_position", mob: name };
+      if (endermanAgitated(entity)) return { safe: false, reason: "enderman_agitated", mob: name };
+      if (Math.hypot(entity.position.x - self.x, entity.position.y - self.y, entity.position.z - self.z) <= STILL_ENDERMAN_CLEARANCE) return { safe: false, reason: "enderman_near", mob: name };
+      continue;
+    }
     if (!REVIEWED_THREAT_NAMES.has(name)) return { safe: false, reason: "unreviewed_mob", mob: name.slice(0, 64) };
     if (!finitePosition(entity.position)) return { safe: false, reason: "missing_position", mob: name };
     const range = reflexThreatRange(name);

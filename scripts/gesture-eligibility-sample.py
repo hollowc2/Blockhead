@@ -32,6 +32,8 @@ def summarize(path):
     rows = [json.loads(line) for line in open(path)]
     ok = [r for r in rows if "error" not in r]
     eligible = [r for r in ok if r["safe"]]
+    still = [r for r in ok if r.get("safeStill") is not None]
+    still_eligible = [r for r in still if r["safeStill"]]
     runs, run = [], 0
     for r in ok:
         run = run + 1 if r["safe"] else 0
@@ -46,6 +48,9 @@ def summarize(path):
         "physical": dict(collections.Counter(g for r in ok for g in r["physical"]).most_common()),
         "threat": dict(collections.Counter(f'{r["threat"]}:{r.get("mob")}' for r in ok).most_common()),
         "only_threats_blocking": sum(1 for r in ok if r["blocked"] == ["threats"]),
+        "still_samples": len(still), "still_eligible": len(still_eligible),
+        "still_eligible_fraction": round(len(still_eligible) / len(still), 4) if still else None,
+        "still_threat": dict(collections.Counter(str(r.get("threatStill")) for r in still).most_common()),
         "eligible_times": [r["t"] for r in eligible][:50],
     }, indent=2))
 
@@ -73,9 +78,14 @@ with os.fdopen(fd, "a") as out:
                                          headers={"Authorization": "Bearer " + token}, method="GET")
             d = json.load(urllib.request.urlopen(req, timeout=8))
             admission = d.get("admission") or {}
+            still = d.get("admissionStill") or {}
             row.update({
                 "safe": admission.get("safe") is True,
                 "blocked": sorted(k for k, v in (admission.get("checks") or {}).items() if v != "pass"),
+                # Hello/wave profile; absent on runtimes before the still profile existed.
+                "safeStill": still.get("safe") is True if still else None,
+                "blockedStill": sorted(k for k, v in (still.get("checks") or {}).items() if v != "pass"),
+                "threatStill": (d.get("threatsStill") or {}).get("reason"),
                 "physical": sorted(k for k, v in ((d.get("physical") or {}).get("checks") or {}).items() if v != "pass"),
                 "threat": (d.get("threats") or {}).get("reason"), "mob": (d.get("threats") or {}).get("mob"),
                 "configuredActions": d.get("configuredActions"),

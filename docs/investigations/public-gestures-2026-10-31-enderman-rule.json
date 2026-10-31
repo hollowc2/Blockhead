@@ -1,0 +1,145 @@
+{
+  "recorded_at": "2026-10-31",
+  "status": "local candidate, not deployed; needs approval",
+  "rule": {
+    "turns": "refused while any enderman is loaded (unchanged)",
+    "hello_wave": "refused only if an enderman is within 16 blocks (3D, inclusive), has no finite position, or reports creepy(17)=true or stared_at(18)=true; otherwise a loaded enderman does not block",
+    "other_unreviewed_hostiles": "unchanged: refuse all four at any loaded distance",
+    "all_other_gates": "unchanged"
+  },
+  "real_server": {
+    "setup": "same disposable setup as public-gestures-2026-10-29-local-qualification.json, difficulty easy with natural monster spawning off; enderman summoned with NoAI at +30 x, then teleported to +6 x",
+    "allowed_far": [
+      "hello",
+      "wave"
+    ],
+    "allowed_near": [],
+    "evaluations": [
+      {
+        "name": "hello",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "wave",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "look_left",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "look_right",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "absent_chat_with_http_success",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "effect_absent"
+        ]
+      },
+      {
+        "name": "off_hand_swing",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "off_hand_swing",
+          "effect_absent"
+        ]
+      },
+      {
+        "name": "prohibited_use_item",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "prohibited_packet"
+        ]
+      },
+      {
+        "name": "wrong_direction",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "wrong_turn"
+        ]
+      },
+      {
+        "name": "extra_turn",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "extra_turn"
+        ]
+      },
+      {
+        "name": "enderman_far_wave",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "enderman_far_hello",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "enderman_far_turn_refused",
+        "expect": "not_pass",
+        "outcome": "unknown",
+        "delivery": "not_sent",
+        "reasons": [
+          "not_dispatched"
+        ]
+      }
+    ],
+    "tickIntervalMs": {
+      "count": 1252,
+      "mean": 49.98562300319489,
+      "max": 51
+    },
+    "verifyErrors": false,
+    "serverExit": 0,
+    "verdict": "qualified"
+  },
+  "browser": {
+    "turnsRefused": {
+      "reply": "Please wait before trying again. Shared public limits apply.",
+      "delivery": "not_sent",
+      "note": "Turning isn't available right now. Hello and wave are.",
+      "disabled": [
+        false,
+        false,
+        true,
+        true
+      ],
+      "hello": "Say hello"
+    },
+    "consoleErrors": 0
+  },
+  "tests": "npm test 1072/1072; typecheck, diff check and audit policy pass",
+  "limitations": [
+    "NoAI enderman: proves admission reads the real entity/metadata path, not enderman behaviour",
+    "No measurement yet of how often hello/wave would be eligible on Maia: needs the deployed still-profile diagnostics (the sampler records safeStill once deployed)"
+  ]
+}

@@ -110,6 +110,12 @@ for (const [name, state] of [["busy", { actions: false, actionsReason: "busy" }]
 }
 await shot("desktop-busy");
 
+// Turns refused while hello and wave are allowed (still threat profile): only turn buttons disabled.
+await evaluate('(()=>{window.actionState={actions:true,actionsReason:null,actionsCooldownMs:0,helloCooldownMs:0,allowedActions:["hello","wave"]};return true})()');
+await waitFor('/Turning isn/.test(document.getElementById("actionNote").textContent)', "turns-only note");
+results.turnsRefused = await ui();
+assert.deepEqual(results.turnsRefused.disabled, [false, false, true, true]);
+
 // Phone width: gesture controls stay inside the viewport without horizontal scrolling.
 await command("browsingContext.setViewport", { context, viewport: { width: 390, height: 844 }, devicePixelRatio: 2 });
 await evaluate('(()=>{window.actionState={actions:false,actionsReason:"busy"};document.getElementById("publicActions").scrollIntoView();return true})()');
