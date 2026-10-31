@@ -173,19 +173,6 @@ try {
   ender.nearAllowed = makeInteractions().gestures.allowed();
   serverConsole("kill @e[type=minecraft:enderman]");
   result.enderman = ender;
-  await waitFor(() => !Object.values(bob.entities).some(e => e.name === "enderman" && e.isValid !== false), 10_000, "enderman gone");
-  // Zombified piglin: gaze-independent, so a far calm one blocks nothing, turns included.
-  serverConsole(`summon minecraft:zombified_piglin ${Math.floor(at.x) + 30} ${Math.floor(at.y)} ${Math.floor(at.z)} {NoAI:1b,PersistenceRequired:1b,Silent:1b}`);
-  await waitFor(() => Object.values(bob.entities).some(e => e.name === "zombified_piglin"), 10_000, "piglin loaded");
-  await sleep(1000);
-  const piglin = { farAllowed: makeInteractions().gestures.allowed() as string[], nearAllowed: [] as string[] };
-  await trial("piglin_far_turn", "look_right", "pass");
-  serverConsole(`tp @e[type=minecraft:zombified_piglin] ${Math.floor(at.x) + 6} ${Math.floor(at.y)} ${Math.floor(at.z)}`);
-  await waitFor(() => Object.values(bob.entities).some(e => e.name === "zombified_piglin" && e.position.distanceTo(bob.entity.position) < 10), 10_000, "piglin near");
-  await sleep(500);
-  piglin.nearAllowed = makeInteractions().gestures.allowed();
-  serverConsole("kill @e[type=minecraft:zombified_piglin]");
-  result.zombifiedPiglin = piglin;
   const integrity = await capture.stop();
   const records = capture.records;
   const end = records.find(r => r.type === "end");
@@ -217,9 +204,7 @@ try {
     verdict: evaluations.every(e => e.expect === "pass" ? e.outcome === "pass" : e.outcome !== "pass")
       && (!result.enderman || (JSON.stringify((result.enderman as { farAllowed: string[] }).farAllowed) === '["hello","wave"]'
         && (result.enderman as { nearAllowed: string[] }).nearAllowed.length === 0
-        && evaluations.find(e => e.name === "enderman_far_turn_refused")?.delivery === "not_sent"))
-      && (!result.zombifiedPiglin || ((result.zombifiedPiglin as { farAllowed: string[] }).farAllowed.length === 4
-        && (result.zombifiedPiglin as { nearAllowed: string[] }).nearAllowed.length === 0)) ? "qualified" : "not_qualified",
+        && evaluations.find(e => e.name === "enderman_far_turn_refused")?.delivery === "not_sent")) ? "qualified" : "not_qualified",
   });
   http.close(); safety.detach(); bob.quit(); viewer.quit();
   await sleep(500);

@@ -490,23 +490,6 @@ How often hello/wave would be eligible on Maia is unknown until the diagnostics 
 
 **Approval (D, granted and done 2026-10-31):** deploy this runtime change to `blockhead.service`, with one bot restart; actions stay off. Then let the sampler measure `safeStill`. If hello and wave are eligible at a usable rate, run a supervised window with `--actions hello,wave`; turns stay blocked by any loaded enderman.
 
-## Zombified piglin rule (2026-10-31 proposal, not deployed)
-
-After the enderman rule went live, a zombified piglin blocked hello/wave in 12 of the first 13 samples.
-
-**Server review (1.21.4).** Zombified piglins acquire targets only by being hurt (alerting neighbours) or through existing anger. Nothing is gaze-based. Bob's combat code never targets them (not in `HOSTILE_MOB_NAMES`).
-
-**Proposed rule.** For **all four** gestures, a loaded zombified piglin refuses only if it is within 16 blocks, has no finite position, or has the `aggressive` mob flag (metadata 15, bit 0x04, set while its attack goal runs).
-
-**Unchanged.** The enderman rule and every other unreviewed hostile (piglin, brute, hoglin, …).
-
-**Evidence** ([zombified piglin rule](investigations/public-gestures-2026-10-31-zombified-piglin-rule.json)):
-- Real server, NoAI piglin at 30 blocks: all four allowed; `look_right` passed independent evaluation.
-- Same piglin at 6 blocks: nothing allowed.
-- Tests: 1,073 pass.
-
-**Approval needed (E):** deploy with one bot restart; actions stay off.
-
 ## Superseded conclusions
 
 - [Independent effect observation](investigations/public-actions-2026-10-20-independent-observation.md)

@@ -119,8 +119,8 @@ test("threat movement and stale observations between reservation and execution p
 test("still profile: an enderman beyond the clearance with no positive flag does not block hello/wave; turns stay strict", () => {
   const ender = (x: number, y = 64, metadata: Record<number, unknown> = {}) => ({ id: 7, name: "enderman", type: "hostile", isValid: true, metadata, position: new Vec3(x, y, 0) });
   for (const [entity, still, reason] of [
-    [ender(16), false, "neutral_near"], [ender(16.01), true, "clear"], [ender(0, 64 + 16), false, "neutral_near"], [ender(12, 64 + 11), true, "clear"],
-    [ender(40, 64, { 17: true }), false, "neutral_agitated"], [ender(40, 64, { 18: true }), false, "neutral_agitated"],
+    [ender(16), false, "enderman_near"], [ender(16.01), true, "clear"], [ender(0, 64 + 16), false, "enderman_near"], [ender(12, 64 + 11), true, "clear"],
+    [ender(40, 64, { 17: true }), false, "enderman_agitated"], [ender(40, 64, { 18: true }), false, "enderman_agitated"],
     [ender(40, 64, { 17: "true" }), true, "clear"], [{ ...ender(40), position: undefined }, false, "missing_position"],
   ] as const) {
     const bot = fixture([entity]);
@@ -133,26 +133,4 @@ test("still profile: an enderman beyond the clearance with no positive flag does
   assert.equal(safePublicThreatState(fixture([mob("witch", 300)]), "still"), false);
   assert.equal(safePublicThreatState(fixture([mob("zombie", 3)]), "still"), false);
   assert.equal(safePublicThreatState(fixture([ender(40), mob("zombie", 3)]), "still"), false);
-});
-
-test("zombified piglins (gaze-independent) are reviewed for all four gestures: refused only when near, unlocated or aggressive", () => {
-  const piglin = (x: number, metadata: Record<number, unknown> = {}) => ({ id: 8, name: "zombified_piglin", type: "hostile", isValid: true, metadata, position: new Vec3(x, 64, 0) });
-  for (const [entity, safe, reason] of [
-    [piglin(40), true, "clear"], [piglin(40, { 15: 0 }), true, "clear"], [piglin(40, { 15: 1 }), true, "clear"],
-    [piglin(16), false, "neutral_near"], [piglin(16.01), true, "clear"],
-    [piglin(40, { 15: 4 }), false, "neutral_agitated"], [piglin(40, { 15: 5 }), false, "neutral_agitated"],
-    [{ ...piglin(40), position: undefined }, false, "missing_position"],
-  ] as const) {
-    for (const profile of ["still", "turn"] as const) {
-      assert.equal(assessPublicThreatState(fixture([entity]), profile).reason, reason, `${profile} ${JSON.stringify(entity.metadata)}`);
-      assert.equal(safePublicThreatState(fixture([entity]), profile), safe);
-    }
-  }
-  // Other piglin kinds are not reviewed and still refuse everything.
-  for (const name of ["piglin", "piglin_brute", "hoglin"]) assert.equal(safePublicThreatState(fixture([mob(name, 200)]), "still"), false, name);
-  // A far piglin does not hide a turn-blocking enderman or a real threat.
-  const ender = { id: 9, name: "enderman", type: "hostile", isValid: true, metadata: {}, position: new Vec3(80, 64, 0) };
-  assert.equal(safePublicThreatState(fixture([piglin(40), ender])), false);
-  assert.equal(safePublicThreatState(fixture([piglin(40), ender]), "still"), true);
-  assert.equal(safePublicThreatState(fixture([piglin(40), mob("zombie", 3)]), "still"), false);
 });
