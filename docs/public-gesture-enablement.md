@@ -480,6 +480,8 @@ Not requested to be run now; each needs an explicit approval naming it:
   A, B and a successful dry run, with each gesture at most once and actions off
   afterward.
 
+**2026-10-30 decision (option 1):** keep the candidate and observer installed with actions off. Measure eligibility read-only with `scripts/gesture-eligibility-sample.py` (24 h at 30 s on Maia; summarize with `--summary`). Retry a supervised window only if eligible moments occur.
+
 Recommended next step needing no new authorization: Stage 0, a longer read-only
 eligibility sample. If eligible windows remain absent, there is no reason to
 request A–C for gestures.
