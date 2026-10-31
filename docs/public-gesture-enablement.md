@@ -2,6 +2,8 @@
 
 Prepared 2026-10-29 under [implementation prompt 05](implementation-prompts/05-public-gesture-validation.md).
 
+**Shelved (2026-10-31):** the owner decided to move on from public gestures. Actions remain disabled (startup default and live). No gesture was ever dispatched in production. The deployed runtime (`0ed2a31`) keeps the admission, feedback and enderman-rule code, all inert while actions are off. The eligibility sampler was stopped. A drafted zombified-piglin rule (`76583cc`) was reverted without being deployed. The observer javaagent stays loaded but disarmed in `minecraft-server` (no records, no socket traffic). Remove it at the next planned Minecraft restart by restoring `start.sh` from `~/.local/share/blockhead-backups/gesture-observer-20261030T035018Z/`, or run `UNHOOK` for a no-restart unhook.
+
 **Rollout update (2026-10-29 20:52 PDT):** after the user approved items A–C, A and B were completed on Maia. The bot runs `5eb20ae`, and the observer is installed with 22/22 hooks; its dry run reported `ready: true`. Actions are still off. Item C, the supervised window, was blocked for the agent by the permission classifier. The user then ran it on 2026-10-30, 14:08–14:18 UTC. It ended `window_expired`: no eligible moment occurred, so **zero requests were sent**. Actions were disabled and verified off. No gesture has been invoked, and acceptance remains unverified. See the [rollout receipt](investigations/public-gestures-2026-10-30-rollout.json).
 
 **Gestures remain disabled. No live gesture effect has been accepted.** This
