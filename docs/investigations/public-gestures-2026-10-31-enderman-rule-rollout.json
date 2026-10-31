@@ -1,0 +1,54 @@
+{
+  "recorded_at": "2026-10-31T21:26Z (14:26 PDT)",
+  "authorization": "User: \"maaia is up approve\" (item D: deploy the hello/wave enderman rule; actions stay off)",
+  "maia_outage": "Maia's previous boot journal ends at 2026-10-31 13:52:55 PDT without shutdown entries; it was up again at 14:22:20. blockhead and minecraft-server restarted on boot (observer loaded from start.sh, 22/22 hooks). Cause not investigated here.",
+  "strict_sample_18h": {
+    "file": "gesture-observer-20261030T035018Z/eligibility-20261030.jsonl",
+    "window": "2026-10-30T19:58:38 to 2026-10-31T13:52:31 PDT (ended by the outage)",
+    "samples": 2148,
+    "errors": 0,
+    "eligible": 0,
+    "blocked": {
+      "threats": 2148,
+      "lease_owner": 1500,
+      "background": 1466,
+      "active_task": 68,
+      "lease_waiters": 34
+    },
+    "threat": "unreviewed_mob:enderman in 2148/2148",
+    "only_threats_blocking": 648
+  },
+  "deploy": {
+    "from": "5eb20ae",
+    "to": "0ed2a31",
+    "maia_checks": "typecheck pass; npm test 1072/1072 in the source checkout",
+    "bot_stop": "Result=success",
+    "sqlite_backup": {
+      "path": "/home/corey/.local/share/blockhead-backups/gesture-enderman-rule-20261031T212441Z/blockhead.db",
+      "integrity": "ok",
+      "sha256": "2266a102bcad1602daacece9148750505c052b1d6ab55c32e777baed95461b5c"
+    },
+    "dependencies": "unchanged",
+    "minecraft": "not restarted; observer untouched",
+    "after": {
+      "connected": true,
+      "health": 20,
+      "NRestarts": 0,
+      "unauthenticated_diagnostics": 401,
+      "public_state": 200,
+      "configuredActions": false,
+      "allowedActions": [],
+      "dispatches": "all zero",
+      "first_still_reading": "blocked: active task, lease, physical, threats (unreviewed_mob: zombified_piglin); strict profile blocked by enderman"
+    }
+  },
+  "sampler": {
+    "file": "/home/corey/.local/share/blockhead-backups/gesture-enderman-rule-20261031T212441Z/eligibility.jsonl",
+    "started": "2026-10-31T21:25:47Z",
+    "interval_s": 30,
+    "hours": 24,
+    "records": "strict and still (hello/wave) admission, still-profile blocking mob",
+    "earlier_partial": "/home/corey/.local/share/blockhead-backups/gesture-enderman-rule-20261031T212441Z/eligibility-pre.jsonl (2 samples before mobStill was added)"
+  },
+  "rollback": "sync source at 5eb20ae into the runtime (deploy-maia rsync rules) and restart blockhead.service; never restore DB/world to undo code"
+}

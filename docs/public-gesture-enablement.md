@@ -455,7 +455,9 @@ persistent availability and its monitoring. Prerequisites:
   or is removed. Without independent observation, persistent gestures remain
   dispatch-only and must be described that way to visitors.
 
-## Enderman rule for hello and wave (2026-10-31 proposal, not deployed)
+## Enderman rule for hello and wave (2026-10-31; deployed 14:26 PDT, actions off)
+
+**Rollout:** approved as item D and deployed to Maia (`0ed2a31`) with one bot restart; Minecraft and the observer were untouched. The full 18-hour strict sample had 0/2,148 eligible: the enderman refused every sample and was the only blocker in 648. A new 24-hour sampler now records hello/wave eligibility. Its first reading found other unreviewed mobs too (a zombified piglin) and an exposed creeper. See the [rollout receipt](investigations/public-gestures-2026-10-31-enderman-rule-rollout.json).
 
 **Why.** The 24-hour sample (first 69 samples) found an enderman loaded in every sample. In 30 % of samples it was the *only* blocker; Bob was otherwise idle and safe. The all-actions refusal makes gestures permanently unavailable in this world.
 
@@ -486,7 +488,7 @@ persistent availability and its monitoring. Prerequisites:
 
 How often hello/wave would be eligible on Maia is unknown until the diagnostics are deployed.
 
-**Approval needed (D):** deploy this runtime change to `blockhead.service`, with one bot restart; actions stay off. Then let the sampler measure `safeStill`. If hello and wave are eligible at a usable rate, run a supervised window with `--actions hello,wave`; turns stay blocked by any loaded enderman.
+**Approval (D, granted and done 2026-10-31):** deploy this runtime change to `blockhead.service`, with one bot restart; actions stay off. Then let the sampler measure `safeStill`. If hello and wave are eligible at a usable rate, run a supervised window with `--actions hello,wave`; turns stay blocked by any loaded enderman.
 
 ## Superseded conclusions
 
