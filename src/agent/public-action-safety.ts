@@ -76,21 +76,35 @@ function finitePosition(value: { x: number; y: number; z: number } | null | unde
  * and that danger exists with or without the gesture.
  */
 export type ThreatProfile = "turn" | "still";
-/** The server's own teleport-toward threshold (squared distance 256): closer, an angry enderman walks in and strikes. */
-export const STILL_ENDERMAN_CLEARANCE = 16;
+/**
+ * Minimum distance to a loaded reviewed neutral mob. For endermen it is the
+ * server's teleport-toward threshold (squared distance 256): closer, an angry
+ * one walks in and strikes. Zombified piglins use the same clearance.
+ */
+export const NEUTRAL_CLEARANCE = 16;
 /** Live registry scan, never the spawn counter or cached dashboard danger. */
 export function safePublicThreatState(bot: Bot, profile: ThreatProfile = "turn"): boolean {
   return assessPublicThreatState(bot, profile).safe;
 }
-export type PublicThreatAssessment = { safe: boolean; reason: "clear" | "missing_state" | "unknown_entity" | "unreviewed_mob" | "missing_position" | "unknown_visibility" | "exposed_threat" | "enderman_near" | "enderman_agitated" | "observation_error"; mob?: string };
+export type PublicThreatAssessment = { safe: boolean; reason: "clear" | "missing_state" | "unknown_entity" | "unreviewed_mob" | "missing_position" | "unknown_visibility" | "exposed_threat" | "neutral_near" | "neutral_agitated" | "observation_error"; mob?: string };
 export function assessPublicThreatState(bot: Bot, profile: ThreatProfile = "turn"): PublicThreatAssessment {
   try { return scanPublicThreatState(bot, profile); } catch { return { safe: false, reason: "observation_error" }; }
 }
-/** 1.21.4 enderman metadata: 17 creepy (has a target), 18 stared_at. Only a positive value is informative. */
-function endermanAgitated(entity: { metadata?: unknown }): boolean {
-  const metadata = entity.metadata as Record<number, unknown> | undefined;
-  return metadata?.[17] === true || metadata?.[18] === true;
-}
+/**
+ * Reviewed neutral mobs: refused when close, unlocated or showing a positive
+ * aggression signal; otherwise a loaded one does not block. Only positive
+ * signals are used: persistent anger is server-only state for both.
+ * - enderman (hello/wave only): 1.21.4 metadata 17 creepy, 18 stared_at. Turns
+ *   move gaze and stay refused for any loaded enderman.
+ * - zombified_piglin (all four): angered only by being hurt, alerts from hurt
+ *   neighbours or existing anger, never by gaze. Bob's combat never targets it
+ *   (not in HOSTILE_MOB_NAMES). Metadata 15 mob_flags bit 0x04 is set while its
+ *   attack goal runs.
+ */
+const REVIEWED_NEUTRALS: Record<string, { profiles: readonly ThreatProfile[]; agitated: (metadata: Record<number, unknown>) => boolean }> = {
+  enderman: { profiles: ["still"], agitated: m => m[17] === true || m[18] === true },
+  zombified_piglin: { profiles: ["still", "turn"], agitated: m => typeof m[15] === "number" && (m[15] & 0x04) !== 0 },
+};
 function scanPublicThreatState(bot: Bot, profile: ThreatProfile): PublicThreatAssessment {
   const self = bot.entity?.position;
   if (!finitePosition(self) || bot.entities == null || typeof bot.blockAt !== "function") return { safe: false, reason: "missing_state" };
@@ -101,10 +115,11 @@ function scanPublicThreatState(bot: Bot, profile: ThreatProfile): PublicThreatAs
     if (typeof mob.health === "number" && Number.isFinite(mob.health) && mob.health <= 0) continue;
     const name = canonicalMobName(entity);
     if (entity.type !== "hostile" && !HOSTILE_MOB_NAMES.has(name)) continue;
-    if (name === "enderman" && profile === "still") {
+    const neutral = REVIEWED_NEUTRALS[name];
+    if (neutral?.profiles.includes(profile)) {
       if (!finitePosition(entity.position)) return { safe: false, reason: "missing_position", mob: name };
-      if (endermanAgitated(entity)) return { safe: false, reason: "enderman_agitated", mob: name };
-      if (Math.hypot(entity.position.x - self.x, entity.position.y - self.y, entity.position.z - self.z) <= STILL_ENDERMAN_CLEARANCE) return { safe: false, reason: "enderman_near", mob: name };
+      if (neutral.agitated((entity.metadata ?? {}) as unknown as Record<number, unknown>)) return { safe: false, reason: "neutral_agitated", mob: name };
+      if (Math.hypot(entity.position.x - self.x, entity.position.y - self.y, entity.position.z - self.z) <= NEUTRAL_CLEARANCE) return { safe: false, reason: "neutral_near", mob: name };
       continue;
     }
     if (!REVIEWED_THREAT_NAMES.has(name)) return { safe: false, reason: "unreviewed_mob", mob: name.slice(0, 64) };

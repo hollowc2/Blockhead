@@ -1,0 +1,148 @@
+{
+  "recorded_at": "2026-10-31",
+  "status": "local candidate, not deployed; needs approval (item E)",
+  "motivation": "First 13 samples after deploying the enderman rule: hello/wave blocked by an unreviewed zombified_piglin in 12 (an exposed creeper in the other).",
+  "review": {
+    "server_1.21.4": "ZombifiedPiglin goals: HurtByTargetGoal with alertOthers, NearestAttackableTargetGoal(Player) restricted to isAngryAt, ResetUniversalAngerTargetGoal, ZombieAttackGoal (sets Mob aggressive flag while attacking). Persistent anger target and time are server-only. No gaze-based acquisition.",
+    "bot": "zombified_piglin is not in HOSTILE_MOB_NAMES, so self-defense and the defense skill never target it; Bob does not provoke it.",
+    "client_signal": "metadata 15 mob_flags bit 0x04 (aggressive), positive only"
+  },
+  "rule": "For all four gestures, a loaded zombified piglin refuses only within 16 blocks (3D, inclusive), without a finite position, or with the aggressive flag. Enderman rule, other unreviewed hostiles and all other gates unchanged. Reason codes renamed neutral_near / neutral_agitated (private diagnostics).",
+  "real_server": {
+    "piglin": {
+      "farAllowed": [
+        "hello",
+        "wave",
+        "look_left",
+        "look_right"
+      ],
+      "nearAllowed": []
+    },
+    "enderman": {
+      "farAllowed": [
+        "hello",
+        "wave"
+      ],
+      "nearAllowed": []
+    },
+    "evaluations": [
+      {
+        "name": "hello",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "wave",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "look_left",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "look_right",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "absent_chat_with_http_success",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "effect_absent"
+        ]
+      },
+      {
+        "name": "off_hand_swing",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "off_hand_swing",
+          "effect_absent"
+        ]
+      },
+      {
+        "name": "prohibited_use_item",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "prohibited_packet"
+        ]
+      },
+      {
+        "name": "wrong_direction",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "wrong_turn"
+        ]
+      },
+      {
+        "name": "extra_turn",
+        "expect": "not_pass",
+        "outcome": "fail",
+        "delivery": "sent",
+        "reasons": [
+          "extra_turn"
+        ]
+      },
+      {
+        "name": "enderman_far_wave",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "enderman_far_hello",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      },
+      {
+        "name": "enderman_far_turn_refused",
+        "expect": "not_pass",
+        "outcome": "unknown",
+        "delivery": "not_sent",
+        "reasons": [
+          "not_dispatched"
+        ]
+      },
+      {
+        "name": "piglin_far_turn",
+        "expect": "pass",
+        "outcome": "pass",
+        "delivery": "sent",
+        "reasons": []
+      }
+    ],
+    "tickIntervalMs": {
+      "count": 1404,
+      "mean": 49.98789173789174,
+      "max": 52
+    },
+    "verifyErrors": false,
+    "verdict": "qualified"
+  },
+  "tests": "npm test 1073/1073; diff check pass",
+  "limitations": [
+    "NoAI piglin: proves the entity/metadata path, not piglin behaviour",
+    "Aggressive-flag refusal is unit-tested only (a NoAI mob never attacks)",
+    "A piglin angered by another player beyond 16 blocks is invisible to the client; the same holds for the enderman rule"
+  ]
+}
