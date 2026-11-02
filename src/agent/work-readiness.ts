@@ -27,10 +27,9 @@ export function workReadiness(bot: Bot): { reason: string; item?: string; quanti
   for (const [suffix, item] of [["_sword", "stone_sword"], ["_pickaxe", "stone_pickaxe"], ["_axe", "stone_axe"]] as const) {
     if (!names.some(name => name.endsWith(suffix))) return { reason: `rearm before discretionary work: ${item}`, item };
   }
-  // With some food carried, replace missing tools before topping up the
-  // reserve. A bread-trip cooldown must not strand a tool-less recovery.
-  if (Number.isFinite(bot.food) && countFoodItems(bot) < WORK_FOOD_RESERVE) {
-    return { reason: "stock carried food before discretionary work", item: "bread", quantity: WORK_FOOD_RESERVE };
-  }
+  // A reserve target is not a survival prerequisite. An equipped bot with
+  // two bread and a growing farm must not retry ensure_item:bread:6 until
+  // the watchdog holds it idle. Empty supplies above remain urgent; regular
+  // food-stockpile maintenance handles the desired surplus.
   return null;
 }

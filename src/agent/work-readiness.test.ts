@@ -44,3 +44,11 @@ test("carried food permits missing-tool recovery before reserve top-up", () => {
   b.inventory.items = (() => [{ name: "stone_sword", count: 1 }, { name: "iron_axe", count: 1 }]) as never;
   equal(workReadiness(b)?.item, "bread", "an empty food supply still comes first");
 });
+
+
+test("an equipped bot with a partial food reserve can do useful work", () => {
+  const b = bot(["stone_sword", "stone_axe", "stone_pickaxe", "bread"]); b.food = 20;
+  equal(workReadiness(b), null);
+  b.inventory.items = (() => [{ name:"stone_sword",count:1 }, { name:"stone_axe",count:1 }, { name:"wooden_pickaxe",count:1 }, { name:"bread",count:2 }]) as never;
+  equal(workReadiness(b), null, "a six-bread target must not block survival-ready work");
+});

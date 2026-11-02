@@ -81,3 +81,27 @@ The movement follow-up waits up to 750 ms for a still-airborne arrival to land
 before judging that specific stance failure; other access failures still fail.
 Surface tree classification now rejects a solid terrain/structure roof above
 a trunk (while allowing the tree's own logs/leaves). Both have regressions.
+
+Fourth installation: `1a05092`, 2026-11-02 03:15:45 UTC, all 1,083 tests
+passed both normally locally and with force-exit in staging; typecheck and diff
+check passed. At 03:26:55 UTC the journal inventory included a wooden pickaxe,
+stone sword, oak logs/planks/sticks and bread; the bot was gathering cobblestone
+for its stone pickaxe. The landing/tree fixes enabled actual tool production,
+not just another bread trip. A drowning death at 03:21:37 occurred during an
+already-running distant hunger search before it recovered home and tools.
+
+Visual stream verification is unavailable: no Browser connection exists in the
+session, and the supplied `IIjZYz4Zolk` YouTube video reports **Private video**
+to an unauthenticated read-only download attempt. No cookies, visibility,
+broadcast settings or stream service were changed. Stream journal frame and
+encoded-write counts continue increasing; actual movement is established by
+bot/server coordinates, tasks and inventory, not a claimed visual inspection.
+
+Observation also exposed an overly strict readiness target: after successfully
+making and eating bread, the bot still failed the six-bread reserve request
+with two carried, triggering the bread watchdog again at 03:37:19. Readiness
+now permits an equipped bot with some edible food to work; an empty carried
+supply still requests six urgently, and existing food stockpile maintenance
+still seeks a surplus. This avoids treating a desired reserve as a mandatory
+prerequisite after real recovery. A regression covers both stone and wooden
+pickaxe kits with partial food; prior empty-food regressions remain intact.
