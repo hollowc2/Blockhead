@@ -1189,12 +1189,9 @@ export class EnsureItemRunner {
 }
 
 /**
- * Deterministic equipment upgrade ladder (spec 10.2): wood -> stone -> iron
- * tools, then a shield and iron helmet, chestplate and boots, put on as made,
- * when the resources are available, no user permission needed. Runs entirely
- * through the ensure machinery so every prerequisite is satisfied
- * deterministically. Returns the items upgraded this pass (empty when the
- * ladder is already at its top or no upgrade is affordable).
+ * Protection before optional tool upgrades: the one-ingot shield and armor
+ * should not wait behind repeated three-ingot pickaxe/axe mining trips.
+ * The ensure machinery supplies required gathering tools along the way.
  */
 export async function runEquipmentUpgrade(
   bot: Bot,
@@ -1202,12 +1199,24 @@ export async function runEquipmentUpgrade(
   options: { signals?: TaskSignals } = {},
 ): Promise<SkillResult<{ upgraded: readonly string[] }>> {
   const upgraded: string[] = [];
+  const stopped = (result: SkillResult<EnsureItemData>): SkillResult<{ upgraded: readonly string[] }> => ({
+    ...result,
+    data: { ...result.data, upgraded: [...upgraded] },
+  });
+  // Equip a carried shield/armor too: an earlier interrupted pass may have
+  // made it without getting as far as putting it on.
+  await equipAllArmor(bot, options.signals?.signal);
+  for (const piece of missingIronKitFor(bot)) {
+    const result = await runner.run(piece.item, 1, { mode: "ensure", signals: options.signals });
+    // Keep the precise blocker or interruption. Continuing here used to
+    // launch another mining trip after a failure, then hide all its causes.
+    if (!result.ok) return stopped(result);
+    upgraded.push(piece.item);
+    await equipAllArmor(bot, options.signals?.signal);
+  }
   const familyNames: readonly ("pickaxe" | "axe")[] = ["pickaxe", "axe"];
   for (const family of familyNames) {
-    const members = TOOL_FAMILIES[family];
-    // The implemented ladder is wood -> stone -> iron (spec 10.2); gold is a
-    // vanity tier and diamond is beyond the initial scope.
-    const ladder = members.slice(0, 3);
+    const ladder = TOOL_FAMILIES[family].slice(0, 3);
     let carriedTier = -1;
     for (let i = 0; i < ladder.length; i++) {
       if (countItem(bot, ladder[i] ?? "") > 0) carriedTier = i;
@@ -1215,25 +1224,10 @@ export async function runEquipmentUpgrade(
     const next = ladder[carriedTier + 1];
     if (next === undefined) continue;
     const result = await runner.run(next, 1, { mode: "ensure", signals: options.signals });
-    if (result.ok) upgraded.push(next);
+    if (!result.ok) return stopped(result);
+    upgraded.push(next);
   }
-  // Then the shield and iron armor kit, one piece at a time in priority
-  // order; the first piece that cannot be made ends the pass (it is the
-  // cheapest left, so the rest would fail on the same shortage).
-  // Each piece goes on as soon as it is made: a shield crafted but still
-  // in the pack when the upgrade was interrupted did not block a single hit
-  // in the cave fight that killed the bot (2026-10-22 10:56).
-  for (const piece of missingIronKitFor(bot)) {
-    const result = await runner.run(piece.item, 1, { mode: "ensure", signals: options.signals });
-    if (!result.ok) break;
-    upgraded.push(piece.item);
-    await equipAllArmor(bot, options.signals?.signal).catch((err) => {
-      if (options.signals?.signal.aborted === true) throw err;
-    });
-  }
-  return upgraded.length > 0
-    ? { ok: true, status: "completed", data: { upgraded } }
-    : { ok: false, status: "failed", errorCode: "NOT_READY", message: "no affordable tool or armor upgrade right now", retryable: false, data: { upgraded: [] } };
+  return { ok: true, status: "completed", data: { upgraded } };
 }
 
 /** One step toward carrying enough planks. */

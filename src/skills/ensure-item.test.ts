@@ -474,3 +474,54 @@ test("a gather result without delivery evidence cannot invent stored ore", async
   await internal.stepGather({ item: "iron_ore", quantity: 4 }, { gathered: 0 });
   assert.equal(internal.stored.raw_iron, 0);
 });
+
+async function equipmentHarness(failAt?: string, interrupted = false) {
+  const { runEquipmentUpgrade } = await import("./ensure-item.js");
+  const { WorldActionExecutor } = await import("../agent/world-actions.js");
+  const calls: string[] = [];
+  const slots: any[] = [];
+  const items = [{ name: "stone_pickaxe", count: 1 }, { name: "stone_axe", count: 1 }];
+  const bot = {
+    inventory: { items: () => items, slots },
+    armorManager: { equipAll: async () => { calls.push("equip"); } },
+  };
+  const runner = { run: async (item: string) => {
+    calls.push(item);
+    if (item === failAt) return { ok: false, status: interrupted ? "interrupted" : "failed", errorCode: "PATH_UNREACHABLE", message: "could not return home: failed", retryable: true, data: { interruptions: 2 } };
+    items.push({ name: item, count: 1 });
+    return { ok: true, status: "completed" };
+  } };
+  const result = await new WorldActionExecutor().run("equipment-test", new AbortController().signal,
+    () => runEquipmentUpgrade(bot as never, runner as never));
+  return { calls, result };
+}
+
+test("equipment pass makes and equips protection before spending iron on optional tools", async () => {
+  const { calls, result } = await equipmentHarness();
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ["equip", "shield", "equip", "iron_chestplate", "equip", "iron_helmet", "equip", "iron_boots", "equip", "iron_pickaxe", "iron_axe"]);
+});
+
+test("equipment pass keeps a failed prerequisite's actual cause and stops further trips", async () => {
+  const { calls, result } = await equipmentHarness("iron_chestplate");
+  assert.deepEqual(calls, ["equip", "shield", "equip", "iron_chestplate"]);
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, "PATH_UNREACHABLE");
+  assert.equal(result.message, "could not return home: failed");
+  assert.equal(result.retryable, true);
+  assert.deepEqual(result.data?.upgraded, ["shield"]);
+});
+
+test("equipment pass preserves interruption rather than starting another prerequisite", async () => {
+  const { calls, result } = await equipmentHarness("shield", true);
+  assert.deepEqual(calls, ["equip", "shield"]);
+  assert.equal(result.status, "interrupted");
+  assert.equal((result.data as any).interruptions, 2);
+});
+
+test("a tool prerequisite failure also ends the equipment pass", async () => {
+  const { calls, result } = await equipmentHarness("iron_pickaxe");
+  assert.equal(result.status, "failed");
+  assert.equal(calls.includes("iron_axe"), false);
+  assert.deepEqual(result.data?.upgraded, ["shield", "iron_chestplate", "iron_helmet", "iron_boots"]);
+});
