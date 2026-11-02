@@ -1214,3 +1214,20 @@ test("deferred re-arm work does not bypass the bread recovery cooldown", async (
     assert.ok(h.queued.includes(rearm));
   } finally { h.manager.stop(); }
 });
+
+test("an unreachable bread return selects local survival recovery once without clearing the cooldown", async () => {
+  const h = newHarness(20, 11);
+  h.crisis = null;
+  h.options.bot.inventory = { items: () => [] } as never;
+  h.bus.emit("task.failed", { task: { id: "bread-home-failure", type: "ensure_item", priority: TaskPriority.MAINTENANCE,
+    source: "background", objective: "food", status: TaskStatus.FAILED, createdAt: new Date().toISOString(),
+    parameters: { item: "bread", quantity: 6 }, lastError: "could not return home: failed" } });
+  try {
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 1);
+    assert.equal(h.enqueued[0]?.type, "go_home");
+    assert.deepEqual(h.enqueued[0]?.parameters, { recoverSupplies: true });
+    await h.manager.tick();
+    assert.equal(h.enqueued.length, 1, "one distinct recovery per failed bread trip");
+  } finally { h.manager.stop(); }
+});

@@ -159,6 +159,7 @@ export class BackgroundManager {
   /** Consecutive failed restores per kind; a success resets it. */
   private readonly failureStreak = new Map<string, number>();
   /** Last block code warn issued per key; one notice per block state entry. */
+  private homeRecoveryAttemptedFor: number | undefined;
   private readonly lastBlockNotice = new Map<string, string>();
 
   constructor(options: BackgroundManagerOptions) {
@@ -432,6 +433,21 @@ export class BackgroundManager {
     // (notably carried food) instead of deadlocking behind queued re-arm work.
     // Owner/system tasks remain authoritative through taskSafeToRun.
     if (scheduler.queued.some((task) => task.priority >= TaskPriority.FOREGROUND && isRunnable(task) && taskSafeToRun(bot, task))) return;
+
+    // A home-dependent bread failure is a route problem, not proof that no
+    // local work is possible. Attempt a distinct recovery once per failed
+    // bread trip; retain its cooldown and every paused equipment checkpoint.
+    const breadFailure = this.lastFailedAt.get("rearm:bread");
+    if (breadFailure !== undefined && this.homeRecoveryAttemptedFor !== breadFailure
+      && /could not return home/.test(this.lastFailReason.get("rearm:bread") ?? "")
+      && workReadiness(bot)?.item === "bread") {
+      this.homeRecoveryAttemptedFor = breadFailure;
+      scheduler.enqueue({ type: "go_home", priority: TaskPriority.MAINTENANCE, source: "background",
+        objective: "Rebuild supplies nearby and find a supported route home.",
+        parameters: { recoverSupplies: true }, workKey: `home-recovery:${breadFailure}` });
+      scheduler.claim();
+      return;
+    }
 
     // Night without owner work: go home and stay there. Background errands
     // far from home at night are how the bot dies and loses its inventory.

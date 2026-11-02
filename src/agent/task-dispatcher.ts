@@ -1,3 +1,4 @@
+import { recoverSuppliesInField } from "../skills/field-craft.js";
 import type { Bot } from "mineflayer";
 import type { Logger } from "pino";
 import type { AgentState } from "./state.js";
@@ -881,6 +882,10 @@ export class TaskDispatcher {
 
   /** "go home": travel to the home column, then let the next task claim the slot. */
   private async runGoHome(task: Task, signals: TaskSignals): Promise<SkillResult> {
+    if (task.parameters.recoverSupplies === true) {
+      await recoverSuppliesInField(this.opts.bot, this.opts.logger, signals.signal);
+      if (!signals.checkpoint()) return { ok: false, status: "interrupted", message: "interrupted during local supply recovery" };
+    }
     const home = this.opts.state.home;
     if (home === null) {
       return { ok: false, status: "failed", message: "no home coordinate configured", retryable: false };

@@ -46,3 +46,15 @@ field crafts and 15 watchdog blocks. This differs from the prompt's older
 window. Counts must be compared by elapsed time, alongside actual recovery.
 
 Deployment and observation results are appended below after verification.
+
+First installation: `a79d85a660b0668a9bc6c1aefbb752672bbb726e`,
+2026-11-02 02:44:36 UTC; staged 1,078 tests passed with `--test-force-exit`.
+Normal local `npm test` also exited successfully with 1,078 passing tests.
+Single CobbleBob disconnect/rejoin and zero automatic restarts confirmed.
+
+Live observation exposed a separate decision deadlock: the durable bread
+cooldown survived deployment, so even a repaired route would not be tried for
+11 minutes. The follow-up selects a distinct `go_home` recovery with local
+supply rebuilding once per failed bread trip, retaining bread's cooldown and
+paused equipment checkpoints. A regression verifies it is not re-enqueued on
+every idle tick; ordinary storage failures keep their existing behavior.
