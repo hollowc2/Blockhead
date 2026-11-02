@@ -197,7 +197,11 @@ export class BackgroundManager {
 
     const onSettled = (): void => this.scheduleKick();
     const onCompleted = ({ task }: { task: Task }): void => {
-      const key = failureKey(task);
+      // The failed prerequisite has now changed: a confirmed recovery home
+      // invalidates a bread *route* failure, but not a storage/food shortage.
+      const recoveredBreadRoute = task.type === "go_home" && task.parameters.recoverSupplies === true
+        && /could not return home/.test(this.lastFailReason.get("rearm:bread") ?? "");
+      const key = recoveredBreadRoute ? "rearm:bread" : failureKey(task);
       if (key !== null) {
         this.failureStreak.delete(key);
         this.lastFailedAt.delete(key);

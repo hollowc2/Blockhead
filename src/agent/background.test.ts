@@ -1231,3 +1231,20 @@ test("an unreachable bread return selects local survival recovery once without c
     assert.equal(h.enqueued.length, 1, "one distinct recovery per failed bread trip");
   } finally { h.manager.stop(); }
 });
+
+for (const reason of ["could not return home: failed", "storage unavailable"]) {
+  test(`a confirmed recovery home releases only a bread route blocker: ${reason}`, async () => {
+    const h = newHarness(20, 11); h.crisis = null;
+    h.options.bot.inventory = { items: () => [] } as never;
+    const failure: Task = { id: "failed-bread", type: "ensure_item", priority: TaskPriority.MAINTENANCE,
+      source: "background", objective: "food", status: TaskStatus.FAILED, createdAt: new Date().toISOString(),
+      parameters: { item: "bread", quantity: 6 }, lastError: reason };
+    h.bus.emit("task.failed", { task: failure });
+    h.bus.emit("task.completed", { task: { ...failure, type: "go_home", parameters: { recoverSupplies: true }, status: TaskStatus.COMPLETED } });
+    try {
+      await h.manager.tick();
+      if (reason.startsWith("could not return home")) assert.deepEqual(h.enqueued.at(-1)?.parameters, { item: "bread", quantity: 6 });
+      else assert.equal(h.enqueued.length, 0, "a home arrival cannot repair missing storage");
+    } finally { h.manager.stop(); }
+  });
+}

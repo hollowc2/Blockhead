@@ -58,3 +58,15 @@ cooldown survived deployment, so even a repaired route would not be tried for
 supply rebuilding once per failed bread trip, retaining bread's cooldown and
 paused equipment checkpoints. A regression verifies it is not re-enqueued on
 every idle tick; ordinary storage failures keep their existing behavior.
+
+Follow-up `978ed2d283805b7fb3d7b2bdb9176971eb7d4071` installed at
+02:48:20 UTC (1,079 staged tests passed). Recovery started at 02:48:52 and
+completed at 02:49:05 at `(23.52,58,-38.5)` beside the home anchor. It got
+around the obstruction without any manual world change. The local scan found
+no qualifying nearby trunk, so its one insufficient-wood warning is expected.
+The bread timer still held after arrival. A second decision follow-up releases
+only that homing failure after a confirmed recovery return; unrelated storage
+failures retain their cooldown (separate positive and negative regressions).
+
+The disposable survival test also verified actual field recovery: punching and
+collecting three logs, placing a table and crafting a wooden pickaxe.
