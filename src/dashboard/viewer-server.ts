@@ -46,6 +46,7 @@ export interface ReadOnlyViewerOptions {
 
 interface Vec { x: number; y: number; z: number }
 type Emit = (event: string, payload?: unknown) => void;
+type SlowDisconnectReason = "bufferedBytes" | "bufferedPackets" | "packetCapacity" | "entityCapacity";
 
 /** Project dropped stacks without sending inventory metadata, NBT or custom names. */
 export function viewerEntityPayload(bot: Bot, payload: unknown): unknown {
@@ -202,6 +203,9 @@ export class ReadOnlyViewerServer {
   private totalSockets = 0;
   private peakBufferedBytes = 0;
   private slowDisconnects = 0;
+  private readonly slowDisconnectReasons: Record<SlowDisconnectReason, number> = {
+    bufferedBytes: 0, bufferedPackets: 0, packetCapacity: 0, entityCapacity: 0,
+  };
 
   constructor(private readonly bot: Bot, private readonly options: ReadOnlyViewerOptions) {}
 
@@ -304,16 +308,75 @@ export class ReadOnlyViewerServer {
       if (dropped > MAX_DROPPED_INBOUND) socket.disconnect(true);
     });
 
+    const dropSlow = (reason: SlowDisconnectReason): void => {
+      if (closed) return;
+      this.slowDisconnects++; this.slowDisconnectReasons[reason]++; socket.disconnect(true);
+    };
+    // All world events can arrive in synchronous bursts. One paced writer
+    // shares the transport budget between geometry, status and live entities.
+    // Queue/transport caps and Engine.IO's heartbeat bound abandoned clients;
+    // a delayed timer during synchronous bot work does not prove a slow client.
+    const pendingPackets: { event: string; payload: unknown; bytes: number }[] = [];
+    const pendingEntities = new Map<number, Record<string, unknown>>();
+    let queuedBytes = 0;
+    let writerTimer: NodeJS.Timeout | undefined;
+    let entityTurn = false;
+    const bufferedBytes = (): number => queuedBytes + socket.conn.writeBuffer.reduce((sum: number, packet: { data?: string | Buffer }) => sum + (typeof packet.data === "string" ? Buffer.byteLength(packet.data) : packet.data?.length ?? 0), 0) + (socket.conn.transport.socket?.bufferedAmount ?? 0);
+    const withinBudget = (extra = 0): boolean => {
+      const buffered = bufferedBytes() + extra;
+      this.peakBufferedBytes = Math.max(this.peakBufferedBytes, buffered);
+      if (buffered > (this.options.maxBufferedBytes ?? 4 * 1024 * 1024)) { dropSlow("bufferedBytes"); return false; }
+      if (socket.conn.writeBuffer.length > 128) { dropSlow("bufferedPackets"); return false; }
+      return true;
+    };
+    const prepare = (event: string, payload: unknown): unknown => isPublic ? this.publicTransform(event, payload) : payload;
+    const flush = (): void => {
+      writerTimer = undefined;
+      if (closed) return;
+      // Leave headroom for Engine.IO's own control packets. Never fill its
+      // entire packet allowance before the event loop can flush the socket.
+      const batchSize = Math.min(32, Math.max(0, 96 - socket.conn.writeBuffer.length));
+      try {
+        for (let count = 0; count < batchSize && !closed && (pendingPackets.length || pendingEntities.size); count++) {
+          let event: string, payload: unknown;
+          if (pendingPackets.length && (!entityTurn || !pendingEntities.size)) {
+            const packet = pendingPackets.shift()!;
+            queuedBytes -= packet.bytes;
+            event = packet.event; payload = packet.payload;
+          } else {
+            const [id, data] = pendingEntities.entries().next().value!;
+            pendingEntities.delete(id);
+            event = "entity"; payload = prepare(event, data);
+          }
+          entityTurn = !entityTurn;
+          if (!withinBudget()) return;
+          if (payload !== undefined) socket.emit(event, payload);
+        }
+      } catch { socket.disconnect(true); }
+      if (!closed && (pendingPackets.length || pendingEntities.size)) writerTimer = setTimeout(flush, 4);
+    };
     const emit: Emit = (event, payload) => {
       if (closed) return;
-      // Include Engine.IO's pending packets plus the actual WebSocket transport buffer.
-      const buffered = socket.conn.writeBuffer.reduce((sum: number, packet: { data?: string | Buffer }) => sum + (typeof packet.data === "string" ? Buffer.byteLength(packet.data) : packet.data?.length ?? 0), 0) + (socket.conn.transport.socket?.bufferedAmount ?? 0);
-      this.peakBufferedBytes = Math.max(this.peakBufferedBytes, buffered);
-      if (buffered > (this.options.maxBufferedBytes ?? 4 * 1024 * 1024) || socket.conn.writeBuffer.length > 128) { this.slowDisconnects++; socket.disconnect(true); return; }
       try {
-        const projected = event === "entity" ? viewerEntityPayload(bot, payload) : payload;
-        const safe = isPublic ? this.publicTransform(event, projected) : projected;
-        if (safe !== undefined) socket.emit(event, safe);
+        if (event === "entity") {
+          const data = viewerEntityPayload(bot, payload) as Record<string, unknown>;
+          const id = data.id as number;
+          const previous = pendingEntities.get(id);
+          if (!previous && pendingEntities.size >= 2048) { dropSlow("entityCapacity"); return; }
+          // Preserve spawn metadata through movement; removal supersedes it.
+          if (previous?.delete && !data.delete && !data.name) return;
+          const next = data.delete || previous?.delete ? data : { ...previous, ...data };
+          if (next.pos) next.pos = { ...next.pos as Vec };
+          pendingEntities.set(id, next);
+        } else {
+          const safe = prepare(event, payload);
+          if (safe === undefined) return;
+          if (pendingPackets.length >= 2048) { dropSlow("packetCapacity"); return; }
+          const bytes = Buffer.byteLength(JSON.stringify([event, safe])) + 2;
+          if (!withinBudget(bytes)) return;
+          pendingPackets.push({ event, payload: safe, bytes }); queuedBytes += bytes;
+        }
+        if (!writerTimer) writerTimer = setTimeout(flush, 4);
       } catch { socket.disconnect(true); }
     };
     // WorldView subscribes to its emitter for `mouseClick`; this emitter has
@@ -394,6 +457,7 @@ export class ReadOnlyViewerServer {
     let worldListening = false;
     socket.on("disconnect", () => {
       closed = true;
+      clearTimeout(writerTimer); pendingEntities.clear(); pendingPackets.length = 0; queuedBytes = 0;
       abortChunks.abort();
       this.chunks.cancel(socket);
       seat.release();
@@ -412,7 +476,6 @@ export class ReadOnlyViewerServer {
     void worldView.init(bot.entity.position).catch(() => socket.disconnect(true));
     botPosition();
     const sendInitialEntities = async (): Promise<void> => {
-      const deadline = Date.now() + 5000;
       let count = 0;
       for (const id in bot.entities) {
         if (closed) return;
@@ -426,15 +489,14 @@ export class ReadOnlyViewerServer {
         do {
           await new Promise(resolve => setTimeout(resolve, 4));
           if (closed) return;
-          if (Date.now() >= deadline) { this.slowDisconnects++; socket.disconnect(true); return; }
-        } while (socket.conn.writeBuffer.length > 0);
+        } while (socket.conn.writeBuffer.length > 96 || pendingPackets.length > 96 || pendingEntities.size > 96);
       }
     };
     void sendInitialEntities().catch(() => socket.disconnect(true));
   }
 
-  resources(): { chunks: ReturnType<ChunkQueue["stats"]>; peakBufferedBytes: number; slowDisconnects: number } {
-    return { chunks: this.chunks.stats(), peakBufferedBytes: this.peakBufferedBytes, slowDisconnects: this.slowDisconnects };
+  resources(): { chunks: ReturnType<ChunkQueue["stats"]>; peakBufferedBytes: number; slowDisconnects: number; slowDisconnectReasons: Record<SlowDisconnectReason, number> } {
+    return { chunks: this.chunks.stats(), peakBufferedBytes: this.peakBufferedBytes, slowDisconnects: this.slowDisconnects, slowDisconnectReasons: { ...this.slowDisconnectReasons } };
   }
 
   diagnostics(): { pending: number; total: number; public: number } {

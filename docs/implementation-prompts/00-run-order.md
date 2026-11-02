@@ -44,3 +44,14 @@ self-contained and can also be invoked independently.
 
 These two are independent and can run in either order. Stream improvements for
 later are tracked in [`docs/stream-backlog.md`](../stream-backlog.md).
+
+## Stream readiness before a public launch (2026-11-02)
+
+8. [08-stream-resilience-and-holding-screen.md](08-stream-resilience-and-holding-screen.md):
+   qualify the private stream, implement safe recovery and a branded holding
+   graphic, specify independent coverage for encoder/host/internet outages,
+   and collect a 24-hour private readiness record.
+
+Run this only when separately invoked. It does not require publishing prompt 07's
+landing page first. Writing the prompt does not implement it or authorize live
+changes, failure injection, off-host resources, or a visibility change.

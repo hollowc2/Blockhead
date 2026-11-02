@@ -330,6 +330,124 @@ for (const transport of ["websocket", "polling"]) test(`a populated world delive
   }
 });
 
+for (const transport of ["websocket", "polling"]) test(`healthy ${transport} viewers survive a burst of live entity updates`, { timeout: 8000 }, async () => {
+  const bot = fakeBot(), port = await freePort();
+  for (let id = 1; id <= 600; id++) bot.entities[id] = { id, name: "cow", position: new Vec3(100, 64, 200), width: 1, height: 1 } as never;
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = connect(`http://127.0.0.1:${port}`, { transports: [transport], reconnection: false, extraHeaders: { "x-blockhead-public": "1" } });
+  const entities = new Map<number, { id: number; name?: string; pos?: { x: number }; delete?: boolean }>();
+  socket.on("entity", payload => entities.set(payload.id, payload));
+  const receiveAll = (): Promise<void> => new Promise((resolve, reject) => {
+    const check = (): void => { if (entities.size === 600) { cleanup(); resolve(); } };
+    const fail = (reason: string): void => { cleanup(); reject(new Error(`live entity burst disconnected: ${reason}`)); };
+    const cleanup = (): void => { socket.off("entity", check); socket.off("disconnect", fail); };
+    socket.on("entity", check); socket.once("disconnect", fail); check();
+  });
+  try {
+    await receiveAll();
+    const originalX = entities.get(2)!.pos!.x;
+    entities.clear();
+    const updated = receiveAll();
+    // A Minecraft packet can update hundreds of entities before network I/O runs.
+    for (let pass = 1; pass <= 2; pass++) for (const entity of Object.values(bot.entities)) {
+      entity.position = new Vec3(100 + pass, 64, 200);
+      if (pass === 1) bot.emit("entitySpawn", entity);
+      bot.emit("entityMoved", entity);
+    }
+    bot.emit("entityGone", bot.entities[1]!);
+    await updated;
+    assert.equal(entities.get(1)!.delete, true, "a removal supersedes queued movement");
+    assert.equal(entities.get(2)!.pos!.x, originalX + 2, "the latest position reaches the viewer");
+    assert.equal(entities.get(2)!.name, "cow", "movement retains pending spawn metadata");
+    assert.equal(socket.connected, true);
+    assert.equal(server.resources().slowDisconnects, 0);
+  } finally {
+    socket.close(); server.close();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(bot.listenerCount("entityMoved"), 0);
+  }
+});
+
+test("continuous entity traffic can stay busy without being mistaken for a stalled viewer", { timeout: 12_000 }, async () => {
+  const bot = fakeBot(), port = await freePort();
+  for (let id = 1; id <= 600; id++) bot.entities[id] = { id, name: "cow", position: new Vec3(100, 64, 200), width: 1, height: 1 } as never;
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = client(port, true);
+  let updates: ReturnType<typeof setInterval> | undefined;
+  let finish: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await next(socket, "loadChunk");
+    let delivered = 0;
+    socket.on("entity", () => delivered++);
+    const remainsConnected = new Promise<void>((resolve, reject) => {
+      socket.once("disconnect", reason => reject(new Error(`busy viewer disconnected: ${reason}`)));
+      finish = setTimeout(resolve, 5500);
+    });
+    // Updates arrive faster than the paced sender, but coalescing keeps the
+    // queue bounded and the receiver continuously makes forward progress.
+    updates = setInterval(() => {
+      for (const entity of Object.values(bot.entities)) bot.emit("entityMoved", entity);
+    }, 20);
+    await remainsConnected;
+    assert(delivered > 600, "the viewer kept receiving live updates");
+    assert.equal(server.resources().slowDisconnects, 0);
+  } finally {
+    clearInterval(updates); clearTimeout(finish);
+    socket.close(); server.close();
+  }
+});
+
+test("a delayed server tick does not disconnect a healthy viewer with bounded queued updates", { timeout: 4000 }, async t => {
+  const bot = fakeBot(), port = await freePort();
+  bot.entities[1] = { id: 1, name: "cow", position: new Vec3(100, 64, 200), width: 1, height: 1 } as never;
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = client(port, true);
+  try {
+    await Promise.all([next(socket, "loadChunk"), next(socket, "entity")]);
+    const now = Date.now;
+    let delay = 0;
+    t.mock.method(Date, "now", () => now() + delay);
+    const update = new Promise<void>((resolve, reject) => {
+      socket.once("entity", () => resolve());
+      socket.once("disconnect", reason => reject(new Error(`delayed server tick disconnected viewer: ${reason}`)));
+    });
+    bot.emit("entityMoved", bot.entities[1]!);
+    // Model the timer running late after the bot performs synchronous work,
+    // without making the test burn six seconds of CPU or stop network I/O.
+    delay = 6000;
+    await update;
+    assert.equal(socket.connected, true);
+    assert.equal(server.resources().slowDisconnects, 0);
+  } finally { socket.close(); server.close(); }
+});
+
+for (const transport of ["websocket", "polling"]) test(`healthy ${transport} viewers survive mixed block and position bursts`, { timeout: 8000 }, async () => {
+  const bot = fakeBot(), port = await freePort();
+  const server = new ReadOnlyViewerServer(bot, { host: "127.0.0.1", port, viewDistance: 1, maxPublicConnections: 2, maxConnections: 4 });
+  await server.start();
+  const socket = connect(`http://127.0.0.1:${port}`, { transports: [transport], reconnection: false, extraHeaders: { "x-blockhead-public": "1" } });
+  try {
+    await Promise.all([next(socket, "loadChunk"), next(socket, "position")]);
+    let blocks = 0, positions = 0;
+    const received = new Promise<void>((resolve, reject) => {
+      const check = (): void => { if (blocks === 600 && positions === 600) resolve(); };
+      socket.on("blockUpdate", () => { blocks++; check(); });
+      socket.on("position", () => { positions++; check(); });
+      socket.once("disconnect", reason => reject(new Error(`mixed burst disconnected: ${reason}`)));
+    });
+    for (let i = 0; i < 600; i++) {
+      bot.emit("move");
+      bot.emit("blockUpdate", { position: new Vec3(100, 64, 200) }, { stateId: i + 1, type: 1, metadata: 0 });
+    }
+    await received;
+    assert.equal(socket.connected, true);
+    assert.equal(server.resources().slowDisconnects, 0);
+  } finally { socket.close(); server.close(); }
+});
+
 test("public wire chunks are cached geometry; private chunks retain NBT and world updates invalidate the cache", async () => {
   const bot = fakeBot(), port = await freePort();
   const Chunk = createRequire(import.meta.url)("prismarine-chunk")("1.20.1");
