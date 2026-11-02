@@ -32,3 +32,15 @@ them or authorize new live changes.
 Execute these follow-ups sequentially when both are requested: they share public
 interaction code, configuration and deployment documentation. Each prompt is
 self-contained and can also be invoked independently.
+
+## Follow-ups after going private and streaming (2026-11-01)
+
+6. [06-cobblebob-return-home-and-equipment.md](06-cobblebob-return-home-and-equipment.md):
+   fix the "could not return home" loop at its root, commit the in-progress
+   equipment repair, deploy, and watch him recover on the stream.
+7. [07-stream-landing-page.md](07-stream-landing-page.md): a static
+   `billybitcoin.cloud/cobblebob` page embedding the YouTube stream, with no
+   exposure of the home network.
+
+These two are independent and can run in either order. Stream improvements for
+later are tracked in [`docs/stream-backlog.md`](../stream-backlog.md).
