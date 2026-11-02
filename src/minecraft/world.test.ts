@@ -247,3 +247,10 @@ test("collector plugin is not invoked for a stale natural target", async () => {
   assert.equal(collections,0);
   assert.match(errors[0]!,/expected dirt, observed chest/);
 });
+
+test("wood recovery rejects an underground log even with natural footing", () => {
+  const roofed = flatWorld({ "5,65,0":"oak_log", "5,66,0":"oak_log", "5,110,0":"stone" });
+  assert.equal(isTrunkBase(roofed,new Vec3(5,65,0)),false);
+  const canopy = flatWorld({ "5,65,0":"oak_log", "5,66,0":"oak_log", "5,70,0":"oak_leaves" });
+  assert.equal(isTrunkBase(canopy,new Vec3(5,65,0)),true);
+});

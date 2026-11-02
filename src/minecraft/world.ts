@@ -106,6 +106,14 @@ export function isTrunkBase(bot: Bot, position: Vec3): boolean {
     if (block.boundingBox !== "empty" && !/_log$/.test(name)) return false;
   }
   if (groundY === null) return false;
+  // A log on cave stone is not a surface tree. It sent tool-less wood
+  // recovery 50 blocks underground into guarded shafts. Ignore the tree's
+  // own canopy, but reject an overlying terrain/structure roof.
+  for (let y = position.y + 1; y <= Math.min(319, position.y + 64); y++) {
+    const above = bot.blockAt(new Vec3(position.x, y, position.z));
+    if (above === null) return false;
+    if (above.boundingBox === "block" && !/_log$|_leaves$/.test(above.name)) return false;
+  }
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
     const floor = bot.blockAt(new Vec3(position.x + dx, groundY, position.z + dz));
     const feet = bot.blockAt(new Vec3(position.x + dx, groundY + 1, position.z + dz));

@@ -70,3 +70,14 @@ failures retain their cooldown (separate positive and negative regressions).
 
 The disposable survival test also verified actual field recovery: punching and
 collecting three logs, placing a table and crafting a wooden pickaxe.
+
+Third installation: `47996fcc08adb248655cc2be6926668770652034`,
+02:53:52 UTC, 1,081 tests passed locally and in staging. By 02:54:45 the bot
+carried six bread and resumed tool restocking. Subsequent observation found a
+new blocker rather than a stable recovery: nearby log approaches were rejected
+with `standing support does not match feet height`, then tool gathering tried
+logs at y=13 and entered dangerous caves. There were two subsequent deaths.
+The movement follow-up waits up to 750 ms for a still-airborne arrival to land
+before judging that specific stance failure; other access failures still fail.
+Surface tree classification now rejects a solid terrain/structure roof above
+a trunk (while allowing the tree's own logs/leaves). Both have regressions.

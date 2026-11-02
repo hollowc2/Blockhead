@@ -2150,6 +2150,8 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
       if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
       if (options.dimension && String(bot.game.dimension).replace(/^minecraft:/, "") !== options.dimension.replace(/^minecraft:/, "")) return { status: "wrong_dimension" };
       if (result.status === "arrived" && options.arrivalCheck) {
+        await settleArrivalStance(bot, options);
+        if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
         const blocker = options.arrivalCheck();
         return blocker === null ? result : { status: "failed", error: `arrival precondition: ${blocker}` };
       }
@@ -2257,6 +2259,8 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
       return result;
     }
     if (options.dimension && String(bot.game.dimension).replace(/^minecraft:/, "") !== options.dimension.replace(/^minecraft:/, "")) return { status: "wrong_dimension" };
+    await settleArrivalStance(bot, options);
+    if (signal.aborted || options.shouldAbort?.() === true) return { status: "aborted" };
     const after = bot.entity;
     if (!after) return { status: "not_ready" };
     const previousDistance = distance;
@@ -2287,6 +2291,16 @@ async function travelAndWaitImpl(bot: Bot, location: Location, options: TravelWa
     }
   }
   return { status: "arrived" };
+}
+
+/** GoalNear can settle while still falling/jumping inside the destination cell. */
+async function settleArrivalStance(bot: Bot, options: TravelWaitOptions): Promise<void> {
+  const deadline = Date.now() + 750;
+  while (options.arrivalCheck?.() === "standing support does not match feet height"
+    && bot.entity?.onGround === false && Date.now() < deadline) {
+    if (options.signal?.aborted || options.shouldAbort?.() === true) return;
+    await new Promise<void>(resolve => setTimeout(resolve, 25));
+  }
 }
 
 /** Final boundary applies to every transport branch, including creative and fallbacks. */

@@ -1059,3 +1059,18 @@ test("a failed homing attempt runs bounded local recovery once, preserving its f
     assert.equal(recoveries, 1, "cooldown prevents repeated supply work on the same bot");
   } finally { setHomingRecovery(null); }
 });
+
+test("a log approach waits for landing before judging its digging stance", async () => {
+  const h = closedDoorBot();
+  (h.bot.entity as any).onGround = true;
+  h.bot.pathfinder.goto = async () => {
+    h.bot.entity.position.set(5.5,64.42,0.5);
+    (h.bot.entity as any).onGround = false;
+    setTimeout(() => { h.bot.entity.position.y = 64; (h.bot.entity as any).onGround = true; }, 50);
+  };
+  const signal = new AbortController().signal;
+  const result = await new WorldActionExecutor().run("landing-log", signal, () => travelAndWait(h.bot as never,
+    { x:5,y:64,z:0 }, { signal, range:0, arrivalCheck: () => h.bot.entity.position.x < 5 ? "target outside actual eye reach" : (h.bot.entity as any).onGround ? null : "standing support does not match feet height" }));
+  assert.equal(result.status, "arrived");
+  assert.equal(h.bot.entity.position.y, 64);
+});
