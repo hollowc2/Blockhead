@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vec3 } from "vec3";
 import { withWorldActionLease } from "../agent/world-actions.js";
-import { collectBlocks, dominantNearbyLog, findBlocksNearRefined, hasAirNeighbor, isReachableFromGround, isTrunkBase } from "./world.js";
+import { pickUpDropsNear, collectBlocks, dominantNearbyLog, findBlocksNearRefined, hasAirNeighbor, isReachableFromGround, isTrunkBase } from "./world.js";
 
 test("refined block search applies exposure before the candidate cap", () => {
   let options: Record<string, unknown> | undefined;
@@ -253,4 +253,26 @@ test("wood recovery rejects an underground log even with natural footing", () =>
   assert.equal(isTrunkBase(roofed,new Vec3(5,65,0)),false);
   const canopy = flatWorld({ "5,65,0":"oak_log", "5,66,0":"oak_log", "5,70,0":"oak_leaves" });
   assert.equal(isTrunkBase(canopy,new Vec3(5,65,0)),true);
+});
+
+
+test("crop drops sharing an unreachable cell do not repeat the failed pickup route", async () => {
+  const { default: minecraftData } = await import("minecraft-data");
+  let trips = 0;
+  const bot: any = {
+    registry:minecraftData("1.21.4"),game:{dimension:"overworld"},collectBlock:{},
+    entity:{position:new Vec3(0.5,64,0.5)},inventory:{items:()=>[],slots:[]},
+    entities:{ 1:{id:1,name:"item",position:new Vec3(3.2,64,0.2)}, 2:{id:2,name:"item",position:new Vec3(3.8,64,0.8)} },
+    blockAt:(p:Vec3)=>({position:p.floored(),name:p.y<64?"stone":"air",boundingBox:p.y<64?"block":"empty"}),
+    findBlocks:()=>[],pathfinder:{setMovements(){},stop(){},setGoal(){},goto:async()=>{trips++;throw Error("NoPath");}},
+  };
+  const signal=new AbortController().signal;
+  await withWorldActionLease({owner:"drops-backoff",signal,acknowledged:Promise.resolve()},async()=>{
+    await pickUpDropsNear(bot,new Vec3(3,64,0),signal);
+    await pickUpDropsNear(bot,new Vec3(3,64,0),signal);
+    assert.equal(trips,1,"one failed route for the stable pile, across harvests");
+    bot.entities[1].position=new Vec3(4.2,64,0.2);
+    await pickUpDropsNear(bot,new Vec3(4,64,0),signal);
+    assert.equal(trips,2,"a moved drop in a different cell gets a fresh route");
+  });
 });

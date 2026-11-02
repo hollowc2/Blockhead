@@ -37,3 +37,10 @@ The previously uncommitted source and regression tests were reviewed and committ
 separately as `fix: prioritize protection and preserve equipment prerequisite failures`.
 On 2026-11-01 all 37 ensure-item tests passed again. Live homing recovery is
 tracked in `docs/cobblebob-return-home-2026-11-01.md`.
+
+Commit confirmed: `acfe74f`. Integrated and deployed with homing release
+`4983c8c`; the combined suite passes 1,085 tests. Live observation verified
+that tool restocking resumed and the protection-first task attempted its shield
+prerequisite. Shield/armor production remains limited by iron acquisition; the
+precise missing-iron failure is preserved rather than replaced by a generic
+affordability error. See the return-home receipt for the full observation.

@@ -329,7 +329,11 @@ function withinDirectReach(bot: Bot, position: Vec3): boolean {
 }
 
 /** Walk over the item drops a dig left near `position` (best effort, bounded). */
-async function pickUpDropsNear(bot: Bot, position: Vec3, signal?: AbortSignal): Promise<void> {
+const failedDropCells = new WeakMap<Bot, Map<string, number>>();
+// A stable, unreachable pile will normally despawn in five minutes.
+const DROP_RETRY_MS = 5 * 60_000;
+
+export async function pickUpDropsNear(bot: Bot, position: Vec3, signal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 300));
   const drops = Object.values(bot.entities)
     .filter((entity) => isDroppedItemEntity(entity) && entity.position.distanceTo(position) <= 4)
@@ -337,7 +341,22 @@ async function pickUpDropsNear(bot: Bot, position: Vec3, signal?: AbortSignal): 
   for (const drop of drops) {
     throwIfAborted(signal);
     if (bot.entities[drop.id] === undefined) continue;
-    await travelAndWait(bot, drop.position, { range: 1, timeoutMs: 4_000, signal });
+    let failed = failedDropCells.get(bot);
+    if (failed === undefined) { failed = new Map(); failedDropCells.set(bot, failed); }
+    const now = Date.now();
+    for (const [key, until] of failed) if (until <= now) failed.delete(key);
+    // Harvesting each new crop used to retry the same unreachable pile,
+    // causing a reset every four seconds for minutes. Share the backoff by
+    // cell so different item entities in that pile do not repeat the route.
+    const cell = drop.position.floored().toString();
+    if ((failed.get(cell) ?? 0) > now) continue;
+    const walked = await travelAndWait(bot, drop.position, { range: 1, timeoutMs: 4_000, signal });
+    if (walked.status === "aborted" || walked.status === "not_ready" || walked.status === "wrong_dimension") return;
+    if (walked.status !== "arrived" && walked.status !== "already_there") {
+      failed.set(cell, Date.now() + DROP_RETRY_MS);
+      logger.info({ cell, status: walked.status, retryAfterMs: DROP_RETRY_MS }, "unreachable item pile deferred");
+      if (failed.size > 128) failed.delete(failed.keys().next().value!);
+    }
   }
 }
 

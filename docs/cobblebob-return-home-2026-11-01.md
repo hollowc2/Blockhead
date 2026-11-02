@@ -1,115 +1,105 @@
-# Return-home repair — 2026-11-01
+# CobbleBob return-home and equipment repair — 2026-11-01
 
-Equipment repair committed separately as `acfe74f`.
+Deployed to Maia's isolated runtime; only `blockhead.service` was restarted.
+Equipment changes were committed separately as `acfe74f`. Final code release:
+`4983c8cc81da477c6d7008ae78e488ceaa93bd5b` (2026-11-02 04:05:53 UTC).
 
-## Evidence and implementation
+## Outcome and root causes
 
-Server `data get entity CobbleBob` and the existing viewer's read-only chunk
-stream showed `(21.5,68,2.5)`, overworld, south of a tall birch-plank column,
-43 horizontal blocks from home `(22,59,-40)`. Inventory: 31 wheat, 142 seeds,
-7 dirt and 2 slime balls; no tools, armor or edible food. Last logged death:
-2026-11-01 13:54:21 PST, fell from a high place. This was open terrain beside
-a protected structure, not a sealed stone cave. A route around the structure
-and down to home is possible; repeated direct walking into it cannot work.
+The server initially placed him at `(21.5,68,2.5)` in the overworld, 43 blocks
+south of home `(22,59,-40)`, beside a tall birch-plank obstruction. Inventory:
+31 wheat, 142 seeds, seven dirt and two slime balls; no edible food or gear.
+This was open terrain, not a sealed cave. A foot route existed around the wall.
 
-The upstream diagonal planner accepts a diagonal when either cardinal side
-is clear, but steering directly to the diagonal centre clips the other solid
-corner. The live repeated first target was `(20,68,1)`. Shared movements now
-require both sides clear, taking a cardinal step around walls first. A
-regression fails against the original code (one unsafe neighbor instead of
-zero) and passes with the repair. Natural stone can already be broken by hand;
-this repair preserves that escape option rather than requiring harvest drops.
+- The upstream planner admitted a diagonal clipping the solid wall corner.
+  Shared movements now require cardinal steps around solid corners. Blind
+  walking yields after bounded unsuccessful clearing instead of hammering a
+  protected structure; it retains safe natural-terrain digging by hand.
+- Failed homing now triggers bounded nearby wood/tool recovery, once per
+  failed bread trip. A confirmed return releases its bread *route* cooldown;
+  unrelated storage failures retain their backoff. Carried food permits an
+  equipped bot to work without treating the six-bread reserve as mandatory.
+- Log approaches could settle while airborne and then fail the digging stance
+  check. Movement waits briefly for landing, and surface-tree selection rejects
+  trunks beneath a solid terrain/structure roof rather than entering deep caves.
+- After a distant harvest, the farm searched only near the bot for a crafting
+  table and tried to replace it without wood. It now also searches the home
+  anchor and walks back to the existing station before baking.
 
-Blind walking now uses immediate facing and yields after 12 unsuccessful
-clearance attempts instead of continuing for 241 ticks against protected
-walls. Failed homing calls a throttled local survival recovery: approach a
-supported visible trunk nearby, punch up to three logs, craft a field pickaxe,
-and bake carried wheat at a reachable table. It never calls ensure-item or
-homing recursively, and preserves the original return failure. Carried food
-then lets the existing readiness gate select missing tools rather than bread.
-No home coordinate replacement or live world console workaround is used.
+First successful return: 02:49:05 UTC, `(23.52,58,-38.5)`. Subsequent observation
+found additional starvation cycles, which led to the landing, readiness and
+station fixes above. Following the final fix, he baked his wheat, recovered
+from one health to 20, restocked tools, and completed the old held bread task
+at **04:20:04 UTC**, carrying seven bread with no active watchdog blocks.
+Both stone-tool restocking and the protection-first equipment task ran live.
 
-Disposable server: loopback 25599, vanilla 1.21.4, survival, empty inventory,
-9-block height difference, birch obstruction and stone plateau. Shared homing
-reached `(22.31,59,-37.42)` by walking and hand-digging, without grants. Repro:
+Final uninterrupted observation: **2026-11-02T04:06:46.009796+00:00 through 2026-11-02T04:36:46.569890+00:00** (30.0 minutes). 0 deaths and 0 new bread watchdog blocks. Final health/hunger: 20/17; 11 bread, stone pickaxe, stone sword and wooden axe carried. One connected bot session and zero automatic service restarts were confirmed. Work continued around the home farms.
+
+## Validation and warnings
+
+Disposable vanilla 1.21.4 survival server, loopback 25599: empty-inventory
+return over a nine-block height difference, stone barrier and birch obstruction;
+field recovery punched/collected logs, placed a table and made a pickaxe. The
+unsafe-corner regression fails against the original movement code. Repro:
 `BLOCKHEAD_DISPOSABLE_TEST=1 BLOCKHEAD_SMOKE_PORT=25599
 node_modules/.bin/tsx scripts/return-home-smoke.ts` (operator-enabled disposable
-server only). Local initial setup runs lacking operator access were invalid
-and excluded; the script now asserts its initial position and empty inventory.
+server only). The disposable server was stopped after testing.
 
-## Before and after
+`npm run typecheck`, normal `npm test` (**1,085 passed**, exited normally), and
+`git diff --check` passed. Staging also passed 1,085 tests using
+`tsx --test --test-force-exit src/**/*.test.ts`; force-exit use is recorded here.
+Nine deployed file hashes match committed source.
 
-Pre-repair six-hour journal captured in `/tmp/cobblebob-before-journal.jsonl`:
-111 no-diggable stalls, 76 pathfinder resets, 66 obstacle clears, 29 travel
-fallbacks, 23 task exceptions, 22 nudges, 17 perch rescues, 18 insufficient-wood
-field crafts and 15 watchdog blocks. This differs from the prompt's older
-window. Counts must be compared by elapsed time, alongside actual recovery.
+Pre-repair six-hour capture versus the final 30.0-minute observation (counts; hourly rates in parentheses):
 
-Deployment and observation results are appended below after verification.
+- No-diggable blind-walk stalls: 111 → 0 (18.5/h → 0.0/h).
+- Pathfinder resets: 76 → 31 (12.7/h → 62.0/h).
+- Obstacle clears: 66 → 20 (11.0/h → 40.0/h).
+- Travel fallbacks: 29 → 5 (4.8/h → 10.0/h).
+- Task exceptions: 23 → 1 (3.8/h → 2.0/h).
+- Stuck nudges: 22 → 5 (3.7/h → 10.0/h).
+- Perch rescues: 17 → 2 (2.8/h → 4.0/h).
+- Insufficient-wood field crafts: 18 → 0 (3.0/h → 0.0/h).
+- Watchdog blocks, all actions: 15 → 0 (2.5/h → 0.0/h).
 
-First installation: `a79d85a660b0668a9bc6c1aefbb752672bbb726e`,
-2026-11-02 02:44:36 UTC; staged 1,078 tests passed with `--test-force-exit`.
-Normal local `npm test` also exited successfully with 1,078 passing tests.
-Single CobbleBob disconnect/rejoin and zero automatic restarts confirmed.
+These are different-length windows, so raw counts alone are not improvement evidence. Blind-walk stalls, insufficient-wood field-craft warnings and new bread watchdog blocks were zero in this window. The remaining task exception was an AbortError preemption. **The overall warning-reduction target was not met:** the selected warnings totalled 64 in 30 minutes (128/h), versus 477 in six hours (79.5/h). Route reset, obstacle-clearing and fallback rates increased during active work, despite successful food/tool recovery. These remain follow-up movement work.
 
-Live observation exposed a separate decision deadlock: the durable bread
-cooldown survived deployment, so even a repaired route would not be tried for
-11 minutes. The follow-up selects a distinct `go_home` recovery with local
-supply rebuilding once per failed bread trip, retaining bread's cooldown and
-paused equipment checkpoints. A regression verifies it is not re-enqueued on
-every idle tick; ordinary storage failures keep their existing behavior.
+## Deployment, rollback and remaining limits
 
-Follow-up `978ed2d283805b7fb3d7b2bdb9176971eb7d4071` installed at
-02:48:20 UTC (1,079 staged tests passed). Recovery started at 02:48:52 and
-completed at 02:49:05 at `(23.52,58,-38.5)` beside the home anchor. It got
-around the obstruction without any manual world change. The local scan found
-no qualifying nearby trunk, so its one insufficient-wood warning is expected.
-The bread timer still held after arrival. A second decision follow-up releases
-only that homing failure after a confirmed recovery return; unrelated storage
-failures retain their cooldown (separate positive and negative regressions).
+Source repair commits: `acfe74f` (equipment), `a79d85a` (movement/recovery),
+`978ed2d` and `47996fc` (recovery choice/cooldown), `1a05092` (landing/trees),
+`b1a3e3d` (readiness), `4983c8c` (home table). All staged releases had backups
+and passing checks before installation. No live console grants, world edits,
+DB edits, configuration changes, or other service restarts were used.
 
-The disposable survival test also verified actual field recovery: punching and
-collecting three logs, placing a table and crafting a wooden pickaxe.
+Backup and receipt directory on Maia:
+`/home/corey/.local/share/blockhead-backups/return-home-20261101/`.
+`deployment-manifest.json` pins the release and SHA256 of all nine installed
+files; it is also in the runtime. Runtime Git metadata remains the old baseline
+because deployment used a verified file overlay. The manifest is authoritative.
+Baseline code archives, consistent pre-deployment SQLite backup, test logs and
+observation evidence are retained in the backup directory.
 
-Third installation: `47996fcc08adb248655cc2be6926668770652034`,
-02:53:52 UTC, 1,081 tests passed locally and in staging. By 02:54:45 the bot
-carried six bread and resumed tool restocking. Subsequent observation found a
-new blocker rather than a stable recovery: nearby log approaches were rejected
-with `standing support does not match feet height`, then tool gathering tried
-logs at y=13 and entered dangerous caves. There were two subsequent deaths.
-The movement follow-up waits up to 750 ms for a still-airborne arrival to land
-before judging that specific stance failure; other access failures still fail.
-Surface tree classification now rejects a solid terrain/structure roof above
-a trunk (while allowing the tree's own logs/leaves). Both have regressions.
+Rollback: `ssh -F /dev/null corey@maia 'sh /home/corey/.local/share/blockhead-backups/return-home-20261101/rollback.sh'`.
+It stops only the bot, restores and verifies the nine pre-repair runtime files,
+updates the deployment marker and starts only the bot. It preserves the current
+DB and world, and retains the equipment repair already installed before this task.
 
-Fourth installation: `1a05092`, 2026-11-02 03:15:45 UTC, all 1,083 tests
-passed both normally locally and with force-exit in staging; typecheck and diff
-check passed. At 03:26:55 UTC the journal inventory included a wooden pickaxe,
-stone sword, oak logs/planks/sticks and bread; the bot was gathering cobblestone
-for its stone pickaxe. The landing/tree fixes enabled actual tool production,
-not just another bread trip. A drowning death at 03:21:37 occurred during an
-already-running distant hunger search before it recovered home and tools.
+Shield and iron armor are **not yet equipped**: acquisition still fails to find iron. The protection-first task now reports that precise prerequisite failure and stops further upgrade trips. Occasional route timeouts and a species-specific oak-log prerequisite failure remain. The completed repair should not be read as a claim that all gathering/navigation defects are solved.
 
-Visual stream verification is unavailable: no Browser connection exists in the
-session, and the supplied `IIjZYz4Zolk` YouTube video reports **Private video**
-to an unauthenticated read-only download attempt. No cookies, visibility,
-broadcast settings or stream service were changed. Stream journal frame and
-encoded-write counts continue increasing; actual movement is established by
-bot/server coordinates, tasks and inventory, not a claimed visual inspection.
+Visual stream verification is blocked: no browser is connected in this session,
+and supplied video `IIjZYz4Zolk` reports **Private video** to unauthenticated
+access. Stream journal frame/write counters keep increasing. Movement, food and
+tool recovery were verified from server truth, journal and telemetry; a visual
+inspection of the private video is not claimed. Stream settings were unchanged.
 
-Observation also exposed an overly strict readiness target: after successfully
-making and eating bread, the bot still failed the six-bread reserve request
-with two carried, triggering the bread watchdog again at 03:37:19. Readiness
-now permits an equipped bot with some edible food to work; an empty carried
-supply still requests six urgently, and existing food stockpile maintenance
-still seeks a surplus. This avoids treating a desired reserve as a mandatory
-prerequisite after real recovery. A regression covers both stone and wooden
-pickaxe kits with partial food; prior empty-food regressions remain intact.
+## Follow-up: repeated drop-pickup routes
 
-Fifth installation: `b1a3e3d`, 03:41:44 UTC, all 1,084 tests passed locally
-and in staging. Later observation found a distinct baking blocker: farm table
-lookup searched within 16 blocks of the bot after a distant harvest, then
-tried to craft a replacement without wood. It now searches the known home
-anchor before crafting another table, and walks to the reused station through
-the existing reach checks. This is a general station-location correction,
-with a regression for a distant, wood-less harvester.
+The high reset count above was traced to repeated four-second pickup attempts
+at the same obstructed crop-drop area (20:27–20:29 PST), including different
+item entities in the same pile. Pickup routing now remembers a failed block
+cell for five minutes, matching the ordinary lifetime of dropped items. This
+backoff is shared across harvests, bounded in memory and scoped to the bot
+session. Drops in a different cell get a fresh attempt; passive pickup remains
+possible. A regression checks repeated harvests and multiple entities in the
+same failed cell, plus a moved drop that should be tried again.
