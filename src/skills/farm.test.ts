@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chooseFarmCells, isMatureWheat, sowingOrder, type FarmBlock, type FarmLookup } from "./farm.js";
+import { findFarmCraftingTable, chooseFarmCells, isMatureWheat, sowingOrder, type FarmBlock, type FarmLookup } from "./farm.js";
 
 const HOME = { x: 0, y: 64, z: 0 };
 
@@ -136,4 +136,19 @@ test("development sowing preserves a dirt path within its selected plot", () => 
   const cells = chooseFarmCells(HOME, world({ "-8,63,0": { name: "dirt_path" } }), 64, plot, true);
   assert.equal(cells.length, 24);
   assert.ok(!cells.some(cell => cell.x === -8 && cell.z === 0));
+});
+
+
+test("a distant harvest reuses the crafting table at home without carried wood", () => {
+  const table = { name:"crafting_table", position:{ x:1,y:64,z:0 } };
+  const bot: any = { entity:{ position:{ x:40,y:64,z:0 } },
+    findBlock: () => null,
+    findBlocks: (options: any) => {
+      if (options.point.x === 40) return [];
+      assert.equal(options.point.x, HOME.x);
+      assert.equal(options.point.z, HOME.z);
+      return [table.position];
+    }, blockAt: () => table,
+  };
+  assert.equal(findFarmCraftingTable(bot,{...HOME,dimension:"overworld"}),table);
 });

@@ -7,7 +7,7 @@ import { bareName, countItem, countPlanks, findItem } from "../minecraft/invento
 import type { HomeLocation } from "../minecraft/movement.js";
 import { travelAndWait, walkIntoReach } from "../minecraft/movement.js";
 import { digBlock, equipItem, useHeldItemOn } from "../minecraft/primitives.js";
-import { collectBlocks, findBlockNear, findBlocksNear, findPlacementSpot, placeItemAt } from "../minecraft/world.js";
+import { collectBlocks, findBlocksNearPoint, findBlockNear, findBlocksNear, findPlacementSpot, placeItemAt } from "../minecraft/world.js";
 
 /**
  * A wheat farm beside home: the food source that does not run out. Animals
@@ -298,8 +298,22 @@ function findHoe(bot: Bot) {
  * down beside the bot (which is at home). Bread and the hoe both need it.
  * Placed around the bot's own height, not home's stored Y, which can drift.
  */
+export function findFarmCraftingTable(bot: Bot, home: HomeLocation): Block | null {
+  const nearby = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+  if (nearby !== null) return nearby;
+  // Harvesting can end on a plot far outside the local scan. The home
+  // station still exists: search its anchor before trying to craft another
+  // table with no wood while carrying otherwise-edible wheat.
+  const positions = findBlocksNearPoint(bot, new Vec3(home.x, home.y, home.z), block => block.name === "crafting_table", TABLE_SCAN_RADIUS, 8);
+  for (const position of positions) {
+    const block = bot.blockAt(position);
+    if (block?.name === "crafting_table") return block;
+  }
+  return null;
+}
+
 async function ensureTable(bot: Bot, home: HomeLocation, logger: Logger, signal?: AbortSignal): Promise<Block | null> {
-  const existing = findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+  const existing = findFarmCraftingTable(bot, home);
   if (existing !== null) return existing;
   return placeNewTable(bot, home, logger, signal);
 }
@@ -388,7 +402,7 @@ export async function tendFarm(opts: TendFarmOptions): Promise<TendFarmResult> {
   const loaves = Math.floor(countItem(bot, "wheat") / WHEAT_PER_BREAD);
   const table = loaves > 0
     ? await ensureTable(bot, home, logger, signal)
-    : findBlockNear(bot, "crafting_table", TABLE_SCAN_RADIUS);
+    : findFarmCraftingTable(bot, home);
   if (loaves > 0 && table !== null && await walkToTable(table)) {
     const baked = await craftItem(bot, "bread", { times: loaves, craftingTable: table, signal });
     if (baked.ok) result.bread = baked.crafted;

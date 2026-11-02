@@ -105,3 +105,11 @@ supply still requests six urgently, and existing food stockpile maintenance
 still seeks a surplus. This avoids treating a desired reserve as a mandatory
 prerequisite after real recovery. A regression covers both stone and wooden
 pickaxe kits with partial food; prior empty-food regressions remain intact.
+
+Fifth installation: `b1a3e3d`, 03:41:44 UTC, all 1,084 tests passed locally
+and in staging. Later observation found a distinct baking blocker: farm table
+lookup searched within 16 blocks of the bot after a distant harvest, then
+tried to craft a replacement without wood. It now searches the known home
+anchor before crafting another table, and walks to the reused station through
+the existing reach checks. This is a general station-location correction,
+with a regression for a distant, wood-less harvester.
