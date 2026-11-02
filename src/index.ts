@@ -482,6 +482,7 @@ statusServer = new StatusServer({
     startedAtMs: processStartedAt,
     player: session?.bot.username ?? null,
     connected: session?.bot.entity !== null && session?.bot.entity !== undefined,
+    serverObservationAgeMs: session?.publicSafety.diagnostics().serverAgeMs ?? null,
     state: { self: state.self, timePhase: state.timePhase },
     scheduler,
     goal: goals.active(),

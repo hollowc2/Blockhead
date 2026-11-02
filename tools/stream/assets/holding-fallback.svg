@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <title>CobbleBob — Back soon</title>
+  <defs>
+    <radialGradient id="tl" cx="10%" cy="-10%" r="75%"><stop offset="0" stop-color="#2ee6f0" stop-opacity=".09"/><stop offset="1" stop-color="#2ee6f0" stop-opacity="0"/></radialGradient>
+    <radialGradient id="tr" cx="100%" cy="0%" r="65%"><stop offset="0" stop-color="#3ccf7e" stop-opacity=".08"/><stop offset="1" stop-color="#3ccf7e" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="#2ee6f0" stop-opacity=".16"/><stop offset=".6" stop-color="#3ccf7e" stop-opacity=".05"/><stop offset="1" stop-color="#2ee6f0" stop-opacity="0"/></radialGradient>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>
+    <g id="cobble"><rect width="8" height="8" fill="#4c545b"/><rect x="0" y="0" width="3" height="2" fill="#7f888f"/><rect x="4" y="0" width="4" height="2" fill="#7f888f"/><rect x="0" y="3" width="2" height="2" fill="#7f888f"/><rect x="3" y="3" width="3" height="2" fill="#7f888f"/><rect x="7" y="3" width="1" height="2" fill="#7f888f"/><rect x="0" y="6" width="4" height="2" fill="#7f888f"/><rect x="5" y="6" width="3" height="2" fill="#7f888f"/><rect x="0" y="0" width="2" height="1" fill="#a3acb2"/><rect x="4" y="0" width="2" height="1" fill="#a3acb2"/><rect x="3" y="3" width="1" height="1" fill="#a3acb2"/><rect x="0" y="6" width="2" height="1" fill="#a3acb2"/><rect x="5" y="6" width="1" height="1" fill="#a3acb2"/><rect x="2" y="1" width="1" height="1" fill="#666f76"/><rect x="7" y="1" width="1" height="1" fill="#666f76"/><rect x="5" y="4" width="1" height="1" fill="#666f76"/><rect x="3" y="7" width="1" height="1" fill="#666f76"/><rect x="7" y="7" width="1" height="1" fill="#666f76"/></g>
+    <g id="mossy"><rect width="8" height="8" fill="#4c545b"/><rect x="0" y="0" width="3" height="2" fill="#7f888f"/><rect x="4" y="0" width="4" height="2" fill="#7f888f"/><rect x="0" y="3" width="2" height="2" fill="#7f888f"/><rect x="3" y="3" width="3" height="2" fill="#7f888f"/><rect x="7" y="3" width="1" height="2" fill="#7f888f"/><rect x="0" y="6" width="4" height="2" fill="#7f888f"/><rect x="5" y="6" width="3" height="2" fill="#7f888f"/><rect x="0" y="0" width="2" height="1" fill="#a3acb2"/><rect x="4" y="0" width="2" height="1" fill="#a3acb2"/><rect x="3" y="3" width="1" height="1" fill="#a3acb2"/><rect x="0" y="6" width="2" height="1" fill="#a3acb2"/><rect x="5" y="6" width="1" height="1" fill="#a3acb2"/><rect x="2" y="1" width="1" height="1" fill="#666f76"/><rect x="7" y="1" width="1" height="1" fill="#666f76"/><rect x="5" y="4" width="1" height="1" fill="#666f76"/><rect x="3" y="7" width="1" height="1" fill="#666f76"/><rect x="7" y="7" width="1" height="1" fill="#666f76"/><rect x="1" y="0" width="2" height="1" fill="#1f8f58"/><rect x="6" y="6" width="2" height="1" fill="#1f8f58"/><rect x="6" y="6" width="1" height="1" fill="#3ccf7e"/></g>
+  </defs>
+  <g id="background">
+    <rect width="1280" height="720" fill="#1d252c"/>
+    <rect width="1280" height="720" fill="url(#tl)"/>
+    <rect width="1280" height="720" fill="url(#tr)"/>
+    
+    <rect width="1280" height="720" fill="url(#vignette)"/>
+  </g>
+  
+  <g id="copy" font-family="'Noto Sans', 'DejaVu Sans', sans-serif" text-anchor="middle">
+    
+  <svg x="610" y="150" width="60" height="60" viewBox="0 0 32 32" aria-hidden="true">
+    <path fill="#1f8f58" d="M16 2 3 9v14l13 7z"/>
+    <path fill="#3ccf7e" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+    <path fill="none" stroke="#2ee6f0" stroke-width="1.4" stroke-linejoin="round" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+    <g fill="#2ee6f0"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+  </svg>
+    <text x="640" y="252" font-size="34" font-weight="700" fill="#e6edf2" letter-spacing="-.3">CobbleBob</text>
+    <text x="640" y="342" font-size="58" font-weight="700" fill="#e6edf2" letter-spacing="-1">Back soon.</text>
+    <text x="640" y="392" font-size="24" fill="#b4c2cc">His adventure will continue.</text>
+    <text x="640" y="423" font-size="24" fill="#b4c2cc">Thanks for waiting.</text>
+    
+  </g>
+</svg>

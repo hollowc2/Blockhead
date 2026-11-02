@@ -11,7 +11,7 @@ import { projectBuildProject } from "../dashboard/projections.js";
 export interface StatusSnapshot {
   schema: 1;
   process: { startedAt: string; uptimeSeconds: number };
-  minecraft: { connected: boolean; player: string | null; health: number; hunger: number; position: SelfState["position"]; dimension: string | null; timePhase: "day" | "night" | null };
+  minecraft: { connected: boolean; player: string | null; health: number; hunger: number; position: SelfState["position"]; dimension: string | null; timePhase: "day" | "night" | null; serverObservationAgeMs: number | null };
   task: { active: TaskSummary | null; queued: TaskSummary[]; interrupt: { pending: boolean; reason: "pause" | "cancel" | null }; blockedActions: readonly BlockView[] };
   buildProject: BuildProjectSummary | null;
   goal: Goal | null;
@@ -32,6 +32,8 @@ export interface StatusInput {
   nowMs?: () => number;
   player: string | null;
   connected: boolean;
+  /** Age of the last server-sent time update for the current session; null when none since (re)spawn. */
+  serverObservationAgeMs?: number | null;
   state: { self: SelfState; timePhase: "day" | "night" | null };
   scheduler: { active: Task | null; queued: readonly Task[]; interruptPending: boolean; pendingInterruptReason: "pause" | "cancel" | null; blockedActions(): readonly BlockView[] };
   goal: Goal | null;
@@ -65,7 +67,7 @@ export function buildStatusSnapshot(input: StatusInput): StatusSnapshot {
   return {
     schema: 1,
     process: { startedAt: new Date(input.startedAtMs).toISOString(), uptimeSeconds: Math.max(0, (now - input.startedAtMs) / 1000) },
-    minecraft: { connected: input.connected, player: input.player, health: input.state.self.health, hunger: input.state.self.food, position: input.state.self.position, dimension: input.state.self.dimension, timePhase: input.state.timePhase },
+    minecraft: { connected: input.connected, player: input.player, health: input.state.self.health, hunger: input.state.self.food, position: input.state.self.position, dimension: input.state.self.dimension, timePhase: input.state.timePhase, serverObservationAgeMs: input.serverObservationAgeMs ?? null },
     task: { active: input.scheduler.active === null ? null : taskSummary(input.scheduler.active), queued: input.scheduler.queued.map(taskSummary), interrupt: { pending: input.scheduler.interruptPending, reason: input.scheduler.pendingInterruptReason }, blockedActions: input.scheduler.blockedActions() },
     buildProject: projectBuildProject(input.buildProjects?.currentProject() ?? null),
     goal: input.goal,

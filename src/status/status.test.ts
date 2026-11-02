@@ -24,6 +24,11 @@ test("builds a machine-readable snapshot with uptime and timestamps", () => {
   assert.equal(snapshot.llm.lastDecision?.at, "1970-01-01T00:00:02.000Z");
 });
 
+test("reports the age of the last server observation, null when none", () => {
+  assert.equal(buildStatusSnapshot(input({ serverObservationAgeMs: 850 })).minecraft.serverObservationAgeMs, 850);
+  assert.equal(buildStatusSnapshot(input()).minecraft.serverObservationAgeMs, null);
+});
+
 test("reports disconnected state and pauses autonomy", () => {
   const snapshot = buildStatusSnapshot(input({ connected: false, player: null, state: { self: { position: null, health: 20, food: 20, dimension: null }, timePhase: null } }));
   assert.deepEqual(snapshot.autonomy, { paused: true, reasons: ["disconnected"] });
