@@ -47,7 +47,7 @@ const sample = () => {
   let status = null;
   try { status = JSON.parse(readFileSync(join(stateDir, "status.json"), "utf8")); } catch {}
   const s = status && { state: status.state, reason: status.reason, sourceKind: status.sourceKind, health: status.health, autonomy: status.autonomy, encoder: status.encoder, publisher: status.publisher, renderer: status.renderer, totals: status.totals, statusAgeSeconds: Math.round((Date.now() - Date.parse(status.time)) / 1000) };
-  const record = { kind: "sample", status: s, stream: unit("cobblebob-stream.service"), bot: unit("blockhead.service"), chromium: count("chrome-headless-shell"), ffmpeg: count("^ffmpeg .*anullsrc"), load: readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3).join(" "), memory: meminfo(), pressure: pressure(), swap: vmstat(), gpu: gpu() };
+  const record = { kind: "sample", status: s, stream: unit("cobblebob-stream.service"), bot: unit("blockhead.service"), chromium: count("ms-playwright/chromium"), ffmpeg: count("^ffmpeg .*anullsrc"), load: readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3).join(" "), memory: meminfo(), pressure: pressure(), swap: vmstat(), gpu: gpu() };
   // Encoded fps over this interval, from ffmpeg's own frame counter.
   if (last && s?.encoder?.frame != null && last.frame != null && s.encoder.generation === last.generation) record.encodedFps = Math.round((s.encoder.frame - last.frame) / ((Date.now() - last.at) / 1000) * 100) / 100;
   last = { frame: s?.encoder?.frame ?? null, generation: s?.encoder?.generation, at: Date.now() };

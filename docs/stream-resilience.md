@@ -166,10 +166,10 @@ Each row: trigger → expected → independent check → recovery bound → clea
 
 1. `systemctl --user stop blockhead.service` → "Reconnecting" ≤ 15 s → watch
    page + `$ctl status` reason `bot-unreachable` → start it; live ≤ 15 s after
-   the bot reports connected → `pgrep -c chrome-headless-shell` unchanged.
+   the bot reports connected → `pgrep -fc ms-playwright/chromium` unchanged.
 2. Server console `kick CobbleBob test` → holding ≤ 15 s, bot reconnects by
    itself → live after admission → one bot in `list`.
-3. `pkill -f 'chrome-headless-shell.*--type=renderer'` → holding immediately
+3. `pkill -f 'headless_shell.*--type=renderer'` → holding immediately
    → relaunch → live ≤ 60 s → Chromium count back to baseline.
 4. `kill -STOP` the ffmpeg pid for 30 s, then `-CONT` → `encoder-stalled`
    restart, a recorded interruption → YouTube resumes ≤ 1 min.
@@ -241,3 +241,26 @@ the soak is incomplete; a runtime change restarts the window. Launch criteria
 are listed in the prompt (≥ 99.5 % live-world, ≥ 99.9 % output availability,
 ≥ 29 fps average encoded, no unexplained restarts, playback checked at
 start/middle/end by a person).
+
+## Deployment record (2026-11-02)
+
+- Bot: `scripts/deploy-maia` → runtime at `4abbe7b`, restarted 10:10:48 PST;
+  `/health` reports `serverObservationAgeMs` ≈ 0.4 s while connected.
+- Stream: targeted copy of the runtime modules, three holding JPEGs and the
+  unit; restarted 10:11:06 PST. Holding card from the first frame; live
+  admitted at 10:11:28 (15 s after the viewer connected).
+- First checks on Maia: 30 fps encoded over a 60 s window, 0 interruptions,
+  one ffmpeg, publisher RSS 144 MB, service memory 1.78 GB (limit 2.5 GB),
+  memory pressure avg10 0.00. The stream key and RTMP URL appear 0 times in
+  the journal and state directory; state files are 0600 in a 0700 directory.
+- Rollback material: `~/.local/share/cobblebob-stream.rollback-2026-11-02/`
+  (old runtime plus `cobblebob-stream.service.unit`).
+- Not yet checked: YouTube playback of the new build (needs a person), and
+  any fault injection on Maia.
+
+## Readiness decision
+
+**INCOMPLETE QUALIFICATION.** The 24-hour soak started after this deployment
+and has not finished; YouTube playback hasn't been confirmed by a person; no
+fault has been injected on Maia; host/WAN loss is uncovered until the owner
+decides on the off-host publisher. This is not a decision to go public.
