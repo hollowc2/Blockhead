@@ -1,0 +1,21 @@
+# User unit: streams the public viewer to YouTube Live. Outbound only.
+# Install: tools/stream/install.sh (copies stream.mjs into ~/.local/share/cobblebob-stream)
+# Key: one line in ~/.config/cobblebob-stream/stream.key (0600), never in this file.
+[Unit]
+Description=CobbleBob YouTube stream
+After=blockhead.service network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/.local/share/cobblebob-stream
+Environment=STREAM_KEY_FILE=%h/.config/cobblebob-stream/stream.key
+ExecStart=/usr/bin/node %h/.local/share/cobblebob-stream/stream.mjs
+Restart=always
+RestartSec=15
+# Keep the bot, Minecraft and llama-server ahead of the stream.
+Nice=10
+MemoryMax=2500M
+UMask=0077
+
+[Install]
+WantedBy=default.target

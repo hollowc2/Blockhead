@@ -54,3 +54,16 @@ fell in the window, so owner latency wasn't re-measured.
   (the 2026-10-31 equipment repair in progress). It is unrelated to this path.
 - Disable/rollback paths are unchanged: see the
   [deployment receipt](public-model-answer-deployment-2026-10-29.md#stop-conditions-disable-and-rollback).
+
+## Later the same day: public exposure removed
+
+- The owner turned Tailscale Funnel off (`tailscale funnel --https=443 off`). That
+  also removed the tailnet-only `:443 → 127.0.0.1:3003` Serve route, so the public
+  page is now reachable only on maia's loopback. Private Serve routes 3000/3001 are unchanged.
+- With nothing public, `aegis.service` was stopped and disabled (`systemctl --user
+  disable --now`), freeing about 340 MB. Blockhead was not restarted. A loopback
+  question now gets `answerKind: rules` (the firewall fails closed). The config
+  still has `model_questions.enabled: true`.
+- To expose the page again: `systemctl --user enable --now aegis.service`, check
+  readiness, then restore Serve/Funnel. Don't re-expose it with Aegis stopped and
+  then rely on model answers.
