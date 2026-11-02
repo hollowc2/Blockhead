@@ -39,7 +39,7 @@ On 2026-11-01 all 37 ensure-item tests passed again. Live homing recovery is
 tracked in `docs/cobblebob-return-home-2026-11-01.md`.
 
 Commit confirmed: `acfe74f`. Integrated and deployed with homing release
-`14aac93`; the combined suite passes 1,086 tests. Live observation verified
+`dacae4a`; the combined suite passes 1,086 tests. Live observation verified
 that tool restocking resumed and the protection-first task attempted its shield
 prerequisite. Shield/armor production remains limited by iron acquisition; the
 precise missing-iron failure is preserved rather than replaced by a generic
