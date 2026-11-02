@@ -336,7 +336,8 @@ const DROP_RETRY_MS = 5 * 60_000;
 export async function pickUpDropsNear(bot: Bot, position: Vec3, signal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 300));
   const drops = Object.values(bot.entities)
-    .filter((entity) => isDroppedItemEntity(entity) && entity.position.distanceTo(position) <= 4)
+    .filter((entity) => isDroppedItemEntity(entity) && entity.position.distanceTo(position) <= 4
+      && (failedDropCells.get(bot)?.get(entity.position.floored().toString()) ?? 0) <= Date.now())
     .slice(0, 4);
   for (const drop of drops) {
     throwIfAborted(signal);

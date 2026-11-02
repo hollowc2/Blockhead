@@ -271,8 +271,12 @@ test("crop drops sharing an unreachable cell do not repeat the failed pickup rou
     await pickUpDropsNear(bot,new Vec3(3,64,0),signal);
     await pickUpDropsNear(bot,new Vec3(3,64,0),signal);
     assert.equal(trips,1,"one failed route for the stable pile, across harvests");
+    for (let id=3;id<=6;id++) bot.entities[id]={id,name:"item",position:new Vec3(3.4,64,0.4)};
+    bot.entities[7]={id:7,name:"item",position:new Vec3(6.2,64,0.2)};
+    await pickUpDropsNear(bot,new Vec3(3,64,0),signal);
+    assert.equal(trips,2,"blocked piles cannot crowd a fresh drop out of the four-target cap");
     bot.entities[1].position=new Vec3(4.2,64,0.2);
     await pickUpDropsNear(bot,new Vec3(4,64,0),signal);
-    assert.equal(trips,2,"a moved drop in a different cell gets a fresh route");
+    assert.equal(trips,3,"a moved drop in a different cell gets a fresh route");
   });
 });

@@ -2,7 +2,8 @@
 
 Deployed to Maia's isolated runtime; only `blockhead.service` was restarted.
 Equipment changes were committed separately as `acfe74f`. Final code release:
-`4983c8cc81da477c6d7008ae78e488ceaa93bd5b` (2026-11-02 04:05:53 UTC).
+`14aac93dfba2754a03fb2b03693284209832fa64` (2026-11-02 04:47:29 UTC).
+The preceding home-table release was `4983c8c` at 04:05:53 UTC.
 
 ## Outcome and root causes
 
@@ -45,8 +46,8 @@ unsafe-corner regression fails against the original movement code. Repro:
 node_modules/.bin/tsx scripts/return-home-smoke.ts` (operator-enabled disposable
 server only). The disposable server was stopped after testing.
 
-`npm run typecheck`, normal `npm test` (**1,085 passed**, exited normally), and
-`git diff --check` passed. Staging also passed 1,085 tests using
+`npm run typecheck`, normal `npm test` (**1,086 passed**, exited normally), and
+`git diff --check` passed. Staging also passed 1,086 tests using
 `tsx --test --test-force-exit src/**/*.test.ts`; force-exit use is recorded here.
 Nine deployed file hashes match committed source.
 
@@ -103,3 +104,8 @@ backoff is shared across harvests, bounded in memory and scoped to the bot
 session. Drops in a different cell get a fresh attempt; passive pickup remains
 possible. A regression checks repeated harvests and multiple entities in the
 same failed cell, plus a moved drop that should be tried again.
+
+Pickup follow-up installed at 04:47:29 UTC as `14aac93`, with all 1,086
+staged tests passing. `rollback-drop.sh` in the backup directory restores only
+the pre-pickup world primitive and its previous deployment manifest, restarting
+only the bot; the full `rollback.sh` remains available for the entire repair.
