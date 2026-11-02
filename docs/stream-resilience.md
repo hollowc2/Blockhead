@@ -116,8 +116,14 @@ journalctl --user -u cobblebob-stream -n 100 --no-pager
 `$ctl status`: if `encoder.health` is `ok` and `encoder.frame` advances, the
 problem is downstream. First reload the Studio preview / watch page in a fresh
 tab. If it still doesn't play after a minute, run `$ctl reconnect-encoder`
-once (this cleared the 2026-11 incident). Don't restart the bot, the whole
-service, or rotate the stream key as a generic fix.
+once (this cleared the 2026-11-01 incident). If YouTube ended the previous
+broadcast and created a new one that sits at "Live stream offline" (the watch
+page's `playabilityStatus` is `LIVE_STREAM_OFFLINE` while `ss` shows the RTMP
+socket acked and growing), a 2 s reconnect is not enough: stop the unit, wait
+60 s, start it (`systemctl --user stop cobblebob-stream; sleep 60; systemctl
+--user start cobblebob-stream`). This cleared the 2026-11-02 incident within
+10 s of the restart; Studio's own "start stream" button did not. Don't restart
+the bot or rotate the stream key as a generic fix.
 
 **Alerts.** Prepared as local conditions only (no external destination is
 approved): `status.json` older than 10 s; `encoder.health != ok` for > 2 min;
@@ -255,12 +261,21 @@ start/middle/end by a person).
   the journal and state directory; state files are 0600 in a 0700 directory.
 - Rollback material: `~/.local/share/cobblebob-stream.rollback-2026-11-02/`
   (old runtime plus `cobblebob-stream.service.unit`).
-- Not yet checked: YouTube playback of the new build (needs a person), and
-  any fault injection on Maia.
+- 10:51 PST: Maia lost its network for about 70 s ("Network is
+  unreachable"). The encoder restarted 4 times with backoff and recovered by
+  itself; the RTMP URL appeared only as `rtmp://[redacted]`.
+- Afternoon: the broadcast was made Public. YouTube had already ended it
+  (replay 1:33:54) and created a new Public broadcast stuck at "Live stream
+  offline" despite an acked RTMP socket. One `reconnect-encoder` (13:45) and
+  Studio's start button didn't help; stopping the unit for 60 s (13:57:50 →
+  13:58:51) did. YouTube reported `OK`/`isLiveNow` at 13:59:05, live admitted
+  13:59:21, and playback on billybitcoin.cloud/cobblebob/ was seen working.
+  This restart is inside the soak window, so the soak records it.
+- Not yet checked: fault injection on Maia.
 
 ## Readiness decision
 
 **INCOMPLETE QUALIFICATION.** The 24-hour soak started after this deployment
-and has not finished; YouTube playback hasn't been confirmed by a person; no
+and has not finished (and includes one manual unit restart); no
 fault has been injected on Maia; host/WAN loss is uncovered until the owner
 decides on the off-host publisher. This is not a decision to go public.
