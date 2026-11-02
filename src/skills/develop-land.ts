@@ -103,14 +103,18 @@ export function surveyPlot(home: { x: number; y: number; z: number }, offset: Pl
           if (floating) survey.leftoverLogs.push(log);
         }
       };
+      let open = false;
       for (let y = baseY + GROUND_SEARCH_DY; y >= baseY - GROUND_SEARCH_DY; y--) {
         const block = lookup(x, y, z);
         if (block === null) break;
         // A crop stands on farmland: the column is already a field.
-        if (CROP.test(block.name)) continue;
+        if (CROP.test(block.name)) { open = true; continue; }
         if (TREE_LOG.test(block.name)) logsAbove.push({ x, y, z, name: block.name });
-        if (isAirName(block.name) || CLEARABLE.test(block.name)) continue;
-        if (!FIELD_GROUND.test(block.name)) break;
+        if (isAirName(block.name) || CLEARABLE.test(block.name)) { open = true; continue; }
+        // Dirt at the top of the search window is the inside of a hill, not
+        // its surface: plots in a hillside read as level ground at home+12
+        // and failed every run with nothing to till (2026-11-02, 115 times).
+        if (!open || !FIELD_GROUND.test(block.name)) break;
         keepLeftovers(y);
         survey.groundColumns += 1;
         survey.groundYs.push(y);

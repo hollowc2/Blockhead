@@ -34,6 +34,14 @@ test("a tree on a plot is cleared at crop and walking height; the canopy is left
   assert.deepEqual(survey.clear.map((c) => `${c.x},${c.y},${c.z}:${c.name}`).sort(), ["15,64,1:short_grass", "16,64,0:oak_log", "16,65,0:oak_log"]);
 });
 
+test("dirt buried in a hill taller than the search window is not field ground", () => {
+  // 2026-11-02: plots in a hillside surveyed as flat ground at home+12.
+  const hill: Record<string, FarmBlock> = {};
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let y = 64; y <= 90; y++) hill[`${24 + dx},${y},${dz}`] = { name: "dirt" };
+  const survey = surveyPlot(HOME, { dx: 24, dz: 0 }, world(hill));
+  assert.equal(survey.groundColumns, 0);
+});
+
 test("the next plot skips farmland, water and an owner's reserved build", () => {
   const overrides: Record<string, FarmBlock> = {};
   // The three home plots are already fields.

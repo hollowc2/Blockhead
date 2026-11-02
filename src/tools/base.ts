@@ -119,9 +119,14 @@ export function planSimpleStructure(
   const width = Number(args.width);
   const height = Number(args.height);
   const length = Number(args.length);
-  const anchorKind = String(args.anchor ?? "owner");
+  let anchorKind = String(args.anchor ?? "owner");
   const self = ctx.bot.entity;
   if (self === null || self === undefined) return "I cannot start a structure build until I am spawned.";
+  const owner = ctx.config.agent?.owner ?? "Corey";
+  // Requests from the web viewer come from an owner who is not in the
+  // world: "go outside and build something" was refused (2026-11-02).
+  // Build beside home instead.
+  if (anchorKind === "owner" && !ctx.bot.players[owner]?.entity && ctx.state.home !== null) anchorKind = "home";
   let point: { x: number; y: number; z: number; dimension: string } | null = null;
   if (anchorKind === "home" && ctx.state.home !== null) {
     // The home point is ringed by the bot's own chest, furnace and
@@ -133,7 +138,6 @@ export function planSimpleStructure(
   }
   else if (anchorKind === "current") point = { ...self.position, dimension: String(ctx.bot.game.dimension ?? "overworld") };
   else if (anchorKind !== "home") {
-    const owner = ctx.config.agent?.owner ?? "Corey";
     const entity = ctx.bot.players[owner]?.entity;
     if (!entity) return `I cannot anchor at ${owner}: the owner is not currently visible.`;
     // Offset the footprint so construction never starts inside the owner.
