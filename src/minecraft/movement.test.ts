@@ -1019,3 +1019,43 @@ test("plain stone is dug with the stone pickaxe; the iron one is kept for what n
   await equipDigTool(bot, { name: "stone", material: "mineable/pickaxe", canHarvest: stoneHarvestable } as any);
   assert.equal(held.name, "stone_pickaxe");
 });
+
+test("solid wall corners require a cardinal step before turning", () => {
+  const registry = minecraftData("1.21.4");
+  const Block = (prismarineBlock as any)(registry);
+  const bot: any = {
+    registry, version: "1.21.4", game: { dimension: "overworld" },
+    entity: { position: new Vec3(21.5, 68, 2.5), height: 1.8 }, entities: {},
+    inventory: { items: () => [], slots: [] }, pathfinder: { setMovements() {} },
+    blockAt: (pos: Vec3) => {
+      const p = pos.floored();
+      const name = p.y < 68 ? "grass_block" : p.x === 21 && p.z === 1 && p.y < 72 ? "birch_planks" : "air";
+      const b = Block.fromProperties(name, {}, 0); b.position = p; return b;
+    },
+  };
+  const movements = new pathfinderPkg.Movements(bot);
+  configureMovements(bot, movements);
+  const neighbors: any[] = [];
+  movements.getMoveDiagonal(new (Move as any)(21,68,2,0,0), { x: -1, z: -1 }, neighbors);
+  assert.equal(neighbors.length, 0, "the diagonal clips the protected wall corner");
+  const route = new (AStar as any)(new (Move as any)(21,68,2,0,0), movements, new pathfinderPkg.goals.GoalBlock(20,68,0), 5000,5000,-1).compute();
+  assert.equal(route.status, "success");
+  assert.equal(route.path[0].z, 2, "step west before going north");
+});
+
+test("a failed homing attempt runs bounded local recovery once, preserving its failure", async () => {
+  const { setHomingRecovery } = await import("./movement.js");
+  const h = closedDoorBot();
+  const signal = new AbortController().signal;
+  let recoveries = 0;
+  setHomingRecovery(async (_bot, recoverySignal) => { assert.equal(recoverySignal, signal); recoveries++; });
+  try {
+    await new WorldActionExecutor().run("blocked-home-recovery", signal, async () => {
+      for (let i = 0; i < 2; i++) {
+        const result = await travelHomeAndWait(h.bot as never, { x: 50, y: 64, z: 0, dimension: "overworld" }, { signal, timeoutMs: 0 });
+        assert.equal(result.status, "timed_out");
+      }
+    });
+    assert.equal(recoveries, 1, "cooldown prevents repeated supply work on the same bot");
+  } finally { setHomingRecovery(null); }
+});

@@ -297,6 +297,14 @@ function restrictDoorwayMoves(movements: Pathfinder.Movements): void {
   const diagonal = moves.getMoveDiagonal!.bind(movements);
   moves.getMoveDiagonal = (node, dir, neighbors) => {
     if (doorsOnMove(movements, node, [[0, 0], [dir.x, 0], [0, dir.z], [dir.x, dir.z]]).length > 0) return;
+    // A diagonal past a solid corner clips the player's 0.6-block hitbox.
+    // The upstream planner accepts either open side, although its controller
+    // steers directly to the diagonal centre. Take cardinal steps around it.
+    for (const [dx, dz] of [[dir.x, 0], [0, dir.z]]) {
+      for (const dy of [0, 1]) {
+        if (movements.getBlock(node, dx!, dy, dz!).physical) return;
+      }
+    }
     diagonal(node, dir, neighbors);
   };
   for (const name of ["getMoveForward", "getMoveJumpUp", "getMoveDropDown", "getMoveParkourForward"]) {
@@ -619,6 +627,10 @@ const TOOL_TIERS: Record<string, number> = { wooden: 1, golden: 1, stone: 2, iro
 /** Makes a pickaxe where the bot stands (the skills layer's field craft). */
 export type PickaxeFallback = (bot: Bot, signal?: AbortSignal) => Promise<unknown>;
 let pickaxeFallback: PickaxeFallback | null = null;
+let homingRecovery: PickaxeFallback | null = null;
+const lastHomingRecovery = new WeakMap<Bot, number>();
+/** Local survival work after a failed return; must never call homing recursively. */
+export function setHomingRecovery(recovery: PickaxeFallback | null): void { homingRecovery = recovery; }
 const lastPickaxeFallback = new WeakMap<Bot, number>();
 /** One field-craft try per minute: with no wood it cannot succeed, and each try scans the inventory. */
 const PICKAXE_FALLBACK_COOLDOWN_MS = 60_000;
@@ -1112,6 +1124,7 @@ export async function walkToward(
   let lastDigAt = 0;
   let lastStrafeAt = 0;
   let strafeSide = false;
+  let barrenStalls = 0;
 
   const destinationVec = new Vec3(destination.x, destination.y, destination.z);
 
@@ -1225,6 +1238,11 @@ export async function walkToward(
             }
           }
 
+          barrenStalls = dug ? 0 : barrenStalls + 1;
+          if (barrenStalls >= 12) {
+            logger.warn({ position: current.position, destination }, "walkToward blocked by protected or unsafe terrain; yielding to recovery");
+            break;
+          }
           if (!dug && stuckTicks % 20 === 0) {
             logger.warn({ position: current.position, distance: Number(distance.toFixed(1)), stuckTicks, ...standingDiagnostics(bot) }, "walkToward stalled, no diggable blocks found in adjacency");
           }
@@ -1237,6 +1255,7 @@ export async function walkToward(
         }
       } else {
         stuckTicks = 0;
+        barrenStalls = 0;
         lastDistance = distance;
       }
 
@@ -1244,7 +1263,7 @@ export async function walkToward(
       // Re-aim toward the destination and walk forward. A smooth look waits
       // on physics ticks, which stall while the bot is dead.
       try {
-        await raceAbort(bot.lookAt(destinationVec.offset(0, 1, 0), false), options.signal, { timeoutMs: 2_000, label: "look" });
+        await raceAbort(bot.lookAt(destinationVec.offset(0, 1, 0), true), options.signal, { timeoutMs: 2_000, label: "look" });
       } catch {
         if (options.signal?.aborted) break;
       }
@@ -2062,6 +2081,19 @@ export async function travelHomeAndWait(bot: Bot, home: HomeLocation, options: T
   await climbOutFirst(bot, { y: home.y }, options);
   const allowDig = options.allowDig ?? true;
   const result = interruptedTrip(await withPathfinderDigging(bot, allowDig, () => travelHomeAndWaitImpl(bot, home, options)), options);
+  if (result.status === "failed" || result.status === "timed_out") {
+    if (homingRecovery !== null && !options.signal?.aborted && options.shouldAbort?.() !== true
+      && Date.now() - (lastHomingRecovery.get(bot) ?? 0) >= 5 * 60_000) {
+      lastHomingRecovery.set(bot, Date.now());
+      const lease = requireWorldActionLease(options.signal);
+      logger.info({ home, result }, "home route blocked; rebuilding supplies locally before another return");
+      try { await homingRecovery(bot, options.signal ?? lease.signal); }
+      catch (error) {
+        if ((options.signal ?? lease.signal).aborted) return { status: "aborted" };
+        logger.warn({ error: String(error) }, "local homing recovery could not rebuild supplies");
+      }
+    }
+  }
   if (allowDig || !isNoPath(result)) return result;
   // A no-dig route can be physically impossible (the bot is in a pit or a
   // sealed cave). Digging only natural terrain is always safe, and staying
