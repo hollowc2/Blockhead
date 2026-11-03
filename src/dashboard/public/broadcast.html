@@ -8,7 +8,7 @@
 </head>
 <body>
   <!-- A fixed 1280×720 TV frame for the stream: no controls, nothing to click. -->
-  <main id="frame" class="frame">
+  <main id="frame" class="frame" data-scene="normal">
     <section class="stage" id="stage">
       <iframe title="CobbleBob Minecraft viewer" tabindex="-1"></iframe>
 
@@ -27,6 +27,15 @@
         <div id="dayChip" class="chip chip-day" hidden>Day <b id="dayCount">—</b></div>
         <div id="phaseChip" class="chip" hidden><i id="phaseIcon" class="phase-icon"></i><span id="phaseLabel"></span></div>
         <div id="dimensionChip" class="chip" hidden></div>
+        <!-- Action scene only: the side column is gone, so who and what ride on the game. -->
+        <div id="actionBar" class="action-bar" data-activity="offline">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path class="mark-pixel" d="M16 2 3 9v14l13 7z"/><path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/><path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/></svg>
+          <div class="action-text">
+            <p class="action-head"><b>CobbleBob</b><span class="status-icon" aria-hidden="true"></span><span id="actionStatus" class="action-status"></span><span id="actionNow" class="action-now"></span></p>
+            <p id="actionStory" class="action-story"></p>
+          </div>
+          <span class="live" data-state="ok"><i></i>Live</span>
+        </div>
       </div>
 
       <div id="dial" class="dial" data-live hidden>
@@ -62,6 +71,30 @@
         <li class="slot-box" data-slot="legs"></li>
         <li class="slot-box" data-slot="feet"></li>
       </ul>
+
+      <!-- Event banner (broadcast-scenes.mjs): one at a time, six seconds each. -->
+      <div id="banner" class="banner" data-kind="">
+        <span id="bannerArt" class="banner-art"></span>
+        <div class="banner-text">
+          <small id="bannerLabel"></small>
+          <b id="bannerText"></b>
+          <span id="bannerNote" class="banner-note"></span>
+        </div>
+      </div>
+
+      <!-- "What is this?" for viewers dropping in: every few minutes, never with a banner. -->
+      <div id="lowerThird" class="lower-third">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path class="mark-pixel" d="M16 2 3 9v14l13 7z"/>
+          <path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+          <path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+          <g class="mark-node"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+        </svg>
+        <div class="lower-text">
+          <small>What is this?</small>
+          <p>CobbleBob is an autonomous AI playing Minecraft 24/7 on a home server.</p>
+        </div>
+      </div>
     </section>
 
     <aside class="side">

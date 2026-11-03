@@ -17,6 +17,7 @@ const BROADCAST_CSS = fileURLToPath(new URL("./public/broadcast.css", import.met
 const BROADCAST_JS = fileURLToPath(new URL("./public/broadcast.js", import.meta.url));
 const BROADCAST_PANELS_JS = fileURLToPath(new URL("./public/broadcast-panels.mjs", import.meta.url));
 const BROADCAST_MINIMAP_JS = fileURLToPath(new URL("./public/broadcast-minimap.mjs", import.meta.url));
+const BROADCAST_SCENES_JS = fileURLToPath(new URL("./public/broadcast-scenes.mjs", import.meta.url));
 
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
 const PUBLIC_VIEWER_ASSET = /^\/viewer\/(?:index\.js|worker\.js|(?:textures|blocksStates)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|json))$/;
@@ -334,6 +335,7 @@ export class ViewerShellServer {
     else if (pathname === "/broadcast.js") await this.sendFile(response, BROADCAST_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/broadcast-panels.mjs") await this.sendFile(response, BROADCAST_PANELS_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/broadcast-minimap.mjs") await this.sendFile(response, BROADCAST_MINIMAP_JS, "text/javascript; charset=utf-8");
+    else if (pathname === "/broadcast-scenes.mjs") await this.sendFile(response, BROADCAST_SCENES_JS, "text/javascript; charset=utf-8");
     else return false;
     return true;
   }

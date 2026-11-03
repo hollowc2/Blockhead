@@ -17,6 +17,8 @@
   --red: #ef5a5a;
   --empty: #12181d;
   --glass: #141b20d9;
+  /* Scene changes: the stage box and the iframe's scale share one curve, so they stay in step. */
+  --scene: .8s cubic-bezier(.65, 0, .35, 1);
   --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
   background: #0b1015;
@@ -46,9 +48,14 @@ ul, ol { list-style: none; }
 .mark-net { fill: none; stroke: var(--cyan); stroke-width: 1.4; stroke-linejoin: round; }
 .mark-node { fill: var(--cyan); }
 
-/* Game */
-.stage { position: relative; grid-column: 1; grid-row: 1; overflow: hidden; background: #8fc3e6; }
-.stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; pointer-events: none; }
+/* Game. The stage is the visible game box: lifted out of the grid so each
+   scene can move and resize it (see Scenes below). The iframe inside keeps a
+   fixed 1280×720 viewport and is only scaled to fit, so a scene change never
+   resizes the 3D view or touches the element the streamer probes. */
+.stage { position: absolute; left: 0; top: 0; z-index: 3; width: 960px; height: 540px; overflow: hidden; background: #8fc3e6;
+  transition: left var(--scene), top var(--scene), width var(--scene), height var(--scene), border-radius var(--scene), box-shadow var(--scene); }
+.stage iframe { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; border: 0; display: block; pointer-events: none;
+  transform-origin: 0 0; transform: scale(.75); transition: transform var(--scene), filter 1.2s ease; }
 .veil { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: radial-gradient(600px 300px at 50% 40%, #2ee6f014, transparent 70%), #1d252cf2; text-align: center; transition: opacity .6s ease; }
 .veil .mark { width: 72px; height: 72px; margin-bottom: 6px; animation: bob 3s ease-in-out infinite; }
 .veil strong { font-size: 32px; font-weight: 700; }
@@ -56,7 +63,7 @@ ul, ol { list-style: none; }
 @keyframes bob { 50% { transform: translateY(-6px); } }
 
 .overlay { position: absolute; left: 16px; z-index: 2; display: flex; gap: 10px; }
-.overlay-top { top: 16px; }
+.overlay-top { top: 16px; align-items: flex-start; }
 .overlay-bottom { bottom: 16px; align-items: flex-end; }
 .chip { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; border-radius: 10px; background: var(--glass); border: 1px solid #ffffff1f; font-size: 20px; font-weight: 600; text-transform: capitalize; box-shadow: 0 4px 16px #0006; }
 .chip-day { color: var(--green); font-size: 22px; font-weight: 750; text-transform: none; }
@@ -231,12 +238,13 @@ h1 { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 27p
 .brain-stats .brain-model { flex: 0 1 auto; min-width: 0; }
 .brain-model b { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--cyan); }
 .brain-uptime, .brain-note { display: none !important; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain { flex-direction: column; align-items: flex-start; justify-content: center; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-stats { flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-stats li + li::before { content: none; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-uptime { display: flex !important; gap: 5px; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-note { display: inline !important; margin-left: 3px; }
-.side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-model b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* (At night the minimap moves to the strip, so the brain keeps its one line.) */
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain { flex-direction: column; align-items: flex-start; justify-content: center; }
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-stats { flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; }
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-stats li + li::before { content: none; }
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-uptime { display: flex !important; gap: 5px; }
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-note { display: inline !important; margin-left: 3px; }
+.frame:not([data-scene="night"]) .side-foot:has(.minimap:not([hidden]):not(:empty)) .brain-model b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* Bottom strip */
 .strip { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 440px minmax(0, 1fr) 372px; gap: 8px; padding: 8px; min-height: 0; }
@@ -260,6 +268,8 @@ h1 { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 27p
 .ticker li.highlight { color: var(--amber); font-weight: 700; }
 .ticker li.highlight.death { color: #ff8a8a; }
 .ticker li.highlight.build, .ticker li.highlight.goal { color: var(--green); }
+/* Seven are rendered; the normal strip has room for four. */
+.ticker li:nth-child(n+5) { display: none; }
 .ticker li.fresh { animation: slide-in .6s cubic-bezier(.2, .9, .3, 1.2); }
 .ticker time { font-family: var(--mono); font-size: 16px; color: var(--muted); }
 @keyframes slide-in { from { opacity: 0; transform: translateX(-14px); background: #2ee6f01f; } }
@@ -308,3 +318,97 @@ h1 { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 27p
 
 /* Retained readings while CobbleBob or the page's server is away. */
 body.stale [data-live] { opacity: .55; filter: grayscale(.8); transition: opacity .3s, filter .3s; }
+
+/* ---- Scenes (data-scene on the frame, from broadcast-scenes.mjs) ----
+   normal: the layout above. action: the game takes the whole frame with a
+   compact bar. night: the game shrinks to half size and the map, story and
+   stats take over. Only the stage box and the iframe's scale move; panels
+   fade out and back in around the layout swap. */
+.side, .strip { transition: opacity .45s ease, visibility 0s; }
+.frame.scene-in:not([data-scene="action"]) .side, .frame.scene-in:not([data-scene="action"]) .strip { animation: scene-in .9s ease both; }
+@keyframes scene-in { 0%, 40% { opacity: 0; } 100% { opacity: 1; } }
+
+/* Action */
+.frame[data-scene="action"] .stage { width: 1280px; height: 720px; }
+.frame[data-scene="action"] .stage iframe { transform: scale(1); }
+.frame[data-scene="action"] .side, .frame[data-scene="action"] .strip { opacity: 0; visibility: hidden; transition: opacity .45s ease, visibility 0s .45s; }
+.action-bar { display: none; flex: 0 1 auto; min-width: 0; max-width: 780px; align-items: center; gap: 12px; padding: 8px 14px 8px 10px; border-radius: 12px; background: var(--glass); border: 1px solid #ffffff1f; border-left: 4px solid var(--tone); box-shadow: 0 4px 16px #0006; }
+.frame[data-scene="action"] .action-bar { display: flex; animation: rise .5s .35s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(-10px); } }
+.action-bar .mark { width: 40px; height: 40px; }
+.action-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.action-head { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 20px; line-height: 28px; white-space: nowrap; }
+.action-head b { font-size: 22px; font-weight: 750; }
+.action-head .status-icon { width: 26px; height: 26px; border-radius: 8px; }
+.action-head .status-icon::after { inset: 5px; }
+.action-status { font-weight: 750; color: var(--tone); }
+.action-now { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; }
+.action-now:empty { display: none; }
+.action-story { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 20px; line-height: 26px; color: #cdd7de; white-space: nowrap; }
+.action-story:empty { display: none; }
+.action-story .glyph { flex: none; width: 24px; height: 24px; border-radius: 6px; }
+.action-story span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.action-bar .live { flex: none; align-self: flex-start; margin-top: 2px; }
+
+/* Night: the stage in the top-left quarter, a touch brighter so night scenes stay readable. */
+.frame[data-scene="night"] { grid-template-columns: 656px 624px; grid-template-rows: 376px 344px; }
+.frame[data-scene="night"] .stage { left: 8px; top: 8px; width: 640px; height: 360px; border-radius: 12px; box-shadow: 0 0 0 1px var(--line), 0 8px 28px #0008; }
+.frame[data-scene="night"] .stage iframe { transform: scale(.5); filter: brightness(1.25) saturate(1.1); }
+.frame[data-scene="night"] .side { padding-left: 0; }
+.frame[data-scene="night"] .overlay-bottom, .frame[data-scene="night"] .hotbar { bottom: 12px; }
+.frame[data-scene="night"] .overlay-top { top: 12px; }
+.frame[data-scene="night"] .overlay { left: 12px; }
+.frame[data-scene="night"] .hotbar { right: 12px; padding: 6px; }
+.frame[data-scene="night"] .dial { top: 12px; right: 12px; }
+.frame[data-scene="night"] .spark { display: none !important; }
+.frame[data-scene="night"] .hotbar .slot-box { width: 40px; height: 40px; }
+.frame[data-scene="night"] .hotbar .slot-box img { width: 30px; height: 30px; }
+.frame[data-scene="night"] .brain-uptime { display: flex !important; gap: 5px; }
+/* The map, big, in the strip's first column; without one the story just widens. */
+.frame[data-scene="night"] .minimap { position: absolute; left: 8px; top: 384px; width: 300px; height: 328px; padding: 10px 12px; gap: 6px; }
+.frame[data-scene="night"] .minimap svg { height: 282px; }
+.frame[data-scene="night"] .strip { grid-template-columns: minmax(0, 1fr) 400px; }
+.frame[data-scene="night"]:has(.minimap:not([hidden]):not(:empty)) .strip { padding-left: 316px; }
+.frame[data-scene="night"] .inventory { display: none; }
+.frame[data-scene="night"] .ticker li { height: 36px; line-height: 36px; font-size: 22px; }
+.frame[data-scene="night"] .ticker li:nth-child(n+5) { display: grid; }
+.frame[data-scene="night"] .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.frame[data-scene="night"] .stat-grid > div { padding: 6px 12px; }
+.frame[data-scene="night"] .stat-grid > div.wide { grid-column: auto; }
+.frame[data-scene="night"] .stat-grid dd { font-size: 32px; line-height: 38px; }
+.frame[data-scene="night"] .stat-grid dd.word { font-size: 24px; line-height: 38px; }
+
+/* ---- Moments: the event banner and the "What is this?" lower-third, both on the game ---- */
+.banner { position: absolute; left: 50%; top: 84px; z-index: 4; display: flex; align-items: center; gap: 16px; max-width: min(600px, calc(100% - 48px)); padding: 12px 26px 12px 12px; border-radius: 14px;
+  --accent: var(--cyan); background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%), #141b20f2; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 10px 30px #000a;
+  opacity: 0; visibility: hidden; transform: translate(-50%, -18px) scale(.96);
+  transition: opacity .35s ease, transform .45s ease, visibility 0s .45s; }
+.banner.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .35s ease, transform .5s cubic-bezier(.2, .9, .3, 1.25), visibility 0s; animation: banner-glow 1.6s ease-out .2s; }
+@keyframes banner-glow { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent), 0 10px 30px #000a; } 100% { box-shadow: 0 0 0 18px transparent, 0 10px 30px #000a; } }
+.frame[data-scene="action"] .banner { top: 112px; }
+/* At night, below the dial. */
+.frame[data-scene="night"] .banner { top: 148px; }
+.banner[data-kind="death"] { --accent: var(--red); }
+.banner[data-kind="build"] { --accent: var(--green); }
+.banner[data-kind="milestone"] { --accent: var(--amber); }
+.banner-art { flex: none; display: grid; place-items: center; width: 60px; height: 60px; border-radius: 12px; }
+.banner-art .glyph { width: 60px; height: 60px; border-radius: 12px; }
+.banner-art .glyph::after { inset: 11px; }
+.banner-art.slot-box { border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); }
+.banner-art.slot-box img { width: 44px; height: 44px; }
+.banner-text { display: flex; flex-direction: column; min-width: 0; }
+.banner-text small { font-size: 16px; line-height: 20px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.banner-text b { font-size: 28px; line-height: 34px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner-note { font-size: 18px; line-height: 22px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.lower-third { position: absolute; left: 16px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 14px; max-width: calc(100% - 32px); padding: 10px 22px 10px 14px; border-radius: 12px;
+  background: linear-gradient(90deg, #2ee6f01a, transparent 60%), #141b20f2; border: 1px solid #2ee6f04d; border-left: 4px solid var(--cyan); box-shadow: 0 8px 24px #0009;
+  opacity: 0; visibility: hidden; transform: translateX(-28px); transition: opacity .4s ease, transform .5s ease, visibility 0s .5s; }
+.frame.lower-third-on .lower-third { opacity: 1; visibility: visible; transform: none; transition: opacity .4s ease .25s, transform .6s cubic-bezier(.2, .9, .3, 1) .25s, visibility 0s; }
+.lower-third .mark { width: 44px; height: 44px; }
+.lower-text { display: flex; flex-direction: column; min-width: 0; }
+.lower-text small { font-size: 16px; line-height: 20px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--cyan); }
+.lower-text p { font-size: 22px; line-height: 28px; font-weight: 600; }
+/* The vitals and hotbar step aside while it is up. */
+.overlay-bottom, .hotbar { transition: opacity .3s ease; }
+.frame.lower-third-on .overlay-bottom, .frame.lower-third-on .hotbar { opacity: 0; }

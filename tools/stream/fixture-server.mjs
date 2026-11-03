@@ -10,12 +10,17 @@
 // In a repo checkout it also serves the real broadcast page at /broadcast,
 // with a fake 3D frame at /viewer/, the viewer's textures and canned
 // public state at /api/state:
-//   curl 'http://127.0.0.1:3999/set?state=edge'       normal | build | edge | empty (bot=down or viewer=offline: offline)
+//   curl 'http://127.0.0.1:3999/set?state=edge'       normal | build | edge | empty | night (bot=down or viewer=offline: offline)
+//   curl 'http://127.0.0.1:3999/set?event=death'      a moment for the scene machine: death | hostile | fight | highlight |
+//                                                     build-done | milestone | tier | armor; several stack; a new state clears them
+// Scenes come from the page's own machine (broadcast-scenes.mjs): hostile, fight or death set off
+// the action scene, night (sheltering after dark) the night scene, and every event but hostile and
+// fight a banner. Switching normal -> build is a building start (action too).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 
 const port = Number(process.argv[2] ?? 3999);
-const control = { viewer: "connected", bot: "up", freeze: 0, state: "normal" };
+const control = { viewer: "connected", bot: "up", freeze: 0, state: "normal", events: [] };
 
 const shell = `<!doctype html><meta charset="utf-8"><title>fixture</title>
 <style>body{margin:0;background:#123;color:#fff;font:20px sans-serif}.stage{position:absolute;inset:0}iframe{border:0;width:100%;height:100%}
@@ -73,7 +78,8 @@ const clock = (from, t) => Math.round(((from + t * 20) % 24000) / 100) * 100 % 2
 const vitalsFor = (now, sample, count = 60) => Array.from({ length: count }, (_, i) => ({ at: new Date(now - (count - 1 - i) * 60_000).toISOString(), ...sample(i) }));
 // A new decision every 12 s; the model is busy for the 3 s before each one.
 const decisions = (t) => ({ n: Math.floor(t / 12), busy: t % 12 > 9 });
-const milestones = (ids) => ["day-1", "day-7", "logs-100", "stone-1000", "iron-pickaxe", "diamond", "kills-10", "builds-1"].map((id) => ({ id, title: id, description: id, unlocked: ids.includes(id), progress: ids.includes(id) ? 1 : 0.4 }));
+const MILESTONES = { "day-1": ["First Night", "Survive the first night"], "day-7": ["One Week In", "Reach day 7"], "logs-100": ["Lumberjack", "Chop 100 logs"], "stone-1000": ["Quarryman", "Mine 1,000 stone"], "iron-pickaxe": ["Iron Age", "Craft an iron pickaxe"], diamond: ["Diamonds!", "Mine a diamond ore"], "kills-10": ["Monster Hunter", "Defeat 10 hostile mobs"], "builds-1": ["Architect", "Complete a build"] };
+const milestones = (ids) => Object.entries(MILESTONES).map(([id, [title, description]]) => ({ id, title, description, unlocked: ids.includes(id), progress: ids.includes(id) ? 1 : 0.4 }));
 const SCENES = {
   normal: ({ t, iso, at, now }) => ({
     status: { activity: "gathering", detail: "Collecting materials and supplies.", since: iso(420) },
@@ -138,6 +144,27 @@ const SCENES = {
     inventory: items(["netherrack", "quartz", "blaze_rod", "gold_nugget", "cooked_porkchop", "golden_carrot", "obsidian", "flint_and_steel", "diamond", "polished_blackstone_brick_stairs", "cobbled_deepslate", "torch", "arrow", "bow", "ender_pearl", "water_bucket", "chest", "magma_cream", "nether_wart", "soul_sand"].map((name, i) => [name, i % 3 ? 64 * (i + 1) : 1])),
     equipment: { hand: { name: "netherite_sword", count: 1 }, "off-hand": { name: "polished_blackstone_brick_stairs", count: 63 }, head: { name: "diamond_helmet", count: 1 }, torso: { name: "netherite_chestplate", count: 1 }, legs: { name: "golden_leggings", count: 1 }, feet: { name: "chainmail_boots", count: 1 } },
   }),
+  // After dark, sheltering: the scene machine's night scene once it has held a few seconds.
+  night: (args) => {
+    const base = SCENES.normal(args);
+    return {
+      ...base,
+      status: { activity: "resting", detail: "Taking a break between jobs.", since: args.iso(240) },
+      // The clock loops through the middle of the night, so dawn never ends a long session.
+      self: { ...base.self, health: 20, hunger: 17, timeOfDay: clock(15_000, args.t % 300) },
+      now: { label: "Sheltering for the night.", step: "Sheltering for the night", progress: null },
+      thinking: { text: "Stay inside until morning; the creepers are out and the walls are only one block thick.", at: args.at(started) },
+      story: [
+        { id: 70, at: args.iso(2400), icon: "gather", text: "Gathered 32 cobblestone", highlight: false },
+        { id: 71, at: args.iso(1900), icon: "build", text: "Finished building a small house!", highlight: true },
+        { id: 72, at: args.iso(1500), icon: "tool", text: "His stone pickaxe broke", highlight: false },
+        { id: 73, at: args.iso(900), icon: "night", text: "Night falls", highlight: false },
+        { id: 74, at: args.iso(860), icon: "home", text: "Made it to shelter for the night", highlight: false },
+        { id: 75, at: args.iso(400), icon: "hostile", text: "Spotted a zombie", highlight: false },
+        { id: 76, at: args.iso(120), icon: "hostile", text: "Spotted a spider", highlight: false },
+      ],
+    };
+  },
   // A brand-new world: nothing carried, nothing told, no stats yet.
   empty: () => ({
     status: { activity: "resting", detail: "Taking a break between jobs.", since: null },
@@ -149,11 +176,31 @@ const SCENES = {
     equipment: { hand: null, "off-hand": null, head: null, torso: null, legs: null, feet: null },
   }),
 };
+// Moments layered on the current state, oldest first (see the event control above).
+const EVENT_STORY = {
+  death: ["death", "Was killed by a skeleton", true], hostile: ["hostile", "Spotted a creeper", false], fight: ["fight", "Fought off an attack", false],
+  highlight: ["goal", "Goal complete: Collect iron ingot", true], "build-done": ["build", "Finished building a cottage!", true],
+};
+function applyEvents(scene, events) {
+  for (const [i, event] of events.entries()) {
+    const story = EVENT_STORY[event.kind];
+    if (story) scene.story = [...scene.story, { id: 10_000 + i, at: new Date(event.at).toISOString(), icon: story[0], text: story[1], highlight: story[2] }];
+    if (event.kind === "death" && scene.world) scene.world = { ...scene.world, deaths: scene.world.deaths + 1 };
+    if (event.kind === "build-done") scene.build = null;
+    if (event.kind === "milestone" && scene.world) {
+      const next = scene.world.milestones.findIndex((m) => !m.unlocked);
+      if (next >= 0) scene.world = { ...scene.world, milestones: scene.world.milestones.map((m, j) => j === next ? { ...m, unlocked: true, progress: 1 } : m) };
+    }
+    if (event.kind === "tier") scene.inventory = items([...scene.inventory.items.map((item) => [item.name, item.count]), ["diamond_pickaxe", 1]]);
+    if (event.kind === "armor") scene.equipment = { ...scene.equipment, torso: { name: "diamond_chestplate", count: 1 } };
+  }
+  return scene;
+}
 function items(pairs) { return { items: pairs.map(([name, count]) => ({ name, count })), totalItems: pairs.reduce((total, [, count]) => total + count, 0) }; }
 function publicState() {
   const now = Date.now();
   const at = (ms) => new Date(ms).toISOString();
-  const scene = (SCENES[control.state] ?? SCENES.normal)({ t: (now - started) / 1000, iso: (secondsAgo) => at(now - secondsAgo * 1000), at, now });
+  const scene = applyEvents((SCENES[control.state] ?? SCENES.normal)({ t: (now - started) / 1000, iso: (secondsAgo) => at(now - secondsAgo * 1000), at, now }), control.events);
   const connected = control.bot === "up" && control.viewer !== "offline";
   return {
     public: true, connection: { connected }, viewer: { status: "running" }, ...scene,
@@ -180,7 +227,7 @@ function minimap() {
 
 const PUBLIC_DIR = new URL("../../src/dashboard/public/", import.meta.url);
 const VIEWER_DIR = new URL("../../node_modules/prismarine-viewer/public/", import.meta.url);
-const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/broadcast-minimap.mjs": "broadcast-minimap.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
+const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/broadcast-minimap.mjs": "broadcast-minimap.mjs", "/broadcast-scenes.mjs": "broadcast-scenes.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
 const TYPES = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", png: "image/png", json: "application/json" };
 // Mirrors SHELL_SECURITY_HEADERS' CSP (src/dashboard/http-guard.ts), so a violation shows up here too.
 const SHELL_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -196,7 +243,11 @@ async function sendFile(res, url, csp) {
 createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/set") {
-    for (const [k, v] of url.searchParams) control[k] = k === "freeze" ? Number(v) : v;
+    for (const [k, v] of url.searchParams) {
+      if (k === "event") { if (v === "clear") control.events = []; else control.events.push({ kind: v, at: Date.now() }); continue; }
+      if (k === "state" && v !== control.state) control.events = [];
+      control[k] = k === "freeze" ? Number(v) : v;
+    }
     if (control.freeze) setTimeout(() => { control.freeze = 0; }, 600);
     res.end(JSON.stringify(control)); return;
   }

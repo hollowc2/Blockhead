@@ -1,4 +1,5 @@
 import { ViewerSession, frameToken } from "./viewer-session.mjs";
+import { createScenes, stepScenes } from "./broadcast-scenes.mjs";
 import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, nearestTurn, progression, sparkline, TIERS, uptime } from "./broadcast-panels.mjs";
 // The broadcast frame filmed by tools/stream. It reads the same /api/state as
 // the viewer shell, polls once a second, and never takes input: no buttons,
@@ -115,8 +116,13 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     $("nowPanel").hidden = connected && !s.status;
     const activity = connected && ACTIVITY[s.status?.activity] ? s.status.activity : "offline";
     $("nowPanel").dataset.activity = activity;
+    $("actionBar").dataset.activity = activity;
     setText($("statusLabel"), ACTIVITY[activity]);
+    setText($("actionStatus"), ACTIVITY[activity]);
     setText($("nowLabel"), connected ? s.now?.label ?? s.status?.detail : "CobbleBob isn't connected to the world right now.");
+    // The action bar's line is short: the goal when there is one, else nothing.
+    const goal = connected && typeof s.now?.label === "string" ? s.now.label : "";
+    if ($("actionNow").textContent !== goal) $("actionNow").textContent = goal;
     const started = connected && s.status?.since ? Date.parse(s.status.since) : NaN;
     const since = Number.isFinite(started) && now - started >= 60_000 ? `for ${span(now - started)}` : "";
     if ($("statusSince").textContent !== since) $("statusSince").textContent = since;
@@ -237,14 +243,14 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     }
   }
 
-  // ---- Story ticker: the latest four, newest first ----
+  // ---- Story ticker: the latest four, newest first (seven in the night scene, by CSS) ----
   const GLYPHS = new Set(["day", "night", "goal", "build", "death", "respawn", "gather", "tool", "hostile", "explore", "home", "fight", "milestone"]);
   let lastStoryId = null;
   function renderStory(entries, now) {
     const newest = entries.length ? entries[entries.length - 1].id : 0;
     // A restarted bot numbers its story from 1 again; treat that as a fresh start.
     const firstLoad = lastStoryId === null || newest < lastStoryId;
-    const latest = entries.slice(-4).reverse();
+    const latest = entries.slice(-7).reverse();
     const list = $("story");
     $("storyEmpty").hidden = latest.length > 0;
     const key = JSON.stringify(latest.map((entry) => [entry.id, entry.text, entry.highlight, ago(entry.at, now)]));
@@ -258,6 +264,9 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
         row.append(el("i", `glyph ${icon}`), el("span", "", entry.text), time);
         return row;
       }));
+      // The action bar repeats the newest line: usually what set the scene off.
+      const top = latest[0];
+      $("actionStory").replaceChildren(...(top ? [el("i", `glyph ${GLYPHS.has(top.icon) ? top.icon : "dot"}`), el("span", "", top.text)] : []));
     }
     lastStoryId = newest;
   }
@@ -334,6 +343,36 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     if (side.scrollHeight > side.clientHeight && thoughtLines > MIN_LINES) set(thoughtLines - 1);
   }
 
+  // ---- Scenes and moments (broadcast-scenes.mjs): layout, banners, the lower-third ----
+  // The scene is a data attribute on the frame; CSS moves the stage box and
+  // scales the iframe inside it. The iframe itself is never moved or reloaded.
+  let scenes = createScenes(Date.now()), bannerId = null;
+  function renderScenes(s, now) {
+    scenes = stepScenes(scenes, s, now);
+    if (frame.dataset.scene !== scenes.scene) {
+      frame.dataset.scene = scenes.scene;
+      // Panels fade back in after the layout swap (a CSS animation, restarted here).
+      frame.classList.remove("scene-in"); void frame.offsetWidth; frame.classList.add("scene-in");
+    }
+    renderBanner(scenes.banner);
+    frame.classList.toggle("lower-third-on", scenes.lowerThird);
+  }
+  function renderBanner(banner) {
+    const node = $("banner");
+    if (!banner) { bannerId = null; node.classList.remove("show"); return; }
+    if (banner.id === bannerId) return;
+    bannerId = banner.id;
+    node.dataset.kind = banner.kind;
+    setText($("bannerLabel"), banner.label);
+    setText($("bannerText"), banner.text);
+    $("bannerNote").hidden = !banner.note;
+    if (banner.note) setText($("bannerNote"), banner.note);
+    const box = $("bannerArt");
+    if (banner.item) { box.className = "banner-art slot-box"; art(box, banner.item); }
+    else { delete box.dataset.art; box.className = "banner-art"; box.replaceChildren(el("i", `glyph ${GLYPHS.has(banner.icon) ? banner.icon : "dot"}`)); }
+    node.classList.remove("show"); void node.offsetWidth; node.classList.add("show");
+  }
+
   // ---- Freshness, the live pill and the veil over the game ----
   let reachable = false, botLive = false, lastReceivedAt = null, lastState = null;
   function renderFreshness() {
@@ -379,6 +418,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     renderBuild(s.build, connected);
     renderProgress(s);
     renderBrain(s.brain, s.uptimeSeconds);
+    if (!repaint) renderScenes(s, now);
     fitColumn();
     if (repaint) return;
     viewerSession.update({ reachable: true, connected, running: s.viewer?.status === "running", session: s.viewer?.session ?? "unknown" });
@@ -444,6 +484,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   }
   function markUnreachable() {
     reachable = false; botLive = false;
+    renderScenes(null, Date.now());
     viewerSession.update({ reachable: false, connected: false, running: false, session: lastState?.viewer?.session ?? "unknown" });
     setText($("viewerStatus"), viewerSession.state);
     renderFreshness();

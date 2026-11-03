@@ -314,7 +314,8 @@ test("public viewer never exposes task delivery even with a handler supplied", a
 
 const BROADCAST_ASSETS: ReadonlyArray<[string, RegExp]> = [
   ["/broadcast", /^text\/html/], ["/broadcast.css", /^text\/css/], ["/broadcast.js", /^text\/javascript/],
-  ["/broadcast-panels.mjs", /^text\/javascript/], ["/broadcast-minimap.mjs", /^text\/javascript/], ["/viewer-session.mjs", /^text\/javascript/],
+  ["/broadcast-panels.mjs", /^text\/javascript/], ["/broadcast-minimap.mjs", /^text\/javascript/], ["/broadcast-scenes.mjs", /^text\/javascript/],
+  ["/viewer-session.mjs", /^text\/javascript/],
 ];
 
 test("broadcast page and its assets are served on both listeners with the shell's security headers", async () => {
@@ -342,7 +343,7 @@ test("broadcast page and its assets are served on both listeners with the shell'
 test("public broadcast routes are exact: no index, directory or method variants", async () => {
   const env = await publicShell();
   try {
-    for (const path of ["/broadcast/", "/broadcast.html", "/broadcast/index.html", "/broadcast.js.map", "/broadcast-scenes.mjs", "/Broadcast"]) {
+    for (const path of ["/broadcast/", "/broadcast.html", "/broadcast/index.html", "/broadcast.js.map", "/broadcast-scenes.js", "/broadcast-scenes.d.mts", "/broadcast-panels.d.mts", "/Broadcast"]) {
       assert.equal((await send(env.port, "GET", path)).status, 404, path);
     }
     for (const method of ["POST", "PUT", "DELETE"]) assert.equal((await send(env.port, method, "/broadcast")).status, 404, method);
@@ -354,7 +355,7 @@ test("public broadcast routes are exact: no index, directory or method variants"
 
 test("broadcast page keeps the renderer contract and loads only same-origin assets", async () => {
   const dir = fileURLToPath(new URL("./public/", import.meta.url));
-  const [html = "", css = "", js = "", panels = "", minimap = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs"].map(name => readFile(dir + name, "utf8")));
+  const [html = "", css = "", js = "", panels = "", minimap = "", scenes = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs", "broadcast-scenes.mjs"].map(name => readFile(dir + name, "utf8")));
   // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`, and presses T unless `#followToggle` is pressed.
   assert.match(html, /<section class="stage"[^>]*>\s*<iframe\b/);
   assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
@@ -363,15 +364,18 @@ test("broadcast page keeps the renderer contract and loads only same-origin asse
   assert.match(js, /detail: "follow"/);
   for (const slot of ["now", "thinking", "build", "brain", "minimap"]) assert.match(html, new RegExp(`data-panel="${slot}"`), slot);
   // No CDN, font or image from anywhere else; the SVG namespace is the only URL.
-  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap]] as const) {
+  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap], ["scenes", scenes]] as const) {
     assert.deepEqual(source.match(/https?:\/\/[^\s"')]+/g)?.filter(url => url !== "http://www.w3.org/2000/svg") ?? [], [], name);
     assert.doesNotMatch(source, /@import|@font-face|\bstyle="/, name);
   }
   assert.deepEqual(html.match(/<script\b[^>]*>/g), ['<script type="module" src="/broadcast.js">'], "no inline script");
   // Every module the page imports is one the server serves.
   const imports = [...js.matchAll(/(?:from |import\()"\.\/([^"]+)"/g)].map(match => `/${match[1]}`);
-  assert.deepEqual(imports.sort(), ["/broadcast-minimap.mjs", "/broadcast-panels.mjs", "/viewer-session.mjs"]);
+  assert.deepEqual(imports.sort(), ["/broadcast-minimap.mjs", "/broadcast-panels.mjs", "/broadcast-scenes.mjs", "/viewer-session.mjs"]);
   assert.doesNotMatch(minimap, /\bimport\b/, "the minimap module stands alone");
+  // The scene module is pure: it imports only the panel helpers and touches no DOM, network or timers.
+  assert.deepEqual([...scenes.matchAll(/\bfrom "([^"]+)"/g)].map(match => match[1]), ["./broadcast-panels.mjs"]);
+  assert.doesNotMatch(scenes, /\b(?:document|window|fetch|setTimeout|setInterval|Date\.now)\b/);
   for (const path of imports) assert(BROADCAST_ASSETS.some(([served]) => served === path), path);
 });
 
