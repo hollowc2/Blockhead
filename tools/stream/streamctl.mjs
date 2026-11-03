@@ -7,9 +7,11 @@
 //   streamctl auto                clear the latch; live returns after the admission window
 //   streamctl reconnect-encoder   restart only ffmpeg (one short output interruption)
 //   streamctl transitions [n]     last n scene transitions (default 20)
+//   streamctl alerts [n]          last n alert events (default 20) and the open incidents
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { openAlerts, readAlerts } from "./alerts.mjs";
 
 const dir = process.env.STREAM_STATE_DIR ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "cobblebob-stream");
 const [command = "status", arg] = process.argv.slice(2);
@@ -26,6 +28,9 @@ switch (command) {
     const age = Math.round((Date.now() - Date.parse(s.time)) / 1000);
     console.log(JSON.stringify({ ...s, statusFileAgeSeconds: age, latch: existsSync(join(dir, "maintenance")) }, null, 2));
     if (age > 10) console.log(`warning: status is ${age}s old — the streamer may be stopped or stuck`);
+    // From the persisted alert book, so this is right even while the streamer is down.
+    const open = openAlerts(dir);
+    console.log(open.length ? `open alerts: ${open.map(a => `${a.condition} (since ${a.openedAt})`).join(", ")}` : "open alerts: none");
     break;
   }
   case "hold":
@@ -47,7 +52,14 @@ switch (command) {
     console.log(lines.slice(-n).join("\n") || "no transitions recorded");
     break;
   }
+  case "alerts": {
+    const n = Math.max(1, Math.min(500, Number(arg) || 20));
+    console.log(readAlerts(dir, n).join("\n") || "no alerts recorded");
+    const open = openAlerts(dir);
+    console.log(open.length ? `open: ${open.map(a => a.condition).join(", ")}` : "open: none");
+    break;
+  }
   default:
-    console.error("usage: streamctl status|hold|auto|reconnect-encoder|transitions [n]");
+    console.error("usage: streamctl status|hold|auto|reconnect-encoder|transitions [n]|alerts [n]");
     process.exit(2);
 }

@@ -22,6 +22,8 @@
 //   STREAM_WIDTH/STREAM_HEIGHT/STREAM_FPS/STREAM_BITRATE_K
 //   STREAM_ENCODER     libx264 (default) or h264_nvenc
 //   STREAM_CHROMIUM    Chromium executable (default: playwright-core's)
+//   STREAM_ALERT_COMMAND  optional: shell command run with each alert's JSON on stdin
+//                      (unset by default; alerts always go to alerts.jsonl and the journal)
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -32,6 +34,7 @@ import { Encoder } from "./encoder.mjs";
 import { loadHoldingFrames } from "./holding.mjs";
 import { FramePublisher } from "./publisher.mjs";
 import { Renderer } from "./renderer.mjs";
+import { createStreamHealth } from "./stream-health.mjs";
 
 const env = process.env;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +55,8 @@ const latchFile = join(stateDir, "maintenance");
 const reconnectFile = join(stateDir, "reconnect-encoder.request");
 const statusFile = join(stateDir, "status.json");
 const transitionsFile = join(stateDir, "transitions.jsonl");
+// Alert conditions, restart counting and the frame check. Advisory only: it never throws.
+const alerts = createStreamHealth({ stateDir, log, env });
 
 function output() {
   if (env.STREAM_OUTPUT) return { args: ["-f", env.STREAM_OUTPUT.endsWith(".flv") ? "flv" : env.STREAM_OUTPUT.endsWith(".ts") ? "mpegts" : "mp4", "-y", env.STREAM_OUTPUT], label: "file", secrets: [] };
@@ -136,6 +141,7 @@ function evaluate() {
   publisher.select(state.sourceKind, state.variant ? holding.frames[state.variant] : null);
 
   const encoderHealth = encoder.health(publisher.blockedFor());
+  alerts.observe({ state: state.state, live: publisher.kind === "live", frame: publisher.live?.frame ?? null, encoder: encoderHealth, exhausted: encoder.exhausted, holdingMissing: holding.missing });
   if (encoder.exhausted) { log("encoder keeps failing; exiting for systemd to restart the service"); void shutdown(1); return; }
   if (!encoderHealth.ok && encoder.proc) { log("encoder unhealthy", { reason: encoderHealth.reason }); encoder.restart(encoderHealth.reason); }
 }
@@ -156,6 +162,7 @@ function writeStatus() {
     // Only a human (or a separate authorized checker) can verify YouTube playback.
     playback: "unknown",
     memory: { rssMB: Math.round(process.memoryUsage().rss / 1048576) },
+    alerts: alerts.status(),
   };
   try { writeFileSync(`${statusFile}.tmp`, JSON.stringify(status, null, 1), { mode: 0o600 }); renameSync(`${statusFile}.tmp`, statusFile); } catch {}
 }
@@ -179,6 +186,7 @@ async function shutdown(code) {
   const force = setTimeout(() => process.exit(code), 15_000); force.unref();
   await renderer.stop().catch(() => {});
   await encoder.stop().catch(() => {});
+  await alerts.drain(5_000);  // let a pending alert hook finish before systemd reaps the group
   process.exit(code);
 }
 process.on("SIGTERM", () => void shutdown(0));
