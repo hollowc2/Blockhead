@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ago, armorMaterial, compact, DAY_SECONDS, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, nearestTurn, NIGHT_SECONDS, progression, sparkline, uptime } from "./public/broadcast-panels.mjs";
+import { ago, armorMaterial, compact, DAY_SECONDS, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, milestoneSummary, nearestTurn, NIGHT_SECONDS, progression, sparkline, uptime, wearBar } from "./public/broadcast-panels.mjs";
+
+test("a durability bar shows only once an item is worn, shorter and redder as it wears", () => {
+  assert.deepEqual([1, 0.9, 0.5, 0.1, 0].map(wearBar), [null, { fill: 0.9, hue: 108 }, { fill: 0.5, hue: 60 }, { fill: 0.1, hue: 12 }, { fill: 0, hue: 0 }]);
+  for (const junk of [undefined, null, "0.5", Number.NaN, Infinity, 1.5]) assert.equal(wearBar(junk), null, String(junk));
+  assert.deepEqual(wearBar(-0.2), { fill: 0, hue: 0 });
+});
+
+test("the offline milestone summary counts unlocked ones and lists the closest locked ones", () => {
+  const milestones = [
+    { id: "a", title: "First Night", description: "Survive the first night", unlocked: true, progress: 1 },
+    { id: "b", title: "Old Timer", description: "Reach day 30", unlocked: false, progress: 0.4 },
+    { id: "c", title: "Quarryman", description: "Mine 1,000 stone", unlocked: false, progress: 0.9 },
+    { id: "d", title: "Farmer", description: "Harvest 1,000 wheat", unlocked: false, progress: 0.4 },
+    { id: "e", title: "Diamonds!", unlocked: false, progress: Number.NaN },
+    { id: "f", title: 12, unlocked: true, progress: 1 },
+  ];
+  assert.deepEqual(milestoneSummary({ milestones }), {
+    unlocked: 1, total: 5,
+    next: [{ title: "Quarryman", description: "Mine 1,000 stone", progress: 0.9 }, { title: "Old Timer", description: "Reach day 30", progress: 0.4 }, { title: "Farmer", description: "Harvest 1,000 wheat", progress: 0.4 }],
+  });
+  assert.deepEqual(milestoneSummary({ milestones }, 4)?.next[3], { title: "Diamonds!", description: "", progress: 0 });
+  for (const world of [null, {}, { milestones: [] }, { milestones: "x" }]) assert.equal(milestoneSummary(world), null);
+});
 
 const reached = (state: unknown): string[] => progression(state).tiers.filter((tier) => tier.reached).map((tier) => tier.id);
 

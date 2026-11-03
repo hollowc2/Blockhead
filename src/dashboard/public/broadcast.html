@@ -23,6 +23,35 @@
         <span id="veilDetail">The live view starts in a moment.</span>
       </div>
 
+      <!-- Offline scene: the bot answers but Bob isn't in the world. Recent story
+           and milestones stand in for the game; the iframe stays where it is. -->
+      <div id="offline" class="offline" hidden>
+        <header class="offline-head">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path class="mark-pixel" d="M16 2 3 9v14l13 7z"/>
+            <path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+            <path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+            <g class="mark-node"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+          </svg>
+          <div class="offline-title">
+            <strong>CobbleBob is offline</strong>
+            <span>He'll be back in the world soon.</span>
+          </div>
+          <span id="offlineFor" class="offline-for" hidden></span>
+        </header>
+        <div class="offline-body">
+          <section class="panel offline-story">
+            <h2>Recently</h2>
+            <ol id="offlineStory" class="offline-list"></ol>
+            <p id="offlineStoryEmpty" class="empty">Nothing yet. His story starts when he does.</p>
+          </section>
+          <section id="offlineMilestones" class="panel offline-milestones" hidden>
+            <h2>Milestones <span id="milestoneCount" class="h2-note"></span></h2>
+            <ul id="milestones" class="milestones"></ul>
+          </section>
+        </div>
+      </div>
+
       <div class="overlay overlay-top" data-live>
         <div id="dayChip" class="chip chip-day" hidden>Day <b id="dayCount">—</b></div>
         <div id="phaseChip" class="chip" hidden><i id="phaseIcon" class="phase-icon"></i><span id="phaseLabel"></span></div>

@@ -110,8 +110,11 @@ ul, ol { list-style: none; }
 .hotbar .slot-box img { width: 34px; height: 34px; }
 .hotbar [data-slot="hand"] { border-color: #ffffffcc; }
 .hotbar .hotbar-gap { width: 6px; }
-/* Armor material as a strip along the slot's foot. */
-.hotbar .slot-box[data-material]::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 3px; height: 3px; border-radius: 2px; background: var(--material); }
+/* Armor material as a strip along the slot's top; the foot is the durability bar's. */
+.hotbar .slot-box[data-material]::after { content: ""; position: absolute; left: 4px; right: 4px; top: 3px; height: 3px; border-radius: 2px; background: var(--material); }
+/* Durability, Minecraft style: shown once worn, on a black track, its length and hue (green → red) what is left. */
+.hotbar .wear { position: absolute; left: 3px; right: 3px; bottom: 3px; height: 6px; padding: 1px; border-radius: 2px; background: #000; }
+.hotbar .wear b { display: block; height: 100%; width: var(--wear, 100%); min-width: 2px; border-radius: 1px; background: hsl(var(--wear-hue, 120) 90% 48%); transition: width .6s ease; }
 [data-material="leather"] { --material: #8a5a33; }
 [data-material="chainmail"] { --material: #8d959c; }
 [data-material="iron"] { --material: #d8dde1; }
@@ -318,6 +321,44 @@ h1 { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 27p
 
 /* Retained readings while CobbleBob or the page's server is away. */
 body.stale [data-live] { opacity: .55; filter: grayscale(.8); transition: opacity .3s, filter .3s; }
+
+/* ---- Offline scene (data-offline on the frame): the bot answers, Bob isn't in the world ----
+   A card over the game (the iframe stays put) with his recent story and the
+   milestones closest to done; the strip trades inventory and story for big lifetime stats. */
+.offline { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; gap: 16px; padding: 22px 24px 24px;
+  background: radial-gradient(700px 260px at 30% 0%, #2ee6f012, transparent 70%), radial-gradient(500px 300px at 100% 100%, #3ccf7e0c, transparent 70%), var(--bg); }
+.offline-head { flex: none; display: flex; align-items: center; gap: 16px; }
+.offline-head .mark { width: 64px; height: 64px; animation: bob 3s ease-in-out infinite; }
+.offline-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.offline-title strong { font-size: 34px; line-height: 42px; font-weight: 750; letter-spacing: -.01em; }
+.offline-title span { font-size: 20px; line-height: 26px; color: var(--muted); }
+.offline-for { flex: none; display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 20px; font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; }
+.offline-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+.offline-body .panel { min-height: 0; overflow: hidden; padding: 12px 14px; gap: 10px; }
+.offline-list { display: flex; flex-direction: column; gap: 6px; }
+.offline-list li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: center; height: 46px; padding: 0 12px 0 8px; border-radius: 8px; background: var(--bg-2); font-size: 22px; line-height: 28px; color: #cdd7de; }
+.offline-list li > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.offline-list .glyph { width: 30px; height: 30px; }
+.offline-list li.highlight { color: var(--amber); font-weight: 700; }
+.offline-list li.highlight.death { color: #ff8a8a; }
+.offline-list li.highlight.build, .offline-list li.highlight.goal { color: var(--green); }
+.offline-list time { font-family: var(--mono); font-size: 16px; color: var(--muted); }
+.milestones { display: flex; flex-direction: column; gap: 14px; }
+.milestone { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 10px; row-gap: 3px; align-items: center; }
+.milestone .glyph { grid-row: span 3; align-self: start; width: 30px; height: 30px; }
+.milestone b { font-size: 20px; line-height: 24px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.milestone span { font-size: 16px; line-height: 20px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.milestone .bar { flex: none; height: 6px; --tone: var(--amber); }
+.milestones .empty { font-size: 20px; }
+/* A banner still up from just before he left would sit on the card; the machine queues none while offline. */
+.frame[data-offline] .banner { visibility: hidden; }
+.frame[data-offline] .strip { grid-template-columns: minmax(0, 1fr); }
+.frame[data-offline] .strip .inventory, .frame[data-offline] .strip .story { display: none; }
+.frame[data-offline] .stat-grid { flex: 1; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.frame[data-offline] .stat-grid > div { justify-content: center; padding: 10px 14px; }
+.frame[data-offline] .stat-grid > div.wide { grid-column: auto; }
+.frame[data-offline] .stat-grid dd { font-size: 36px; line-height: 44px; }
+.frame[data-offline] .stat-grid dd.word { font-size: 28px; }
 
 /* ---- Scenes (data-scene on the frame, from broadcast-scenes.mjs) ----
    normal: the layout above. action: the game takes the whole frame with a

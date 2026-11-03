@@ -13,6 +13,7 @@
 //   curl 'http://127.0.0.1:3999/set?state=edge'       normal | build | edge | empty | night (bot=down or viewer=offline: offline)
 //   curl 'http://127.0.0.1:3999/set?event=death'      a moment for the scene machine: death | hostile | fight | highlight |
 //                                                     build-done | milestone | tier | armor; several stack; a new state clears them
+// bot=down is "Bob disconnected, bot up": the page shows its offline scene and the streamer stays live on it.
 // Scenes come from the page's own machine (broadcast-scenes.mjs): hostile, fight or death set off
 // the action scene, night (sheltering after dark) the night scene, and every event but hostile and
 // fight a banner. Switching normal -> build is a building start (action too).
@@ -101,7 +102,8 @@ const SCENES = {
     ],
     world: { day: 12, blocksMined: 18342, itemsCrafted: 1204, mobsKilled: 87, deaths: 3, distanceKm: 41.7, buildsCompleted: 2, nemesis: "creeper", milestones: milestones(["day-1", "day-7", "logs-100", "iron-pickaxe", "kills-10", "builds-1"]) },
     inventory: items([["cobblestone", 37 + Math.floor(t / 6)], ["oak_log", 12], ["oak_planks", 20], ["stick", 9], ["torch", 23], ["bread", 6], ["coal", 14], ["iron_ingot", 4], ["dirt", 64], ["crafting_table", 1], ["white_bed", 1], ...(t > 12 ? [["raw_iron", 2]] : [])]),
-    equipment: { hand: { name: "iron_pickaxe", count: 1 }, "off-hand": { name: "shield", count: 1 }, head: { name: "iron_helmet", count: 1 }, torso: null, legs: { name: "leather_leggings", count: 1 }, feet: { name: "iron_boots", count: 1 } },
+    // Durability is the public tenths bucket; absent for a like-new item is fine too (no bar either way).
+    equipment: { hand: { name: "iron_pickaxe", count: 1, durability: Math.max(0.1, Math.ceil(10 - t / 15) / 10) }, "off-hand": { name: "shield", count: 1, durability: 0.9 }, head: { name: "iron_helmet", count: 1, durability: 1 }, torso: null, legs: { name: "leather_leggings", count: 1, durability: 0.4 }, feet: { name: "iron_boots", count: 1, durability: 0.1 } },
   }),
   // Building, starting at night: the build card replaces progression, the dial counts down to dawn.
   build: ({ t, iso, at, now }) => ({
@@ -143,7 +145,7 @@ const SCENES = {
     ],
     world: { day: 1234, blocksMined: 2_512_345, itemsCrafted: 98_765, mobsKilled: 4321, deaths: 112, distanceKm: 1234.5, buildsCompleted: 57, nemesis: "zombie villager", milestones: milestones(["day-1", "day-7", "logs-100", "stone-1000", "iron-pickaxe", "diamond", "kills-10", "builds-1"]) },
     inventory: items(["netherrack", "quartz", "blaze_rod", "gold_nugget", "cooked_porkchop", "golden_carrot", "obsidian", "flint_and_steel", "diamond", "polished_blackstone_brick_stairs", "cobbled_deepslate", "torch", "arrow", "bow", "ender_pearl", "water_bucket", "chest", "magma_cream", "nether_wart", "soul_sand"].map((name, i) => [name, i % 3 ? 64 * (i + 1) : 1])),
-    equipment: { hand: { name: "netherite_sword", count: 1 }, "off-hand": { name: "polished_blackstone_brick_stairs", count: 63 }, head: { name: "diamond_helmet", count: 1 }, torso: { name: "netherite_chestplate", count: 1 }, legs: { name: "golden_leggings", count: 1 }, feet: { name: "chainmail_boots", count: 1 } },
+    equipment: { hand: { name: "netherite_sword", count: 1, durability: 0 }, "off-hand": { name: "polished_blackstone_brick_stairs", count: 63 }, head: { name: "diamond_helmet", count: 1, durability: 0.7 }, torso: { name: "netherite_chestplate", count: 1, durability: 0.2 }, legs: { name: "golden_leggings", count: 1, durability: 0.5 }, feet: { name: "chainmail_boots", count: 1, durability: 0.3 } },
   }),
   // After dark, sheltering: the scene machine's night scene once it has held a few seconds.
   night: (args) => {

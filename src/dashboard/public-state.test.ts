@@ -316,3 +316,72 @@ test("a stockpile named like an Object prototype key gives no label", () => {
   snapshot.goal = { ...snapshot.goal!, successCriteria: [{ kind: "stockpile", stockpile: "constructor" as never, item: null, min: 5, label: "x" }] };
   assert.equal(typeof toPublicViewerState(snapshot).now?.label, "string");
 });
+
+/** Gear condition as projectGearDetail reports it: raw use counts and enchantments that stay private. */
+const condition = (name: unknown, remaining: unknown, max: unknown, extra: Record<string, unknown> = {}) => ({
+  name, count: 1, durability: { remaining, max, percent: 77 }, enchantments: [{ name: "OwnerSecretName_curse", level: 1200 }], ...extra,
+});
+const gearSnapshot = (): DashboardSnapshot => {
+  const snapshot = broadcastSnapshot();
+  snapshot.equipment = {
+    hand: { name: "iron_pickaxe", count: 1 }, "off-hand": { name: "torch", count: 23 },
+    head: { name: "iron_helmet", count: 1 }, torso: { name: "diamond_chestplate", count: 1 }, legs: { name: "leather_leggings", count: 1 }, feet: null,
+  };
+  snapshot.gear = {
+    equipment: {
+      hand: condition("iron_pickaxe", 125, 250), "off-hand": { name: "torch", count: 23, durability: null, enchantments: [] },
+      head: condition("iron_helmet", 1, 165), torso: condition("diamond_chestplate", 528, 528), legs: condition("leather_leggings", 0, 75), feet: null,
+    },
+    tools: [condition("diamond_sword", 3, 1561)], slots: { used: 3, free: 33, total: 36 }, supplies: [],
+    readiness: [{ key: "pickaxe", label: "Pickaxe", ok: true, detail: "iron pickaxe · 50% at 1200 64 -950" }], storageSeenAt: null,
+  } as never;
+  return snapshot;
+};
+
+test("worn and held items carry a tenths bucket of wear and nothing else from the gear projection", () => {
+  const state = toPublicViewerState(gearSnapshot());
+  assert.deepEqual(state.equipment, {
+    hand: { name: "iron_pickaxe", count: 1, durability: 0.5 },
+    "off-hand": { name: "torch", count: 23 },
+    head: { name: "iron_helmet", count: 1, durability: 0.1 },
+    torso: { name: "diamond_chestplate", count: 1, durability: 1 },
+    legs: { name: "leather_leggings", count: 1, durability: 0 },
+    feet: null,
+  });
+  const body = JSON.stringify(state);
+  for (const secret of ["125", "250", "165", "528", "1561", "77", "enchant", "curse", "\"max\"", "remaining", "readiness", "slots", "diamond_sword"]) {
+    assert.equal(body.includes(secret), false, `public state contains ${secret}`);
+  }
+  assertNoBroadcastLeak(state);
+});
+
+test("wear rounds up, so only a spent item reads empty and a lightly used one reads full", () => {
+  const wear = (remaining: number, max: number): unknown => {
+    const snapshot = gearSnapshot();
+    snapshot.gear!.equipment.hand = condition("iron_pickaxe", remaining, max) as never;
+    return toPublicViewerState(snapshot).equipment?.hand?.durability;
+  };
+  const cases: Array<[number, number, number]> = [[250, 250, 1], [249, 250, 1], [226, 250, 1], [225, 250, 0.9], [224, 250, 0.9], [26, 250, 0.2], [25, 250, 0.1], [1, 1561, 0.1], [0, 250, 0]];
+  for (const [remaining, max, bucket] of cases) assert.equal(wear(remaining, max), bucket, `${remaining}/${max}`);
+});
+
+test("wear is dropped when the gear projection is missing, junk or describes a different item", () => {
+  const hand = (gearHand: unknown, gear = true): unknown => {
+    const snapshot = gearSnapshot();
+    if (gear) snapshot.gear!.equipment.hand = gearHand as never; else snapshot.gear = null;
+    const state = toPublicViewerState(snapshot);
+    assertNoBroadcastLeak(state);
+    return state.equipment?.hand;
+  };
+  const plain = { name: "iron_pickaxe", count: 1 };
+  assert.deepEqual(hand(null, false), plain, "no gear projection");
+  for (const junk of [
+    null, {}, condition("diamond_pickaxe", 1, 2), condition("OwnerSecretName", 1, 2), condition("iron_pickaxe", 300, 250), condition("iron_pickaxe", -1, 250),
+    condition("iron_pickaxe", 1, 0), condition("iron_pickaxe", Number.NaN, 250), condition("iron_pickaxe", 1, Infinity), condition("iron_pickaxe", "1200", "1561"),
+    condition("iron_pickaxe", 1, 2, { durability: null }), condition(1200, 1, 2),
+  ]) assert.deepEqual(hand(junk), plain, JSON.stringify(junk));
+  assert.deepEqual(hand(condition("minecraft:iron_pickaxe", 1, 2)), { ...plain, durability: 0.5 }, "namespaced names still match");
+  const snapshot = gearSnapshot();
+  snapshot.connection.connected = false;
+  assert.equal(toPublicViewerState(snapshot).equipment, null, "no gear while disconnected");
+});

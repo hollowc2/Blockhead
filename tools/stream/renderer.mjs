@@ -33,7 +33,7 @@ export class Renderer {
     this.failures = 0; this.openedAt = null; this.lastReload = null;
     this.lastFrameAt = null; this.frames = 0;
     this.pendingHardFailure = null;
-    this.viewerState = null; this.raf = null; this.rafAdvancedAt = null; this.probeOkAt = null;
+    this.viewerState = null; this.raf = null; this.rafAdvancedAt = null; this.probeOkAt = null; this.pageOffline = false;
     this.viewerHealth = new BroadcastViewerHealth();
     this.renderer = null;
     this.relaunches = 0;
@@ -54,7 +54,9 @@ export class Renderer {
 
   viewerHealthSignal() {
     if (!this.open) return { ok: false, reason: "viewer-unknown" };
-    if (this.viewerState !== "connected") return { ok: false, reason: this.viewerState === "offline" ? "viewer-offline" : "viewer-not-connected" };
+    // "offline" is the page's fresh word from the bot that Bob is disconnected; with its offline scene up it can be shown (withOfflineScene).
+    if (this.viewerState === "offline") return { ok: false, reason: this.pageOffline ? "viewer-offline-scene" : "viewer-offline" };
+    if (this.viewerState !== "connected") return { ok: false, reason: "viewer-not-connected" };
     // rAF runs in the 3D frame; a CSS animation in the shell can't advance it.
     if (this.rafAdvancedAt === null || this.now() - this.rafAdvancedAt > this.o.frameFreshMs) return { ok: false, reason: "viewer-frozen" };
     return { ok: true };
@@ -129,6 +131,7 @@ export class Renderer {
   }
 
   async openPage(page, cdp) {
+    this.pageOffline = false;  // a fresh page vouches for its offline scene only once probed
     await page.goto(this.pageUrl, { waitUntil: "load", timeout: 30_000 });
     // /broadcast is made for the stream: it has no controls to hide, and it applies the follow camera
     // itself (again whenever the 3D frame reloads). Nothing here clicks, types into or restyles the page.
@@ -153,10 +156,11 @@ export class Renderer {
         let raf = null, gl = null;
         try { raf = frame?.contentWindow?.__cobblebobRaf ?? null; } catch {}
         try { gl = frame?.contentDocument?.querySelector("canvas") ? true : false; } catch {}
-        return { state: document.querySelector("#viewerStatus")?.textContent ?? null, raf, gl };
+        return { state: document.querySelector("#viewerStatus")?.textContent ?? null, raf, gl, offline: document.querySelector("[data-offline]") !== null };
       }), this.o.probeTimeoutMs, "probe");
       if (generation !== this.generation) return;
       this.probeOkAt = this.now();
+      this.pageOffline = probe.offline === true;
       if (probe.state !== this.viewerState) { this.log("viewer state", { state: probe.state }); this.viewerState = probe.state; }
       if (typeof probe.raf === "number" && probe.raf !== this.raf) { this.raf = probe.raf; this.rafAdvancedAt = this.now(); }
       if (this.failures && this.openedAt !== null && now - this.openedAt > this.o.stableMs && this.viewerState === "connected") this.failures = 0;

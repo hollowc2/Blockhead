@@ -50,6 +50,35 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
+## Done: offline scene and durability bars (2026-11-03, not yet deployed)
+
+- **Offline scene.** While the bot answers but Bob is disconnected, the page
+  sets `data-offline` on the frame and covers the game with a card: "CobbleBob
+  is offline", how long he has been away, his last six story entries (the same
+  filtered public feed) and the four milestones closest to done. The strip
+  swaps inventory and story for one row of big lifetime stats. The streamer
+  now counts exactly that case as presentable (`withOfflineScene` in
+  `tools/stream/broadcast-state.mjs`): bot `/health` says disconnected, the
+  page reports `#viewerStatus` "offline" *and* its offline scene, and the
+  renderer is healthy. A down, dead or stale bot, a crashed or frozen
+  renderer, or an older page without the scene still get the fixed holding
+  card. On reconnect the viewer must reach "connected" within the 5 s
+  debounce, or the stream shows "Reconnecting" until the usual 15 s
+  admission. Local run (fixture, real Chromium + ffmpeg, 130 s): live → bot
+  disconnected → offline card on the encoded stream → back, all without
+  leaving LIVE, 0 encoder interruptions, ~31 fps.
+- **Durability bars.** `equipment.<slot>.durability` in the public state is
+  what is left as a tenths bucket (rounded up; absent for items that never
+  wear), taken from the private gear projection only when it names the same
+  item in the same slot. Raw use counts and enchantments stay private
+  (`public-state.test.ts`). The hotbar draws a Minecraft-style bar, green to
+  red, once an item is worn; the armor material strip moved to the slot's top.
+
+Deploy the bot first (page and state), then copy `stream.mjs`, `renderer.mjs`
+and `broadcast-state.mjs` to the stream runtime and restart it. Either half
+alone is safe: an old streamer shows the holding card while Bob is offline,
+and a new streamer with an old page sees no `data-offline` and does the same.
+
 ## Backlog
 
 - **Picture-in-picture.** A small second camera: an overhead view of home,
@@ -62,15 +91,9 @@ What we learned on Maia:
   (combat, building, mining ore). The streamer no longer sends key presses,
   so drive this from the page's scene machine. Keep the `.stage iframe`
   attached so the renderer's probe keeps working.
-- **Offline scene with recent story.** The streamer's holding card is
-  deliberately fixed copy. A richer offline state with the last story
-  entries would have to come from the page, while the bot is up but Bob is
-  disconnected.
 - **More public thinking.** Prompt the model for a short spectator-facing
   line with no numbers or places, instead of relaxing the filter, so the
   bubble shows real reasoning more often.
-- **Durability bars** on the equipment hotbar. This needs a redacted durability
-  field.
 - **Clips/highlights.** Cut clips automatically around event banners.
 - **Background music.** Mix quiet royalty-free/CC0 tracks into the
   currently silent audio track (ffmpeg `-stream_loop` over a playlist).

@@ -76,6 +76,34 @@ export function armorMaterial(name) {
   return key ? MATERIALS.find(([prefix]) => key.startsWith(prefix))?.[1] ?? "other" : null;
 }
 
+/**
+ * A slot's durability bar, Minecraft style: hidden while like new (or for
+ * items that never wear), otherwise its length is what is left and its hue
+ * runs from green (120) to red (0).
+ * @returns {{ fill: number, hue: number } | null}
+ */
+export function wearBar(durability) {
+  if (typeof durability !== "number" || !Number.isFinite(durability) || durability >= 1) return null;
+  const fill = Math.max(0, durability);
+  return { fill, hue: Math.round(fill * 120) };
+}
+
+/**
+ * Lifetime milestones for the offline scene: how many are unlocked, and the
+ * locked ones closest to done (ties keep their list order).
+ * @returns {{ unlocked: number, total: number, next: Array<{ title: string, description: string, progress: number }> } | null}
+ */
+export function milestoneSummary(world, count = 3) {
+  const list = Array.isArray(world?.milestones) ? world.milestones.filter((m) => m && typeof m.title === "string") : [];
+  if (!list.length) return null;
+  const next = list.filter((m) => !m.unlocked)
+    .map((m, index) => ({ title: m.title, description: typeof m.description === "string" ? m.description : "", progress: Number.isFinite(m.progress) ? Math.max(0, Math.min(1, m.progress)) : 0, index }))
+    .sort((a, b) => b.progress - a.progress || a.index - b.index)
+    .slice(0, count)
+    .map(({ index: _index, ...m }) => m);
+  return { unlocked: list.filter((m) => m.unlocked).length, total: list.length, next };
+}
+
 const DAY_TICKS = 24000;
 const DUSK_TICK = 13000;
 

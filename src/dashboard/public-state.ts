@@ -2,7 +2,7 @@ import { publicStatus, type PublicStatus } from "./public-status.js";
 import { isPublicSafeText, publicThought } from "./public-thinking.js";
 import { humanize, type StoryEntry } from "./story.js";
 import type { DashboardSnapshot, GoalCriterionSummary } from "./types.js";
-import { EQUIPMENT_SLOTS, type EquipmentSummary, type InventorySummary } from "./types.js";
+import { EQUIPMENT_SLOTS, type InventorySummary } from "./types.js";
 import type { WorldStatsSummary } from "./world-stats.js";
 import type { PublicAvailability } from "./public-interactions.js";
 
@@ -41,11 +41,25 @@ export interface PublicThinking {
 /** One minute of vitals, whole numbers; null while he was disconnected. */
 export interface PublicVitalsSample { at: string; health: number | null; hunger: number | null }
 
+/** An equipped item: registry name and count, plus how worn it is when it can wear. */
+export interface PublicEquipmentItem {
+  name: string;
+  count: number;
+  /**
+   * Uses left as a fraction of the item's maximum, rounded up to a tenth
+   * (0.1-1; 0 only when nothing is left). Absent for items that never wear.
+   * Coarse on purpose: enough for a bar, never raw counts or enchantments.
+   */
+  durability?: number;
+}
+export type PublicEquipment = Record<typeof EQUIPMENT_SLOTS[number], PublicEquipmentItem | null>;
+
 /**
  * Everything the public viewer page may learn about the bot. Built by
  * allowlist, never by deleting fields, so new snapshot fields stay private.
  * No coordinates, player names, chat, goal or task text, or raw LLM output.
- * Inventory and gear expose only registry item names and counts, never item metadata.
+ * Inventory and gear expose only registry item names and counts, never item metadata;
+ * worn and held items add a tenths bucket of wear.
  * The story feed and lifetime stats are built coordinate-free at the source.
  * The broadcast fields (now … uptimeSeconds) are optional so a page tolerates
  * an older bot; this projection always fills them.
@@ -66,7 +80,7 @@ export interface PublicViewerState {
   story: readonly StoryEntry[];
   world: WorldStatsSummary | null;
   inventory: InventorySummary | null;
-  equipment: EquipmentSummary | null;
+  equipment: PublicEquipment | null;
   /** Null while disconnected. */
   now?: PublicNow | null;
   build?: PublicBuild | null;
@@ -230,6 +244,29 @@ function publicVitals(snapshot: DashboardSnapshot): PublicVitalsSample[] {
   });
 }
 
+/**
+ * Worn and held items by name and count. Wear comes from the private gear
+ * projection in the same snapshot, only when it names the same item in the
+ * same slot, and only as a tenths bucket of what is left.
+ */
+function publicEquipment(snapshot: DashboardSnapshot): PublicEquipment {
+  return Object.fromEntries(EQUIPMENT_SLOTS.map((slot) => {
+    const item = snapshot.equipment?.[slot];
+    if (!item) return [slot, null];
+    const durability = wearBucket(item.name, snapshot.gear?.equipment?.[slot]);
+    return [slot, durability === null ? { name: item.name, count: item.count } : { name: item.name, count: item.count, durability }];
+  })) as PublicEquipment;
+}
+
+/** Remaining uses as a fraction rounded up to a tenth, or null unless the condition is plainly valid. */
+function wearBucket(name: unknown, condition: { name?: unknown; durability?: { remaining?: unknown; max?: unknown } | null } | null | undefined): number | null {
+  const bare = (value: unknown): string | null => typeof value === "string" ? value.replace(/^minecraft:/, "") : null;
+  if (!condition || bare(condition.name) === null || bare(condition.name) !== bare(name)) return null;
+  const remaining = condition.durability?.remaining, max = condition.durability?.max;
+  if (typeof remaining !== "number" || typeof max !== "number" || !Number.isFinite(remaining) || !Number.isFinite(max) || max <= 0 || remaining < 0 || remaining > max) return null;
+  return Math.ceil((remaining / max) * 10) / 10;
+}
+
 export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerState {
   const round = (value: number | null): number | null => value === null ? null : Math.round(value);
   const status = publicStatus(snapshot);
@@ -253,10 +290,7 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
       items: snapshot.inventory.items.map(({ name, count }) => ({ name, count })),
       totalItems: snapshot.inventory.totalItems,
     } : null,
-    equipment: snapshot.connection.connected && snapshot.equipment ? Object.fromEntries(EQUIPMENT_SLOTS.map((slot) => {
-      const item = snapshot.equipment?.[slot];
-      return [slot, item ? { name: item.name, count: item.count } : null];
-    })) as EquipmentSummary : null,
+    equipment: snapshot.connection.connected && snapshot.equipment ? publicEquipment(snapshot) : null,
     now: publicNow(snapshot, status, build, privateTerms),
     build: snapshot.connection.connected === true ? build : null,
     brain: publicBrain(snapshot),

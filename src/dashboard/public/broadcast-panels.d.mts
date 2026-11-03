@@ -8,6 +8,8 @@ export interface Tier { id: "wood" | "stone" | "iron" | "diamond" | "nether"; la
 export const TIERS: readonly Tier[];
 export function progression(state: unknown): { tiers: Array<Tier & { reached: boolean }>; current: Tier["id"] | null };
 export function armorMaterial(name: unknown): string | null;
+export function wearBar(durability: unknown): { fill: number; hue: number } | null;
+export function milestoneSummary(world: unknown, count?: number): { unlocked: number; total: number; next: Array<{ title: string; description: string; progress: number }> } | null;
 export function dayDial(input: { phase: unknown; timeOfDay?: unknown; frozen?: boolean; story?: ReadonlyArray<{ icon?: string; at?: string }>; observedFlipAt?: number | null; now: number }): { phase: "day" | "night" | null; angle: number; remaining: number | null; label: string };
 export function nearestTurn(previous: unknown, angle: number): number;
 export function fraction(progress: unknown): number | null;

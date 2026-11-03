@@ -28,7 +28,8 @@ the stream only chooses what to show while it happens.
 
 | Failure | Covered by | Viewer sees |
 |---|---|---|
-| Bot down, disconnected, dead, stale server observations | holding card through the healthy encoder | "Reconnecting", then "Taking a break" after 10 min |
+| Bob disconnected from Minecraft, bot process up, page showing its offline scene | stays live (`withOfflineScene`) | the page's offline card: recent story, milestones, lifetime stats |
+| Bot down, dead, stale server observations; disconnected without the page's offline scene | holding card through the healthy encoder | "Reconnecting", then "Taking a break" after 10 min |
 | Viewer socket loss, capacity refusal, "offline", stalled UI retries | holding card + page reload after 2 min stall | same |
 | Browser launch failure, page/context crash, browser exit, stuck navigation, WebGL failure | holding card; Chromium relaunched with 5 s→5 min backoff; **encoder untouched** | same |
 | Frozen 3D frame behind a still-animating shell | rAF counter inside the 3D iframe | same |
@@ -74,6 +75,10 @@ Health questions and their evidence:
 - **Viewer:** `#viewerStatus === "connected"` (only set after the current
   token's socket delivered rendered chunk geometry) and an advancing rAF
   counter inside the 3D iframe.
+- **Offline scene:** the one exception. `bot-disconnected` together with
+  `#viewerStatus === "offline"` (the page's fresh answer from the bot) and a
+  `[data-offline]` frame, with the renderer healthy, counts as healthy for
+  both bot and viewer; status and transitions record it as `offline-scene`.
 - **Renderer:** a page probe answering within 3 s, and a live frame from the
   current renderer generation in the last 10 s. Frames from older generations
   are dropped; holding frames never refresh live freshness.

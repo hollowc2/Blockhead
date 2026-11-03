@@ -30,6 +30,21 @@ export const DEFAULTS = Object.freeze({
 
 const REQUIRED = ["bot", "viewer", "renderer"];
 
+/**
+ * The page's offline scene (recent story, milestones, lifetime stats) is a
+ * truthful picture while the bot process is up but Bob is disconnected from
+ * Minecraft, so exactly that combination counts as healthy: the bot's /health
+ * answers and says "disconnected" (not unreachable, unknown, dead or stale),
+ * the page reports its own offline scene (it holds a fresh answer from the bot
+ * saying so; see renderer.viewerHealthSignal), and the renderer is healthy.
+ * Everything else passes through unchanged, so a down bot, a crashed or frozen
+ * renderer, or a page without the scene still gets the fixed holding card.
+ */
+export function withOfflineScene(health) {
+  if (health?.bot?.reason !== "bot-disconnected" || health?.viewer?.reason !== "viewer-offline-scene" || health?.renderer?.ok !== true) return health;
+  return { ...health, bot: { ok: true, reason: "offline-scene" }, viewer: { ok: true, reason: "offline-scene" } };
+}
+
 export class BroadcastState {
   constructor(now, options = {}) {
     this.o = { ...DEFAULTS, ...options };
