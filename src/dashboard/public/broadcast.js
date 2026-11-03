@@ -356,6 +356,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     }
     renderBanner(scenes.banner);
     frame.classList.toggle("lower-third-on", scenes.lowerThird);
+    if (scenes.camera !== frame.dataset.camera) { frame.dataset.camera = scenes.camera; aim(); }
   }
   function renderBanner(banner) {
     const node = $("banner");
@@ -427,12 +428,13 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   }
 
   // ---- The 3D frame: the same mount/retry lifecycle as the viewer shell ----
-  // Follow mode is applied on every mount, so the streamer never needs to press T.
+  // The scene machine's camera shot (follow until it says otherwise) is sent
+  // on every mount and every cut, so the streamer never presses a key.
   let viewerFrame = document.querySelector(".stage iframe");
-  function follow() {
+  function aim() {
     try {
       const win = viewerFrame.contentWindow;
-      win.dispatchEvent(new win.CustomEvent("bob-cam", { detail: "follow" }));
+      win.dispatchEvent(new win.CustomEvent("bob-cam", { detail: scenes.camera ?? "follow" }));
     } catch {}
   }
   const viewerSession = new ViewerSession({
@@ -441,7 +443,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     mount(token) {
       const replacement = viewerFrame.cloneNode(false);
       replacement.removeAttribute("src"); viewerFrame.replaceWith(replacement); viewerFrame = replacement;
-      viewerFrame.addEventListener("load", follow);
+      viewerFrame.addEventListener("load", aim);
       viewerFrame.src = `/viewer/?visit=${token}`;
       return viewerFrame.contentWindow;
     },
@@ -449,7 +451,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     changed(state) {
       setText($("viewerStatus"), state);
       renderVeil(state);
-      if (state === "connected") follow();
+      if (state === "connected") aim();
     },
   });
   window.addEventListener("message", (event) => viewerSession.message(event.source, event.origin, event.data));

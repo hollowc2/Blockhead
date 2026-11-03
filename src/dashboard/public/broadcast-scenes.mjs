@@ -1,12 +1,13 @@
 /**
  * The broadcast's scene machine (/broadcast): which layout the frame shows,
- * which event banner is up, and when the "What is this?" lower-third runs.
+ * which event banner is up, when the "What is this?" lower-third runs, and
+ * which camera shot the 3D view uses.
  * Pure: it reads only public viewer state and the clock it is handed, so
  * src/dashboard/broadcast-scenes.test.ts can drive it poll by poll.
  *
  *   let scenes = createScenes(now);
  *   scenes = stepScenes(scenes, state, now);   // each poll; state null: page server unreachable
- *   scenes.scene, scenes.banner, scenes.queue, scenes.lowerThird
+ *   scenes.scene, scenes.banner, scenes.queue, scenes.lowerThird, scenes.camera
  *
  * Nothing fires on the first poll, after a reconnect or after a bot restart:
  * those polls only take a baseline, so a page load never replays history.
@@ -38,6 +39,19 @@ export const LOWER_THIRD_EVERY_MS = 300_000;
 export const LOWER_THIRD_FIRST_MS = 60_000;
 /** A banner cut the lower-third short; try again this much later. */
 const LOWER_THIRD_RETRY_MS = 60_000;
+/**
+ * Camera shots (the viewer's bob-cam modes, see scripts/viewer-shots.mjs):
+ * the rotation the 3D view cycles through while nothing much happens, as
+ * [shot, how long it holds]. Follow carries the stream; his eyes and the
+ * slow overhead orbit break it up every few minutes.
+ */
+export const CAMERA_SHOTS = Object.freeze([["follow", 150_000], ["eyes", 40_000], ["follow", 150_000], ["wide", 45_000]].map((shot) => Object.freeze(shot)));
+/** The close shot lasts this long after its latest trigger (a fight, a build starting, ore mined). */
+export const CLOSE_HOLD_MS = 20_000;
+/** A shot stays up at least this long, so the camera never cuts twice in quick succession. */
+export const CAMERA_MIN_MS = 6_000;
+// Mining ore shows up as these landing in the inventory.
+const ORE_DROP = /^(?:raw_(?:iron|gold|copper)|coal|diamond|emerald|lapis_lazuli|redstone|quartz|ancient_debris|[a-z_]+_ore)$/;
 
 const bare = (name) => String(name ?? "").replace(/^minecraft:/, "");
 const TOOL = /^(wooden|stone|golden|iron|diamond|netherite)_(?:pickaxe|axe|shovel|hoe|sword)$/;
@@ -74,6 +88,7 @@ export function createScenes(now) {
     actionUntil: 0, lastBuildingAt: null, nightSince: null, awaySince: null, night: false,
     bannerFreeAt: 0, nextBannerId: 1, lastBuildBannerAt: null,
     lowerThirdUntil: 0, nextLowerThirdAt: now + LOWER_THIRD_FIRST_MS,
+    camera: "follow", cameraSince: now, shot: 0, shotUntil: now + CAMERA_SHOTS[0][1], closeUntil: 0, ores: null,
   };
 }
 
@@ -90,6 +105,7 @@ function read(state) {
     story, storyId: story.length ? Math.max(...story.map((entry) => entry.id)) : 0,
     milestones, build, gear: gearTiers(state),
     activity: typeof state.status?.activity === "string" ? state.status.activity : null,
+    ores: oreCounts(state.inventory),
     // The Nether and the End have no night to sit out.
     night: night && (dimension === "" || dimension === "overworld"),
   };
@@ -144,14 +160,16 @@ function buildBannerDue(m, now) {
 export function stepScenes(previous, state, now) {
   const m = { ...previous, queue: previous.queue.slice(), best: { ...previous.best } };
   const connected = state?.connection?.connected === true;
+  let facts = null, action = false;
 
   if (!connected) {
     // Forget the baseline so the reconnect poll is quiet; old news never queues up.
     m.seen = null; m.queue = []; m.actionUntil = 0; m.night = false; m.nightSince = null; m.awaySince = null;
   } else {
-    const facts = read(state);
+    facts = read(state);
     const fresh = m.seen === null || facts.storyId < m.seen.storyId;
-    if (!fresh && compare(m, m.seen, facts, now)) m.actionUntil = now + ACTION_HOLD_MS;
+    action = !fresh && compare(m, m.seen, facts, now);
+    if (action) m.actionUntil = now + ACTION_HOLD_MS;
     if (facts.gear) for (const slot of ["tool", "armor"]) m.best[slot] = Math.max(m.best[slot] ?? 0, facts.gear[slot].rank);
     if (facts.activity === "building") m.lastBuildingAt = now;
     m.seen = {
@@ -176,6 +194,7 @@ export function stepScenes(previous, state, now) {
   const wanted = connected && now < m.actionUntil ? "action" : m.night ? "night" : "normal";
   // Going offline is immediate (the veil covers the game); anything else waits out the dwell.
   if (wanted !== m.scene && (!connected || now - m.sceneSince >= MIN_DWELL_MS)) { m.scene = wanted; m.sceneSince = now; }
+  stepCamera(m, facts, action, now);
 
   // Banners: one at a time, each for BANNER_MS, with a short gap between them.
   if (m.banner && now >= m.banner.until) { m.bannerFreeAt = m.banner.until + BANNER_GAP_MS; m.banner = null; }
@@ -193,4 +212,47 @@ export function stepScenes(previous, state, now) {
     m.lowerThird = true; m.lowerThirdUntil = now + LOWER_THIRD_MS;
   }
   return m;
+}
+
+/** Ore drops carried, by name; null when the inventory is unavailable. */
+function oreCounts(inventory) {
+  if (!Array.isArray(inventory?.items)) return null;
+  const counts = {};
+  for (const item of inventory.items) {
+    const name = bare(item?.name);
+    if (ORE_DROP.test(name)) counts[name] = (counts[name] ?? 0) + (Number(item.count) || 0);
+  }
+  return counts;
+}
+
+/**
+ * The camera after a poll. Interesting moments (anything that starts the
+ * action scene, or ore landing in the inventory while out gathering) cut to
+ * the close shot; sheltering at night keeps the follow shot (his eyes would
+ * stare at a wall, the overhead at a roof); otherwise the rotation runs, and
+ * it starts again from follow after either.
+ */
+function stepCamera(m, facts, action, now) {
+  if (facts === null) {
+    // Offline: back to follow at once (the veil covers the cut), and forget the baseline.
+    m.ores = null; m.closeUntil = 0; m.shot = 0; m.shotUntil = null;
+    if (m.camera !== "follow") { m.camera = "follow"; m.cameraSince = now; }
+    return;
+  }
+  const out = facts.activity === "gathering" || facts.activity === "exploring";
+  const mined = out && m.ores !== null && facts.ores !== null && Object.entries(facts.ores).some(([name, count]) => count > (m.ores[name] ?? 0));
+  m.ores = facts.ores;
+  if (action || mined) m.closeUntil = now + CLOSE_HOLD_MS;
+
+  let wanted;
+  if (now < m.closeUntil) wanted = "close";
+  else if (m.night) wanted = "follow";
+  // While the rotation is set aside it waits at its start; it resumes with a full follow slot.
+  if (wanted !== undefined) { m.shot = 0; m.shotUntil = null; }
+  else {
+    m.shotUntil ??= now + CAMERA_SHOTS[0][1];
+    if (now >= m.shotUntil) { m.shot = (m.shot + 1) % CAMERA_SHOTS.length; m.shotUntil = now + CAMERA_SHOTS[m.shot][1]; }
+    wanted = CAMERA_SHOTS[m.shot][0];
+  }
+  if (wanted !== m.camera && now - m.cameraSince >= CAMERA_MIN_MS) { m.camera = wanted; m.cameraSince = now; }
 }

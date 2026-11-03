@@ -361,7 +361,8 @@ test("broadcast page keeps the renderer contract and loads only same-origin asse
   assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
   assert.match(html, /id="viewerStatus"/);
   assert.match(html, /<span id="followToggle" aria-pressed="true"/);
-  assert.match(js, /detail: "follow"/);
+  // The scene machine picks the camera shot; follow is the fallback and where it starts.
+  assert.match(js, /"bob-cam", \{ detail: scenes\.camera \?\? "follow" \}/);
   for (const slot of ["now", "thinking", "build", "brain", "minimap"]) assert.match(html, new RegExp(`data-panel="${slot}"`), slot);
   // No CDN, font or image from anywhere else; the SVG namespace is the only URL.
   for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap], ["scenes", scenes]] as const) {
