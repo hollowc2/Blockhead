@@ -1,5 +1,5 @@
 /**
- * Owns the headless Chromium that renders the loopback viewer. Every
+ * Owns the headless Chromium that renders the loopback broadcast page. Every
  * (re)launch is a new generation: frames and events from an older one are
  * ignored. A failure here never touches the encoder; the broadcast shows the
  * holding card while this retries with backoff.
@@ -17,8 +17,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxBackoffMs: 300_000,
   stableMs: 300_000,
 });
-
-const BROADCAST_CSS = ".viewer-choices, article:has(#publicQuestionForm) { display: none !important; }";
 
 const withTimeout = (promise, ms, label) => {
   let timer;
@@ -101,10 +99,9 @@ export class Renderer {
       if (generation !== this.generation || this.stopped) { void this.teardown(browser); return; }
       this.browser = browser;
       browser.on("disconnected", () => this.crash(generation, "browser-disconnected"));
-      // bypassCSP lets us inject the broadcast stylesheet; this browser only ever loads the loopback page.
-      const context = await browser.newContext({ viewport: { width: this.width, height: this.height }, deviceScaleFactor: 1, bypassCSP: true });
+      // The page runs under its own CSP, as for any visitor. The init script goes in through CDP, which CSP doesn't govern.
+      const context = await browser.newContext({ viewport: { width: this.width, height: this.height }, deviceScaleFactor: 1 });
       await context.addInitScript(() => {
-        try { localStorage.setItem("cobblebob.help", "dismissed"); } catch {}
         // Render-loop evidence for the broadcast probe, installed in every frame.
         let ticks = 0; const tick = () => { ticks++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
         Object.defineProperty(window, "__cobblebobRaf", { get: () => ticks });
@@ -133,11 +130,9 @@ export class Renderer {
 
   async openPage(page, cdp) {
     await page.goto(this.pageUrl, { waitUntil: "load", timeout: 30_000 });
-    // Broadcast viewers can't click: hide the question box, gestures and view toggles.
-    await page.addStyleTag({ content: BROADCAST_CSS });
+    // /broadcast is made for the stream: it has no controls to hide, and it applies the follow camera
+    // itself (again whenever the 3D frame reloads). Nothing here clicks, types into or restyles the page.
     await page.locator(".stage iframe").waitFor({ state: "attached", timeout: 30_000 });
-    // The shell owns the camera mode and re-applies it whenever the 3D frame reloads.
-    if (await page.locator("#followToggle").getAttribute("aria-pressed") !== "true") await page.keyboard.press("t");
     await cdp.send("Page.startScreencast", { format: "jpeg", quality: 85, maxWidth: this.width, maxHeight: this.height, everyNthFrame: 2 });  // the page paints at ~60 Hz; the stream needs 30
     this.log("page open", { generation: this.generation });
   }

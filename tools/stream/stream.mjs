@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-// Streams the public viewer page to an RTMP endpoint (YouTube Live) or a file.
+// Streams the public broadcast page to an RTMP endpoint (YouTube Live) or a file.
 //
 // The encoder starts first and is fed the "Starting up" holding card at once,
 // before Minecraft, the status endpoint or Chromium exist. Headless Chromium
-// then renders the loopback viewer; a broadcast state machine admits live
+// then renders the loopback broadcast page; a broadcast state machine admits live
 // frames only after the bot, viewer and renderer have been healthy for a
 // while, and falls back to the holding card when any of them fails. Renderer
 // failures never stop the encoder; encoder failures restart only ffmpeg.
 // Outbound only: nothing listens.
 //
 // Env:
-//   STREAM_PAGE        page to render (default http://127.0.0.1:3003/)
+//   STREAM_PAGE        page to render (default http://127.0.0.1:3003/broadcast, the
+//                      bot's TV-frame page; the interactive viewer at / isn't made for it)
 //   STREAM_HEALTH_URL  bot's private status (default http://127.0.0.1:8155/health)
 //   STREAM_KEY_FILE    file holding the YouTube stream key (never logged)
 //   STREAM_OUTPUT      instead of YouTube, write here (e.g. /tmp/test.mp4) — for tests
@@ -34,7 +35,7 @@ import { Renderer } from "./renderer.mjs";
 
 const env = process.env;
 const here = dirname(fileURLToPath(import.meta.url));
-const pageUrl = env.STREAM_PAGE ?? "http://127.0.0.1:3003/";
+const pageUrl = env.STREAM_PAGE ?? "http://127.0.0.1:3003/broadcast";
 const healthUrl = env.STREAM_HEALTH_URL ?? "http://127.0.0.1:8155/health";
 const width = Number(env.STREAM_WIDTH ?? 1280), height = Number(env.STREAM_HEIGHT ?? 720);
 const fps = Number(env.STREAM_FPS ?? 30), bitrate = Number(env.STREAM_BITRATE_K ?? 3000);

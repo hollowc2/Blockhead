@@ -1,4 +1,4 @@
-# User unit: streams the public viewer to YouTube Live. Outbound only.
+# User unit: streams the public broadcast page (/broadcast on :3003) to YouTube Live. Outbound only.
 # Install: tools/stream/install.sh (copies stream.mjs into ~/.local/share/cobblebob-stream)
 # Key: one line in ~/.config/cobblebob-stream/stream.key (0600), never in this file.
 # Private state (status.json, transitions.jsonl, maintenance latch): ~/.local/state/cobblebob-stream

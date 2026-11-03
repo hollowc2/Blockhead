@@ -16,6 +16,8 @@
 // Scenes come from the page's own machine (broadcast-scenes.mjs): hostile, fight or death set off
 // the action scene, night (sheltering after dark) the night scene, and every event but hostile and
 // fight a banner. Switching normal -> build is a building start (action too).
+// Stream it as on Maia: STREAM_PAGE=http://127.0.0.1:3999/broadcast STREAM_HEALTH_URL=http://127.0.0.1:3999/health
+// (the bare / page is the minimal stand-in, for runs outside a repo checkout).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 
@@ -26,9 +28,8 @@ const shell = `<!doctype html><meta charset="utf-8"><title>fixture</title>
 <style>body{margin:0;background:#123;color:#fff;font:20px sans-serif}.stage{position:absolute;inset:0}iframe{border:0;width:100%;height:100%}
 footer{position:absolute;bottom:8px;left:8px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#3c7;animation:p 1s infinite}@keyframes p{50%{opacity:.2}}</style>
 <div class="stage"><iframe src="/frame"></iframe></div>
-<footer><i class="dot"></i> FIXTURE WORLD · viewer <b id="viewerStatus">connecting</b> <button id="followToggle" aria-pressed="false">follow</button></footer>
+<footer><i class="dot"></i> FIXTURE WORLD · viewer <b id="viewerStatus">connecting</b></footer>
 <script>
-document.addEventListener("keydown", e => { if (e.key === "t") document.getElementById("followToggle").setAttribute("aria-pressed", "true"); });
 setInterval(async () => {
   const c = await (await fetch("/control")).json();
   document.getElementById("viewerStatus").textContent = c.viewer;

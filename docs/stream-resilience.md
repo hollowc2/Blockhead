@@ -7,11 +7,11 @@ Private state: `~/.local/state/cobblebob-stream/`.
 ## The chain and who supervises what
 
 ```
-Minecraft ─► blockhead.service (bot, /health on 127.0.0.1:8155, viewer on 127.0.0.1:3003)
+Minecraft ─► blockhead.service (bot, /health on 127.0.0.1:8155, public listener 127.0.0.1:3003)
                  │ own reconnect loop (backoff ≤ 1/min), death recovery + death-loop brake, watchdog
                  ▼
 cobblebob-stream.service (one node process, Nice=10, MemoryMax=2500M, Restart=always)
-   ├─ Renderer   headless Chromium → loopback viewer → CDP JPEG frames   (relaunch w/ backoff)
+   ├─ Renderer   headless Chromium → :3003/broadcast → CDP JPEG frames  (relaunch w/ backoff)
    ├─ BotHealth  polls /health, keeps only booleans + reason codes
    ├─ BroadcastState  STARTING / LIVE / RECOVERING / HOLDING / MAINTENANCE
    ├─ Publisher  30 fps pacing of the live frame or a holding card     (bounded, latest-only)
@@ -82,6 +82,31 @@ Health questions and their evidence:
   while ffmpeg isn't draining.
 - **YouTube playback:** not observable from Maia without new credentials; the
   status always says `"playback": "unknown"`. Check it by watching.
+
+## The page the stream renders
+
+`STREAM_PAGE` defaults to `http://127.0.0.1:3003/broadcast`, a fixed
+1280×720 TV layout made for the stream ([prompt 09](implementation-prompts/09-broadcast-screen.md)).
+The unit doesn't set it. The bot serves it (`blockhead.service`, from
+`src/dashboard/public/broadcast*` via `viewer-shell.ts`) on its public
+listener, so a change to the page ships with the bot, not with the stream
+runtime. The interactive viewer at `/` is unchanged but no longer streamed.
+
+Renderer contract (`renderer.mjs`, checked by `viewer-shell.test.ts` and
+`renderer.test.mjs`): exactly one `.stage iframe` (the 3D frame the rAF probe
+reads) and `#viewerStatus` holding the session state. The page applies the
+follow camera itself and re-applies it when the 3D frame reloads. Scene
+changes rescale the iframe and never detach or reload it. The renderer
+doesn't inject CSS, press keys or click. It also no longer sets Playwright's
+`bypassCSP`, which was only there for the injected stylesheet. The page and
+the viewer frame run under the same CSP as for any visitor
+(`SHELL_SECURITY_HEADERS` and `VIEWER_SECURITY_HEADERS`). The rAF init script
+goes in through CDP, which CSP doesn't govern.
+
+To go back to the old page, roll the runtime back (see below). Setting
+`STREAM_PAGE=http://127.0.0.1:3003/` on the new runtime would stream the
+interactive page with its question box and view toggles showing, and the
+camera in orbit mode.
 
 ## The holding screen
 
@@ -165,6 +190,46 @@ real Chromium + ffmpeg writing MPEG-TS:
 Not yet observed: anything on YouTube, a 24-hour soak, the real viewer's
 behaviour under these faults on Maia.
 
+### The switch to /broadcast (local, Zeus, 2026-11-02)
+
+I used the same Chromium build as Maia (headless shell 141, Playwright
+1.56.1) and a runtime copy laid out like `install.sh`'s. Output went to a
+local MPEG-TS file, not RTMP.
+
+- **Fixture `/broadcast` (175 s).** Live 18 s after start. `streamctl hold`
+  switched to the "Taking a break" card at once. `auto` went to RECOVERING,
+  then live 17 s later. `bot=down` went to "Reconnecting" in 5 s, and
+  `bot=up` brought live back 16 s after the viewer reconnected. One ffmpeg
+  ran the whole time (generation 1, 0 interruptions, 30.7 fps), the
+  renderer opened once, and no Chromium was left over. Frames extracted
+  from the file show the broadcast layout with "camera follow" in the fake
+  3D frame, and the holding cards at the logged times.
+- **Real CSP.** The real public `ViewerShellServer` served the real
+  prismarine viewer with a fake bot and fixture state. There were 0
+  `securitypolicyviolation` events in the page or the 3D frame and no
+  console errors. `#viewerStatus` read `connected`, the rAF counter
+  advanced and the follow camera was on, in the normal, action and night
+  scenes.
+- **Cost, old `/` against `/broadcast`.** Both ran against the same real
+  viewer and fixture state, in a scope with `MemoryMax=2500M`. Figures are
+  means of 5 s samples after a 30 s warm-up, over 3–4 min per run. CPU is %
+  of one core. Zeus has a different CPU and GPU from Maia, so compare the rows
+  with each other, not with Maia's absolute numbers.
+
+  | Page | Chromium PSS (6 procs) | node PSS | ffmpeg PSS | cgroup mean / peak | Chromium CPU | ffmpeg CPU | node CPU | Encoded |
+  |---|---|---|---|---|---|---|---|---|
+  | `/` (old runtime: injected CSS, T, `bypassCSP`) | 929 MB | 109 MB | 95 MB | 1060 / 1651 MB | 148 % | 95 % | 11 % | 30.5 fps |
+  | `/broadcast` normal (P4: 1280×720 iframe at 0.75) | 961 MB | 107 MB | 92 MB | 1073 / 1625 MB | 147 % | 86 % | 12 % | 30.3 fps |
+  | `/broadcast` night (iframe at 0.5 + brightness) | 962 MB | 105 MB | 93 MB | 1153 / 1625 MB | 136 % | 71 % | 11 % | 30.3 fps |
+
+  Before P4, when the iframe was 960×540 and unscaled, `/broadcast` measured
+  951 MB Chromium PSS, 154 % Chromium CPU and 81 % ffmpeg CPU, so it was
+  level with `/`. Taken together, the page costs the same as the old one to
+  within noise (about +30 MB PSS), and the night scene uses less CPU. The
+  peak of about 1.65 GB is the Chromium start-up transient, and it is the
+  same for both pages. On Maia the old page ran at 1.78 GB service memory,
+  so expect about the same there.
+
 ## Fault-injection plan for an authorized private trial
 
 Run only with the stream private and the owner watching the YouTube preview.
@@ -234,6 +299,68 @@ ssh maia 'systemctl --user daemon-reload && systemctl --user restart cobblebob-s
 Rollback: `systemctl --user stop cobblebob-stream`, copy the rollback
 directory back over the runtime, restore the old unit (`git show
 HEAD~1:tools/stream/cobblebob-stream.service`), daemon-reload, start.
+
+### Deploying the broadcast page (prompt 09)
+
+The page and its data come from the bot. The stream runtime only changes
+where it points and stops restyling the page. **Deploy the bot first.** A new
+streamer pointed at an old bot gets a 404 on `/broadcast`, finds no
+`.stage iframe` and stays on the holding card while it relaunches with
+backoff.
+
+Before you start:
+
+- The P7 review is done and main is committed in `/mnt/Repos/Games/Blockhead`
+  with no tracked changes (`scripts/deploy-maia` refuses otherwise).
+  `npm run check` passes.
+- The owner knows that this restarts the 24-hour soak window, because the
+  runtime changes. The bot restart also drops Bob from the world for a few
+  seconds.
+- `config/minecraft.yaml` has `dashboard.public_viewer.model_label: Qwen3.5 9B`
+  (committed with the public fields). It must name the model llama-server
+  really serves. Check it read-only with `ssh maia 'systemctl --user cat
+  llama-server.service | grep -E -- "-m |--model"'`. The schema allows
+  letters, digits, spaces, dots and dashes, up to 32 characters. The bot
+  reads the file from its working directory (the source checkout) at
+  start-up, so a change needs the bot restart in step 1.
+
+Steps, from Zeus:
+
+```sh
+# 1. Bot: typecheck + tests on Maia, rsync to ~/.local/share/blockhead-runtime, restart blockhead.service.
+#    The old streamer keeps filming / and shows "Reconnecting" until the bot is back.
+scripts/deploy-maia
+
+# 2. The bot serves the page and its data (expect 200, then the label, then 200; 503 while Bob is disconnected).
+ssh maia 'curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3003/broadcast
+  curl -s http://127.0.0.1:3003/api/state | node -e "let s=\"\";process.stdin.on(\"data\",d=>s+=d).on(\"end\",()=>{const j=JSON.parse(s);console.log(j.brain?.model, !!j.now, !!j.vitals)})"
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3003/api/public/minimap'
+
+# 3. Stream runtime: keep a rollback copy, then copy the two changed modules and the unit (comment only).
+#    No new runtime files; package.json is unchanged, so no npm install.
+ssh maia 'cp -a ~/.local/share/cobblebob-stream ~/.local/share/cobblebob-stream.rollback-pre-broadcast'
+cd tools/stream && scp stream.mjs renderer.mjs maia:.local/share/cobblebob-stream/
+scp cobblebob-stream.service maia:.config/systemd/user/
+
+# 4. Restart the streamer (an output gap of about 15–20 s).
+ssh maia 'systemctl --user daemon-reload && systemctl --user restart cobblebob-stream'
+
+# 5. Check: LIVE within about 30 s, viewerState "connected", about 30 fps, memory well under 2500M.
+ssh maia 'node ~/.local/share/cobblebob-stream/streamctl.mjs status | head -40
+  journalctl --user -u cobblebob-stream -n 30 --no-pager | grep -E "page open|viewer state|broadcast state|renderer"
+  systemctl --user show cobblebob-stream -p MemoryCurrent -p MemoryPeak -p NRestarts'
+```
+
+Then watch the YouTube preview. It should show the broadcast layout with
+the follow camera, and no question box or view buttons. If the watch page
+sits at "Live stream offline" after the restart, use the stop-60 s-start
+procedure under Operator procedures.
+
+Rollback: `systemctl --user stop cobblebob-stream`, copy
+`~/.local/share/cobblebob-stream.rollback-pre-broadcast/` back over the
+runtime, `git show <pre-P6 commit>:tools/stream/cobblebob-stream.service` into
+`~/.config/systemd/user/`, daemon-reload, start. The bot doesn't need rolling
+back, because `/` is unchanged and `/broadcast` is only an addition.
 
 ## 24-hour qualification
 

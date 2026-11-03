@@ -356,7 +356,7 @@ test("public broadcast routes are exact: no index, directory or method variants"
 test("broadcast page keeps the renderer contract and loads only same-origin assets", async () => {
   const dir = fileURLToPath(new URL("./public/", import.meta.url));
   const [html = "", css = "", js = "", panels = "", minimap = "", scenes = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs", "broadcast-scenes.mjs"].map(name => readFile(dir + name, "utf8")));
-  // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`, and presses T unless `#followToggle` is pressed.
+  // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`; it never presses T, so the page follows by itself.
   assert.match(html, /<section class="stage"[^>]*>\s*<iframe\b/);
   assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
   assert.match(html, /id="viewerStatus"/);
