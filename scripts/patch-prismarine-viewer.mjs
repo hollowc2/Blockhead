@@ -5,6 +5,7 @@ import { createViewerEquipment } from "./viewer-equipment.mjs";
 import { installViewerDroppedItems } from "./viewer-dropped-items.mjs";
 import { installViewerLifecycle } from "./viewer-lifecycle.mjs";
 import { installViewerPreview } from "./viewer-preview.mjs";
+import { installViewerShots } from "./viewer-shots.mjs";
 
 const files = [
   {
@@ -121,7 +122,7 @@ export const FIRST_PERSON_V1 = [
  * after the recenter hotkey without touching it, so re-running every patch is
  * a no-op.
  */
-const CAMERA_MODES = `let bobCam={mode:"orbit",pos:null,yaw:0,pitch:0,heading:0,mesh:null,last:0,boom:5.2,want:5.2,probed:0,ray:new THREE.Raycaster,cam:{x:0,y:0,z:0,yaw:0,pitch:0},
+export const CAMERA_MODES = `let bobCam={mode:"orbit",pos:null,yaw:0,pitch:0,heading:0,mesh:null,last:0,boom:5.2,want:5.2,probed:0,ray:new THREE.Raycaster,cam:{x:0,y:0,z:0,yaw:0,pitch:0},
 seen(t,y,p){if(!t)return;if(this.pos){const dx=t.x-this.pos.x,dz=t.z-this.pos.z;dx*dx+dz*dz>.0025&&(this.heading=Math.atan2(-dx,-dz))}else void 0!==y&&(this.heading=y);this.pos={x:t.x,y:t.y,z:t.z};void 0!==y&&(this.yaw=y);void 0!==p&&(this.pitch=p)},
 goal(){const t=this.pos;if(this.mode==="eyes")return{x:t.x,y:t.y+u.playerHeight,z:t.z,yaw:this.yaw,pitch:this.pitch};const y=this.mode==="follow"?this.cam.yaw:this.heading,d=this.dir(y),b=this.boom;return{x:t.x+d.x*b,y:t.y+u.playerHeight+d.y*b,z:t.z+d.z*b,yaw:this.heading,pitch:-.3}},
 dir(y){return new THREE.Vector3(5*Math.sin(y),1.4,5*Math.cos(y)).normalize()},
@@ -156,6 +157,28 @@ export function patchViewerCamera(source, path = "viewer client") {
     "e||(e=new a(\"1.16.4\",\"player\",u.scene).mesh,u.scene.add(e),bobCam.mesh=e,e.visible=bobCam.mode!==\"eyes\")",
   );
   return patched;
+}
+
+const CAMERA_LISTENER = 'window.addEventListener("bob-cam",e=>bobCam.set(["eyes","follow"].includes(e.detail)?e.detail:"orbit"));';
+const SHOTS_LISTENER = 'window.addEventListener("bob-cam",e=>bobCam.set(["eyes","follow","wide","close"].includes(e.detail)?e.detail:"orbit"));';
+
+/**
+ * The broadcast's extra shots (viewer-shots.mjs): installed on bobCam just
+ * before its `bob-cam` listener, which then also accepts "wide" and
+ * "close". A bundle that already has them gets the current code, so
+ * re-running every patch is a no-op and a changed shot still lands.
+ */
+export function patchViewerShots(source, path = "viewer client") {
+  const marker = "/* bob-shots */";
+  const code = `${marker}(${installViewerShots.toString()})(bobCam,THREE,u);`;
+  const start = source.indexOf(marker);
+  if (start !== -1) {
+    const end = source.indexOf(SHOTS_LISTENER, start);
+    if (end === -1 || source.split(marker).length !== 2) throw new Error(`Unexpected prismarine-viewer shots layout in ${path}; refusing to patch`);
+    return source.slice(0, start) + code + source.slice(end);
+  }
+  if (source.split(CAMERA_LISTENER).length !== 2) throw new Error(`Unexpected prismarine-viewer shots layout in ${path}; refusing to patch`);
+  return source.replace(CAMERA_LISTENER, () => code + SHOTS_LISTENER);
 }
 
 /** Add worn/held gear, textured dropped stacks and the build-preview ghost to the browser renderer. */
@@ -228,13 +251,13 @@ export async function patchPrismarineViewer() {
     if (patched !== source) await writeFile(path, patched);
   }
   const clientSource = await readFile(viewerClient, "utf8");
-  const patchedClient = patchViewerLifecycle(patchViewerEquipment(patchViewerCamera(
+  const patchedClient = patchViewerLifecycle(patchViewerEquipment(patchViewerShots(patchViewerCamera(
     patchViewerRecenterHotkey(
       patchViewerClient(clientSource, fileURLToPath(viewerClient)),
       fileURLToPath(viewerClient),
     ),
     fileURLToPath(viewerClient),
-  ), fileURLToPath(viewerClient)), fileURLToPath(viewerClient));
+  ), fileURLToPath(viewerClient)), fileURLToPath(viewerClient)), fileURLToPath(viewerClient));
   if (patchedClient !== clientSource) await writeFile(viewerClient, patchedClient);
 
   const mineflayerSource = await readFile(mineflayerInventory, "utf8");

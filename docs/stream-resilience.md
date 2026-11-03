@@ -95,7 +95,8 @@ runtime. The interactive viewer at `/` is unchanged but no longer streamed.
 Renderer contract (`renderer.mjs`, checked by `viewer-shell.test.ts` and
 `renderer.test.mjs`): exactly one `.stage iframe` (the 3D frame the rAF probe
 reads) and `#viewerStatus` holding the session state. The page applies the
-follow camera itself and re-applies it when the 3D frame reloads. Scene
+camera itself (the scene machine's shot, follow by default; see
+stream-backlog.md) and re-applies it when the 3D frame reloads. Scene
 changes rescale the iframe and never detach or reload it. The renderer
 doesn't inject CSS, press keys or click. It also no longer sets Playwright's
 `bypassCSP`, which was only there for the injected stylesheet. The page and
@@ -451,7 +452,8 @@ ssh maia 'node ~/.local/share/cobblebob-stream/streamctl.mjs status | head -40
 ```
 
 Then watch the YouTube preview. It should show the broadcast layout with
-the follow camera, and no question box or view buttons. If the watch page
+the follow camera (his eyes or the overhead orbit for a minute every few
+minutes), and no question box or view buttons. If the watch page
 sits at "Live stream offline" after the restart, use the stop-60 s-start
 procedure under Operator procedures.
 

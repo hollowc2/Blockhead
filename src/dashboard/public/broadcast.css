@@ -412,3 +412,15 @@ body.stale [data-live] { opacity: .55; filter: grayscale(.8); transition: opacit
 /* The vitals and hotbar step aside while it is up. */
 .overlay-bottom, .hotbar { transition: opacity .3s ease; }
 .frame.lower-third-on .overlay-bottom, .frame.lower-third-on .hotbar { opacity: 0; }
+
+/* ---- Picture-in-picture: home from above (broadcast-pip.mjs), on the game's right
+   edge between the dial and the hotbar. One pixel a block, drawn pixelated; the
+   normal scene only (action wants the whole picture, night has the map). ---- */
+.pip { position: absolute; right: 16px; bottom: 92px; z-index: 2; margin: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 12px; background: var(--glass); border: 1px solid #ffffff1f; box-shadow: 0 4px 16px #0006; transition: opacity .4s ease; }
+.pip-view { position: relative; width: 156px; height: 156px; border-radius: 6px; overflow: hidden; background: var(--empty); }
+.pip-view img { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; opacity: 0; transition: opacity 1s ease; }
+.pip-view img.on { opacity: 1; }
+/* Home is the centre block: a small ring marks it. */
+.pip-view::after { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #0009; z-index: 1; }
+.pip figcaption { font-size: 16px; line-height: 20px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.frame:not([data-scene="normal"]) .pip { opacity: 0; visibility: hidden; }

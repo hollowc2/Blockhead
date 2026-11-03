@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { ACTION_HOLD_MS, BANNER_GAP_MS, BANNER_MS, BANNER_QUEUE_MAX, BANNER_STALE_MS, BUILD_REARM_MS, createScenes, gearTiers, LOWER_THIRD_EVERY_MS, LOWER_THIRD_FIRST_MS, LOWER_THIRD_MS, MIN_DWELL_MS, NIGHT_AWAY_MS, NIGHT_ENTER_MS, stepScenes, type Scenes } from "./public/broadcast-scenes.mjs";
+import { ACTION_HOLD_MS, BANNER_GAP_MS, BANNER_MS, BANNER_QUEUE_MAX, BANNER_STALE_MS, BUILD_REARM_MS, CAMERA_MIN_MS, CAMERA_SHOTS, CLOSE_HOLD_MS, createScenes, gearTiers, LOWER_THIRD_EVERY_MS, LOWER_THIRD_FIRST_MS, LOWER_THIRD_MS, MIN_DWELL_MS, NIGHT_AWAY_MS, NIGHT_ENTER_MS, stepScenes, type Scenes } from "./public/broadcast-scenes.mjs";
 
 interface Entry { id: number; icon: string; text: string; highlight: boolean; at?: string }
 interface Fixture {
@@ -351,4 +351,122 @@ test("the lower-third runs every ~5 min for 12 s, never with a banner", () => {
 test("the lower-third's fixed sentence is in the page", async () => {
   const html = await readFile(new URL("./public/broadcast.html", import.meta.url), "utf8");
   assert.match(html, /CobbleBob is an autonomous AI playing Minecraft 24\/7 on a home server\./);
+});
+
+const FOLLOW_MS = CAMERA_SHOTS[0]![1], EYES_MS = CAMERA_SHOTS[1]![1];
+/** Every camera cut while polling `s` once a second for `ms`, as [shot, ms since `from`]. */
+function cuts(d: Driver, s: unknown | ((i: number) => unknown), ms: number, from = T0): Array<[string, number]> {
+  const seen: Array<[string, number]> = [];
+  for (let t = 0, i = 0; t < ms; t += 1000, i++) {
+    const was = d.m.camera;
+    d.poll(typeof s === "function" ? (s as (i: number) => unknown)(i) : s);
+    if (d.m.camera !== was) seen.push([d.m.camera, d.now - from]);
+  }
+  return seen;
+}
+
+test("the camera rotates follow, his eyes, follow and the wide orbit every few minutes", () => {
+  assert.deepEqual(CAMERA_SHOTS.map(([shot]) => shot), ["follow", "eyes", "follow", "wide"]);
+  const total = CAMERA_SHOTS.reduce((sum, [, ms]) => sum + ms, 0);
+  assert(total >= 4 * 60_000 && total <= 8 * 60_000, "a full cycle takes a few minutes");
+  const d = new Driver();
+  assert.equal(d.m.camera, "follow", "a fresh page starts on follow");
+  const [follow, eyes, , wide] = CAMERA_SHOTS.map(([, ms]) => ms) as [number, number, number, number];
+  assert.deepEqual(cuts(d, state(), total + 1000), [["eyes", follow], ["follow", follow + eyes], ["wide", 2 * follow + eyes], ["follow", total]]);
+});
+
+test("a fight, a build starting or ore mined cuts to the close shot; the rotation then restarts from follow", () => {
+  const fight = new Driver();
+  fight.poll(state());
+  fight.hold(state(), 30_000);
+  const story = [...BASE_STORY, entry(3, "fight")];
+  fight.poll(state({ story }));
+  assert.equal(fight.m.camera, "close");
+  const closedAt = fight.now;
+  // It holds CLOSE_HOLD_MS after the trigger, then follow for a full follow slot before his eyes.
+  const after = cuts(fight, state({ story }), CLOSE_HOLD_MS + FOLLOW_MS + 2000, closedAt);
+  assert.deepEqual(after, [["follow", CLOSE_HOLD_MS], ["eyes", CLOSE_HOLD_MS + FOLLOW_MS]]);
+
+  const build = new Driver();
+  build.poll(state());
+  build.hold(state(), 10_000);
+  build.poll(state({ activity: "building", build: { structure: "cottage", percent: 5 } }));
+  assert.equal(build.m.camera, "close");
+
+  // Ore landing in the inventory while out gathering; more of the same ore extends the shot.
+  const ore = new Driver();
+  ore.poll(state({ items: ["raw_iron"] }));
+  ore.hold(state({ items: ["raw_iron"] }), 10_000);
+  ore.poll(state({ items: ["raw_iron", "raw_iron"] }));
+  assert.equal(ore.m.camera, "close");
+  ore.hold(state({ items: ["raw_iron", "raw_iron"] }), 15_000);
+  ore.poll(state({ items: ["raw_iron", "raw_iron", "minecraft:diamond"] }));
+  ore.hold(state({ items: ["raw_iron", "raw_iron", "diamond"] }), CLOSE_HOLD_MS - 2000);
+  assert.equal(ore.m.camera, "close", "the second find extended the hold");
+  ore.hold(state({ items: ["raw_iron", "raw_iron", "diamond"] }), 3000);
+  assert.equal(ore.m.camera, "follow");
+});
+
+test("ore that is not news never cuts: the first poll, a reconnect, chores and other items", () => {
+  const quiet = (d: Driver, s: unknown) => { d.poll(s); assert.equal(d.m.camera, "follow"); };
+  const d = new Driver();
+  quiet(d, state({ items: ["raw_gold", "coal", "deepslate_iron_ore"] }));
+  // Taking ore out of a chest during chores is not mining.
+  quiet(d, state({ activity: "working", items: ["raw_gold", "coal", "deepslate_iron_ore", "raw_copper"] }));
+  // Gathering other things (logs, an ingot) is not ore.
+  quiet(d, state({ items: ["raw_gold", "coal", "deepslate_iron_ore", "raw_copper", "oak_log", "iron_ingot", "charcoal"] }));
+  // Back from offline with more ore: the reconnect poll is only a baseline.
+  d.poll(state({ connected: false }));
+  quiet(d, state({ items: ["raw_gold", "raw_gold", "coal"] }));
+  // No inventory, then one: a baseline too.
+  quiet(d, { ...(state() as object), inventory: null });
+  quiet(d, state({ items: ["emerald"] }));
+});
+
+test("camera cuts never come faster than CAMERA_MIN_MS, except back to follow on going offline", () => {
+  const d = new Driver();
+  d.poll(state());
+  // Just after the rotation cuts to his eyes, a fight waits out the minimum before the close shot.
+  d.hold(state(), FOLLOW_MS - 1000);
+  assert.equal(d.m.camera, "eyes");
+  const eyesAt = d.m.cameraSince;
+  d.poll(state({ story: [...BASE_STORY, entry(3, "fight")] }));
+  assert.equal(d.m.camera, "eyes");
+  const seen = cuts(d, state({ story: [...BASE_STORY, entry(3, "fight")] }), CAMERA_MIN_MS);
+  assert.deepEqual(seen, [["close", eyesAt + CAMERA_MIN_MS - T0]]);
+
+  // However noisy the input, cuts stay at least CAMERA_MIN_MS apart, and every shot is one the viewer knows.
+  const noisy = new Driver();
+  let id = 10, lastChange = noisy.now;
+  const shots = new Set<string>();
+  noisy.poll(state({ story: [entry(id, "gather")] }));
+  for (let i = 0; i < 1200; i++) {
+    const was = noisy.m.camera;
+    const kind = i % 23 === 0 ? "fight" : "gather";
+    const s = noisy.poll(state({ story: [entry(++id, kind)], activity: i % 5 ? "gathering" : "building", items: i % 31 === 0 ? ["coal", "coal"] : ["coal"], timeOfDay: i % 300 < 150 ? 6000 : 18_000 }));
+    shots.add(s.camera);
+    if (s.camera !== was) { assert(noisy.now - lastChange >= CAMERA_MIN_MS, `cut at ${i}`); lastChange = noisy.now; }
+  }
+  for (const shot of shots) assert(["follow", "eyes", "wide", "close"].includes(shot), shot);
+
+  // Offline from the wide shot: follow at once.
+  const off = new Driver();
+  off.hold(state(), 2 * FOLLOW_MS + EYES_MS + 1000);
+  assert.equal(off.m.camera, "wide");
+  off.poll(state({ connected: false }));
+  assert.equal(off.m.camera, "follow");
+  off.poll(null);
+  assert.equal(off.m.camera, "follow");
+});
+
+test("sheltering at night holds the follow shot; a fight still cuts close", () => {
+  const d = new Driver();
+  const night = state({ timeOfDay: 14_000, activity: "resting" });
+  d.hold(night, NIGHT_ENTER_MS + 2000);
+  assert.equal(d.m.scene, "night");
+  assert.deepEqual(cuts(d, night, 3 * FOLLOW_MS), [], "no eyes or overhead while he sits out the night");
+  const story = [...BASE_STORY, entry(3, "fight")];
+  d.poll(state({ timeOfDay: 14_000, activity: "resting", story }));
+  assert.equal(d.m.camera, "close");
+  assert.equal(cuts(d, state({ timeOfDay: 14_000, activity: "resting", story }), CLOSE_HOLD_MS).at(-1)?.[0], "follow");
 });

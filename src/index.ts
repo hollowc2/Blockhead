@@ -96,6 +96,7 @@ import { CommandTracker, createJobControl, projectJobs } from "./dashboard/jobs.
 import { projectGearDetail, storedContents } from "./dashboard/gear.js";
 import { readOwnerMap, RouteTracker } from "./dashboard/owner-map.js";
 import { cachedPublicMinimap } from "./dashboard/public-minimap.js";
+import { botHomeViewWorld, cachedHomeView } from "./dashboard/public-home-view.js";
 import { createBuildPreview, createPreviewStart } from "./dashboard/build-preview.js";
 import { readHistory, type UnresolvedProblem } from "./dashboard/history.js";
 import { TaskStatus } from "./agent/task.js";
@@ -325,6 +326,12 @@ const viewerAdapter = createPrismarineViewerAdapter({
   publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
   // The broadcast minimap: the private map's source, projected coarse and Bob-relative, shared for 2 s.
   publicMinimap: cachedPublicMinimap(() => readOwnerMap({ db, worldId: state.worldId, bot: session?.bot ?? null, routes: session?.routes ?? null, build: null, homeAndRouteOnly: true })),
+  // The broadcast's picture-in-picture: home from above, rendered from the loaded world at most every 90 s while watched.
+  publicHomeView: cachedHomeView(() => {
+    const bot = session?.bot ?? null;
+    const { home } = readOwnerMap({ db, worldId: state.worldId, bot, routes: null, build: null, homeAndRouteOnly: true });
+    return { home, world: bot === null || home === null ? null : botHomeViewWorld(bot) };
+  }, { onError: (error) => logger.warn({ err: String(error) }, "home view render failed") }),
   // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
   chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
   command: viewerCommand,

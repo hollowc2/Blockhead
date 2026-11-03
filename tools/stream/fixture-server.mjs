@@ -20,6 +20,7 @@
 // (the bare / page is the minimal stand-in, for runs outside a repo checkout).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { crc32, deflateSync } from "node:zlib";
 
 const port = Number(process.argv[2] ?? 3999);
 const control = { viewer: "connected", bot: "up", freeze: 0, state: "normal", events: [] };
@@ -226,9 +227,25 @@ function minimap() {
     : { dimension: "overworld", radius: 12, heading: t % 16, trail, home: { at: [6, -4] } };
 }
 
+// Canned /api/public/home.png (the shape of publicHomeView): a 39×39 overhead
+// still of a field with a house, a pond and a tree; empty and offline answer 503.
+function homePicture() {
+  const size = 39, rows = Buffer.alloc(size * (size * 3 + 1));
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = x - 19, dz = y - 19, shade = (x * 7 + y * 3) % 5 === 0 ? 0.86 : 1;
+    const rgb = Math.abs(dx) <= 3 && Math.abs(dz) <= 3 ? [112, 112, 112] : dx >= 6 && dx <= 10 && dz >= -8 && dz <= -4 ? [64, 64, 255]
+      : Math.hypot(dx + 8, dz - 6) <= 2.5 ? [0, 104, 0] : [127, 178, 56];
+    rgb.forEach((value, i) => { rows[y * (size * 3 + 1) + 1 + x * 3 + i] = Math.round(value * shade); });
+  }
+  const chunk = (type, data) => { const head = Buffer.alloc(4), tail = Buffer.alloc(4), body = Buffer.concat([Buffer.from(type), data]); head.writeUInt32BE(data.length); tail.writeUInt32BE(crc32(body)); return Buffer.concat([head, body, tail]); };
+  const header = Buffer.alloc(13); header.writeUInt32BE(size, 0); header.writeUInt32BE(size, 4); header.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+}
+const HOME_PICTURE = homePicture();
+
 const PUBLIC_DIR = new URL("../../src/dashboard/public/", import.meta.url);
 const VIEWER_DIR = new URL("../../node_modules/prismarine-viewer/public/", import.meta.url);
-const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/broadcast-minimap.mjs": "broadcast-minimap.mjs", "/broadcast-scenes.mjs": "broadcast-scenes.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
+const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/broadcast-minimap.mjs": "broadcast-minimap.mjs", "/broadcast-scenes.mjs": "broadcast-scenes.mjs", "/broadcast-pip.mjs": "broadcast-pip.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
 const TYPES = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", png: "image/png", json: "application/json" };
 // Mirrors SHELL_SECURITY_HEADERS' CSP (src/dashboard/http-guard.ts), so a violation shows up here too.
 const SHELL_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -260,6 +277,11 @@ createServer((req, res) => {
   }
   if (url.pathname === "/api/state") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(publicState())); return; }
   if (url.pathname === "/api/public/minimap") { const body = minimap(); res.writeHead(body ? 200 : 503, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(body ?? { error: "unavailable" })); return; }
+  if (url.pathname === "/api/public/home.png") {
+    const shown = control.bot === "up" && control.viewer !== "offline" && control.state !== "empty";
+    res.writeHead(shown ? 200 : 503, { "content-type": shown ? "image/png" : "application/json", "cache-control": "no-store" });
+    res.end(shown ? HOME_PICTURE : JSON.stringify({ error: "unavailable" })); return;
+  }
   if (BROADCAST_FILES[url.pathname]) { void sendFile(res, new URL(BROADCAST_FILES[url.pathname], PUBLIC_DIR), true); return; }
   if (url.pathname === "/viewer/" || url.pathname === "/viewer") { res.setHeader("content-type", "text/html"); res.end(viewerFrame); return; }
   if (/^\/viewer\/textures\/[A-Za-z0-9._/-]+\.(?:png|json)$/.test(url.pathname) && !url.pathname.includes("..")) {

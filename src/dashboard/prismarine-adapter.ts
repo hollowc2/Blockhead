@@ -17,6 +17,8 @@ export interface PrismarineAdapterOptions {
   publicState: () => Promise<unknown>;
   /** The broadcast minimap (public-minimap.ts), served on both shells; null while unavailable. */
   publicMinimap?: () => Promise<unknown>;
+  /** The broadcast's overhead picture of home (public-home-view.ts), served on both shells; null while there is none. */
+  publicHomeView?: () => Buffer | null;
   /** Viewer Q&A for the private shell only; the public shell never gets it. */
   chat?: (question: unknown) => Promise<ViewerChatResult>;
   command?: (command: unknown) => Promise<ViewerChatResult>;
@@ -49,7 +51,7 @@ export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterO
         publicState: async () => {
           const state = await adapterOptions.publicState() as Record<string, unknown>;
           return { ...state, viewer: { ...(state.viewer as object), session: viewerSession } };
-        }, publicMinimap: adapterOptions.publicMinimap, publicInteractions: adapterOptions.publicInteractions, logger: adapterOptions.logger,
+        }, publicMinimap: adapterOptions.publicMinimap, publicHomeView: adapterOptions.publicHomeView, publicInteractions: adapterOptions.publicInteractions, logger: adapterOptions.logger,
       });
       publicShell = shell;
       publicStart = shell.start().then(() => { publicReady = true; if (closed) shell.stop(); }).catch((error: unknown) => { shell.stop(); if (publicShell === shell) { publicShell = null; publicStart = null; publicReady = false; } throw error; });
@@ -67,7 +69,7 @@ export function createPrismarineViewerAdapter(adapterOptions: PrismarineAdapterO
         maxConnections: (adapterOptions.publicViewer?.maxConnections ?? 0) + 4, logger: adapterOptions.logger,
       });
       const shell = new ViewerShellServer({ host: adapterOptions.host, port: options.port, viewerPort, statsPort: options.dashboardPort,
-        chat: adapterOptions.chat, command: adapterOptions.command, privateApi: adapterOptions.privateApi, publicMinimap: adapterOptions.publicMinimap, logger: adapterOptions.logger,
+        chat: adapterOptions.chat, command: adapterOptions.command, privateApi: adapterOptions.privateApi, publicMinimap: adapterOptions.publicMinimap, publicHomeView: adapterOptions.publicHomeView, logger: adapterOptions.logger,
       });
       try { await viewer.start(); await shell.start(); }
       catch (error) { shell.stop(); viewer.close(); throw error; }

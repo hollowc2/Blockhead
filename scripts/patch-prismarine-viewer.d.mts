@@ -3,6 +3,8 @@ export function patchWorker(source: string, path?: string): string;
 export function patchViewerClient(source: string, path?: string): string;
 export function patchViewerRecenterHotkey(source: string, path?: string): string;
 export function patchViewerCamera(source: string, path?: string): string;
+export function patchViewerShots(source: string, path?: string): string;
+export const CAMERA_MODES: string;
 export function patchViewerEquipment(source: string, path?: string): string;
 export function patchMineflayerCrafting(source: string, path?: string): string;
 export function patchPrismarineViewer(): Promise<void>;
