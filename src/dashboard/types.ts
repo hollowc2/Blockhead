@@ -13,7 +13,11 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 
 export interface BotConnectionInfo { connected: boolean; player: string | null; server: string | null }
 export interface Position { x: number; y: number; z: number }
-export interface SelfSummary { health: number | null; hunger: number | null; position: Position | null; dimension: string | null; timePhase: "day" | "night" | null }
+export interface SelfSummary {
+  health: number | null; hunger: number | null; position: Position | null; dimension: string | null; timePhase: "day" | "night" | null;
+  /** World clock, whole ticks into the day (0 = sunrise, 13000 = dusk, 0-23999); null while disconnected. */
+  timeOfDay?: number | null;
+}
 export interface GoalCriterionSummary { kind: SuccessCriterion["kind"]; stockpile: StockpileKind | null; item: string | null; min: number; label: string }
 export interface GoalResultSummary { action: string; outcome: string; message: string | null; at: string }
 export interface GoalSummary { id: string; description: string; source: GoalSource; status: GoalStatus; createdAt: string; currentStep: string | null; successCriteria: readonly GoalCriterionSummary[]; recentResults: readonly GoalResultSummary[]; note: string | null; endedAt: string | null }

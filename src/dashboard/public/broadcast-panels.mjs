@@ -76,32 +76,102 @@ export function armorMaterial(name) {
   return key ? MATERIALS.find(([prefix]) => key.startsWith(prefix))?.[1] ?? "other" : null;
 }
 
+const DAY_TICKS = 24000;
+const DUSK_TICK = 13000;
+
 /**
- * Where the world clock is. The public state only has the phase, so the
- * position comes from the latest sunrise/sunset: a story entry or a flip
- * this page saw itself. Without a believable anchor the dial sits mid-phase
- * and gives no countdown.
+ * Where the world clock is. With the public `self.timeOfDay` (ticks, to the
+ * nearest 100) the dial is exact, unless the page saw the clock stand still
+ * (`frozen`: a stopped daylight cycle), which gives no countdown. Without it
+ * (an older bot) the position comes from the latest sunrise/sunset: a story
+ * entry or a flip this page saw itself; with no believable anchor the dial
+ * sits mid-phase and gives no countdown.
  * @returns {{ phase: "day"|"night"|null, angle: number, remaining: number|null, label: string }}
  */
-export function dayDial({ phase, story = [], observedFlipAt = null, now }) {
+export function dayDial({ phase, timeOfDay = null, frozen = false, story = [], observedFlipAt = null, now }) {
   if (phase !== "day" && phase !== "night") return { phase: null, angle: 0, remaining: null, label: "" };
-  const length = phase === "day" ? DAY_SECONDS : NIGHT_SECONDS;
-  let anchor = observedFlipAt;
-  for (const entry of story) {
-    const at = Date.parse(entry?.at);
-    if (entry?.icon === phase && Number.isFinite(at) && (anchor === null || at > anchor)) anchor = at;
+  let cycle, remaining;
+  if (typeof timeOfDay === "number" && Number.isFinite(timeOfDay)) {
+    const ticks = ((Math.round(timeOfDay) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+    // The clock decides the phase; the edge-triggered phase can trail it by a packet.
+    phase = ticks < DUSK_TICK ? "day" : "night";
+    cycle = ticks / 20;
+    remaining = frozen ? null : Math.round(((phase === "day" ? DUSK_TICK : DAY_TICKS) - ticks) / 20);
+  } else {
+    const length = phase === "day" ? DAY_SECONDS : NIGHT_SECONDS;
+    let anchor = observedFlipAt;
+    for (const entry of story) {
+      const at = Date.parse(entry?.at);
+      if (entry?.icon === phase && Number.isFinite(at) && (anchor === null || at > anchor)) anchor = at;
+    }
+    const elapsed = anchor === null ? NaN : (now - anchor) / 1000;
+    const anchored = elapsed >= 0 && elapsed <= length + ANCHOR_GRACE_SECONDS;
+    cycle = (phase === "day" ? 0 : DAY_SECONDS) + (anchored ? Math.min(length, elapsed) : length / 2);
+    remaining = anchored ? Math.max(0, Math.round(length - elapsed)) : null;
   }
-  const elapsed = anchor === null ? NaN : (now - anchor) / 1000;
-  const anchored = elapsed >= 0 && elapsed <= length + ANCHOR_GRACE_SECONDS;
-  const into = anchored ? Math.min(length, elapsed) : length / 2;
-  const cycle = (phase === "day" ? 0 : DAY_SECONDS) + into;
-  // 0° is noon at the top; sunrise sits left of it, sunset right.
+  // 0° is the middle of the day arc at the top; sunrise sits left of it, sunset right.
   const angle = (cycle / CYCLE_SECONDS) * 360 - (DAY_SECONDS / CYCLE_SECONDS) * 180;
-  const remaining = anchored ? Math.max(0, Math.round(length - elapsed)) : null;
   const next = phase === "day" ? "Night" : "Dawn";
   const label = remaining === null ? (phase === "day" ? "Daytime" : "Nighttime")
-    : remaining < 60 ? `${next} soon` : `${next} in ~${Math.ceil(remaining / 60)} min`;
+    : remaining < 60 ? `${next} soon` : `${next} in ${typeof timeOfDay === "number" ? "" : "~"}${Math.ceil(remaining / 60)} min`;
   return { phase, angle: Math.round(angle * 10) / 10, remaining, label };
+}
+
+/** `angle` turned by whole circles to sit nearest `previous`, so a CSS transition never spins backwards at dawn. */
+export function nearestTurn(previous, angle) {
+  if (typeof previous !== "number" || !Number.isFinite(previous)) return angle;
+  return angle + Math.round((previous - angle) / 360) * 360;
+}
+
+/** A done/total pair as a 0-1 fraction, or null when there is nothing to measure. */
+export function fraction(progress) {
+  const done = Number(progress?.done), total = Number(progress?.total);
+  return Number.isFinite(done) && Number.isFinite(total) && total > 0 ? Math.max(0, Math.min(1, done / total)) : null;
+}
+
+/** A model latency in a few characters: "640 ms", "2.4 s", "38 s", or "—". */
+export function latency(ms) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "—";
+  return ms < 1000 ? `${Math.round(ms)} ms` : ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`;
+}
+
+/** Whole seconds as "45s", "12m", "3h 05m" or "4d 2h". */
+export function uptime(seconds) {
+  const s = typeof seconds === "number" && Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+  return `${Math.floor(s / 86_400)}d ${Math.floor((s % 86_400) / 3600)}h`;
+}
+
+export const VITALS_MINUTES = 60;
+/**
+ * SVG path data for the vitals sparkline: one point a minute, newest at the
+ * right edge, 0-20 bottom to top. A null sample (disconnected) breaks the
+ * line; a lone point between gaps becomes a short dash so it still shows.
+ * @returns {{ health: string, hunger: string }}
+ */
+export function sparkline(samples, { width, height, max = 20, inset = 2 } = {}) {
+  const list = Array.isArray(samples) ? samples.slice(-VITALS_MINUTES) : [];
+  const step = width / (VITALS_MINUTES - 1);
+  const offset = VITALS_MINUTES - list.length;
+  const y = (value) => inset + (1 - Math.max(0, Math.min(max, value)) / max) * (height - inset * 2);
+  const round = (n) => Math.round(n * 10) / 10;
+  const path = (key) => {
+    const runs = [];
+    let run = [];
+    list.forEach((sample, index) => {
+      const value = sample?.[key];
+      if (typeof value === "number" && Number.isFinite(value)) run.push([(offset + index) * step, y(value)]);
+      else if (run.length) { runs.push(run); run = []; }
+    });
+    if (run.length) runs.push(run);
+    return runs.map((points) => {
+      if (points.length === 1) { const [[x, py]] = points; points = [[Math.max(0, x - step / 2), py], [Math.min(width, x + step / 2), py]]; }
+      return points.map(([x, py], i) => `${i ? "L" : "M"}${round(x)} ${round(py)}`).join("");
+    }).join("");
+  };
+  return { health: path("health"), hunger: path("hunger") };
 }
 
 /** Minecraft-style row of 10 icons, each worth 2 points: "full" | "half" | "empty". */

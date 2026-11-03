@@ -36,12 +36,32 @@
 
       <div class="overlay overlay-bottom" data-live>
         <div id="vitals" class="vitals" hidden>
-          <div id="hearts" class="icons hearts" aria-label="Health"></div>
-          <div id="food" class="icons food" aria-label="Hunger"></div>
+          <div class="vitals-icons">
+            <div id="hearts" class="icons hearts" aria-label="Health"></div>
+            <div id="food" class="icons food" aria-label="Hunger"></div>
+          </div>
+          <!-- Health and hunger over the last hour, newest at the right. -->
+          <figure class="spark" data-panel="vitals" hidden>
+            <svg viewBox="0 0 150 46" preserveAspectRatio="none" aria-hidden="true">
+              <path class="spark-mid" d="M0 23H150"/>
+              <path id="sparkHunger" class="spark-hunger"/>
+              <path id="sparkHealth" class="spark-health"/>
+            </svg>
+            <figcaption>Last hour</figcaption>
+          </figure>
         </div>
-        <!-- P3: health/hunger sparkline. -->
-        <div class="slot" data-panel="vitals" hidden></div>
       </div>
+
+      <!-- Equipment as a hotbar: hands, then armor head to feet. -->
+      <ul id="hotbar" class="hotbar" data-live hidden>
+        <li class="slot-box" data-slot="hand"></li>
+        <li class="slot-box" data-slot="off-hand"></li>
+        <li class="hotbar-gap" aria-hidden="true"></li>
+        <li class="slot-box" data-slot="head"></li>
+        <li class="slot-box" data-slot="torso"></li>
+        <li class="slot-box" data-slot="legs"></li>
+        <li class="slot-box" data-slot="feet"></li>
+      </ul>
     </section>
 
     <aside class="side">
@@ -56,52 +76,50 @@
         <span id="live" class="live" data-state="wait"><i></i><span id="liveText">Connecting</span></span>
       </header>
 
-      <section id="statusPanel" class="panel status" data-activity="offline" data-live>
-        <div class="status-head">
+      <!-- Now: the coarse public activity, and what he is doing about it. -->
+      <section id="nowPanel" class="panel now" data-panel="now" data-activity="offline" data-live>
+        <div class="now-head">
           <span class="status-icon" aria-hidden="true"></span>
           <p id="statusLabel" class="status-label">Offline</p>
           <span id="statusSince" class="status-since"></span>
         </div>
-        <p id="statusDetail" class="status-detail">CobbleBob isn't connected to the world right now.</p>
+        <p id="nowLabel" class="now-label">CobbleBob isn't connected to the world right now.</p>
+        <div id="nowBar" class="bar" hidden><i></i></div>
+        <p id="nowStep" class="now-step" hidden></p>
       </section>
 
-      <!-- Empty slots for later phases; each stays hidden until its public field exists and is bound. -->
-      <section class="panel slot" data-panel="now" hidden></section>
-      <section class="panel slot" data-panel="thinking" hidden></section>
-      <section class="panel slot" data-panel="build" hidden></section>
-      <section class="panel slot" data-panel="brain" hidden></section>
+      <section id="thinkingPanel" class="panel thinking" data-panel="thinking" data-live hidden>
+        <h2>Thinking <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></h2>
+        <p id="thought" class="thought"></p>
+      </section>
 
-      <section class="panel progress">
-        <h2>Progress <span id="tierLabel" class="h2-note"></span></h2>
+      <!-- Build takes the progression row's place while a build is underway. -->
+      <section id="buildPanel" class="panel build-card" data-panel="build" data-live hidden>
+        <i class="glyph build" aria-hidden="true"></i>
+        <b id="buildName"></b>
+        <span id="buildBlocks"></span>
+        <span id="buildPercent"></span>
+        <div class="bar"><i id="buildBar"></i></div>
+      </section>
+
+      <section id="progressPanel" class="panel progress">
         <ol id="tiers" class="tiers"></ol>
+        <p class="tier-label"><small>Best tier</small><b id="tierLabel"></b></p>
       </section>
 
-      <section class="panel gear" data-live>
-        <h2>Equipped</h2>
-        <div class="doll">
-          <ul class="doll-armor">
-            <li class="slot-box" data-slot="head"></li>
-            <li class="slot-box" data-slot="torso"></li>
-            <li class="slot-box" data-slot="legs"></li>
-            <li class="slot-box" data-slot="feet"></li>
+      <div class="side-foot">
+        <!-- P5: coarse minimap (a heading over a 140px disc); hidden until mounted. -->
+        <section class="panel slot minimap" data-panel="minimap" hidden></section>
+        <section id="brainPanel" class="panel brain" data-panel="brain" data-live hidden>
+          <i class="brain-icon" aria-hidden="true"></i>
+          <ul class="brain-stats">
+            <li class="brain-model"><b id="brainModel"></b></li>
+            <li><b id="brainRate"></b><small>/h</small><small class="brain-note">decisions</small></li>
+            <li><b id="brainLatency"></b><small class="brain-note">reply</small></li>
+            <li class="brain-uptime"><small>up</small><b id="brainUptime"></b></li>
           </ul>
-          <svg class="doll-figure" viewBox="0 0 40 72" aria-hidden="true">
-            <rect data-part="arms" x="2" y="17" width="8" height="24"/>
-            <rect data-part="arms" x="30" y="17" width="8" height="24"/>
-            <rect data-part="legs" x="12" y="42" width="16" height="22"/>
-            <rect data-part="feet" x="12" y="64" width="16" height="7"/>
-            <rect data-part="torso" x="11" y="17" width="18" height="25"/>
-            <rect data-part="head" x="12" y="0" width="16" height="16"/>
-          </svg>
-          <ul class="doll-hands">
-            <li data-slot="hand"><span class="slot-box"></span><span class="hand-text"><small>Main hand</small><b>—</b></span></li>
-            <li data-slot="off-hand"><span class="slot-box"></span><span class="hand-text"><small>Off hand</small><b>—</b></span></li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- P5: coarse minimap. -->
-      <section class="panel slot" data-panel="minimap" hidden></section>
+        </section>
+      </div>
     </aside>
 
     <section class="strip">

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ago, armorMaterial, compact, DAY_SECONDS, dayDial, gainedItems, iconRow, itemLabel, NIGHT_SECONDS, progression } from "./public/broadcast-panels.mjs";
+import { ago, armorMaterial, compact, DAY_SECONDS, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, nearestTurn, NIGHT_SECONDS, progression, sparkline, uptime } from "./public/broadcast-panels.mjs";
 
 const reached = (state: unknown): string[] => progression(state).tiers.filter((tier) => tier.reached).map((tier) => tier.id);
 
@@ -62,4 +62,59 @@ test("formatting helpers stay short and never print raw junk", () => {
   assert.deepEqual(iconRow(null), Array(10).fill("empty"));
   assert.deepEqual(iconRow(99), Array(10).fill("full"));
   assert.deepEqual(["iron_helmet", "golden_boots", "turtle_helmet", "elytra", null].map(armorMaterial), ["iron", "gold", "turtle", "other", null]);
+});
+
+test("with the public clock the dial is exact, and a frozen clock gives no countdown", () => {
+  const now = Date.parse("2026-11-02T12:00:00Z");
+  // 8200 ticks: 4800 to dusk at 20 ticks/s is exactly 4 minutes.
+  assert.deepEqual(dayDial({ phase: "day", timeOfDay: 8200, now }), { phase: "day", angle: 25.5, remaining: 240, label: "Night in 4 min" });
+  assert.equal(dayDial({ phase: "day", timeOfDay: 12_000, now }).label, "Night soon");
+  // Midnight-ish: 6000 ticks to sunrise is 5 minutes; dawn wraps at 24000.
+  assert.equal(dayDial({ phase: "night", timeOfDay: 18_000, now }).label, "Dawn in 5 min");
+  assert.equal(dayDial({ phase: "night", timeOfDay: 23_900, now }).label, "Dawn soon");
+  // The clock decides the phase when the edge-triggered phase lags a packet.
+  assert.equal(dayDial({ phase: "day", timeOfDay: 13_100, now }).phase, "night");
+  // The day arc is centred at the top: sunrise at -97.5°, dusk at +97.5°, as the story-anchored dial.
+  assert.equal(dayDial({ phase: "day", timeOfDay: 0, now }).angle, -97.5);
+  assert.equal(dayDial({ phase: "night", timeOfDay: 13_000, now }).angle, 97.5);
+  assert.equal(dayDial({ phase: "day", timeOfDay: 6500, now }).angle, dayDial({ phase: "day", observedFlipAt: now - (DAY_SECONDS / 2) * 1000, now }).angle);
+  // A stopped daylight cycle keeps the hand but drops the countdown.
+  assert.deepEqual(dayDial({ phase: "day", timeOfDay: 8200, frozen: true, now }), { phase: "day", angle: 25.5, remaining: null, label: "Daytime" });
+  // No phase (the Nether, offline) hides the dial whatever the clock says; junk clocks fall back to the story anchor.
+  assert.equal(dayDial({ phase: null, timeOfDay: 6000, now }).phase, null);
+  assert.equal(dayDial({ phase: "day", timeOfDay: Number.NaN, now }).label, "Daytime");
+});
+
+test("the dial hand turns forward through dawn instead of spinning back", () => {
+  assert.equal(nearestTurn(null, 262), 262);
+  assert.equal(nearestTurn(262, -97.5), 262.5);
+  assert.equal(nearestTurn(262.5 + 360, 0), 720);
+  assert.equal(nearestTurn(10, 12), 12);
+});
+
+test("now and build progress, latency and uptime stay short and bounded", () => {
+  assert.deepEqual([fraction({ done: 4, total: 10 }), fraction({ done: 12, total: 10 }), fraction({ done: -1, total: 10 }), fraction({ done: 0, total: 0 }), fraction(null), fraction({ done: "x", total: 3 })], [0.4, 1, 0, null, null, null]);
+  assert.deepEqual([latency(812.4), latency(2430), latency(38_400), latency(null), latency(-5), latency(Number.NaN)], ["812 ms", "2.4 s", "38 s", "—", "—", "—"]);
+  assert.deepEqual([uptime(0), uptime(45.9), uptime(720), uptime(11_520), uptime(9_999_999), uptime(null), uptime(-3)], ["0s", "45s", "12m", "3h 12m", "115d 17h", "0s", "0s"]);
+});
+
+test("the vitals sparkline puts the newest minute at the right edge and breaks on gaps", () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString();
+  // A full hour spans the width; 0 is the bottom (inset), 20 the top.
+  const full = sparkline(Array.from({ length: 60 }, (_, i) => ({ at: at(i), health: 20, hunger: 0 })), { width: 118, height: 24, inset: 2 });
+  assert.match(full.health, /^M0 2L2 2/);
+  assert.match(full.health, /L118 2$/);
+  assert.match(full.hunger, /^M0 22/);
+  // A short history hugs the right edge; a null minute splits the line into two runs.
+  const short = sparkline([{ at: at(0), health: 10, hunger: 10 }, { at: at(1), health: null, hunger: null }, { at: at(2), health: 20, hunger: 20 }, { at: at(3), health: 20, hunger: 20 }], { width: 118, height: 24, inset: 2 });
+  assert.equal(short.health.split("M").length - 1, 2);
+  assert.match(short.health, /L118 2$/);
+  // A lone point becomes a short dash so it still shows.
+  assert.match(short.health, /^M111 12L113 12/);
+  // Out-of-range values are clamped; nothing at all draws nothing.
+  assert.match(sparkline([{ health: 99, hunger: -4 }, { health: 99, hunger: -4 }], { width: 118, height: 24 }).health, / 2L118 2$/);
+  assert.deepEqual(sparkline([], { width: 118, height: 24 }), { health: "", hunger: "" });
+  assert.deepEqual(sparkline(null, { width: 118, height: 24 }), { health: "", hunger: "" });
+  // More than an hour keeps only the newest 60 minutes.
+  assert.equal(sparkline(Array.from({ length: 90 }, (_, i) => ({ health: i < 30 ? null : 10, hunger: 10 })), { width: 118, height: 24 }).health.split("M").length - 1, 1);
 });

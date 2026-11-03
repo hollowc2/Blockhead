@@ -53,6 +53,7 @@ test("collects a connected bot snapshot without retaining the bot", () => {
   equal(snapshot.connection.connected, true);
   equal(snapshot.connection.player, "CobbleBob");
   deepStrictEqual(snapshot.inventory?.items, [{ name: "oak_log", count: 3 }]);
+  equal(snapshot.self.timeOfDay, null, "no clock before the first time packet");
   notStrictEqual(snapshot.inventory, (bot as unknown as { inventory: unknown }).inventory);
 });
 
@@ -217,4 +218,17 @@ test("gathers broadcast inputs: vitals, decisions, the config model label and ev
 test("broadcast inputs degrade to empty without a decider, tracker or config", () => {
   const snapshot = new DashboardTelemetryCollector(source()).snapshot();
   deepStrictEqual({ ...snapshot.broadcast, privateTerms: [] }, { vitals: [], decisionsLastHour: 0, lastDecision: null, privateTerms: [], modelLabel: null });
+});
+
+test("reports the world clock as whole ticks into the day while connected", () => {
+  const time = { timeOfDay: 0 as number | null };
+  const bot = { username: "CobbleBob", entity: { position: { x: 1, y: 64, z: -2 } }, time, inventory: { items: () => [] } } as unknown as Bot;
+  let current: Bot | null = bot;
+  const collector = new DashboardTelemetryCollector(source({ bot: () => current }));
+  for (const [raw, ticks] of [[6012.7, 6012], [23_999, 23_999], [48_123, 123], [-50, 23_950], [null, null]] as const) {
+    time.timeOfDay = raw;
+    equal(collector.snapshot().self.timeOfDay, ticks, String(raw));
+  }
+  current = null;
+  equal(collector.snapshot().self.timeOfDay, null);
 });

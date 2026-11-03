@@ -1,5 +1,5 @@
 import { ViewerSession, frameToken } from "./viewer-session.mjs";
-import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, progression, TIERS } from "./broadcast-panels.mjs";
+import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, nearestTurn, progression, sparkline, TIERS, uptime } from "./broadcast-panels.mjs";
 // The broadcast frame filmed by tools/stream. It reads the same /api/state as
 // the viewer shell, polls once a second, and never takes input: no buttons,
 // no hover, no keys. Animations are CSS; nothing here runs per frame.
@@ -52,29 +52,37 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
     if (lastState) render(lastState, { repaint: true });
   }).catch(() => {}); // Initials stay readable if artwork fails.
 
-  // ---- Game overlay: day, phase, dial, hearts and hunger ----
-  let lastPhase = null, observedFlipAt = null;
+  // ---- Game overlay: day, phase, dial, hearts, hunger and their last hour ----
+  // The public clock moves 100 ticks (5 s) at a time; one standing still for
+  // longer is a stopped daylight cycle, which gets no countdown.
+  const FROZEN_AFTER_MS = 20_000;
+  let lastPhase = null, observedFlipAt = null, lastTicks = null, ticksMovedAt = 0, dialAngle = null;
   const DIMENSIONS = { overworld: "Overworld", the_nether: "Nether", the_end: "The End" };
   function renderOverlay(s, connected, now) {
     const self = s.self || {};
     const day = s.world?.day;
     $("dayChip").hidden = typeof day !== "number";
     setText($("dayCount"), day);
+    const ticks = connected && typeof self.timeOfDay === "number" ? self.timeOfDay : null;
+    if (ticks !== lastTicks) { lastTicks = ticks; ticksMovedAt = now; }
     const phase = connected && (self.timePhase === "day" || self.timePhase === "night") ? self.timePhase : null;
     if (phase && lastPhase && phase !== lastPhase) observedFlipAt = now;
     if (phase) lastPhase = phase;
-    $("phaseChip").hidden = !phase;
-    $("phaseIcon").className = `phase-icon ${phase ?? ""}`;
-    setText($("phaseLabel"), phase === "day" ? "Day" : "Night");
     const dimension = typeof self.dimension === "string" ? self.dimension.replace(/^minecraft:/, "") : null;
     const away = connected && dimension && dimension !== "overworld";
     $("dimensionChip").hidden = !away;
     if (away) setText($("dimensionChip"), DIMENSIONS[dimension] ?? itemLabel(dimension));
     // The Nether and the End have no sky to time.
-    const dial = dayDial({ phase: away ? null : phase, story: s.story || [], observedFlipAt, now });
+    const dial = dayDial({ phase: away ? null : phase, timeOfDay: ticks, frozen: now - ticksMovedAt > FROZEN_AFTER_MS, story: s.story || [], observedFlipAt, now });
+    // With the exact clock the dial's phase leads, so the chip and the dial never disagree.
+    const shown = dial.phase ?? phase;
+    $("phaseChip").hidden = !shown;
+    $("phaseIcon").className = `phase-icon ${shown ?? ""}`;
+    setText($("phaseLabel"), shown === "day" ? "Day" : "Night");
     $("dial").hidden = dial.phase === null;
     $("dial").dataset.phase = dial.phase ?? "";
-    $("dialHand").style.setProperty("--dial-angle", `${dial.angle}deg`);
+    dialAngle = nearestTurn(dialAngle, dial.angle);
+    $("dialHand").style.setProperty("--dial-angle", `${dialAngle}deg`);
     setText($("dialLabel"), dial.label);
 
     const live = connected && typeof self.health === "number";
@@ -83,23 +91,90 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
     icons($("food"), self.hunger);
     $("hearts").classList.toggle("low", live && self.health <= 6);
   }
+  // Drawn only when the samples change (once a minute), never per frame.
+  function renderVitals(vitals) {
+    const spark = document.querySelector('[data-panel="vitals"]');
+    const samples = Array.isArray(vitals) ? vitals : [];
+    spark.hidden = !samples.some((sample) => typeof sample?.health === "number" || typeof sample?.hunger === "number");
+    const key = JSON.stringify(samples.map((sample) => [sample?.health, sample?.hunger]));
+    if (spark.dataset.key === key) return;
+    spark.dataset.key = key;
+    const paths = sparkline(samples, { width: 150, height: 46 });
+    $("sparkHealth").setAttribute("d", paths.health);
+    $("sparkHunger").setAttribute("d", paths.hunger);
+  }
   function icons(root, value) {
     if (root.children.length !== 10) root.replaceChildren(...Array.from({ length: 10 }, () => el("i")));
     iconRow(value).forEach((state, i) => { const icon = root.children[i]; if (icon.className !== state) icon.className = state; });
   }
 
-  // ---- Right now: the coarse public status ----
+  // ---- Now: the coarse public status, the templated goal line, its progress and step ----
   const ACTIVITY = { offline: "Offline", recovering: "Recovering", building: "Building", gathering: "Gathering", exploring: "Exploring", resting: "Resting", working: "Working" };
-  function renderStatus(s, connected, now) {
+  function renderNow(s, connected, now) {
     // The private listener's state has no public status; the card waits for one.
-    $("statusPanel").hidden = connected && !s.status;
+    $("nowPanel").hidden = connected && !s.status;
     const activity = connected && ACTIVITY[s.status?.activity] ? s.status.activity : "offline";
-    $("statusPanel").dataset.activity = activity;
+    $("nowPanel").dataset.activity = activity;
     setText($("statusLabel"), ACTIVITY[activity]);
-    setText($("statusDetail"), connected ? s.status?.detail : "CobbleBob isn't connected to the world right now.");
+    setText($("nowLabel"), connected ? s.now?.label ?? s.status?.detail : "CobbleBob isn't connected to the world right now.");
     const started = connected && s.status?.since ? Date.parse(s.status.since) : NaN;
     const since = Number.isFinite(started) && now - started >= 60_000 ? `for ${span(now - started)}` : "";
     if ($("statusSince").textContent !== since) $("statusSince").textContent = since;
+    const done = connected ? fraction(s.now?.progress) : null;
+    $("nowBar").hidden = done === null;
+    if (done !== null) $("nowBar").style.setProperty("--fill", `${Math.round(done * 1000) / 10}%`);
+    // The step adds nothing when it only repeats the activity ("Exploring").
+    const step = connected && typeof s.now?.step === "string" && s.now.step !== ACTIVITY[activity] ? s.now.step : "";
+    $("nowStep").hidden = !step;
+    if ($("nowStep").textContent !== step) $("nowStep").textContent = step;
+  }
+
+  // ---- Thinking: typed out once per decision, pulsing while a model call is in flight ----
+  const TYPE_MS = 2600, TYPE_STEP_MAX_MS = 45;
+  let thoughtAt = null;
+  function renderThinking(s, connected) {
+    const panel = $("thinkingPanel");
+    const thought = connected && typeof s.thinking?.text === "string" && s.thinking.text ? s.thinking : null;
+    const busy = connected && s.brain?.thinking === true;
+    panel.hidden = !thought && !busy;
+    panel.classList.toggle("busy", busy);
+    const node = $("thought");
+    if (!thought) {
+      if (thoughtAt !== "") { thoughtAt = ""; node.className = "thought still"; node.textContent = "Mulling it over…"; }
+      return;
+    }
+    // The trigger is the decision time: a repeated fixed phrase still types out again.
+    if (thought.at === thoughtAt) return;
+    thoughtAt = thought.at;
+    const chars = [...thought.text];
+    node.className = "thought";
+    node.style.setProperty("--type-step", `${Math.min(TYPE_STEP_MAX_MS, TYPE_MS / chars.length).toFixed(1)}ms`);
+    node.style.setProperty("--n", String(chars.length));
+    node.replaceChildren(...chars.map((char, i) => { const letter = el("span", "", char); letter.style.setProperty("--i", String(i)); return letter; }));
+  }
+
+  // ---- Build: only while one is underway; it takes the progression row's place ----
+  function renderBuild(build, connected) {
+    const shown = connected && build && typeof build.structure === "string";
+    $("buildPanel").hidden = !shown;
+    $("progressPanel").hidden = Boolean(shown);
+    if (!shown) return;
+    const percent = Math.max(0, Math.min(100, Math.round(Number(build.percent) || 0)));
+    setText($("buildName"), build.structure);
+    setText($("buildPercent"), `${percent}%`);
+    $("buildBar").style.setProperty("--fill", `${percent}%`);
+    const placed = Number(build.blocksPlaced) || 0;
+    setText($("buildBlocks"), `${compact(placed)} ${placed === 1 ? "block" : "blocks"}`);
+  }
+
+  // ---- Brain: model, decisions an hour, last latency (and uptime beside the minimap) ----
+  function renderBrain(brain, uptimeSeconds) {
+    $("brainPanel").hidden = !brain;
+    if (!brain) return;
+    setText($("brainModel"), brain.model ?? "Local model");
+    setText($("brainRate"), compact(brain.decisionsLastHour ?? 0));
+    setText($("brainLatency"), latency(brain.lastLatencyMs));
+    setText($("brainUptime"), uptime(uptimeSeconds));
   }
 
   // ---- Inventory: sprites and counts; anything gained since the last poll glows ~5 s ----
@@ -148,23 +223,17 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
     } else more?.remove();
   }
 
-  // ---- Equipment paper doll ----
-  const ARMOR_PARTS = { head: ["head"], torso: ["torso", "arms"], legs: ["legs"], feet: ["feet"] };
+  // ---- Equipment hotbar: hands, then armor (its material shown as a strip) ----
+  const EQUIPMENT_SLOTS = ["hand", "off-hand", "head", "torso", "legs", "feet"];
+  const ARMOR_SLOTS = new Set(["head", "torso", "legs", "feet"]);
   function renderEquipment(equipment) {
-    for (const [slot, parts] of Object.entries(ARMOR_PARTS)) {
+    $("hotbar").hidden = !equipment;
+    for (const slot of EQUIPMENT_SLOTS) {
+      const box = document.querySelector(`.hotbar [data-slot="${slot}"]`);
       const item = equipment?.[slot];
-      art(document.querySelector(`.doll-armor [data-slot="${slot}"]`), item?.name, slot);
-      const material = armorMaterial(item?.name);
-      for (const part of parts) document.querySelectorAll(`.doll-figure [data-part="${part}"]`).forEach((node) => {
-        if (material) node.setAttribute("data-material", material); else node.removeAttribute("data-material");
-      });
-    }
-    for (const slot of ["hand", "off-hand"]) {
-      const row = document.querySelector(`.doll-hands [data-slot="${slot}"]`);
-      const item = equipment?.[slot];
-      art(row.querySelector(".slot-box"), item?.name, slot);
-      row.classList.toggle("blank", !item);
-      setText(row.querySelector("b"), !equipment ? "—" : item ? `${itemLabel(item.name)}${item.count > 1 ? ` ×${item.count}` : ""}` : "Empty");
+      art(box, item?.name, slot);
+      const material = ARMOR_SLOTS.has(slot) ? armorMaterial(item?.name) : null;
+      if (material) box.setAttribute("data-material", material); else box.removeAttribute("data-material");
     }
   }
 
@@ -214,7 +283,7 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
       const badge = el("span", "badge");
       const img = el("img"); img.alt = ""; img.width = 28; img.height = 28; img.src = textureRoot + tier.texture;
       badge.append(img);
-      row.append(badge, el("span", "", tier.label));
+      row.append(badge);
       tierRows.set(tier.id, row);
       root.append(row);
     }
@@ -226,8 +295,9 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
       if (reachedTiers && tier.reached && !reachedTiers.has(tier.id)) { row.classList.remove("fresh"); void row.offsetWidth; row.classList.add("fresh"); }
     }
     reachedTiers = new Set(tiers.filter((tier) => tier.reached).map((tier) => tier.id));
-    // The frame never reflows, so the track is measured only when the current tier changes.
-    if (root.dataset.current !== String(current)) {
+    // The frame never reflows, so the track is measured only when the current
+    // tier changes, and not while the build card hides the row (nothing to measure).
+    if (root.dataset.current !== String(current) && root.offsetWidth > 0) {
       root.dataset.current = String(current);
       const centre = (id) => { const badge = tierRows.get(id).firstElementChild; return badge.offsetLeft + badge.parentElement.offsetLeft + badge.offsetWidth / 2; };
       const first = centre(TIERS[0].id);
@@ -236,7 +306,7 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
       root.style.setProperty("--fill-width", `${current ? centre(current) - first : 0}px`);
     }
     const label = current ? TIERS.find((tier) => tier.id === current).label : null;
-    setText($("tierLabel"), label ? (current === "nether" ? "Nether explorer" : `${label} age`) : "Just started");
+    setText($("tierLabel"), label ?? "None yet");
   }
 
   // Later phases bind these slots; a slot shows only once its field is present (and bound).
@@ -246,6 +316,21 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
       const field = slot.dataset.panel;
       slot.hidden = !SLOT_FIELDS.has(field) || s[field] === undefined || s[field] === null;
     });
+  }
+
+  // The thought gets as many lines as the column has room for (2-5), so the
+  // foot (brain, minimap) never gets pushed out. One layout read a poll.
+  const LINE_PX = 24, MIN_LINES = 2, MAX_LINES = 5;
+  let thoughtLines = MAX_LINES;
+  function fitColumn() {
+    const side = document.querySelector(".side"), node = $("thought"), foot = document.querySelector(".side-foot");
+    if ($("thinkingPanel").hidden) return;
+    const above = () => { let last = foot.previousElementSibling; while (last && last.hidden) last = last.previousElementSibling; return last; };
+    const free = () => foot.getBoundingClientRect().top - above().getBoundingClientRect().bottom - parseFloat(getComputedStyle(side).rowGap);
+    const set = (lines) => { thoughtLines = lines; node.style.setProperty("--lines", String(lines)); };
+    while (thoughtLines > MIN_LINES && side.scrollHeight > side.clientHeight) set(thoughtLines - 1);
+    while (thoughtLines < MAX_LINES && side.scrollHeight <= side.clientHeight && free() >= LINE_PX) set(thoughtLines + 1);
+    if (side.scrollHeight > side.clientHeight && thoughtLines > MIN_LINES) set(thoughtLines - 1);
   }
 
   // ---- Freshness, the live pill and the veil over the game ----
@@ -281,13 +366,19 @@ import { ago, armorMaterial, compact, dayDial, gainedItems, iconRow, itemLabel, 
     if (!repaint) { reachable = true; botLive = connected; lastReceivedAt = now; }
     lastState = s;
     renderOverlay(s, connected, now);
-    renderStatus(s, connected, now);
     renderInventory(connected ? s.inventory : null, connected, now);
     renderEquipment(connected ? s.equipment : null);
     renderStory(s.story || [], now);
     renderStats(s.world);
-    renderProgress(s);
     renderSlots(s);
+    // The bound panels refine what renderSlots showed: offline, busy and building states.
+    renderVitals(s.vitals);
+    renderNow(s, connected, now);
+    renderThinking(s, connected);
+    renderBuild(s.build, connected);
+    renderProgress(s);
+    renderBrain(s.brain, s.uptimeSeconds);
+    fitColumn();
     if (repaint) return;
     viewerSession.update({ reachable: true, connected, running: s.viewer?.status === "running", session: s.viewer?.session ?? "unknown" });
     setText($("viewerStatus"), viewerSession.state);

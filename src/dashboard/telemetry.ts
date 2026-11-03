@@ -67,6 +67,12 @@ export interface DashboardTelemetrySource {
 }
 
 const HOUR_MS = 3_600_000;
+const DAY_TICKS = 24_000;
+
+/** mineflayer's timeOfDay as whole ticks in 0-23999, or null before the first time packet. */
+function worldTicks(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS : null;
+}
 
 /** A process-lifetime, side-effect-free projection of live agent telemetry. */
 export class DashboardTelemetryCollector {
@@ -132,6 +138,7 @@ export class DashboardTelemetryCollector {
         position: connected ? projectPosition(self.position) : null,
         dimension: connected ? self.dimension : null,
         timePhase: connected ? this.source.state.timePhase : null,
+        timeOfDay: connected ? worldTicks(bot?.time?.timeOfDay) : null,
       },
       goal: projectGoal(activeGoal),
       task: projectTask(activeTask),

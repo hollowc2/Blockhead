@@ -8,5 +8,11 @@ export interface Tier { id: "wood" | "stone" | "iron" | "diamond" | "nether"; la
 export const TIERS: readonly Tier[];
 export function progression(state: unknown): { tiers: Array<Tier & { reached: boolean }>; current: Tier["id"] | null };
 export function armorMaterial(name: unknown): string | null;
-export function dayDial(input: { phase: unknown; story?: ReadonlyArray<{ icon?: string; at?: string }>; observedFlipAt?: number | null; now: number }): { phase: "day" | "night" | null; angle: number; remaining: number | null; label: string };
+export function dayDial(input: { phase: unknown; timeOfDay?: unknown; frozen?: boolean; story?: ReadonlyArray<{ icon?: string; at?: string }>; observedFlipAt?: number | null; now: number }): { phase: "day" | "night" | null; angle: number; remaining: number | null; label: string };
+export function nearestTurn(previous: unknown, angle: number): number;
+export function fraction(progress: unknown): number | null;
+export function latency(ms: unknown): string;
+export function uptime(seconds: unknown): string;
+export const VITALS_MINUTES: number;
+export function sparkline(samples: unknown, options: { width: number; height: number; max?: number; inset?: number }): { health: string; hunger: string };
 export function iconRow(value: unknown): Array<"full" | "half" | "empty">;

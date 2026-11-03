@@ -10,7 +10,7 @@
 // In a repo checkout it also serves the real broadcast page at /broadcast,
 // with a fake 3D frame at /viewer/, the viewer's textures and canned
 // public state at /api/state:
-//   curl 'http://127.0.0.1:3999/set?state=edge'       normal | edge | empty (bot=down or viewer=offline: offline)
+//   curl 'http://127.0.0.1:3999/set?state=edge'       normal | build | edge | empty (bot=down or viewer=offline: offline)
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 
@@ -67,11 +67,23 @@ requestAnimationFrame(draw);
 // Canned public state (the shape of toPublicViewerState). It moves with time so
 // the inventory glow, the fresh story entry and the dial can be seen.
 const started = Date.now();
+// World clock: `from` ticks at start, running at 20 ticks/s, to the nearest 100 like toPublicViewerState.
+const clock = (from, t) => Math.round(((from + t * 20) % 24000) / 100) * 100 % 24000;
+// An hour of one-minute vitals from a function of the minute (0 = oldest); null is "disconnected".
+const vitalsFor = (now, sample, count = 60) => Array.from({ length: count }, (_, i) => ({ at: new Date(now - (count - 1 - i) * 60_000).toISOString(), ...sample(i) }));
+// A new decision every 12 s; the model is busy for the 3 s before each one.
+const decisions = (t) => ({ n: Math.floor(t / 12), busy: t % 12 > 9 });
 const milestones = (ids) => ["day-1", "day-7", "logs-100", "stone-1000", "iron-pickaxe", "diamond", "kills-10", "builds-1"].map((id) => ({ id, title: id, description: id, unlocked: ids.includes(id), progress: ids.includes(id) ? 1 : 0.4 }));
 const SCENES = {
-  normal: ({ t, iso, at }) => ({
+  normal: ({ t, iso, at, now }) => ({
     status: { activity: "gathering", detail: "Collecting materials and supplies.", since: iso(420) },
-    self: { health: 17, hunger: 14, dimension: "minecraft:overworld", timePhase: "day" },
+    self: { health: 17, hunger: 14, dimension: "minecraft:overworld", timePhase: "day", timeOfDay: clock(8200, t) },
+    now: { label: "Collect iron ingot · 4/10", step: "Gathering materials", progress: { done: 4, total: 10 } },
+    build: null,
+    brain: { thinking: decisions(t).busy, decisionsLastHour: 37 + decisions(t).n, lastLatencyMs: 812, model: "Qwen3.5 9B" },
+    thinking: { text: ["Smelt the raw iron, then craft an iron pickaxe so he can mine deeper.", "Gather more cobblestone for the furnace and the walls."][decisions(t).n % 2], at: at(started + decisions(t).n * 12_000) },
+    vitals: vitalsFor(now, (i) => ({ health: i < 20 ? 20 : i < 28 ? 20 - (i - 20) * 1.5 : Math.min(20, 8 + (i - 28) * 0.6), hunger: Math.round(20 - i / 5) })),
+    uptimeSeconds: 11_520 + Math.floor(t),
     story: [
       { id: 40, at: iso(1500), icon: "night", text: "Night falls", highlight: false },
       { id: 41, at: at(started - 240_000), icon: "day", text: "A new day dawns", highlight: false },
@@ -84,10 +96,37 @@ const SCENES = {
     inventory: items([["cobblestone", 37 + Math.floor(t / 6)], ["oak_log", 12], ["oak_planks", 20], ["stick", 9], ["torch", 23], ["bread", 6], ["coal", 14], ["iron_ingot", 4], ["dirt", 64], ["crafting_table", 1], ["white_bed", 1], ...(t > 12 ? [["raw_iron", 2]] : [])]),
     equipment: { hand: { name: "iron_pickaxe", count: 1 }, "off-hand": { name: "shield", count: 1 }, head: { name: "iron_helmet", count: 1 }, torso: null, legs: { name: "leather_leggings", count: 1 }, feet: { name: "iron_boots", count: 1 } },
   }),
+  // Building, starting at night: the build card replaces progression, the dial counts down to dawn.
+  build: ({ t, iso, at, now }) => ({
+    status: { activity: "building", detail: "Working on a build.", since: iso(1260) },
+    self: { health: 20, hunger: 18, dimension: "minecraft:overworld", timePhase: "night", timeOfDay: clock(15_400, t) },
+    now: { label: `Build a cottage · ${Math.min(100, 42 + Math.floor(t / 4))}%`, step: "Placing blocks", progress: { done: Math.min(100, 42 + Math.floor(t / 4)), total: 100 } },
+    build: { structure: "cottage", percent: Math.min(100, 42 + Math.floor(t / 4)), blocksPlaced: 214 + Math.floor(t) * 3 },
+    brain: { thinking: decisions(t).busy, decisionsLastHour: 12, lastLatencyMs: 2430, model: "Qwen3.5 9B" },
+    thinking: { text: "Planning the next part of the build…", at: at(started + decisions(t).n * 12_000) },
+    vitals: vitalsFor(now, (i) => ({ health: 20, hunger: 20 - Math.floor(i / 10) })),
+    uptimeSeconds: 200_000 + Math.floor(t),
+    story: [
+      { id: 60, at: iso(1300), icon: "goal", text: "New goal: build a cottage", highlight: false },
+      { id: 61, at: iso(400), icon: "night", text: "Night falls", highlight: false },
+      { id: 62, at: iso(90), icon: "build", text: "Walls are up on the cottage", highlight: true },
+    ],
+    world: { day: 31, blocksMined: 42_100, itemsCrafted: 3_301, mobsKilled: 240, deaths: 9, distanceKm: 88.2, buildsCompleted: 4, nemesis: "skeleton", milestones: milestones(["day-1", "day-7", "logs-100", "stone-1000", "iron-pickaxe", "kills-10", "builds-1"]) },
+    inventory: items([["oak_planks", 148], ["cobblestone", 210], ["glass", 18], ["oak_door", 1], ["torch", 40], ["oak_stairs", 24], ["bread", 9], ["iron_ingot", 6]]),
+    equipment: { hand: { name: "oak_planks", count: 64 }, "off-hand": { name: "torch", count: 40 }, head: { name: "iron_helmet", count: 1 }, torso: { name: "iron_chestplate", count: 1 }, legs: { name: "iron_leggings", count: 1 }, feet: { name: "iron_boots", count: 1 } },
+  }),
   // Edge values: long words, low vitals, overflowing inventory, big counters, the Nether at night.
-  edge: ({ iso }) => ({
+  // The longest label, structure and model name the projection allows, a 120-character thought,
+  // a stuck build at 0%, zero decisions, a slow call and an hour with gaps and bottomed-out vitals.
+  edge: ({ iso, at, now }) => ({
     status: { activity: "recovering", detail: "Getting back on his feet: healing, eating or staying safe.", since: iso(5400) },
-    self: { health: 5, hunger: 3, dimension: "minecraft:the_nether", timePhase: "night" },
+    self: { health: 5, hunger: 3, dimension: "minecraft:the_nether", timePhase: "night", timeOfDay: 23_900 },
+    now: { label: "Collect polished blackstone brick stairs · 0/64", step: "Gathering project materials", progress: { done: 0, total: 64 } },
+    build: { structure: "polished blackstone watchtower", percent: 0, blocksPlaced: 0 },
+    brain: { thinking: true, decisionsLastHour: 0, lastLatencyMs: 38_400, model: "Qwen3.5 9B Instruct Q4 K M Large" },
+    thinking: { text: "Retreat from the lava lake and eat the golden carrots before the piglins notice, then circle back for the obsidian later", at: at(started) },
+    vitals: vitalsFor(now, (i) => i % 17 === 5 || (i > 30 && i < 38) ? { health: null, hunger: null } : { health: i % 9, hunger: i < 50 ? 0 : 20 }),
+    uptimeSeconds: 9_999_999,
     story: [
       { id: 900, at: iso(9000), icon: "goal", text: "Goal complete: Collect sixty-four polished blackstone bricks for the extension", highlight: true },
       { id: 901, at: iso(4000), icon: "explore", text: "Set out on an expedition", highlight: false },
@@ -102,7 +141,9 @@ const SCENES = {
   // A brand-new world: nothing carried, nothing told, no stats yet.
   empty: () => ({
     status: { activity: "resting", detail: "Taking a break between jobs.", since: null },
-    self: { health: 20, hunger: 20, dimension: "minecraft:overworld", timePhase: "day" },
+    self: { health: 20, hunger: 20, dimension: "minecraft:overworld", timePhase: "day", timeOfDay: 0 },
+    now: { label: "Taking a break between jobs.", step: null, progress: null },
+    build: null, brain: { thinking: false, decisionsLastHour: 0, lastLatencyMs: null, model: null }, thinking: null, vitals: [], uptimeSeconds: 0,
     story: [], world: { day: 0, blocksMined: 0, itemsCrafted: 0, mobsKilled: 0, deaths: 0, distanceKm: 0, buildsCompleted: 0, nemesis: null, milestones: milestones([]) },
     inventory: { items: [], totalItems: 0 },
     equipment: { hand: null, "off-hand": null, head: null, torso: null, legs: null, feet: null },
@@ -112,12 +153,16 @@ function items(pairs) { return { items: pairs.map(([name, count]) => ({ name, co
 function publicState() {
   const now = Date.now();
   const at = (ms) => new Date(ms).toISOString();
-  const scene = (SCENES[control.state] ?? SCENES.normal)({ t: (now - started) / 1000, iso: (secondsAgo) => at(now - secondsAgo * 1000), at });
+  const scene = (SCENES[control.state] ?? SCENES.normal)({ t: (now - started) / 1000, iso: (secondsAgo) => at(now - secondsAgo * 1000), at, now });
   const connected = control.bot === "up" && control.viewer !== "offline";
   return {
     public: true, connection: { connected }, viewer: { status: "running" }, ...scene,
     status: connected ? scene.status : { activity: "offline", detail: "CobbleBob isn't connected to the world right now.", since: null },
-    self: connected ? scene.self : { health: null, hunger: null, dimension: null, timePhase: null },
+    // The phase follows the running clock, as mineflayer's isDay does.
+    self: connected ? { ...scene.self, timePhase: typeof scene.self.timeOfDay === "number" ? (scene.self.timeOfDay < 13_000 ? "day" : "night") : scene.self.timePhase } : { health: null, hunger: null, dimension: null, timePhase: null, timeOfDay: null },
+    now: connected ? scene.now : null, build: connected ? scene.build : null,
+    brain: { ...scene.brain, thinking: connected && scene.brain.thinking },
+    vitals: connected ? scene.vitals : scene.vitals.map((sample, i, all) => i >= all.length - 3 ? { ...sample, health: null, hunger: null } : sample),
     inventory: connected ? scene.inventory : null, equipment: connected ? scene.equipment : null,
   };
 }

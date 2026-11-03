@@ -33,7 +33,7 @@ test("public state is an allowlisted, redacted projection", () => {
     public: true,
     connection: { connected: true },
     status: { activity: "resting", detail: "Taking a break between jobs.", since: null },
-    self: { health: 20, hunger: 17, dimension: "overworld", timePhase: "day" },
+    self: { health: 20, hunger: 17, dimension: "overworld", timePhase: "day", timeOfDay: null },
     viewer: { status: "running" },
     story: [],
     world: null,
@@ -269,4 +269,24 @@ test("uptime is whole, non-negative seconds", () => {
   assert.equal(toPublicViewerState(snapshot).uptimeSeconds, 0);
   snapshot.process.uptimeSeconds = Number.NaN;
   assert.equal(toPublicViewerState(snapshot).uptimeSeconds, 0);
+});
+
+test("the world clock is a whole tick count in one day, to the nearest 100, and nothing else", () => {
+  const clock = (timeOfDay: unknown, connected = true): unknown => {
+    const snapshot = broadcastSnapshot();
+    snapshot.connection.connected = connected;
+    snapshot.self = { ...snapshot.self, timeOfDay: timeOfDay as number };
+    return toPublicViewerState(snapshot).self.timeOfDay;
+  };
+  assert.deepEqual([0, 49, 50, 6012, 12_999, 13_000, 23_949, 23_950, 23_999].map((ticks) => clock(ticks)), [0, 0, 100, 6000, 13_000, 13_000, 23_900, 0, 0]);
+  // Raw world time, negative (frozen cycle) or junk still lands on a bounded multiple of 100.
+  for (const ticks of [1_234_567_891, -950, 1200.64, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER]) {
+    const value = clock(ticks);
+    assert(typeof value === "number" && Number.isInteger(value) && value >= 0 && value < 24_000 && value % 100 === 0, `${ticks} -> ${value}`);
+  }
+  for (const junk of [Number.NaN, Infinity, "1200 64 -950", { x: 1200 }, null, undefined]) assert.equal(clock(junk), null, String(junk));
+  assert.equal(clock(6000, false), null, "no clock while disconnected");
+  const snapshot = broadcastSnapshot();
+  snapshot.self = { ...snapshot.self, timeOfDay: 6012 };
+  assertNoBroadcastLeak(toPublicViewerState(snapshot));
 });

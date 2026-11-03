@@ -57,7 +57,11 @@ export interface PublicViewerState {
   connection: { connected: boolean };
   /** Coarse spectator status; see public-status.ts. */
   status: PublicStatus;
-  self: { health: number | null; hunger: number | null; dimension: string | null; timePhase: "day" | "night" | null };
+  self: {
+    health: number | null; hunger: number | null; dimension: string | null; timePhase: "day" | "night" | null;
+    /** World clock: ticks into the day (0 = sunrise), rounded to 100 and kept in 0-23999; null while unknown. */
+    timeOfDay?: number | null;
+  };
   viewer: { status: DashboardSnapshot["viewer"]["status"] };
   story: readonly StoryEntry[];
   world: WorldStatsSummary | null;
@@ -97,6 +101,13 @@ const REGISTRY_NAME = /^(?:minecraft:)?[a-z]+(?:_[a-z]+){0,5}$/;
 /** A humanized name is a few lowercase words. */
 const PLAIN_NAME = /^[a-z]+(?: [a-z]+){0,5}$/;
 const MODEL_LABEL = /^[A-Za-z0-9][A-Za-z0-9 .-]{0,31}$/;
+
+const DAY_TICKS = 24_000;
+/** The clock to the nearest 100 ticks (5 s), wrapped into one day: enough for a dial, nothing else. */
+function publicTimeOfDay(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return (((Math.round(value / 100) * 100) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+}
 
 const article = (noun: string): string => /^[aeiou]/.test(noun) ? `an ${noun}` : `a ${noun}`;
 const wholeNumber = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
@@ -215,6 +226,7 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
       hunger: round(snapshot.self.hunger),
       dimension: snapshot.self.dimension,
       timePhase: snapshot.self.timePhase,
+      timeOfDay: snapshot.connection.connected === true ? publicTimeOfDay(snapshot.self.timeOfDay) : null,
     },
     viewer: { status: snapshot.viewer.status },
     story: (snapshot.story ?? []).map(({ id, at, icon, text, highlight }) => ({ id, at, icon, text, highlight })),
