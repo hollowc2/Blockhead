@@ -114,6 +114,24 @@ new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
   away from home; a new home drops it. A second live renderer (his eyes
   beside follow) is still out of reach on RAM.
 
+## Done: background music and clips (2026-11-03, built locally, not deployed)
+
+See [stream-resilience.md](stream-resilience.md#background-music).
+
+- **Background music** (`music.mjs`). On by default and a no-op without
+  tracks. Tracks go in `~/.local/share/cobblebob-stream/music/`; choosing
+  them and checking their licenses and Content ID is the owner's call. They
+  are probed with ffprobe, kept to one compatible format, shuffled into a
+  repeated concat playlist (ffmpeg 9 can't `-stream_loop` a concat input)
+  and mixed quietly (0.15) onto the silent track. A bad file is skipped, and
+  if an encoder generation with music fails early, music pauses for a
+  cool-off.
+- **Clips** (`clips.mjs`). Off by default (`STREAM_CLIPS=on`). A tee slave
+  writes a bounded rolling window of copy-codec segments with
+  `onfail=ignore` behind a dropping fifo. Each event banner on the live
+  picture becomes a 35–75 s MP4 in `~/.local/state/cobblebob-stream/clips/`,
+  capped at 30 clips / 600 MB and 12 an hour. Nothing is uploaded.
+
 ## Backlog
 
 - **Offline scene with recent story.** The streamer's holding card is
@@ -122,10 +140,6 @@ new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
   disconnected.
 - **Durability bars** on the equipment hotbar. This needs a redacted durability
   field.
-- **Clips/highlights.** Cut clips automatically around event banners.
-- **Background music.** Mix quiet royalty-free/CC0 tracks into the
-  currently silent audio track (ffmpeg `-stream_loop` over a playlist).
-  Check the licenses for YouTube Content ID.
 - **Health checks: push destination.** The local half is done (above). The
   owner still needs to pick a push destination (ntfy, Pushover, email, …)
   and set `STREAM_ALERT_COMMAND` in a unit drop-in.

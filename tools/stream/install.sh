@@ -5,9 +5,9 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 dest=$HOME/.local/share/cobblebob-stream
-mkdir -p "$dest/assets" "$HOME/.config/cobblebob-stream" "$HOME/.config/systemd/user"
+mkdir -p "$dest/assets" "$dest/music" "$HOME/.config/cobblebob-stream" "$HOME/.config/systemd/user"
 chmod 700 "$HOME/.config/cobblebob-stream"
-install -m 644 "$here"/{stream,viewer-health,broadcast-state,bot-health,encoder,holding,holding-fallback,publisher,redact,renderer,streamctl,soak-sample,alerts,frame-watch,stream-health}.mjs "$here/package.json" "$dest/"
+install -m 644 "$here"/{stream,viewer-health,broadcast-state,bot-health,encoder,music,clips,holding,holding-fallback,publisher,redact,renderer,streamctl,soak-sample,alerts,frame-watch,stream-health}.mjs "$here/package.json" "$dest/"
 install -m 644 "$here"/assets/holding-{starting,reconnecting,break}.jpg "$dest/assets/"
 (cd "$dest" && npm install --no-audit --no-fund --omit=dev)
 npx -y playwright@1.56.1 install chromium-headless-shell

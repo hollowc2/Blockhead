@@ -18,6 +18,47 @@ export const ENCODER_DEFAULTS = Object.freeze({
   stableMs: 300_000,      // healthy this long resets the backoff
 });
 
+/** Escapes a tee slave target (an output URL or path) for ffmpeg's tee muxer. */
+export function teeEscape(target) {
+  return String(target).replace(/[\\'|[\]]/g, ch => `\\${ch}`);
+}
+
+/**
+ * ffmpeg's arguments for one encoder generation. Pure.
+ *   output   { format, target, overwrite }: the stream (RTMP) or a test file
+ *   music    { list, volume } | null: a concat playlist; null sends silence
+ *   segments string | null: an extra tee slave (rolling clip segments, clips.mjs)
+ * The silent source stays input 1 either way. Music is mixed onto it with
+ * amix duration=first, so the audio outlives a playlist that ends or a track
+ * that fails, and `-shortest` still ends only with video. (A filter-generated
+ * pad such as apad is not paced like an input: ffmpeg 9 failed it with ENOSPC.)
+ */
+export function encoderArgs({ fps, width, height, bitrateK, video, output, music = null, segments = null }) {
+  // YouTube rejects streams without audio; send silence.
+  const audio = ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", ...(music
+    // amix halves each of its two inputs, hence the doubled gain.
+    ? ["-f", "concat", "-safe", "0", "-i", music.list,
+      "-filter_complex", `[2:a]volume=${(2 * Number(music.volume)).toFixed(3)},aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[music];[1:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`,
+      "-map", "0:v", "-map", "[aout]"]
+    : ["-map", "0:v", "-map", "1:a"])];
+  const out = segments
+    // The tee muxer can't ask the encoders for global headers (FLV and MP4 need them), so ask
+    // here. The main slave keeps tee's default onfail=abort: losing it still ends ffmpeg.
+    ? ["-flags:v", "+global_header", "-flags:a", "+global_header", "-f", "tee", `[f=${output.format}]${teeEscape(output.target)}|${segments}`]
+    : ["-f", output.format, output.target];
+  return [
+    "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:3", "-stats_period", "2",
+    ...(output.overwrite ? ["-y"] : []),
+    "-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-",
+    ...audio,
+    ...video, "-b:v", `${bitrateK}k`, "-maxrate", `${bitrateK}k`, "-bufsize", `${bitrateK * 2}k`,
+    // A keyframe at least every 2 s, as YouTube asks; scene cuts may add more.
+    "-g", String(fps * 2), "-pix_fmt", "yuv420p", "-vf", `scale=${width}:${height}`,
+    "-c:a", "aac", "-b:a", "128k", "-shortest",
+    ...out,
+  ];
+}
+
 /** Parses ffmpeg -progress key=value blocks. */
 export function progressParser(onBlock) {
   let pending = "", block = {};
@@ -49,12 +90,14 @@ export class Encoder {
     this.failures = 0;                     // consecutive, for backoff
     this.timer = null; this.stopped = false; this.exhausted = false;
     this.interruptions = 0; this.lastInterruption = null;
+    this.lastRun = null;                   // { generation, ranMs, progressed } of the previous ffmpeg
   }
 
   start() {
     if (this.stopped || this.proc) return;
     const generation = ++this.generation;
-    const proc = this.spawn("ffmpeg", this.args(), { stdio: ["pipe", "ignore", "pipe", "pipe"] });
+    // args() may adapt to how the previous generation went (music.mjs drops music after an early failure).
+    const proc = this.spawn("ffmpeg", this.args({ generation, previous: this.lastRun }), { stdio: ["pipe", "ignore", "pipe", "pipe"] });
     this.proc = proc; this.startedAt = this.now(); this.progress = null; this.frameAdvancedAt = null;
     const stderr = lineRedactor(line => this.log("ffmpeg", { line }), this.secrets);
     proc.stderr?.on("data", chunk => stderr.push(chunk));
@@ -77,8 +120,14 @@ export class Encoder {
     if (this.failures && now - this.startedAt > this.o.stableMs) this.failures = 0;
   }
 
+  /** Remembers how the ending generation went, for the next args() call. */
+  endRun() {
+    this.lastRun = { generation: this.generation, ranMs: this.now() - this.startedAt, progressed: this.frameAdvancedAt !== null };
+  }
+
   onExit(generation, code) {
     if (generation !== this.generation || !this.proc) return;
+    this.endRun();
     this.proc = null;
     this.onStdin?.(null);
     if (this.stopped) return;
@@ -102,6 +151,7 @@ export class Encoder {
   restart(reason) {
     const proc = this.proc;
     if (proc) {
+      this.endRun();
       this.proc = null;
       this.onStdin?.(null);
       try { proc.stdin?.destroy(); } catch {}

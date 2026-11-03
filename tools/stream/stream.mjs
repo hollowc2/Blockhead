@@ -24,14 +24,22 @@
 //   STREAM_CHROMIUM    Chromium executable (default: playwright-core's)
 //   STREAM_ALERT_COMMAND  optional: shell command run with each alert's JSON on stdin
 //                      (unset by default; alerts always go to alerts.jsonl and the journal)
+//   STREAM_MUSIC       "off" keeps the silent audio track; default on (a no-op without tracks)
+//   STREAM_MUSIC_DIR   background music tracks (default ~/.local/share/cobblebob-stream/music)
+//   STREAM_MUSIC_VOLUME  linear gain per track, 0-1 (default 0.15)
+//   STREAM_CLIPS       "on" records rolling segments and cuts clips around event banners (default off)
+//   STREAM_CLIPS_DIR   saved clips (default <state dir>/clips)
+//   STREAM_CLIPS_MAX_COUNT / STREAM_CLIPS_MAX_MB  retention caps (default 30 clips / 600 MB)
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BroadcastState, STATES } from "./broadcast-state.mjs";
 import { BotHealthMonitor } from "./bot-health.mjs";
-import { Encoder } from "./encoder.mjs";
+import { ClipRecorder } from "./clips.mjs";
+import { Encoder, encoderArgs } from "./encoder.mjs";
 import { loadHoldingFrames } from "./holding.mjs";
+import { MusicLibrary } from "./music.mjs";
 import { FramePublisher } from "./publisher.mjs";
 import { Renderer } from "./renderer.mjs";
 import { createStreamHealth } from "./stream-health.mjs";
@@ -59,11 +67,11 @@ const transitionsFile = join(stateDir, "transitions.jsonl");
 const alerts = createStreamHealth({ stateDir, log, env });
 
 function output() {
-  if (env.STREAM_OUTPUT) return { args: ["-f", env.STREAM_OUTPUT.endsWith(".flv") ? "flv" : env.STREAM_OUTPUT.endsWith(".ts") ? "mpegts" : "mp4", "-y", env.STREAM_OUTPUT], label: "file", secrets: [] };
+  if (env.STREAM_OUTPUT) return { format: env.STREAM_OUTPUT.endsWith(".flv") ? "flv" : env.STREAM_OUTPUT.endsWith(".ts") ? "mpegts" : "mp4", target: env.STREAM_OUTPUT, overwrite: true, label: "file", secrets: [] };
   if (!env.STREAM_KEY_FILE) throw new Error("set STREAM_KEY_FILE or STREAM_OUTPUT");
   const key = readFileSync(env.STREAM_KEY_FILE, "utf8").trim();
   if (!/^[\w-]{8,}$/.test(key)) throw new Error("stream key file looks wrong");
-  return { args: ["-f", "flv", `rtmp://a.rtmp.youtube.com/live2/${key}`], label: "youtube", secrets: [key] };
+  return { format: "flv", target: `rtmp://a.rtmp.youtube.com/live2/${key}`, label: "youtube", secrets: [key] };
 }
 
 // 1. Holding frames first: they must exist before anything can fail.
@@ -77,20 +85,22 @@ publisher.select("holding", holding.frames[state.variant]);
 const video = encoderName === "libx264"
   ? ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency"]
   : ["-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "cbr"];
+// Optional extras: without tracks the audio stays silent; clips stay off unless asked for.
+const music = new MusicLibrary({
+  dir: env.STREAM_MUSIC_DIR ?? join(env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "cobblebob-stream", "music"),
+  playlistFile: join(stateDir, "music.ffconcat"), enabled: env.STREAM_MUSIC !== "off", log, now,
+  ...(env.STREAM_MUSIC_VOLUME ? { volume: Number(env.STREAM_MUSIC_VOLUME) } : {}),
+});
+await Promise.race([music.refresh(), new Promise(resolve => setTimeout(resolve, 5_000))]);
+const clips = env.STREAM_CLIPS === "on" ? new ClipRecorder({
+  clipsDir: env.STREAM_CLIPS_DIR ?? join(stateDir, "clips"), segmentsDir: join(stateDir, "clip-segments"), log,
+  ...(env.STREAM_CLIPS_MAX_COUNT ? { maxCount: Number(env.STREAM_CLIPS_MAX_COUNT) } : {}),
+  ...(env.STREAM_CLIPS_MAX_MB ? { maxBytes: Number(env.STREAM_CLIPS_MAX_MB) * 1048576 } : {}),
+}).start() : null;
 const encoder = new Encoder({
   now, log, secrets: out.secrets,
   onStdin: stdin => stdin ? publisher.attach(stdin) : publisher.detach(),
-  args: () => [
-    "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:3", "-stats_period", "2",
-    "-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-",
-    // YouTube rejects streams without audio; send silence.
-    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-    ...video, "-b:v", `${bitrate}k`, "-maxrate", `${bitrate}k`, "-bufsize", `${bitrate * 2}k`,
-    // A keyframe at least every 2 s, as YouTube asks; scene cuts may add more.
-    "-g", String(fps * 2), "-pix_fmt", "yuv420p", "-vf", `scale=${width}:${height}`,
-    "-c:a", "aac", "-b:a", "128k", "-shortest",
-    ...out.args,
-  ],
+  args: run => encoderArgs({ fps, width, height, bitrateK: bitrate, video, output: out, music: music.forRun(run), segments: clips?.slave(run.generation) ?? null }),
 });
 encoder.start();
 const pace = setInterval(() => publisher.tick(), 5);
@@ -101,6 +111,8 @@ const renderer = new Renderer({
   chromium, pageUrl, width, height, log, now, executablePath: env.STREAM_CHROMIUM,
   onFrame: (frame, generation) => publisher.offerLive(frame, generation),
   onGeneration: generation => publisher.setGeneration(generation),
+  // A banner on the live picture is a moment worth a clip; the holding card is not.
+  onBanner: kind => { if (publisher.kind === "live") clips?.event(kind); },
 });
 renderer.start();
 
@@ -163,6 +175,8 @@ function writeStatus() {
     playback: "unknown",
     memory: { rssMB: Math.round(process.memoryUsage().rss / 1048576) },
     alerts: alerts.status(),
+    music: music.status(),
+    clips: clips?.status() ?? { enabled: false },
   };
   try { writeFileSync(`${statusFile}.tmp`, JSON.stringify(status, null, 1), { mode: 0o600 }); renameSync(`${statusFile}.tmp`, statusFile); } catch {}
 }
@@ -173,6 +187,7 @@ const timers = [
   setInterval(() => void renderer.check(), 2000),
   setInterval(() => void bot.poll(healthUrl, now), 2000),
   setInterval(writeStatus, 2000),
+  setInterval(() => void music.refresh(), 600_000),  // new tracks join at the next encoder start
   setInterval(() => log("stats", { state: state.state, ...publisher.stats, encoderFrame: encoder.progress?.frame ?? null, encoderFps: encoder.progress?.fps ?? null, interruptions: encoder.interruptions, rendererGeneration: renderer.generation }), 60_000),
 ];
 void bot.poll(healthUrl, now);
@@ -183,6 +198,7 @@ async function shutdown(code) {
   log("stopping", { code, ...publisher.stats });
   for (const timer of timers) clearInterval(timer);
   writeStatus();
+  clips?.stop();
   const force = setTimeout(() => process.exit(code), 15_000); force.unref();
   await renderer.stop().catch(() => {});
   await encoder.stop().catch(() => {});
