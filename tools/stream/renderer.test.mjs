@@ -83,3 +83,26 @@ test("each new event banner on the page is reported once, by kind only", async (
     assert.deepEqual(kinds, ["death", "tier", "milestone"]);
   } finally { await r.stop(); }
 });
+
+test("an offline viewer is told apart by whether the page shows its offline scene; a reopened page must say so again", async () => {
+  let probe = { state: "offline", raf: null, gl: false, offline: true };
+  const fake = fakeChromium({ probe: () => probe });
+  const clock = { t: 0 };
+  const { r } = renderer(fake.chromium, clock);
+  await r.launch();
+  try {
+    await r.check();
+    assert.deepEqual(r.viewerHealthSignal(), { ok: false, reason: "viewer-offline-scene" }, "no rAF needed: the 3D frame is released while offline");
+    probe = { state: "offline", raf: null, gl: false };
+    await r.check();
+    assert.deepEqual(r.viewerHealthSignal(), { ok: false, reason: "viewer-offline" }, "an older page without the scene");
+    // The scene marker alone is not enough: the page must also hold the bot's "disconnected".
+    probe = { state: "unavailable", raf: null, gl: false, offline: true };
+    await r.check();
+    assert.deepEqual(r.viewerHealthSignal(), { ok: false, reason: "viewer-not-connected" });
+    probe = { state: "offline", raf: null, gl: false, offline: true };
+    await r.check();
+    await r.openPage({ goto: async () => {}, locator: () => ({ waitFor: async () => {} }) }, fake.cdp);
+    assert.equal(r.pageOffline, false);
+  } finally { await r.stop(); }
+});

@@ -34,7 +34,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writ
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BroadcastState, STATES } from "./broadcast-state.mjs";
+import { BroadcastState, STATES, withOfflineScene } from "./broadcast-state.mjs";
 import { BotHealthMonitor } from "./bot-health.mjs";
 import { ClipRecorder } from "./clips.mjs";
 import { Encoder, encoderArgs } from "./encoder.mjs";
@@ -130,7 +130,7 @@ function rotateIfLarge(file, max = 512 * 1024) {
 
 function record(transition) {
   const entry = { time: new Date().toISOString(), from: transition.from, to: transition.to, reason: transition.reason,
-    health: Object.fromEntries(Object.entries(lastHealth).map(([k, v]) => [k, v?.ok ? "ok" : v?.reason ?? "unknown"])) };
+    health: Object.fromEntries(Object.entries(lastHealth).map(([k, v]) => [k, v?.ok ? v.reason ?? "ok" : v?.reason ?? "unknown"])) };
   if (transition.to === STATES.LIVE && outageStartedAt.at !== null) { entry.outageMs = Math.round(now() - outageStartedAt.at); totals.lastOutageMs = entry.outageMs; outageStartedAt.at = null; }
   if (transition.from === STATES.LIVE) { outageStartedAt.at = now(); totals.outages++; }
   log("broadcast state", entry);
@@ -147,7 +147,8 @@ function evaluate() {
     log("operator requested encoder reconnect");
     encoder.restart("operator-reconnect");
   }
-  lastHealth = { bot: bot.health(t), viewer: renderer.viewerHealthSignal(), renderer: renderer.health() };
+  // Bob disconnected but the bot and page fine: the page's offline scene is shown live, not the holding card.
+  lastHealth = withOfflineScene({ bot: bot.health(t), viewer: renderer.viewerHealthSignal(), renderer: renderer.health() });
   const transition = state.update(t, { health: lastHealth, hardFailure: renderer.takeHardFailure(), liveFrameAt: publisher.liveFrameAt(), maintenance });
   if (transition) record(transition);
   publisher.select(state.sourceKind, state.variant ? holding.frames[state.variant] : null);
@@ -165,7 +166,7 @@ function writeStatus() {
     time: new Date().toISOString(), pid: process.pid, output: out.label,
     state: state.state, reason: state.reason, sourceKind: publisher.kind, stateAgeSeconds: Math.round((t - state.since) / 1000),
     maintenance, holdingVariant: state.variant, holdingAssetsMissing: holding.missing,
-    health: Object.fromEntries(Object.entries(lastHealth).map(([k, v]) => [k, v?.ok ? "ok" : v?.reason ?? "unknown"])),
+    health: Object.fromEntries(Object.entries(lastHealth).map(([k, v]) => [k, v?.ok ? v.reason ?? "ok" : v?.reason ?? "unknown"])),
     autonomy: bot.autonomy,
     encoder: { health: encoderHealth.ok ? "ok" : encoderHealth.reason, generation: encoder.generation, frame: encoder.progress?.frame ?? null, fps: encoder.progress?.fps ?? null, speed: encoder.progress?.speed ?? null, progressAgeSeconds: encoder.progress ? Math.round((t - encoder.progress.at) / 1000) : null, interruptions: encoder.interruptions, blockedMs: Math.round(publisher.blockedFor()) },
     publisher: { ...publisher.stats, liveFrameAgeSeconds: publisher.liveFrameAt() === null ? null : Math.round((t - publisher.liveFrameAt()) / 1000) },

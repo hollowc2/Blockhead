@@ -1,6 +1,6 @@
 import { ViewerSession, frameToken } from "./viewer-session.mjs";
 import { createScenes, stepScenes } from "./broadcast-scenes.mjs";
-import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, nearestTurn, progression, sparkline, TIERS, uptime } from "./broadcast-panels.mjs";
+import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, itemLabel, latency, milestoneSummary, nearestTurn, progression, sparkline, TIERS, uptime, wearBar } from "./broadcast-panels.mjs";
 // The broadcast frame filmed by tools/stream. It reads the same /api/state as
 // the viewer shell, polls once a second, and never takes input: no buttons,
 // no hover, no keys. Animations are CSS; nothing here runs per frame.
@@ -229,7 +229,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     } else more?.remove();
   }
 
-  // ---- Equipment hotbar: hands, then armor (its material shown as a strip) ----
+  // ---- Equipment hotbar: hands, then armor (its material shown as a strip, its wear as a bar) ----
   const EQUIPMENT_SLOTS = ["hand", "off-hand", "head", "torso", "legs", "feet"];
   const ARMOR_SLOTS = new Set(["head", "torso", "legs", "feet"]);
   function renderEquipment(equipment) {
@@ -240,6 +240,13 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
       art(box, item?.name, slot);
       const material = ARMOR_SLOTS.has(slot) ? armorMaterial(item?.name) : null;
       if (material) box.setAttribute("data-material", material); else box.removeAttribute("data-material");
+      // art() replaces the box's children when the item changes, so the bar is re-added after it.
+      const bar = item ? wearBar(item.durability) : null;
+      let wear = box.querySelector(".wear");
+      if (!bar) { wear?.remove(); continue; }
+      if (!wear) { wear = el("i", "wear"); wear.append(el("b")); box.append(wear); }
+      wear.style.setProperty("--wear", `${Math.round(bar.fill * 100)}%`);
+      wear.style.setProperty("--wear-hue", String(bar.hue));
     }
   }
 
@@ -256,19 +263,63 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
     const key = JSON.stringify(latest.map((entry) => [entry.id, entry.text, entry.highlight, ago(entry.at, now)]));
     if (list.dataset.key !== key) {
       list.dataset.key = key;
-      list.replaceChildren(...latest.map((entry) => {
-        const icon = GLYPHS.has(entry.icon) ? entry.icon : "dot";
-        const row = el("li", `${icon}${entry.highlight ? " highlight" : ""}${!firstLoad && entry.id > lastStoryId ? " fresh" : ""}`);
-        const time = el("time", "", ago(entry.at, now));
-        time.dateTime = entry.at;
-        row.append(el("i", `glyph ${icon}`), el("span", "", entry.text), time);
-        return row;
-      }));
+      list.replaceChildren(...latest.map((entry) => storyRow(entry, now, !firstLoad && entry.id > lastStoryId)));
       // The action bar repeats the newest line: usually what set the scene off.
       const top = latest[0];
       $("actionStory").replaceChildren(...(top ? [el("i", `glyph ${GLYPHS.has(top.icon) ? top.icon : "dot"}`), el("span", "", top.text)] : []));
     }
     lastStoryId = newest;
+  }
+  function storyRow(entry, now, fresh = false) {
+    const icon = GLYPHS.has(entry.icon) ? entry.icon : "dot";
+    const row = el("li", `${icon}${entry.highlight ? " highlight" : ""}${fresh ? " fresh" : ""}`);
+    const time = el("time", "", ago(entry.at, now));
+    time.dateTime = entry.at;
+    row.append(el("i", `glyph ${icon}`), el("span", "", entry.text), time);
+    return row;
+  }
+
+  // ---- Offline scene: the bot answers but Bob isn't in the world ----
+  // Recent story (already public-safe: built and filtered by the bot) and the
+  // milestones closest to done stand in for the game view. The strip drops the
+  // inventory and story for wider lifetime stats (CSS). The streamer counts
+  // this, and only this, as presentable while Bob is disconnected.
+  const OFFLINE_STORY = 6;
+  let offlineSince = null, lastLiveAt = null;
+  function renderOffline(s, offline, now) {
+    if (frame.hasAttribute("data-offline") !== offline) frame.toggleAttribute("data-offline", offline);
+    $("offline").hidden = !offline;
+    if (!offline) { offlineSince = null; return; }
+    // Since when: this page saw him go, else the last connected minute of the vitals (a page loaded mid-outage).
+    if (offlineSince === null) {
+      const seen = [...(Array.isArray(s.vitals) ? s.vitals : [])].reverse().find((sample) => typeof sample?.health === "number");
+      const at = seen ? Date.parse(seen.at) : NaN;
+      offlineSince = lastLiveAt ?? (Number.isFinite(at) ? at : NaN);
+    }
+    const away = Number.isFinite(offlineSince) && now - offlineSince >= 60_000 ? `Away ${span(now - offlineSince)}` : "";
+    $("offlineFor").hidden = !away;
+    if ($("offlineFor").textContent !== away) $("offlineFor").textContent = away;
+
+    const entries = (Array.isArray(s.story) ? s.story : []).filter((entry) => entry && typeof entry.text === "string").slice(-OFFLINE_STORY).reverse();
+    $("offlineStoryEmpty").hidden = entries.length > 0;
+    const list = $("offlineStory");
+    const key = JSON.stringify(entries.map((entry) => [entry.id, entry.text, entry.highlight, ago(entry.at, now)]));
+    if (list.dataset.key !== key) { list.dataset.key = key; list.replaceChildren(...entries.map((entry) => storyRow(entry, now))); }
+
+    const summary = milestoneSummary(s.world, 4);
+    $("offlineMilestones").hidden = !summary;
+    if (!summary) return;
+    setText($("milestoneCount"), `${summary.unlocked}/${summary.total}`);
+    const rows = $("milestones");
+    const milestonesKey = JSON.stringify(summary.next);
+    if (rows.dataset.key === milestonesKey) return;
+    rows.dataset.key = milestonesKey;
+    rows.replaceChildren(...(summary.next.length ? summary.next.map((m) => {
+      const row = el("li", "milestone");
+      const bar = el("div", "bar"); const fill = el("i"); fill.style.setProperty("--fill", `${Math.round(m.progress * 100)}%`); bar.append(fill);
+      row.append(el("i", "glyph milestone"), el("b", "", m.title), el("span", "", m.description), bar);
+      return row;
+    }) : [el("li", "empty", "Every milestone unlocked!")]));
   }
 
   // ---- Lifetime stats ----
@@ -404,8 +455,9 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   function render(s, { repaint = false } = {}) {
     const now = Date.now();
     const connected = s.connection?.connected === true;
-    if (!repaint) { reachable = true; botLive = connected; lastReceivedAt = now; }
+    if (!repaint) { reachable = true; botLive = connected; lastReceivedAt = now; if (connected) lastLiveAt = now; }
     lastState = s;
+    renderOffline(s, reachable && !botLive, now);
     renderOverlay(s, connected, now);
     renderInventory(connected ? s.inventory : null, connected, now);
     renderEquipment(connected ? s.equipment : null);
@@ -486,6 +538,8 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   }
   function markUnreachable() {
     reachable = false; botLive = false;
+    // Without a fresh answer the page can't vouch for the offline scene; the veil says "Reconnecting".
+    renderOffline(null, false, Date.now());
     renderScenes(null, Date.now());
     viewerSession.update({ reachable: false, connected: false, running: false, session: lastState?.viewer?.session ?? "unknown" });
     setText($("viewerStatus"), viewerSession.state);

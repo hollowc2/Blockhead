@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BroadcastState, STATES } from "./broadcast-state.mjs";
+import { BroadcastState, STATES, withOfflineScene } from "./broadcast-state.mjs";
 
 const ok = { ok: true };
 const healthy = { bot: ok, viewer: ok, renderer: ok };
@@ -175,4 +175,48 @@ test("ten failure/recovery cycles leave no growing state", () => {
   run(m, t, t + 700_000, { health: bad("bot", "bot-disconnected") });
   m.admitWindow(t + 700_000);
   assert.ok(m.liveExits.length <= 1, `liveExits=${m.liveExits.length}`);
+});
+
+const offlineScene = { bot: { ok: false, reason: "bot-disconnected" }, viewer: { ok: false, reason: "viewer-offline-scene" }, renderer: ok };
+
+test("Bob disconnected with the bot up and the page's offline scene showing counts as presentable", () => {
+  assert.deepEqual(withOfflineScene(offlineScene), { bot: { ok: true, reason: "offline-scene" }, viewer: { ok: true, reason: "offline-scene" }, renderer: ok });
+  // Any other failure keeps its holding card: the bot down, dead or stale, an older page, a sick renderer.
+  for (const health of [
+    { ...offlineScene, bot: { ok: false, reason: "bot-unreachable" } },
+    { ...offlineScene, bot: { ok: false, reason: "bot-unknown" } },
+    { ...offlineScene, bot: { ok: false, reason: "bot-dead" } },
+    { ...offlineScene, bot: { ok: false, reason: "bot-stale" } },
+    { ...offlineScene, viewer: { ok: false, reason: "viewer-offline" } },
+    { ...offlineScene, viewer: { ok: false, reason: "viewer-not-connected" } },
+    { ...offlineScene, renderer: { ok: false, reason: "frame-stale" } },
+    { ...offlineScene, renderer: { ok: false, reason: "renderer-unresponsive" } },
+    { ...offlineScene, renderer: undefined },
+    { ...healthy, viewer: { ok: false, reason: "viewer-offline-scene" } },
+    healthy, {},
+  ]) assert.equal(withOfflineScene(health), health, JSON.stringify(health));
+});
+
+test("a disconnect with the offline scene up stays live; losing the bot, the page or the renderer still holds", () => {
+  const m = new BroadcastState(0);
+  goLive(m);
+  // The page needs a poll or two to notice: shorter than the debounce, so no flap.
+  run(m, 21_000, 23_000, { health: { ...offlineScene, viewer: { ok: false, reason: "viewer-not-connected" } } });
+  run(m, 24_000, 120_000, t => ({ health: withOfflineScene(offlineScene), liveFrameAt: t }));
+  assert.equal(m.state, STATES.LIVE);
+  // The bot process goes away: the fixed card, after the debounce.
+  const seen = run(m, 121_000, 130_000, { health: withOfflineScene({ ...offlineScene, bot: { ok: false, reason: "bot-unreachable" } }) });
+  assert.deepEqual(seen.map(tr => [tr.to, tr.reason]), [[STATES.RECOVERING, "bot-unreachable"]]);
+  // A renderer crash is still immediate, offline scene or not.
+  const n = new BroadcastState(0);
+  goLive(n);
+  assert.equal(n.update(21_000, { health: withOfflineScene(offlineScene), hardFailure: "page-crashed" })?.to, STATES.RECOVERING);
+});
+
+test("the streamer starting while Bob is offline admits the offline scene after the usual window", () => {
+  const m = new BroadcastState(0);
+  run(m, 0, 14_000, t => ({ health: withOfflineScene(offlineScene), liveFrameAt: t }));
+  assert.equal(m.state, STATES.STARTING);
+  run(m, 15_000, 16_000, t => ({ health: withOfflineScene(offlineScene), liveFrameAt: t }));
+  assert.equal(m.state, STATES.LIVE);
 });
