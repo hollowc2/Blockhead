@@ -18,6 +18,7 @@ const BROADCAST_JS = fileURLToPath(new URL("./public/broadcast.js", import.meta.
 const BROADCAST_PANELS_JS = fileURLToPath(new URL("./public/broadcast-panels.mjs", import.meta.url));
 const BROADCAST_MINIMAP_JS = fileURLToPath(new URL("./public/broadcast-minimap.mjs", import.meta.url));
 const BROADCAST_SCENES_JS = fileURLToPath(new URL("./public/broadcast-scenes.mjs", import.meta.url));
+const BROADCAST_PIP_JS = fileURLToPath(new URL("./public/broadcast-pip.mjs", import.meta.url));
 
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
 const PUBLIC_VIEWER_ASSET = /^\/viewer\/(?:index\.js|worker\.js|(?:textures|blocksStates)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|json))$/;
@@ -77,6 +78,12 @@ export interface ViewerShellOptions {
    * projection (public-minimap.ts), or null while unavailable (503).
    */
   publicMinimap?: () => Promise<unknown>;
+  /**
+   * `GET /api/public/home.png` on both listeners: the cached overhead picture
+   * of home (public-home-view.ts), or null while there is none (503). It is
+   * only read here, never rendered.
+   */
+  publicHomeView?: () => Buffer | null;
   limits?: PublicShellLimits;
   /** Viewer Q&A behind `POST /api/chat`; private mode only, ignored when public. */
   chat?: (question: unknown) => Promise<ViewerChatResult>;
@@ -210,6 +217,7 @@ export class ViewerShellServer {
     }
     if (await this.serveShellAsset(pathname, response)) return;
     if (await this.serveMinimap(pathname, response)) return;
+    if (this.serveHomeView(pathname, response)) return;
     if (pathname === "/api/state") {
       this.proxy(request, response, this.options.statsPort, "/api/state");
       return;
@@ -264,6 +272,7 @@ export class ViewerShellServer {
       return;
     }
     if (await this.serveMinimap(pathname, response)) return;
+    if (this.serveHomeView(pathname, response)) return;
     if (pathname === "/viewer" || pathname === "/viewer/") {
       this.proxy(request, response, this.options.viewerPort, "/");
       return;
@@ -336,6 +345,7 @@ export class ViewerShellServer {
     else if (pathname === "/broadcast-panels.mjs") await this.sendFile(response, BROADCAST_PANELS_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/broadcast-minimap.mjs") await this.sendFile(response, BROADCAST_MINIMAP_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/broadcast-scenes.mjs") await this.sendFile(response, BROADCAST_SCENES_JS, "text/javascript; charset=utf-8");
+    else if (pathname === "/broadcast-pip.mjs") await this.sendFile(response, BROADCAST_PIP_JS, "text/javascript; charset=utf-8");
     else return false;
     return true;
   }
@@ -354,6 +364,18 @@ export class ViewerShellServer {
     if (response.destroyed || response.writableEnded || response.headersSent) return true;
     response.writeHead(200, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store" });
     response.end(body);
+    return true;
+  }
+
+  /** The broadcast's overhead picture of home; callers have already limited the rate and the method to GET. */
+  private serveHomeView(pathname: string, response: ServerResponse): boolean {
+    if (pathname !== "/api/public/home.png" || this.options.publicHomeView === undefined) return false;
+    let image: Buffer | null = null;
+    try { image = this.options.publicHomeView(); } catch { image = null; }
+    if (image === null) { this.sendJson(response, 503, { error: "unavailable" }); return true; }
+    if (response.destroyed || response.writableEnded || response.headersSent) return true;
+    response.writeHead(200, { ...SHELL_SECURITY_HEADERS, "content-type": "image/png", "content-length": String(image.length), "cache-control": "no-store" });
+    response.end(image);
     return true;
   }
 

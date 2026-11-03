@@ -106,14 +106,27 @@ async function send(port: number, method: string, path: string, headers: Record<
   });
 }
 
-async function publicShell(limits?: ConstructorParameters<typeof ViewerShellServer>[0]["limits"], publicMinimap?: () => Promise<unknown>) {
+/** A GET whose body is kept as bytes. */
+async function sendRaw(port: number, path: string): Promise<{ status: number; headers: Record<string, unknown>; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, method: "GET", path }, res => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.once("error", reject);
+    req.end();
+  });
+}
+
+async function publicShell(limits?:ConstructorParameters<typeof ViewerShellServer>[0]["limits"], publicMinimap?: () => Promise<unknown>, publicHomeView?: () => Buffer | null) {
   const viewer = await recordingServer("viewer-body");
   const stats = await recordingServer("FULL-PRIVATE-STATE");
   const port = await freePort();
   const shell = new ViewerShellServer({
     host: "127.0.0.1", port, viewerPort: viewer.port, statsPort: stats.port, mode: "public",
     publicState: async () => ({ public: true, connection: { connected: true } }),
-    limits, publicMinimap,
+    limits, publicMinimap, publicHomeView,
   });
   await shell.start();
   return {
@@ -315,6 +328,7 @@ test("public viewer never exposes task delivery even with a handler supplied", a
 const BROADCAST_ASSETS: ReadonlyArray<[string, RegExp]> = [
   ["/broadcast", /^text\/html/], ["/broadcast.css", /^text\/css/], ["/broadcast.js", /^text\/javascript/],
   ["/broadcast-panels.mjs", /^text\/javascript/], ["/broadcast-minimap.mjs", /^text\/javascript/], ["/broadcast-scenes.mjs", /^text\/javascript/],
+  ["/broadcast-pip.mjs", /^text\/javascript/],
   ["/viewer-session.mjs", /^text\/javascript/],
 ];
 
@@ -355,7 +369,7 @@ test("public broadcast routes are exact: no index, directory or method variants"
 
 test("broadcast page keeps the renderer contract and loads only same-origin assets", async () => {
   const dir = fileURLToPath(new URL("./public/", import.meta.url));
-  const [html = "", css = "", js = "", panels = "", minimap = "", scenes = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs", "broadcast-scenes.mjs"].map(name => readFile(dir + name, "utf8")));
+  const [html = "", css = "", js = "", panels = "", minimap = "", scenes = "", pip = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs", "broadcast-scenes.mjs", "broadcast-pip.mjs"].map(name => readFile(dir + name, "utf8")));
   // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`; it never presses T, so the page follows by itself.
   assert.match(html, /<section class="stage"[^>]*>\s*<iframe\b/);
   assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
@@ -365,15 +379,20 @@ test("broadcast page keeps the renderer contract and loads only same-origin asse
   assert.match(js, /"bob-cam", \{ detail: scenes\.camera \?\? "follow" \}/);
   for (const slot of ["now", "thinking", "build", "brain", "minimap"]) assert.match(html, new RegExp(`data-panel="${slot}"`), slot);
   // No CDN, font or image from anywhere else; the SVG namespace is the only URL.
-  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap], ["scenes", scenes]] as const) {
+  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap], ["scenes", scenes], ["pip", pip]] as const) {
     assert.deepEqual(source.match(/https?:\/\/[^\s"')]+/g)?.filter(url => url !== "http://www.w3.org/2000/svg") ?? [], [], name);
     assert.doesNotMatch(source, /@import|@font-face|\bstyle="/, name);
   }
   assert.deepEqual(html.match(/<script\b[^>]*>/g), ['<script type="module" src="/broadcast.js">'], "no inline script");
   // Every module the page imports is one the server serves.
   const imports = [...js.matchAll(/(?:from |import\()"\.\/([^"]+)"/g)].map(match => `/${match[1]}`);
-  assert.deepEqual(imports.sort(), ["/broadcast-minimap.mjs", "/broadcast-panels.mjs", "/broadcast-scenes.mjs", "/viewer-session.mjs"]);
+  assert.deepEqual(imports.sort(), ["/broadcast-minimap.mjs", "/broadcast-panels.mjs", "/broadcast-pip.mjs", "/broadcast-scenes.mjs", "/viewer-session.mjs"]);
   assert.doesNotMatch(minimap, /\bimport\b/, "the minimap module stands alone");
+  // The picture-in-picture stands alone too, loads only the cached picture and writes no text into it.
+  assert.doesNotMatch(pip, /\bimport\b/);
+  assert.deepEqual([...pip.matchAll(/`(\/[^`?]*)/g)].map(match => match[1]), ["/api/public/home.png"]);
+  assert.doesNotMatch(pip, /textContent|innerHTML/);
+  assert.match(html, /<figure id="pip" class="pip"[^>]*hidden>\s*<div class="pip-view"><\/div>\s*<figcaption>Home<\/figcaption>/);
   // The scene module is pure: it imports only the panel helpers and touches no DOM, network or timers.
   assert.deepEqual([...scenes.matchAll(/\bfrom "([^"]+)"/g)].map(match => match[1]), ["./broadcast-panels.mjs"]);
   assert.doesNotMatch(scenes, /\b(?:document|window|fetch|setTimeout|setInterval|Date\.now)\b/);
@@ -446,5 +465,56 @@ test("/api/public/minimap shares the public listener's per-client rate limit", a
     assert.equal((await send(env.port, "GET", "/api/public/minimap", { "x-forwarded-for": "198.51.100.8" })).status, 200);
   } finally {
     await env.close();
+  }
+});
+
+const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+
+test("public and private /api/public/home.png serve the cached picture with the shell's headers, and never render it", async () => {
+  let reads = 0;
+  const source = () => { reads++; return PNG; };
+  const env = await publicShell(undefined, undefined, source);
+  const privatePort = await freePort();
+  const privateShell = new ViewerShellServer({ host: "127.0.0.1", port: privatePort, viewerPort: env.viewer.port, statsPort: env.stats.port, publicHomeView: source });
+  await privateShell.start();
+  try {
+    for (const port of [env.port, privatePort]) {
+      const result = await sendRaw(port, "/api/public/home.png?v=3");
+      assert.equal(result.status, 200, String(port));
+      assert.deepEqual(result.body, PNG);
+      assert.equal(result.headers["content-type"], "image/png");
+      assert.equal(result.headers["cache-control"], "no-store");
+      for (const [header, value] of Object.entries(SHELL_SECURITY_HEADERS)) assert.equal(result.headers[header], value, header);
+    }
+    assert.equal(reads, 2);
+    for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) assert.equal((await send(env.port, method, "/api/public/home.png", {}, method === "POST" ? "{}" : undefined)).status, 404, method);
+    for (const path of ["/api/public/home.png/", "/api/public/home", "/api/public/Home.png", "/api/public/home.jpg", "/home.png"]) assert.equal((await send(env.port, "GET", path)).status, 404, path);
+    assert.equal(reads, 2);
+    assert.equal(env.stats.seen.length + env.viewer.seen.length, 0, "the picture never reaches the dashboard or viewer");
+  } finally {
+    privateShell.stop();
+    await env.close();
+  }
+});
+
+test("/api/public/home.png answers 503 while there is no picture, 404 when not configured, and is rate limited", async () => {
+  let answer: () => Buffer | null = () => null;
+  const env = await publicShell({ ...DEFAULT_PUBLIC_LIMITS, httpBurst: 3, httpPerSecond: 0.001 }, undefined, () => answer());
+  const bare = await publicShell();
+  try {
+    let result = await send(env.port, "GET", "/api/public/home.png");
+    assert.equal(result.status, 503);
+    assert.deepEqual(JSON.parse(result.body), { error: "unavailable" });
+    answer = () => { throw new Error("render failed at x=123457"); };
+    result = await send(env.port, "GET", "/api/public/home.png");
+    assert.equal(result.status, 503);
+    assert.doesNotMatch(result.body, /123457/);
+    answer = () => PNG;
+    assert.equal((await send(env.port, "GET", "/api/public/home.png")).status, 200);
+    assert.equal((await send(env.port, "GET", "/api/public/home.png")).status, 429);
+    assert.equal((await send(bare.port, "GET", "/api/public/home.png")).status, 404);
+  } finally {
+    await env.close();
+    await bare.close();
   }
 });

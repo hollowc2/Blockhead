@@ -496,6 +496,8 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   void refresh();
   // The minimap polls its own route and shows its slot itself; a failure there never stops the page.
   import("./broadcast-minimap.mjs").then(({ mountMinimap }) => mountMinimap(document.querySelector('[data-panel="minimap"]'))).catch(() => {});
+  // Likewise the picture-in-picture of home.
+  import("./broadcast-pip.mjs").then(({ mountPip }) => mountPip($("pip"))).catch(() => {});
   setInterval(() => {
     if (document.hidden) return;
     void refresh();
