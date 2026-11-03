@@ -146,6 +146,8 @@ export interface OwnerMapInput {
   bot: Bot | null;
   routes: RouteTracker | null;
   build: { x: number; y: number; z: number; dimension?: string; label: string } | null;
+  /** Skip resources, chests and deaths (and their exposure scans): the public minimap needs only Bob, home and the trail. */
+  homeAndRouteOnly?: boolean;
 }
 
 /** SELECT-only read of the remembered places for Bob's current dimension. */
@@ -163,10 +165,13 @@ export function readOwnerMap(input: OwnerMapInput): OwnerMapView {
   };
   const places = select("SELECT name, category, x, y, z, dimension FROM locations WHERE world_id = ? ORDER BY id DESC LIMIT 200", input.worldId);
   const homeRow = places.find((row) => row.category === "home");
+  const routes = input.routes?.view() ?? { trail: [], path: [] };
+  if (input.homeAndRouteOnly === true) {
+    return { ...empty, bob, home: homeRow === undefined ? null : { x: homeRow.x, y: homeRow.y, z: homeRow.z, label: "Home" }, path: routes.path, trail: routes.trail };
+  }
   const resources = select("SELECT resource, x, y, z, dimension, depleted, last_seen_at FROM resource_sites WHERE world_id = ? ORDER BY COALESCE(last_seen_at, '') DESC, id DESC LIMIT 300", input.worldId);
   const chests = select("SELECT category, label, x, y, z, dimension, last_seen_at FROM storage_locations WHERE world_id = ? ORDER BY id LIMIT 100", input.worldId);
   const deaths = select("SELECT x, y, z, dimension, created_at, recovered, recovery_failed_reason FROM death_events WHERE world_id = ? ORDER BY id DESC LIMIT 25", input.worldId);
-  const routes = input.routes?.view() ?? { trail: [], path: [] };
   return {
     dimension,
     bob,

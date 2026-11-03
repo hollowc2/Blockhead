@@ -314,6 +314,7 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
   function renderSlots(s) {
     document.querySelectorAll("[data-panel]").forEach((slot) => {
       const field = slot.dataset.panel;
+      if (field === "minimap") return;
       slot.hidden = !SLOT_FIELDS.has(field) || s[field] === undefined || s[field] === null;
     });
   }
@@ -450,6 +451,8 @@ import { ago, armorMaterial, compact, dayDial, fraction, gainedItems, iconRow, i
 
   renderVeil(viewerSession.state);
   void refresh();
+  // The minimap polls its own route and shows its slot itself; a failure there never stops the page.
+  import("./broadcast-minimap.mjs").then(({ mountMinimap }) => mountMinimap(document.querySelector('[data-panel="minimap"]'))).catch(() => {});
   setInterval(() => {
     if (document.hidden) return;
     void refresh();

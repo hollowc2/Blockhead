@@ -354,6 +354,11 @@ test("the map reads remembered places for Bob's dimension and his pathfinder goa
   assert.equal(map.resources[0]?.exposure, "unknown", "no loaded world means no depth claim");
   assert.equal(map.deaths[0]?.recovered, true);
   assert.deepEqual(map.destination, { x: 12, y: 64, z: 8, label: "Near" });
+  // The public minimap's read: Bob, home and the route only.
+  const light = readOwnerMap({ db, worldId: 1, bot: bot as never, routes: null, build: { x: 1, y: 2, z: 3, label: "Build" }, homeAndRouteOnly: true });
+  assert.deepEqual(light.home, map.home);
+  assert.deepEqual(light.bob, map.bob);
+  assert.deepEqual([light.locations, light.resources, light.chests, light.deaths, light.build, light.destination], [[], [], [], [], null, null]);
   const follow = pathfinderDestination({ pathfinder: { goal: { entity: { position: { x: 3, y: 4, z: 5 }, username: "Corey" } } } } as never);
   assert.equal(follow?.label, "Following Corey");
 });

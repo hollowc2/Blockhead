@@ -95,6 +95,7 @@ import { StoryRepository } from "./memory/story.js";
 import { CommandTracker, createJobControl, projectJobs } from "./dashboard/jobs.js";
 import { projectGearDetail, storedContents } from "./dashboard/gear.js";
 import { readOwnerMap, RouteTracker } from "./dashboard/owner-map.js";
+import { cachedPublicMinimap } from "./dashboard/public-minimap.js";
 import { createBuildPreview, createPreviewStart } from "./dashboard/build-preview.js";
 import { readHistory, type UnresolvedProblem } from "./dashboard/history.js";
 import { TaskStatus } from "./agent/task.js";
@@ -322,6 +323,8 @@ const viewerAdapter = createPrismarineViewerAdapter({
   // Redacted allowlist of the dashboard snapshot; see dashboard/public-state.ts.
   publicInteractions,
   publicState: async () => ({ ...await redactedViewerState(), interactions: publicInteractions.availability() }),
+  // The broadcast minimap: the private map's source, projected coarse and Bob-relative, shared for 2 s.
+  publicMinimap: cachedPublicMinimap(() => readOwnerMap({ db, worldId: state.worldId, bot: session?.bot ?? null, routes: session?.routes ?? null, build: null, homeAndRouteOnly: true })),
   // Read-only viewer Q&A on the private shell: snapshot in, text out, no tools.
   chat: createViewerChat({ complete: (messages) => client.complete(messages), snapshot: (): DashboardSnapshot | Promise<DashboardSnapshot> => dashboardTelemetry.snapshot() }),
   command: viewerCommand,

@@ -167,9 +167,20 @@ function publicState() {
   };
 }
 
+// Canned /api/public/minimap (the shape of publicMinimap): home in range and a
+// wandering trail; edge has home off the rim; empty and offline answer 503.
+function minimap() {
+  if (control.bot !== "up" || control.viewer === "offline" || control.state === "empty") return null;
+  const t = Math.floor((Date.now() - started) / 5000);
+  const trail = Array.from({ length: 18 }, (_, i) => [Math.round(4 * Math.cos((i + t) / 4)) + i % 2, Math.round(3 * Math.sin((i + t) / 3))]).map(([x, z], i, all) => [x - all[all.length - 1][0], z - all[all.length - 1][1]]);
+  return control.state === "edge"
+    ? { dimension: "nether", radius: 12, heading: 11, trail: trail.slice(-6), home: { bearing: 5 } }
+    : { dimension: "overworld", radius: 12, heading: t % 16, trail, home: { at: [6, -4] } };
+}
+
 const PUBLIC_DIR = new URL("../../src/dashboard/public/", import.meta.url);
 const VIEWER_DIR = new URL("../../node_modules/prismarine-viewer/public/", import.meta.url);
-const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
+const BROADCAST_FILES = { "/broadcast": "broadcast.html", "/broadcast.css": "broadcast.css", "/broadcast.js": "broadcast.js", "/broadcast-panels.mjs": "broadcast-panels.mjs", "/broadcast-minimap.mjs": "broadcast-minimap.mjs", "/viewer-session.mjs": "viewer-session.mjs" };
 const TYPES = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", png: "image/png", json: "application/json" };
 // Mirrors SHELL_SECURITY_HEADERS' CSP (src/dashboard/http-guard.ts), so a violation shows up here too.
 const SHELL_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -196,6 +207,7 @@ createServer((req, res) => {
     return;
   }
   if (url.pathname === "/api/state") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(publicState())); return; }
+  if (url.pathname === "/api/public/minimap") { const body = minimap(); res.writeHead(body ? 200 : 503, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(body ?? { error: "unavailable" })); return; }
   if (BROADCAST_FILES[url.pathname]) { void sendFile(res, new URL(BROADCAST_FILES[url.pathname], PUBLIC_DIR), true); return; }
   if (url.pathname === "/viewer/" || url.pathname === "/viewer") { res.setHeader("content-type", "text/html"); res.end(viewerFrame); return; }
   if (/^\/viewer\/textures\/[A-Za-z0-9._/-]+\.(?:png|json)$/.test(url.pathname) && !url.pathname.includes("..")) {

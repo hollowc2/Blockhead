@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { SHELL_SECURITY_HEADERS } from "./http-guard.js";
-import { isViewerSocketPath, ViewerShellServer, viewerTargetPath } from "./viewer-shell.js";
+import { DEFAULT_PUBLIC_LIMITS, isViewerSocketPath, ViewerShellServer, viewerTargetPath } from "./viewer-shell.js";
 
 test("viewer proxy preserves Socket.IO query parameters", () => {
   assert.equal(
@@ -106,14 +106,14 @@ async function send(port: number, method: string, path: string, headers: Record<
   });
 }
 
-async function publicShell(limits?: ConstructorParameters<typeof ViewerShellServer>[0]["limits"]) {
+async function publicShell(limits?: ConstructorParameters<typeof ViewerShellServer>[0]["limits"], publicMinimap?: () => Promise<unknown>) {
   const viewer = await recordingServer("viewer-body");
   const stats = await recordingServer("FULL-PRIVATE-STATE");
   const port = await freePort();
   const shell = new ViewerShellServer({
     host: "127.0.0.1", port, viewerPort: viewer.port, statsPort: stats.port, mode: "public",
     publicState: async () => ({ public: true, connection: { connected: true } }),
-    limits,
+    limits, publicMinimap,
   });
   await shell.start();
   return {
@@ -314,7 +314,7 @@ test("public viewer never exposes task delivery even with a handler supplied", a
 
 const BROADCAST_ASSETS: ReadonlyArray<[string, RegExp]> = [
   ["/broadcast", /^text\/html/], ["/broadcast.css", /^text\/css/], ["/broadcast.js", /^text\/javascript/],
-  ["/broadcast-panels.mjs", /^text\/javascript/], ["/viewer-session.mjs", /^text\/javascript/],
+  ["/broadcast-panels.mjs", /^text\/javascript/], ["/broadcast-minimap.mjs", /^text\/javascript/], ["/viewer-session.mjs", /^text\/javascript/],
 ];
 
 test("broadcast page and its assets are served on both listeners with the shell's security headers", async () => {
@@ -354,7 +354,7 @@ test("public broadcast routes are exact: no index, directory or method variants"
 
 test("broadcast page keeps the renderer contract and loads only same-origin assets", async () => {
   const dir = fileURLToPath(new URL("./public/", import.meta.url));
-  const [html = "", css = "", js = "", panels = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs"].map(name => readFile(dir + name, "utf8")));
+  const [html = "", css = "", js = "", panels = "", minimap = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs", "broadcast-minimap.mjs"].map(name => readFile(dir + name, "utf8")));
   // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`, and presses T unless `#followToggle` is pressed.
   assert.match(html, /<section class="stage"[^>]*>\s*<iframe\b/);
   assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
@@ -363,13 +363,83 @@ test("broadcast page keeps the renderer contract and loads only same-origin asse
   assert.match(js, /detail: "follow"/);
   for (const slot of ["now", "thinking", "build", "brain", "minimap"]) assert.match(html, new RegExp(`data-panel="${slot}"`), slot);
   // No CDN, font or image from anywhere else; the SVG namespace is the only URL.
-  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels]] as const) {
+  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels], ["minimap", minimap]] as const) {
     assert.deepEqual(source.match(/https?:\/\/[^\s"')]+/g)?.filter(url => url !== "http://www.w3.org/2000/svg") ?? [], [], name);
     assert.doesNotMatch(source, /@import|@font-face|\bstyle="/, name);
   }
   assert.deepEqual(html.match(/<script\b[^>]*>/g), ['<script type="module" src="/broadcast.js">'], "no inline script");
   // Every module the page imports is one the server serves.
-  const imports = [...js.matchAll(/from "\.\/([^"]+)"/g)].map(match => `/${match[1]}`);
-  assert.deepEqual(imports.sort(), ["/broadcast-panels.mjs", "/viewer-session.mjs"]);
+  const imports = [...js.matchAll(/(?:from |import\()"\.\/([^"]+)"/g)].map(match => `/${match[1]}`);
+  assert.deepEqual(imports.sort(), ["/broadcast-minimap.mjs", "/broadcast-panels.mjs", "/viewer-session.mjs"]);
+  assert.doesNotMatch(minimap, /\bimport\b/, "the minimap module stands alone");
   for (const path of imports) assert(BROADCAST_ASSETS.some(([served]) => served === path), path);
+});
+
+const MINIMAP = { dimension: "overworld", radius: 12, heading: 4, trail: [[-2, 1], [-1, 0], [0, 0]], home: { bearing: 6 } };
+
+test("public and private /api/public/minimap serve the projection with the shell's headers", async () => {
+  let reads = 0;
+  const source = async () => { reads++; return MINIMAP; };
+  const env = await publicShell(undefined, source);
+  const privatePort = await freePort();
+  const privateShell = new ViewerShellServer({ host: "127.0.0.1", port: privatePort, viewerPort: env.viewer.port, statsPort: env.stats.port, publicMinimap: source });
+  await privateShell.start();
+  try {
+    for (const port of [env.port, privatePort]) {
+      const result = await send(port, "GET", "/api/public/minimap");
+      assert.equal(result.status, 200, String(port));
+      assert.deepEqual(JSON.parse(result.body), MINIMAP);
+      assert.match(String(result.headers["content-type"]), /^application\/json/);
+      assert.equal(result.headers["cache-control"], "no-store");
+      for (const [header, value] of Object.entries(SHELL_SECURITY_HEADERS)) assert.equal(result.headers[header], value, header);
+    }
+    assert.equal(reads, 2);
+    // Only GET, and only the exact path.
+    for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) assert.equal((await send(env.port, method, "/api/public/minimap", {}, method === "POST" ? "{}" : undefined)).status, 404, method);
+    assert.equal((await send(privatePort, "POST", "/api/public/minimap", {}, "{}")).status, 405);
+    for (const path of ["/api/public/minimap/", "/api/public/minimap.json", "/api/public/Minimap", "/api/public/map", "/api/map"]) assert.equal((await send(env.port, "GET", path)).status, 404, path);
+    assert.equal(reads, 2);
+    assert.equal(env.stats.seen.length + env.viewer.seen.length, 0, "the minimap never reaches the dashboard or viewer");
+  } finally {
+    privateShell.stop();
+    await env.close();
+  }
+});
+
+test("/api/public/minimap answers 503 while unavailable and 404 when not configured", async () => {
+  let answer: () => unknown = () => null;
+  const env = await publicShell(undefined, async () => answer());
+  const bare = await publicShell();
+  try {
+    let result = await send(env.port, "GET", "/api/public/minimap");
+    assert.equal(result.status, 503);
+    assert.deepEqual(JSON.parse(result.body), { error: "unavailable" });
+    assert.equal(result.headers["cache-control"], "no-store");
+    for (const [header, value] of Object.entries(SHELL_SECURITY_HEADERS)) assert.equal(result.headers[header], value, header);
+    answer = () => { throw new Error("SELECT failed at x=123457"); };
+    result = await send(env.port, "GET", "/api/public/minimap");
+    assert.equal(result.status, 503);
+    assert.doesNotMatch(result.body, /123457|SELECT/);
+    assert.equal((await send(bare.port, "GET", "/api/public/minimap")).status, 404);
+  } finally {
+    await env.close();
+    await bare.close();
+  }
+});
+
+test("/api/public/minimap shares the public listener's per-client rate limit", async () => {
+  let reads = 0;
+  const env = await publicShell({ ...DEFAULT_PUBLIC_LIMITS, httpBurst: 2, httpPerSecond: 0.001 }, async () => { reads++; return MINIMAP; });
+  try {
+    const client = { "x-forwarded-for": "198.51.100.7" };
+    assert.equal((await send(env.port, "GET", "/api/public/minimap", client)).status, 200);
+    assert.equal((await send(env.port, "GET", "/broadcast", client)).status, 200);
+    const limited = await send(env.port, "GET", "/api/public/minimap", client);
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers["retry-after"], "30");
+    assert.equal(reads, 1, "a limited request never reads the map");
+    assert.equal((await send(env.port, "GET", "/api/public/minimap", { "x-forwarded-for": "198.51.100.8" })).status, 200);
+  } finally {
+    await env.close();
+  }
 });

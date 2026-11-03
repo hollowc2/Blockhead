@@ -16,6 +16,7 @@ const BROADCAST_HTML = fileURLToPath(new URL("./public/broadcast.html", import.m
 const BROADCAST_CSS = fileURLToPath(new URL("./public/broadcast.css", import.meta.url));
 const BROADCAST_JS = fileURLToPath(new URL("./public/broadcast.js", import.meta.url));
 const BROADCAST_PANELS_JS = fileURLToPath(new URL("./public/broadcast-panels.mjs", import.meta.url));
+const BROADCAST_MINIMAP_JS = fileURLToPath(new URL("./public/broadcast-minimap.mjs", import.meta.url));
 
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
 const PUBLIC_VIEWER_ASSET = /^\/viewer\/(?:index\.js|worker\.js|(?:textures|blocksStates)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|json))$/;
@@ -70,6 +71,11 @@ export interface ViewerShellOptions {
   /** Redacted state for public mode's `/api/state`. */
   publicInteractions?: PublicInteractions;
   publicState?: () => Promise<unknown>;
+  /**
+   * `GET /api/public/minimap` on both listeners: the coarse Bob-centred
+   * projection (public-minimap.ts), or null while unavailable (503).
+   */
+  publicMinimap?: () => Promise<unknown>;
   limits?: PublicShellLimits;
   /** Viewer Q&A behind `POST /api/chat`; private mode only, ignored when public. */
   chat?: (question: unknown) => Promise<ViewerChatResult>;
@@ -202,6 +208,7 @@ export class ViewerShellServer {
       return;
     }
     if (await this.serveShellAsset(pathname, response)) return;
+    if (await this.serveMinimap(pathname, response)) return;
     if (pathname === "/api/state") {
       this.proxy(request, response, this.options.statsPort, "/api/state");
       return;
@@ -213,7 +220,7 @@ export class ViewerShellServer {
     this.sendText(response, 404, "not found");
   }
 
-  /** Public allowlist: shell and broadcast pages, viewer bundle, viewer socket, redacted state. Anything else is 404. */
+  /** Public allowlist: shell and broadcast pages, viewer bundle, viewer socket, redacted state and minimap. Anything else is 404. */
   private async handlePublic(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const ip = addressKey(clientAddress(request, true));
     if (!this.httpLimiter.take(ip)) { response.setHeader("retry-after", "30"); this.sendText(response, 429, "too many requests"); return; }
@@ -255,6 +262,7 @@ export class ViewerShellServer {
       }
       return;
     }
+    if (await this.serveMinimap(pathname, response)) return;
     if (pathname === "/viewer" || pathname === "/viewer/") {
       this.proxy(request, response, this.options.viewerPort, "/");
       return;
@@ -325,7 +333,25 @@ export class ViewerShellServer {
     else if (pathname === "/broadcast.css") await this.sendFile(response, BROADCAST_CSS, "text/css; charset=utf-8");
     else if (pathname === "/broadcast.js") await this.sendFile(response, BROADCAST_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/broadcast-panels.mjs") await this.sendFile(response, BROADCAST_PANELS_JS, "text/javascript; charset=utf-8");
+    else if (pathname === "/broadcast-minimap.mjs") await this.sendFile(response, BROADCAST_MINIMAP_JS, "text/javascript; charset=utf-8");
     else return false;
+    return true;
+  }
+
+  /** The broadcast minimap; callers have already limited the rate and the method to GET. */
+  private async serveMinimap(pathname: string, response: ServerResponse): Promise<boolean> {
+    if (pathname !== "/api/public/minimap" || this.options.publicMinimap === undefined) return false;
+    let body: string | null = null;
+    try {
+      const minimap = await this.options.publicMinimap();
+      if (minimap !== null && minimap !== undefined) body = JSON.stringify(minimap);
+    } catch {
+      body = null;
+    }
+    if (body === null) { this.sendJson(response, 503, { error: "unavailable" }); return true; }
+    if (response.destroyed || response.writableEnded || response.headersSent) return true;
+    response.writeHead(200, { ...SHELL_SECURITY_HEADERS, "content-type": "application/json", "cache-control": "no-store" });
+    response.end(body);
     return true;
   }
 
