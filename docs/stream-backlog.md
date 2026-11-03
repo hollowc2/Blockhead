@@ -50,18 +50,33 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
+## Done: camera rotation and picture-in-picture (2026-11-03, not yet deployed)
+
+- **Camera rotation.** The scene machine (`broadcast-scenes.mjs`) also picks
+  the shot, and the page sends it to the viewer as a `bob-cam` event; the
+  `.stage iframe` is never touched. It cycles follow (150 s), his eyes
+  (40 s), follow, and a slow overhead orbit (45 s). Anything that starts the
+  action scene (fights, deaths, highlights, a build starting), or ore landing
+  in the inventory while gathering, cuts to a close shot for 20 s after the
+  last trigger; sheltering at night holds follow. Cuts are at least 6 s
+  apart. The two new shots ("wide", "close") are added to the viewer bundle
+  by `scripts/viewer-shots.mjs` via the patch script, which deploy-maia
+  re-runs; an unpatched bundle shows them as the orbit camera.
+- **Picture-in-picture.** The cheap start: a still, north-up, top-down
+  picture of the 39×39 blocks around home (`public-home-view.ts`), one pixel
+  per block, sitting between the dial and the hotbar in the normal scene.
+  It is served as `/api/public/home.png` on both listeners. It is built only
+  from home and block names (no entities, sign text, containers or map
+  layers), as a bare PNG (IHDR/IDAT/IEND). It renders only when every column
+  is loaded, so chunk edges never show, and the same scene anywhere in the
+  world gives the same bytes. Requests never render: they start at most one
+  background render per 90 s, and none while nobody watches. A render takes
+  a few ms and the image is under 8 KB. The last picture stays while he is
+  away from home; a new home drops it. A second live renderer (his eyes
+  beside follow) is still out of reach on RAM.
+
 ## Backlog
 
-- **Picture-in-picture.** A small second camera: an overhead view of home,
-  or his eyes while the main view follows. A second prismarine renderer
-  costs RAM; the stream unit already runs at about 1.7 GB of its 2.5 GB
-  limit on Maia. A cheaper
-  start is a still overhead snapshot refreshed every minute or two.
-- **Camera rotation.** Cycle follow, his eyes and a wider orbit/overhead
-  shot every few minutes, and cut to a closer view in interesting moments
-  (combat, building, mining ore). The streamer no longer sends key presses,
-  so drive this from the page's scene machine. Keep the `.stage iframe`
-  attached so the renderer's probe keeps working.
 - **Offline scene with recent story.** The streamer's holding card is
   deliberately fixed copy. A richer offline state with the last story
   entries would have to come from the page, while the bot is up but Bob is
