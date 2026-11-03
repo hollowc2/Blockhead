@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280">
+  <title>CobbleBob Broadcast</title>
+  <link rel="stylesheet" href="/broadcast.css">
+</head>
+<body>
+  <!-- A fixed 1280×720 TV frame for the stream: no controls, nothing to click. -->
+  <main id="frame" class="frame">
+    <section class="stage" id="stage">
+      <iframe title="CobbleBob Minecraft viewer" tabindex="-1"></iframe>
+
+      <div id="veil" class="veil">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path class="mark-pixel" d="M16 2 3 9v14l13 7z"/>
+          <path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+          <path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+          <g class="mark-node"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+        </svg>
+        <strong id="veilTitle">Joining the world…</strong>
+        <span id="veilDetail">The live view starts in a moment.</span>
+      </div>
+
+      <div class="overlay overlay-top" data-live>
+        <div id="dayChip" class="chip chip-day" hidden>Day <b id="dayCount">—</b></div>
+        <div id="phaseChip" class="chip" hidden><i id="phaseIcon" class="phase-icon"></i><span id="phaseLabel"></span></div>
+        <div id="dimensionChip" class="chip" hidden></div>
+      </div>
+
+      <div id="dial" class="dial" data-live hidden>
+        <div class="dial-face"><i id="dialHand" class="dial-hand"><b></b></i></div>
+        <span id="dialLabel"></span>
+      </div>
+
+      <div class="overlay overlay-bottom" data-live>
+        <div id="vitals" class="vitals" hidden>
+          <div id="hearts" class="icons hearts" aria-label="Health"></div>
+          <div id="food" class="icons food" aria-label="Hunger"></div>
+        </div>
+        <!-- P3: health/hunger sparkline. -->
+        <div class="slot" data-panel="vitals" hidden></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <header class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path class="mark-pixel" d="M16 2 3 9v14l13 7z"/>
+          <path class="mark-shade" d="M6 12h3v3H6zm4 4h3v3h-3zm-4 4h3v3H6zm4-12h3v3h-3z"/>
+          <path class="mark-net" d="M16 2l13 7v14l-13 7M16 2l6 9 7-2M22 11l-2 8 9 4M20 19l-4 11M22 11l-6 8 4 0"/>
+          <g class="mark-node"><circle cx="16" cy="2.5" r="1.6"/><circle cx="22" cy="11" r="1.6"/><circle cx="28.5" cy="9" r="1.6"/><circle cx="20" cy="19" r="1.6"/><circle cx="28.5" cy="23" r="1.6"/><circle cx="16" cy="29.5" r="1.6"/></g>
+        </svg>
+        <div class="brand-text"><h1>CobbleBob</h1><p>Autonomous AI</p></div>
+        <span id="live" class="live" data-state="wait"><i></i><span id="liveText">Connecting</span></span>
+      </header>
+
+      <section id="statusPanel" class="panel status" data-activity="offline" data-live>
+        <div class="status-head">
+          <span class="status-icon" aria-hidden="true"></span>
+          <p id="statusLabel" class="status-label">Offline</p>
+          <span id="statusSince" class="status-since"></span>
+        </div>
+        <p id="statusDetail" class="status-detail">CobbleBob isn't connected to the world right now.</p>
+      </section>
+
+      <!-- Empty slots for later phases; each stays hidden until its public field exists and is bound. -->
+      <section class="panel slot" data-panel="now" hidden></section>
+      <section class="panel slot" data-panel="thinking" hidden></section>
+      <section class="panel slot" data-panel="build" hidden></section>
+      <section class="panel slot" data-panel="brain" hidden></section>
+
+      <section class="panel progress">
+        <h2>Progress <span id="tierLabel" class="h2-note"></span></h2>
+        <ol id="tiers" class="tiers"></ol>
+      </section>
+
+      <section class="panel gear" data-live>
+        <h2>Equipped</h2>
+        <div class="doll">
+          <ul class="doll-armor">
+            <li class="slot-box" data-slot="head"></li>
+            <li class="slot-box" data-slot="torso"></li>
+            <li class="slot-box" data-slot="legs"></li>
+            <li class="slot-box" data-slot="feet"></li>
+          </ul>
+          <svg class="doll-figure" viewBox="0 0 40 72" aria-hidden="true">
+            <rect data-part="arms" x="2" y="17" width="8" height="24"/>
+            <rect data-part="arms" x="30" y="17" width="8" height="24"/>
+            <rect data-part="legs" x="12" y="42" width="16" height="22"/>
+            <rect data-part="feet" x="12" y="64" width="16" height="7"/>
+            <rect data-part="torso" x="11" y="17" width="18" height="25"/>
+            <rect data-part="head" x="12" y="0" width="16" height="16"/>
+          </svg>
+          <ul class="doll-hands">
+            <li data-slot="hand"><span class="slot-box"></span><span class="hand-text"><small>Main hand</small><b>—</b></span></li>
+            <li data-slot="off-hand"><span class="slot-box"></span><span class="hand-text"><small>Off hand</small><b>—</b></span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- P5: coarse minimap. -->
+      <section class="panel slot" data-panel="minimap" hidden></section>
+    </aside>
+
+    <section class="strip">
+      <section class="panel inventory" data-live>
+        <h2>Inventory <span id="inventoryCount" class="h2-note"></span></h2>
+        <ul id="inventory" class="inv-grid"></ul>
+        <p id="inventoryEmpty" class="empty" hidden></p>
+      </section>
+      <section class="panel story">
+        <h2>Story</h2>
+        <ol id="story" class="ticker"></ol>
+        <p id="storyEmpty" class="empty">Nothing yet. Stick around, things happen fast.</p>
+      </section>
+      <section class="panel stats">
+        <h2>Lifetime</h2>
+        <dl class="stat-grid">
+          <div><dt>Day</dt><dd id="statDay">—</dd></div>
+          <div><dt>Deaths</dt><dd id="statDeaths">—</dd></div>
+          <div><dt>Mined</dt><dd id="statMined">—</dd></div>
+          <div><dt>Crafted</dt><dd id="statCrafted">—</dd></div>
+          <div class="wide"><dt>Walked</dt><dd id="statDistance">—</dd></div>
+          <div class="wide"><dt>Nemesis</dt><dd id="statNemesis" class="word">—</dd></div>
+        </dl>
+      </section>
+    </section>
+
+    <!-- Renderer contract (tools/stream/renderer.mjs): the viewer session state,
+         and a follow toggle that is always on, so the streamer never presses T. -->
+    <span id="viewerStatus" hidden>loading</span>
+    <span id="followToggle" aria-pressed="true" hidden></span>
+  </main>
+  <script type="module" src="/broadcast.js"></script>
+</body>
+</html>

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import { createServer as createTcpServer } from "node:net";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { SHELL_SECURITY_HEADERS } from "./http-guard.js";
 import { isViewerSocketPath, ViewerShellServer, viewerTargetPath } from "./viewer-shell.js";
 
 test("viewer proxy preserves Socket.IO query parameters", () => {
@@ -307,4 +310,66 @@ test("public viewer never exposes task delivery even with a handler supplied", a
     }
     assert.equal(calls, 0);
   } finally { shell.stop(); }
+});
+
+const BROADCAST_ASSETS: ReadonlyArray<[string, RegExp]> = [
+  ["/broadcast", /^text\/html/], ["/broadcast.css", /^text\/css/], ["/broadcast.js", /^text\/javascript/],
+  ["/broadcast-panels.mjs", /^text\/javascript/], ["/viewer-session.mjs", /^text\/javascript/],
+];
+
+test("broadcast page and its assets are served on both listeners with the shell's security headers", async () => {
+  const env = await publicShell();
+  const privatePort = await freePort();
+  const privateShell = new ViewerShellServer({ host: "127.0.0.1", port: privatePort, viewerPort: env.viewer.port, statsPort: env.stats.port });
+  await privateShell.start();
+  try {
+    for (const port of [env.port, privatePort]) {
+      for (const [path, type] of BROADCAST_ASSETS) {
+        const result = await send(port, "GET", path);
+        assert.equal(result.status, 200, `${port} ${path}`);
+        assert.match(String(result.headers["content-type"]), type, path);
+        assert.equal(result.headers["cache-control"], "no-store");
+        for (const [header, value] of Object.entries(SHELL_SECURITY_HEADERS)) assert.equal(result.headers[header], value, `${path} ${header}`);
+      }
+    }
+    assert.equal(env.stats.seen.length + env.viewer.seen.length, 0, "static assets never reach the dashboard or viewer");
+  } finally {
+    privateShell.stop();
+    await env.close();
+  }
+});
+
+test("public broadcast routes are exact: no index, directory or method variants", async () => {
+  const env = await publicShell();
+  try {
+    for (const path of ["/broadcast/", "/broadcast.html", "/broadcast/index.html", "/broadcast.js.map", "/broadcast-scenes.mjs", "/Broadcast"]) {
+      assert.equal((await send(env.port, "GET", path)).status, 404, path);
+    }
+    for (const method of ["POST", "PUT", "DELETE"]) assert.equal((await send(env.port, method, "/broadcast")).status, 404, method);
+    assert.equal(env.stats.seen.length + env.viewer.seen.length, 0);
+  } finally {
+    await env.close();
+  }
+});
+
+test("broadcast page keeps the renderer contract and loads only same-origin assets", async () => {
+  const dir = fileURLToPath(new URL("./public/", import.meta.url));
+  const [html = "", css = "", js = "", panels = ""] = await Promise.all(["broadcast.html", "broadcast.css", "broadcast.js", "broadcast-panels.mjs"].map(name => readFile(dir + name, "utf8")));
+  // tools/stream/renderer.mjs probes `.stage iframe` and `#viewerStatus`, and presses T unless `#followToggle` is pressed.
+  assert.match(html, /<section class="stage"[^>]*>\s*<iframe\b/);
+  assert.equal(html.match(/<iframe\b/g)?.length, 1, "the rAF probe reads the first .stage iframe");
+  assert.match(html, /id="viewerStatus"/);
+  assert.match(html, /<span id="followToggle" aria-pressed="true"/);
+  assert.match(js, /detail: "follow"/);
+  for (const slot of ["now", "thinking", "build", "brain", "minimap"]) assert.match(html, new RegExp(`data-panel="${slot}"`), slot);
+  // No CDN, font or image from anywhere else; the SVG namespace is the only URL.
+  for (const [name, source] of [["html", html], ["css", css], ["js", js], ["panels", panels]] as const) {
+    assert.deepEqual(source.match(/https?:\/\/[^\s"')]+/g)?.filter(url => url !== "http://www.w3.org/2000/svg") ?? [], [], name);
+    assert.doesNotMatch(source, /@import|@font-face|\bstyle="/, name);
+  }
+  assert.deepEqual(html.match(/<script\b[^>]*>/g), ['<script type="module" src="/broadcast.js">'], "no inline script");
+  // Every module the page imports is one the server serves.
+  const imports = [...js.matchAll(/from "\.\/([^"]+)"/g)].map(match => `/${match[1]}`);
+  assert.deepEqual(imports.sort(), ["/broadcast-panels.mjs", "/viewer-session.mjs"]);
+  for (const path of imports) assert(BROADCAST_ASSETS.some(([served]) => served === path), path);
 });

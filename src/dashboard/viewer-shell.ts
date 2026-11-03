@@ -12,6 +12,10 @@ const SHELL_HTML = fileURLToPath(new URL("./public/viewer-shell.html", import.me
 const SHELL_CSS = fileURLToPath(new URL("./public/viewer-shell.css", import.meta.url));
 const SESSION_JS = fileURLToPath(new URL("./public/viewer-session.mjs", import.meta.url));
 const SHELL_JS = fileURLToPath(new URL("./public/viewer-shell.js", import.meta.url));
+const BROADCAST_HTML = fileURLToPath(new URL("./public/broadcast.html", import.meta.url));
+const BROADCAST_CSS = fileURLToPath(new URL("./public/broadcast.css", import.meta.url));
+const BROADCAST_JS = fileURLToPath(new URL("./public/broadcast.js", import.meta.url));
+const BROADCAST_PANELS_JS = fileURLToPath(new URL("./public/broadcast-panels.mjs", import.meta.url));
 
 /** Viewer bundle files a public client may fetch (see prismarine-viewer/public). */
 const PUBLIC_VIEWER_ASSET = /^\/viewer\/(?:index\.js|worker\.js|(?:textures|blocksStates)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|json))$/;
@@ -209,7 +213,7 @@ export class ViewerShellServer {
     this.sendText(response, 404, "not found");
   }
 
-  /** Public allowlist: shell page, viewer bundle, viewer socket, redacted state. Anything else is 404. */
+  /** Public allowlist: shell and broadcast pages, viewer bundle, viewer socket, redacted state. Anything else is 404. */
   private async handlePublic(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const ip = addressKey(clientAddress(request, true));
     if (!this.httpLimiter.take(ip)) { response.setHeader("retry-after", "30"); this.sendText(response, 429, "too many requests"); return; }
@@ -316,6 +320,11 @@ export class ViewerShellServer {
     else if (pathname === "/viewer-shell.css") await this.sendFile(response, SHELL_CSS, "text/css; charset=utf-8");
     else if (pathname === "/viewer-session.mjs") await this.sendFile(response, SESSION_JS, "text/javascript; charset=utf-8");
     else if (pathname === "/viewer-shell.js") await this.sendFile(response, SHELL_JS, "text/javascript; charset=utf-8");
+    // The stream's TV frame: same state, viewer and headers as the shell, no controls.
+    else if (pathname === "/broadcast") await this.sendFile(response, BROADCAST_HTML, "text/html; charset=utf-8");
+    else if (pathname === "/broadcast.css") await this.sendFile(response, BROADCAST_CSS, "text/css; charset=utf-8");
+    else if (pathname === "/broadcast.js") await this.sendFile(response, BROADCAST_JS, "text/javascript; charset=utf-8");
+    else if (pathname === "/broadcast-panels.mjs") await this.sendFile(response, BROADCAST_PANELS_JS, "text/javascript; charset=utf-8");
     else return false;
     return true;
   }
