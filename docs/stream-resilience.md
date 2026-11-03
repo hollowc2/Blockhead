@@ -404,6 +404,17 @@ start/middle/end by a person).
   This restart is inside the soak window, so the soak records it.
 - Not yet checked: fault injection on Maia.
 
+## Deployment record (2026-11-02 evening, prompt 09)
+
+- Bot: `scripts/deploy-maia` → runtime at `d24ce89`, restarted 20:05:43 PST.
+  `/broadcast` 200, `/api/state` carries `brain.model` "Qwen3.5 9B",
+  `now`, `vitals`, `self.timeOfDay`; `/api/public/minimap` 200.
+- Stream: rollback copy `~/.local/share/cobblebob-stream.rollback-pre-broadcast`,
+  `stream.mjs` + `renderer.mjs` + unit copied, restarted 20:06:02. LIVE at
+  20:06:43 (healthy), about 30.8 fps, 0 encoder interruptions, NRestarts 0.
+  Memory 1.69 GB after settling (peak 2.22 GB at start-up).
+- This restarted the 24-hour soak window, with the owner's approval.
+
 ## Readiness decision
 
 **INCOMPLETE QUALIFICATION.** The 24-hour soak started after this deployment

@@ -4,7 +4,7 @@ Ideas for making the 24/7 YouTube stream (`tools/stream/`) better to watch.
 Not scheduled. Pick these up once CobbleBob reliably does visible work
 (see `docs/implementation-prompts/06-…`).
 
-## Done: the broadcast screen (2026-11-02)
+## Done: the broadcast screen (2026-11-02, deployed to Maia at d24ce89)
 
 The 2026-11-01 "Screen redesign" brainstorm was built as
 [prompt 09](implementation-prompts/09-broadcast-screen.md). The stream now
@@ -20,7 +20,7 @@ See [stream-resilience.md](stream-resilience.md#the-page-the-stream-renders).
   overlay" idea), a thinking bubble (scrub plus reject-on-doubt filter,
   `public-thinking.ts`), a coarse coordinate-free minimap
   (`/api/public/minimap`), an inventory grid with new-item glow, an
-  equipment paper-doll, a story ticker, lifetime stats, wood → nether
+  equipment hotbar on the game view (it replaced the paper-doll to free the column), a story ticker, lifetime stats, wood → nether
   progression badges, a vitals sparkline (60 min), a day/night dial, a build
   card, brain stats (decisions/hour, latency, model label) and the "What is
   this?" lower-third.
@@ -33,14 +33,29 @@ See [stream-resilience.md](stream-resilience.md#the-page-the-stream-renders).
   completed builds and milestone unlocks.
 
 Each public field is built by allowlist and template in `public-state.ts`,
-with hostile-input leak tests in `public-state.test.ts`.
+with hostile-input leak tests in `public-state.test.ts`. An independent
+privacy review (P7) found no blockers; its fixes landed before deploy. The
+thinking filter now also rejects the start of a private name, mid-sentence
+capitalised words, spelled-out or signed coordinates and digits near a
+private place, while plain item counts ("Gather 20 oak logs") pass. Build
+story lines are re-rendered from a checked structure name so an owner's
+build request never reaches the public feed.
+
+What we learned on Maia:
+
+- The stream unit settled at about 1.7 GB (start-up peak 2.2 GB) against
+  `MemoryMax=2500M`, about the same as the old page.
+- Replaying 14,687 real rationales through the filter, about 3% pass whole.
+  The rest are mostly rejected for numbers ("…stockpile to reach 128…"), so
+  the bubble usually shows a fixed phrase per task type.
+- With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
 ## Backlog
 
 - **Picture-in-picture.** A small second camera: an overhead view of home,
   or his eyes while the main view follows. A second prismarine renderer
-  costs RAM; the page currently costs about the same as the old one, about
-  1.1 GB for the stream unit on Zeus (see stream-resilience.md). A cheaper
+  costs RAM; the stream unit already runs at about 1.7 GB of its 2.5 GB
+  limit on Maia. A cheaper
   start is a still overhead snapshot refreshed every minute or two.
 - **Camera rotation.** Cycle follow, his eyes and a wider orbit/overhead
   shot every few minutes, and cut to a closer view in interesting moments
@@ -51,7 +66,10 @@ with hostile-input leak tests in `public-state.test.ts`.
   deliberately fixed copy. A richer offline state with the last story
   entries would have to come from the page, while the bot is up but Bob is
   disconnected.
-- **Durability bars** on the paper-doll. This needs a redacted durability
+- **More public thinking.** Prompt the model for a short spectator-facing
+  line with no numbers or places, instead of relaxing the filter, so the
+  bubble shows real reasoning more often.
+- **Durability bars** on the equipment hotbar. This needs a redacted durability
   field.
 - **Clips/highlights.** Cut clips automatically around event banners.
 - **Background music.** Mix quiet royalty-free/CC0 tracks into the
