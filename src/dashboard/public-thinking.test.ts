@@ -23,6 +23,10 @@ const GOOD: readonly [string, string][] = [
   ["Both collect_resource and upgrade_equipment are blocked by cooldowns; waiting is the only valid action to progress.",
     "Both collect resource and upgrade equipment are blocked by cooldowns; waiting is the only valid action to progress."],
   ["  Head   north to find a cave.  ", "Head north to find a cave."],
+  // Plain item counts are not places.
+  ["Gather 20 oak logs for planks.", "Gather 20 oak logs for planks."],
+  ["Craft 4 torches and 2 sticks before night.", "Craft 4 torches and 2 sticks before night."],
+  ["Stock up on wood before the Nether trip.", "Stock up on wood before the Nether trip."],
 ];
 
 /** Rationales that must be replaced whole, with the check that catches each. */
@@ -35,6 +39,19 @@ const BAD: readonly [string, ThinkingRejection][] = [
   ["Go to x=-1200 z=950", "digits"],
   ["Player Steve42 is nearby.", "digits"],
   ["Connect to 10.0.0.5", "digits"],
+  // Numbers that measure a place, depth or distance, or are too many or too big to be a count.
+  ["Mine 20 blocks down.", "digits"],
+  ["Go 120 blocks north for iron.", "digits"],
+  ["Dig down to 59 and mine.", "digits"],
+  ["Collect 1200 cobblestone.", "digits"],
+  ["Gather 3 logs, 2 planks and 5 sticks.", "digits"],
+  ["Build a 3 x 3 platform.", "digits"],
+  ["Mine iron at level 16 today.", "digits"],
+  ["The player is currently at distance 13 from home.", "digits"],
+  ["Deposit 20 logs in the chest by the house.", "place"],
+  // Coordinates spelled out in words.
+  ["Walk to x twenty two z minus forty.", "digits"],
+  ["Diamonds are deep, around level negative fifty-nine.", "digits"],
   // Addresses, paths and URLs.
   ["Message me at bob@example", "address"],
   ["Open https://maia", "address"],
@@ -54,6 +71,11 @@ const BAD: readonly [string, ThinkingRejection][] = [
   ["Meet dark knight at the farm.", "name"],
   ["Ed asked for wood.", "name"],
   ["Maia is busy.", "name"],
+  // The start of a known name, and capitalised words that may be unknown players.
+  ["Barnaby wants more wood for the tower.", "name"],
+  ["Heading to barnabys house.", "name"],
+  ["Gathering logs for Jenny's house by the lake.", "name"],
+  ["Trade with the villager like Steve said.", "name"],
   // Unknown names hide in camelCase and mixed-case snake_case.
   ["Ask xXSteveXx for help.", "identifier"],
   ["Meet Night_Owl at the farm.", "identifier"],

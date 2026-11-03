@@ -113,7 +113,7 @@ const HOSTILE_RATIONALE = "Mine iron near OwnerSecretName's base at 1200 64 -950
 const broadcastSnapshot = (): DashboardSnapshot => {
   const snapshot = secretSnapshot();
   snapshot.goal = {
-    id: "g1", description: "Guard HomeBase at 1200 64 -950 for OwnerSecretName", source: "owner", status: "active" as never, createdAt: "2026-01-01T00:00:00.000Z",
+    id: "g1", description: "Guard HomeBase at 1200 64 -950 for OwnerSecretName", source: "background", status: "active" as never, createdAt: "2026-01-01T00:00:00.000Z",
     currentStep: "walk to OwnerSecretName at 1200 64 -950", note: "OwnerSecretName asked", endedAt: null,
     recentResults: [{ action: "collect_resource", outcome: "failed", message: "Error at /home/corey 1200 64 -950", at: "x" }],
     successCriteria: [{ kind: "inventory", stockpile: null, item: "iron_ingot", min: 10, label: "carried iron_ingot >= 10 at 1200 64 -950" }],
@@ -231,6 +231,10 @@ test("thinking passes a clean rationale whole and replaces any doubtful one with
   }
   assert.equal(think("Smelt the carried iron.", "owner_instruction", "come_to_player"), "Working out what the owner asked for…", "owner requests paraphrase private chat");
   assert.equal(think(HOSTILE_RATIONALE, "goal_decision", "build_design"), "Planning the next part of the build…");
+  // Decisions on an owner's goal paraphrase the owner's request.
+  snapshot.goal = { ...snapshot.goal!, source: "owner" as never };
+  assert.equal(think("Gathering logs for the tower by the lake.", "goal_decision"), "Working out what the owner asked for…");
+  snapshot.goal = { ...snapshot.goal!, source: "background" as never };
   assertNoBroadcastLeak(toPublicViewerState(snapshot));
   snapshot.broadcast = { ...snapshot.broadcast!, lastDecision: { ...decision, at: "not a date" } };
   assert.equal(toPublicViewerState(snapshot).thinking, null);
@@ -289,4 +293,26 @@ test("the world clock is a whole tick count in one day, to the nearest 100, and 
   const snapshot = broadcastSnapshot();
   snapshot.self = { ...snapshot.self, timeOfDay: 6012 };
   assertNoBroadcastLeak(toPublicViewerState(snapshot));
+});
+
+test("build story lines are re-rendered from a checked structure name, never the owner's request", () => {
+  const snapshot = broadcastSnapshot();
+  const line = (text: string, structure?: string) => ({ id: 1, at: "2026-01-01T00:00:00.000Z", icon: "build" as const, text, highlight: true, ...(structure === undefined ? {} : { facts: { kind: "build_finished" as const, structure } }) });
+  snapshot.story = [
+    line("Finished building a barnaby castle!", "barnaby castle"),
+    line("Finished building a cottage for OwnerSecretName at 1200 64 -950!"),
+    line("Finished building a cottage!", "cottage"),
+    { ...line("Started building a OwnerSecretName tower"), id: 2 },
+    { ...line("Worked on the base"), id: 3 },
+  ];
+  snapshot.broadcast = { ...snapshot.broadcast!, privateTerms: ["Barnabyisbig", "OwnerSecretName"] };
+  assert.deepEqual(toPublicViewerState(snapshot).story.map((entry) => entry.text), [
+    "Finished building a structure!", "Finished building a structure!", "Finished building a cottage!", "Started building a structure", "Worked on the base",
+  ]);
+});
+
+test("a stockpile named like an Object prototype key gives no label", () => {
+  const snapshot = broadcastSnapshot();
+  snapshot.goal = { ...snapshot.goal!, successCriteria: [{ kind: "stockpile", stockpile: "constructor" as never, item: null, min: 5, label: "x" }] };
+  assert.equal(typeof toPublicViewerState(snapshot).now?.label, "string");
 });

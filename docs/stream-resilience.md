@@ -324,6 +324,10 @@ Before you start:
   reads the file from its working directory (the source checkout) at
   start-up, so a change needs the bot restart in step 1.
 
+- No drop-in overrides the page: `ssh maia 'systemctl --user cat
+  cobblebob-stream | grep STREAM_PAGE'` prints nothing. Step 3 replaces the
+  unit file but not drop-ins, and a `STREAM_PAGE` there would keep the old page.
+
 Steps, from Zeus:
 
 ```sh

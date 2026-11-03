@@ -120,8 +120,24 @@ function itemWords(name: string | null, privateTerms: readonly string[]): string
 }
 
 function structureWords(snapshot: DashboardSnapshot, privateTerms: readonly string[]): string {
-  const words = humanize(snapshot.buildProject?.structureType, "structure").toLowerCase();
+  return safeStructure(snapshot.buildProject?.structureType, privateTerms);
+}
+
+/** A structure name as a few plain words, or "structure" (a build_design name may be anything). */
+function safeStructure(value: unknown, privateTerms: readonly string[]): string {
+  const words = humanize(value, "structure").toLowerCase();
   return words.length <= 32 && PLAIN_NAME.test(words) && isPublicSafeText(words, privateTerms) ? words : "structure";
+}
+
+/** Build lines are rendered from the structure (or the owner's request text); re-render them from a checked name. */
+function publicStoryText(entry: StoryEntry, privateTerms: readonly string[]): string {
+  // Matched by text too: rows stored before facts existed carry none.
+  const started = entry.facts?.kind === "build_started" || entry.text.startsWith("Started building ");
+  const finished = entry.facts?.kind === "build_finished" || entry.text.startsWith("Finished building ");
+  if (!started && !finished) return entry.text;
+  const named = entry.facts?.structure ?? entry.text.replace(/^(?:Started|Finished) building (?:an? )?/, "").replace(/!$/, "");
+  const structure = safeStructure(named, privateTerms);
+  return started ? `Started building ${article(structure)}` : `Finished building ${article(structure)}!`;
 }
 
 function publicBuild(snapshot: DashboardSnapshot, privateTerms: readonly string[]): PublicBuild | null {
@@ -144,7 +160,7 @@ function criterionNow(criterion: GoalCriterionSummary, snapshot: DashboardSnapsh
       return { label: `Collect ${item} · ${done}/${total}`, progress: { done, total } };
     }
     case "stockpile": {
-      const label = criterion.stockpile === null ? undefined : STOCKPILE_LABEL[criterion.stockpile];
+      const label = criterion.stockpile !== null && Object.hasOwn(STOCKPILE_LABEL, criterion.stockpile) ? STOCKPILE_LABEL[criterion.stockpile] : undefined;
       if (label === undefined || total === null || total === 0) return null;
       const level = wholeNumber(snapshot.stockpiles?.levels[criterion.stockpile!]);
       if (level === null) return { label, progress: null };
@@ -189,8 +205,10 @@ function privateTermsOf(snapshot: DashboardSnapshot): string[] {
 function publicThinking(snapshot: DashboardSnapshot, privateTerms: readonly string[]): PublicThinking | null {
   const decision = snapshot.broadcast?.lastDecision ?? null;
   if (decision === null || Number.isNaN(Date.parse(decision.at))) return null;
+  // Goal decisions on an owner's goal paraphrase the owner's request, like owner instructions.
+  const ownerGoal = snapshot.goal?.source === "owner" && snapshot.goal.status === "active";
   return {
-    text: publicThought({ rationale: decision.rationale, tool: decision.tool, callType: decision.callType, privateTerms }),
+    text: publicThought({ rationale: decision.rationale, tool: decision.tool, callType: ownerGoal ? "owner_instruction" : decision.callType, privateTerms }),
     at: new Date(Date.parse(decision.at)).toISOString(),
   };
 }
@@ -229,7 +247,7 @@ export function toPublicViewerState(snapshot: DashboardSnapshot): PublicViewerSt
       timeOfDay: snapshot.connection.connected === true ? publicTimeOfDay(snapshot.self.timeOfDay) : null,
     },
     viewer: { status: snapshot.viewer.status },
-    story: (snapshot.story ?? []).map(({ id, at, icon, text, highlight }) => ({ id, at, icon, text, highlight })),
+    story: (snapshot.story ?? []).map((entry) => ({ id: entry.id, at: entry.at, icon: entry.icon, text: publicStoryText(entry, privateTerms), highlight: entry.highlight })),
     world: snapshot.world ?? null,
     inventory: snapshot.connection.connected && snapshot.inventory ? {
       items: snapshot.inventory.items.map(({ name, count }) => ({ name, count })),

@@ -40,6 +40,17 @@ const PLACE = /\b(?:home|base|chests?|house|bed|shed|storage|spawn)\b/i;
 const DIRECTION = /\b(?:north|south|east|west|(?:north|south)(?:east|west)|northern|southern|eastern|western|(?:north|south|east|west)wards?|left|right|above|below|behind|beneath|underneath|uphill|downhill|blocks?|meters?|metres?|paces?)\b/i;
 const NUMBER_WORD = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|dozens?|half|first|second|third|fourth|fifth)\b/i;
 const SNAKE = /^[a-z]+(?:_[a-z]+)+$/;
+/** Signed or axis-named numbers are positions however they are written. */
+const POSITION_WORDS = /\b(?:minus|negative)\b/i;
+const AXIS = /(?:^|[^A-Za-z])[xyzXYZ](?=$|[^A-Za-z'])/;
+/** A count is "20 oak logs"; these words before or after a number make it a place, depth or distance. */
+const BEFORE_COUNT = /\b(?:at|to|near|around|reach|level|depth|height|layer|distance|of|is|by|about)\s$/i;
+const AFTER_COUNT = /^\s(?:blocks?|meters?|metres?|paces?|steps?|chunks?|levels?|deep|down|up|high|low|below|above|away|far|out|north|south|east|west|left|right|forward|back|behind|ahead|over|across|along)\b/i;
+const MAX_COUNTS = 2;
+/** Capitalised words that may appear mid-sentence; any other one may be a name. */
+const PROPER_NOUNS = new Set(["I", "Minecraft", "Nether", "End", "Overworld"]);
+/** A word this long that starts a private term is that name too ("Barnaby" for Barnabyisbig). */
+const MIN_FRAGMENT = 5;
 
 /** Lowercase letters and digits only, so `Dark_Knight` and `dark knight` compare equal. */
 const compact = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -54,7 +65,7 @@ export function thinkingRejection(text: string, privateTerms: readonly string[])
   if (value === "") return "empty";
   // Printable ASCII only: no control characters or look-alike letters that dodge the name check.
   if (/[^\x20-\x7E]/.test(value)) return "characters";
-  if (/\d/.test(value)) return "digits";
+  if (!onlyCounts(value)) return "digits";
   if (ADDRESS.test(value)) return "address";
   const flat = compact(value);
   const lower = value.toLowerCase();
@@ -63,14 +74,50 @@ export function thinkingRejection(text: string, privateTerms: readonly string[])
     if (key === "") continue;
     // Short terms would match inside ordinary words once spaces are gone; match them as words.
     if (key.length >= 3 ? flat.includes(key) : new RegExp(`\\b${key}\\b`).test(lower)) return "name";
+    // The start of a name ("Barnaby wants wood") is still that name.
+    for (const word of lower.match(/[a-z]+/g) ?? []) {
+      const stem = word.replace(/s$/, "");  // "barnabys house"
+      if (stem.length >= MIN_FRAGMENT && key.startsWith(stem)) return "name";
+    }
   }
   // Usernames hide in camelCase and mixed-case snake_case; registry names are lowercase snake_case.
   if (/[a-z][A-Z]/.test(value)) return "identifier";
   for (const token of value.match(/[A-Za-z_]*_[A-Za-z_]*/g) ?? []) if (!SNAKE.test(token)) return "identifier";
+  // Any other capitalised word mid-sentence may be a player we have never seen.
+  if (hasMidSentenceCapital(value)) return "name";
   if (WORDS.test(value)) return "words";
-  if (PLACE.test(value) && (DIRECTION.test(value) || NUMBER_WORD.test(value))) return "place";
+  if (PLACE.test(value) && (DIRECTION.test(value) || NUMBER_WORD.test(value) || /\d/.test(value))) return "place";
   if (stripCoordinates(value) !== value) return "coordinates";
   return null;
+}
+
+/**
+ * Digits pass only as item counts: at most two plain 1–3 digit numbers, each
+ * followed by an ordinary word ("Gather 20 oak logs") and never a distance,
+ * direction or position word. Anything else with a digit is doubt.
+ */
+function onlyCounts(value: string): boolean {
+  const numbers = [...value.matchAll(/\d+/g)];
+  if (numbers.length === 0) return !(POSITION_WORDS.test(value) || (AXIS.test(value) && NUMBER_WORD.test(value)));
+  if (numbers.length > MAX_COUNTS || POSITION_WORDS.test(value) || AXIS.test(value)) return false;
+  return numbers.every((match) => {
+    const start = match.index, end = start + match[0].length;
+    if (match[0].length > 3 || /^0\d/.test(match[0])) return false;
+    // A space before (or the start), a space and a lowercase word after: nothing glued on.
+    if (start > 0 && value[start - 1] !== " ") return false;
+    if (!/^ [a-z]/.test(value.slice(end, end + 2))) return false;
+    return !BEFORE_COUNT.test(value.slice(0, start)) && !AFTER_COUNT.test(value.slice(end));
+  });
+}
+
+/** A capitalised word that doesn't start a sentence and isn't a known game noun. */
+function hasMidSentenceCapital(value: string): boolean {
+  for (const match of value.matchAll(/[A-Z][A-Za-z']*/g)) {
+    const before = value.slice(0, match.index).trimEnd();
+    if (before === "" || /[.!?;:]$/.test(before)) continue;
+    if (!PROPER_NOUNS.has(match[0].replace(/'s$/, ""))) return true;
+  }
+  return false;
 }
 
 export function isPublicSafeText(text: string, privateTerms: readonly string[]): boolean {
