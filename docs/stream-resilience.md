@@ -131,6 +131,7 @@ words, not colour alone. All essential content sits inside the centred 405×720
 ctl="node ~/.local/share/cobblebob-stream/streamctl.mjs"
 $ctl status                 # scene, reason codes, encoder frame/fps, interruptions, totals
 $ctl transitions 50         # recent scene changes with health reason codes
+$ctl alerts 20              # recent alert events and the open incidents (see Alerting)
 $ctl hold                   # maintenance latch: "Taking a break" until cleared; survives recovery
 $ctl auto                   # clear it; live returns after the admission window
 $ctl reconnect-encoder      # restart ffmpeg only (brief interruption)
@@ -150,10 +151,103 @@ socket acked and growing), a 2 s reconnect is not enough: stop the unit, wait
 10 s of the restart; Studio's own "start stream" button did not. Don't restart
 the bot or rotate the stream key as a generic fix.
 
-**Alerts.** Prepared as local conditions only (no external destination is
-approved): `status.json` older than 10 s; `encoder.health != ok` for > 2 min;
-`state == HOLDING`; `holdingAssetsMissing` non-empty; `NRestarts` rising.
-`soak-sample.mjs` records all of them.
+**Alerts.** The streamer evaluates its own alert conditions (see
+[Alerting](#alerting)). `soak-sample.mjs` still records the raw signals
+(`status.json` age, `encoder.health`, `state`, `holdingAssetsMissing`,
+`NRestarts`) for qualification.
+
+## Alerting
+
+Source: `alerts.mjs` (incident book, sink, readers), `frame-watch.mjs`
+(frame check, daily snapshot) and `stream-health.mjs` (conditions, restart
+counting, the guarded facade `stream.mjs` calls once a second). It is
+advisory: `createStreamHealth` never throws, every call is wrapped, and if
+the state directory can't be written it logs `health checks unavailable` and
+does nothing. The stream doesn't depend on any of it.
+
+**Conditions.**
+
+| Condition | Raised when | Recovered when |
+|---|---|---|
+| `service-restarting` | ≥ 3 unplanned starts of the service in 30 min | fewer than 3 in the last 30 min |
+| `encoder-exhausted` | the encoder used up its restart budget (raised just before the service exits 1) | the encoder is healthy for 5 min (in a later process) |
+| `output-stalled` | `encoder.health != ok` (no ffmpeg progress, input blocked, down or restarting) for 10 min | healthy for 2 min |
+| `not-live` | not LIVE for 10 min; the operator's MAINTENANCE latch doesn't count | LIVE (or latched) for 2 min |
+| `picture-frozen` | while LIVE, every frame sample for 15 min matches the first (≤ 0.2 % of thumbnail pixels moved more than 6 grey levels) | changed, or not live, for 2 min |
+| `picture-black` | while LIVE, for 3 min: the whole frame uniform (any colour), dark and flat, or the game area pure black | the same, 2 min |
+| `holding-assets-missing` | a holding card fell back to the embedded card | the assets load (next start) |
+
+YouTube ingest itself isn't observable from Maia (no credentials); ffmpeg
+progress is the closest local signal, and an uplink loss shows up as
+`encoder-exhausted`, then `service-restarting` (the encoder budget runs out
+in about 3 min, the service exits 1 and systemd restarts it).
+
+**No storms.** A condition must hold for its window before one `alert`
+event, and must stay clear for its clear window before one `recovered` note
+(with the same `id`). The book is persisted in `alerts-state.json`, so an
+incident that outlives a service restart (a crash loop, an exhausted encoder)
+is not raised again by the next process. The push hook is also capped at 6
+deliveries an hour; past that, events are still recorded with
+`"hook":"rate-limited"`.
+
+**Time.** Durations use CLOCK_MONOTONIC (`process.hrtime`), which every
+process of one boot shares, so a pending condition carries across a crash
+restart (the gap counts as an outage) without trusting the wall clock. After a
+clean stop (exit 0) or a reboot, pending onsets are dropped, so planned
+downtime never becomes an alert; open incidents stay open.
+
+**Restart counting.** `lifecycle.jsonl` (last 100 records) gets a `start`
+record at start-up and a `stop` record with the exit code from the process's
+`exit` handler. A start not preceded by a clean stop is unplanned: a crash, an
+OOM or `SIGKILL`, or the encoder budget giving up (exit 1). An operator's
+`systemctl --user restart` exits 0 and isn't counted. This is used instead of
+systemd's `NRestarts`, which needs a `systemctl` call, resets on a manual
+restart and can't tell a crash from a deliberate stop. Across a reboot the
+window falls back to wall-clock time.
+
+**Frame check.** Once a minute while LIVE, the current live JPEG is decoded by
+a short-lived `ffmpeg` (the stream runtime has no image decoder; the
+`canvas` package is the bot's) into a 64×36 greyscale thumbnail, about 2 KB.
+That costs about one small ffmpeg process a minute. Leaving LIVE forgets the
+evidence, since the holding card is still by design. The first live sample at
+or after 12:00 local each day is kept as `snapshots/frame-YYYY-MM-DD.jpg`
+(newest 14 kept) for a person to glance at. The stream picture is public, but
+the files stay in the private state directory.
+
+**Delivery.** No external destination is approved, so every event goes to:
+
+- `alerts.jsonl` in the state directory (append-only, 0600, rotates to
+  `alerts.jsonl.1` past 256 KB);
+- the journal, as a `stream alert` line;
+- `status.json` → `alerts` (open incidents, the last event, restarts in the
+  window, frame-check stats), and `streamctl status` prints `open alerts:`
+  from `alerts-state.json`, which is right even while the streamer is down;
+- `streamctl alerts [n]`: the last n events and the open incidents.
+
+Optional push hook, **unset by default**: `STREAM_ALERT_COMMAND`, a command
+run with `/bin/sh -c`, one event per run as JSON on stdin. Runs are queued
+one at a time (at most 10 waiting), killed after 10 s and never awaited by
+the stream (shutdown waits up to 5 s for a pending one). The hook's
+environment has no variable whose name contains KEY, SECRET or TOKEN, and its
+output is discarded; only its exit status is logged. To wire one up later
+(after the owner picks a destination), use a drop-in, for example:
+
+```ini
+# ~/.config/systemd/user/cobblebob-stream.service.d/alerts.conf
+[Service]
+Environment="STREAM_ALERT_COMMAND=curl -fsS -m 8 -H 'Title: CobbleBob stream' --data-binary @- https://<push service>/<topic>"
+```
+
+An event looks like:
+
+```json
+{"time":"…","kind":"alert","condition":"not-live","id":"not-live-20261103T045046","summary":"The broadcast has not shown the live world for 10 minutes.","sinceSeconds":600,"detail":{"state":"holding"}}
+```
+
+**Privacy.** Summaries are fixed strings. `detail` passes an allowlist:
+known keys only, holding finite numbers, booleans, lowercase reason codes
+(`[a-z0-9-]`) or short lists of them. No stream key, server address,
+coordinates or free text can reach an alert; tests feed canaries for each.
 
 ## Privacy
 
@@ -284,12 +378,13 @@ Pre-deployment runtime (2026-11-02, recorded before this change):
 `cobblebob-stream.service` NRestarts=0. Rollback copies are kept in
 `~/.local/share/cobblebob-stream.rollback-<date>/`.
 
-Deploy (from Zeus, after committing):
+Deploy (from Zeus, after committing). Since the health checks, the runtime
+also needs `alerts.mjs`, `frame-watch.mjs` and `stream-health.mjs`:
 
 ```sh
 scripts/deploy-maia                                     # bot: adds serverObservationAgeMs
 ssh maia 'cp -a ~/.local/share/cobblebob-stream ~/.local/share/cobblebob-stream.rollback-$(date +%F)'
-cd tools/stream && scp stream.mjs viewer-health.mjs broadcast-state.mjs bot-health.mjs encoder.mjs holding.mjs holding-fallback.mjs publisher.mjs redact.mjs renderer.mjs streamctl.mjs soak-sample.mjs maia:.local/share/cobblebob-stream/
+cd tools/stream && scp stream.mjs viewer-health.mjs broadcast-state.mjs bot-health.mjs encoder.mjs holding.mjs holding-fallback.mjs publisher.mjs redact.mjs renderer.mjs streamctl.mjs soak-sample.mjs alerts.mjs frame-watch.mjs stream-health.mjs maia:.local/share/cobblebob-stream/
 ssh maia 'mkdir -p ~/.local/share/cobblebob-stream/assets'
 scp assets/holding-{starting,reconnecting,break}.jpg maia:.local/share/cobblebob-stream/assets/
 scp cobblebob-stream.service maia:.config/systemd/user/

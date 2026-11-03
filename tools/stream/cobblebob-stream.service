@@ -1,8 +1,9 @@
 # User unit: streams the public broadcast page (/broadcast on :3003) to YouTube Live. Outbound only.
 # Install: tools/stream/install.sh (copies stream.mjs into ~/.local/share/cobblebob-stream)
 # Key: one line in ~/.config/cobblebob-stream/stream.key (0600), never in this file.
-# Private state (status.json, transitions.jsonl, maintenance latch): ~/.local/state/cobblebob-stream
-# Operator control: node ~/.local/share/cobblebob-stream/streamctl.mjs status|hold|auto|reconnect-encoder
+# Private state (status.json, transitions.jsonl, alerts.jsonl, snapshots/, maintenance latch): ~/.local/state/cobblebob-stream
+# Operator control: node ~/.local/share/cobblebob-stream/streamctl.mjs status|hold|auto|reconnect-encoder|alerts
+# Optional alert hook (unset by default): a drop-in with Environment=STREAM_ALERT_COMMAND=... gets each alert as JSON on stdin
 [Unit]
 Description=CobbleBob YouTube stream
 After=blockhead.service network-online.target

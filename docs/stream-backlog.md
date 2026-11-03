@@ -50,6 +50,20 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
+## Done: local health checks (2026-11-03, not deployed)
+
+The streamer now raises its own alerts: the service restarting repeatedly
+(counted across process lifetimes in `lifecycle.jsonl`), the encoder budget
+running out, no encoder progress or no live world for 10 minutes, and a
+frozen or black live picture (a 64×36 thumbnail decoded by ffmpeg once a
+minute). One alert per incident plus a "recovered" note, persisted across
+restarts. It keeps one live frame a day (14 kept). Alerts go to
+`alerts.jsonl`, the journal, `streamctl status` and the new `streamctl alerts`.
+An optional `STREAM_ALERT_COMMAND` hook is unset: **no push destination has been
+chosen yet; the owner needs to pick one.** See
+[stream-resilience.md](stream-resilience.md#alerting). Deploying it needs three
+new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
+
 ## Backlog
 
 - **Picture-in-picture.** A small second camera: an overhead view of home,
@@ -75,11 +89,9 @@ What we learned on Maia:
 - **Background music.** Mix quiet royalty-free/CC0 tracks into the
   currently silent audio track (ffmpeg `-stream_loop` over a playlist).
   Check the licenses for YouTube Content ID.
-- **Health checks.** Send an alert (push notification) if the stream service
-  restarts repeatedly or YouTube ingest drops for more than about 10
-  minutes. Add a daily frame snapshot to catch a frozen or black picture.
-  The local alert conditions are listed in stream-resilience.md; no external
-  destination has been approved yet.
+- **Health checks: push destination.** The local half is done (below). The
+  owner still needs to pick a push destination (ntfy, Pushover, email, …)
+  and set `STREAM_ALERT_COMMAND` in a unit drop-in.
 
 Constraints: keep Maia private (outbound only), keep the stream's RAM within the
 unit's `MemoryMax`, and never show coordinates, the server address or owner-only
