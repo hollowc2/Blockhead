@@ -374,14 +374,28 @@ run with `/bin/sh -c`, one event per run as JSON on stdin. Runs are queued
 one at a time (at most 10 waiting), killed after 10 s and never awaited by
 the stream (shutdown waits up to 5 s for a pending one). The hook's
 environment has no variable whose name contains KEY, SECRET or TOKEN, and its
-output is discarded; only its exit status is logged. To wire one up later
-(after the owner picks a destination), use a drop-in, for example:
+output is discarded; only its exit status is logged.
+
+**On Maia, alerts go to Telegram** (since 2026-11-03), through a dedicated bot
+and the owner's private chat, via `alert-telegram.mjs`:
 
 ```ini
 # ~/.config/systemd/user/cobblebob-stream.service.d/alerts.conf
 [Service]
-Environment="STREAM_ALERT_COMMAND=curl -fsS -m 8 -H 'Title: CobbleBob stream' --data-binary @- https://<push service>/<topic>"
+Environment="STREAM_ALERT_COMMAND=/usr/bin/node %h/.local/share/cobblebob-stream/alert-telegram.mjs"
 ```
+
+The bot token and chat ID live in `~/.config/cobblebob-stream/telegram.env`
+(0600; the script refuses a group/world-readable file). It is a file and not
+the unit environment because the hook drops variables naming a TOKEN. Set it
+up, or replace the bot, by running `bash tools/stream/telegram-setup.sh` on
+Maia from the shared checkout: it asks for the @BotFather token without
+echoing it, waits for a private message to the bot to learn the chat ID,
+writes the file and sends a test alert (`node alert-telegram.mjs --test`
+sends another). Messages carry only a fixed label per condition and a
+duration in minutes; event `summary` and `detail` are never forwarded.
+A missing config or a Telegram refusal just fails the hook (logged as its
+exit status); the alert is still in `alerts.jsonl`.
 
 An event looks like:
 
@@ -530,7 +544,7 @@ music and clips `music.mjs` and `clips.mjs`:
 ```sh
 scripts/deploy-maia                                     # bot: adds serverObservationAgeMs
 ssh maia 'cp -a ~/.local/share/cobblebob-stream ~/.local/share/cobblebob-stream.rollback-$(date +%F)'
-cd tools/stream && scp stream.mjs viewer-health.mjs broadcast-state.mjs bot-health.mjs encoder.mjs holding.mjs holding-fallback.mjs publisher.mjs redact.mjs renderer.mjs streamctl.mjs soak-sample.mjs alerts.mjs frame-watch.mjs stream-health.mjs music.mjs clips.mjs maia:.local/share/cobblebob-stream/
+cd tools/stream && scp stream.mjs viewer-health.mjs broadcast-state.mjs bot-health.mjs encoder.mjs holding.mjs holding-fallback.mjs publisher.mjs redact.mjs renderer.mjs streamctl.mjs soak-sample.mjs alerts.mjs frame-watch.mjs stream-health.mjs music.mjs clips.mjs alert-telegram.mjs maia:.local/share/cobblebob-stream/
 ssh maia 'mkdir -p ~/.local/share/cobblebob-stream/assets'
 scp assets/holding-{starting,reconnecting,break}.jpg maia:.local/share/cobblebob-stream/assets/
 scp cobblebob-stream.service maia:.config/systemd/user/

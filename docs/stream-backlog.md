@@ -84,8 +84,7 @@ frozen or black live picture (a 64×36 thumbnail decoded by ffmpeg once a
 minute). One alert per incident plus a "recovered" note, persisted across
 restarts. It keeps one live frame a day (14 kept). Alerts go to
 `alerts.jsonl`, the journal, `streamctl status` and the new `streamctl alerts`.
-An optional `STREAM_ALERT_COMMAND` hook is unset: **no push destination has been
-chosen yet; the owner needs to pick one.** See
+Alerts are pushed to Telegram through `STREAM_ALERT_COMMAND` and `alert-telegram.mjs`. See
 [stream-resilience.md](stream-resilience.md#alerting). Deploying it needs three
 new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
 
@@ -163,9 +162,7 @@ and a new streamer with an old page sees no `data-offline` and does the same.
 
 ## Backlog
 
-- **Health checks: push destination.** The local half is done (above). The
-  owner still needs to pick a push destination (ntfy, Pushover, email, …)
-  and set `STREAM_ALERT_COMMAND` in a unit drop-in.
+Nothing left: alerts go to Telegram (see [stream-resilience.md](stream-resilience.md#alerting)).
 
 Constraints: keep Maia private (outbound only), keep the stream's RAM within the
 unit's `MemoryMax`, and never show coordinates, the server address or owner-only
