@@ -186,6 +186,12 @@ interruptions and 30.6 fps.
 `clips.mjs`. **Off by default** (`STREAM_CLIPS=on` to enable), because it
 changes the encoder's output topology.
 
+**On Maia it is on** since 2026-11-03, through the drop-in
+`~/.config/systemd/user/cobblebob-stream.service.d/clips.conf`
+(`Environment=STREAM_CLIPS=on`). After enabling it the stream unit sat at about
+1.66 GB against `MemoryMax=2500M`, the encoder stayed healthy and YouTube kept
+playing. To turn it off, delete the drop-in, `daemon-reload` and restart the unit.
+
 | Env | Default | |
 |---|---|---|
 | `STREAM_CLIPS` | off | `on` adds the segment slave and cuts clips |

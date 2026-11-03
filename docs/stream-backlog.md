@@ -50,7 +50,7 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
-## Done: more public thinking (2026-11-02, not yet deployed)
+## Done: more public thinking (2026-11-03, deployed to Maia at 713f3a6)
 
 The director and goal-driver prompts (`src/llm/prompt.ts`) now ask for an
 optional `"spectator"` field: one short, friendly, first-person sentence (at
@@ -75,7 +75,7 @@ spectator line goes through every check a rationale does
 Still to measure on Maia: how often the model writes the line, and how
 often it passes the filter, compared with the 3% of rationales that do.
 
-## Done: local health checks (2026-11-03, not deployed)
+## Done: local health checks (2026-11-03, deployed to Maia at 713f3a6)
 
 The streamer now raises its own alerts: the service restarting repeatedly
 (counted across process lifetimes in `lifecycle.jsonl`), the encoder budget
@@ -89,7 +89,7 @@ chosen yet; the owner needs to pick one.** See
 [stream-resilience.md](stream-resilience.md#alerting). Deploying it needs three
 new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
 
-## Done: camera rotation and picture-in-picture (2026-11-03, not yet deployed)
+## Done: camera rotation and picture-in-picture (2026-11-03, deployed to Maia at 713f3a6)
 
 - **Camera rotation.** The scene machine (`broadcast-scenes.mjs`) also picks
   the shot, and the page sends it to the viewer as a `bob-cam` event; the
@@ -114,7 +114,7 @@ new runtime modules (`alerts.mjs`, `frame-watch.mjs`, `stream-health.mjs`).
   away from home; a new home drops it. A second live renderer (his eyes
   beside follow) is still out of reach on RAM.
 
-## Done: background music and clips (2026-11-03, built locally, not deployed)
+## Done: background music and clips (2026-11-03, deployed to Maia at 713f3a6)
 
 See [stream-resilience.md](stream-resilience.md#background-music).
 
@@ -132,7 +132,7 @@ See [stream-resilience.md](stream-resilience.md#background-music).
   picture becomes a 35–75 s MP4 in `~/.local/state/cobblebob-stream/clips/`,
   capped at 30 clips / 600 MB and 12 an hour. Nothing is uploaded.
 
-## Done: offline scene and durability bars (2026-11-03, not yet deployed)
+## Done: offline scene and durability bars (2026-11-03, deployed to Maia at 713f3a6)
 
 - **Offline scene.** While the bot answers but Bob is disconnected, the page
   sets `data-offline` on the frame and covers the game with a card: "CobbleBob
