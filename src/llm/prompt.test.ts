@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { SkillSuccess } from "../memory/skills.js";
 import type { LlmMessage } from "./client.js";
 import type { StateSnapshot } from "./context.js";
-import { buildGoalDecisionMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
+import { buildDirectorMessages, buildGoalDecisionMessages, buildMessages, fewShotsFromSkills } from "./prompt.js";
 import { NextGoalActionSchema } from "./schemas.js";
 
 function success(name: string, parameters: Record<string, unknown>): SkillSuccess {
@@ -127,6 +127,18 @@ test("buildGoalDecisionMessages carries the objective context and the closed act
   assert.match(user, /"abandon"/);
   assert.match(user, /"ensure_item"/);
   assert.match(user, /Current state:/);
+});
+
+test("director and goal prompts ask for a spectator line before the live state; owner prompts don't", () => {
+  for (const messages of [buildDirectorMessages(SNAPSHOT, "idle"), buildGoalDecisionMessages(SNAPSHOT, "goal")]) {
+    const user = messages[1]!.content;
+    const ask = user.indexOf('Also add "spectator"');
+    assert.ok(ask > 0, "asks for the line");
+    assert.ok(ask < user.indexOf("Current state:"), "static text stays in the cached prefix");
+    assert.match(user, /No numbers, coordinates/);
+  }
+  const owner = buildMessages(SNAPSHOT, "[]").map((message) => message.content).join("\n");
+  assert.doesNotMatch(owner, /spectator/, "owner-instruction thoughts never go public; don't spend tokens on them");
 });
 
 test("NextGoalActionSchema accepts a progress task, complete, and abandon — and rejects free actions", () => {

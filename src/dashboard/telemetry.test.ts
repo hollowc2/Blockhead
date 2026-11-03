@@ -197,7 +197,7 @@ test("gathers broadcast inputs: vitals, decisions, the config model label and ev
     decider: {
       activity: { thinking: false, callType: null, startedAt: null },
       lastCall: { at: 1_000, latencyMs: 400, tool: "unknown", rationale: null, success: false, error: "down" },
-      lastDecision: { at: 500, latencyMs: 812, tool: "collect_resource", rationale: "Gather wood.", callType: "background_director" },
+      lastDecision: { at: 500, latencyMs: 812, tool: "collect_resource", rationale: "Gather wood.", spectator: "Chopping some trees.", callType: "background_director" },
       decisionsSince: (at: number) => { since = at; return 12; },
     } as never,
     broadcast: { vitals: () => [{ at: "2026-01-01T00:00:00.000Z", health: 20, hunger: 18 }], names: () => ["Barnabyisbig", "LeftEarlier"] },
@@ -205,7 +205,7 @@ test("gathers broadcast inputs: vitals, decisions, the config model label and ev
   const inputs = snapshot.broadcast!;
   equal(since, 3_600_000);
   equal(inputs.decisionsLastHour, 12);
-  deepStrictEqual(inputs.lastDecision, { at: "1970-01-01T00:00:00.500Z", latencyMs: 812, tool: "collect_resource", callType: "background_director", rationale: "Gather wood." });
+  deepStrictEqual(inputs.lastDecision, { at: "1970-01-01T00:00:00.500Z", latencyMs: 812, tool: "collect_resource", callType: "background_director", rationale: "Gather wood.", spectator: "Chopping some trees." });
   equal(inputs.modelLabel, "Qwen3.5 9B");
   deepStrictEqual(inputs.vitals, [{ at: "2026-01-01T00:00:00.000Z", health: 20, hunger: 18 }]);
   const terms = inputs.privateTerms.map((term) => term.toLowerCase());

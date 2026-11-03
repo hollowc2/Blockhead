@@ -50,6 +50,31 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
+## Done: more public thinking (2026-11-02, not yet deployed)
+
+The director and goal-driver prompts (`src/llm/prompt.ts`) now ask for an
+optional `"spectator"` field: one short, friendly, first-person sentence (at
+most 12 words) with no numbers, coordinates, directions, names or places.
+The bubble shows it in preference to the rationale, and falls back to the
+rationale and then the fixed phrase. The filter is unchanged, and the
+spectator line goes through every check a rationale does
+(`public-thinking.ts`).
+
+- **Cheap.** The instruction is static text before the live state, so
+  llama.cpp's prompt cache covers it, and the line adds about 15 output
+  tokens. Owner-instruction prompts don't ask for it, because those
+  thoughts never go public.
+- **Can't break parsing.** The schema field never fails validation
+  (`schemas.ts`). A line that is missing, not text, blank or over 160
+  characters becomes null without a repair retry. `spectatorLine` and
+  `spectator_line` are accepted too, and a line nested inside the action is
+  lifted out.
+- **Private.** The line is kept on `lastDecision` only, not on `lastCall`,
+  which owner status copies whole.
+
+Still to measure on Maia: how often the model writes the line, and how
+often it passes the filter, compared with the 3% of rationales that do.
+
 ## Backlog
 
 - **Picture-in-picture.** A small second camera: an overhead view of home,
@@ -66,9 +91,6 @@ What we learned on Maia:
   deliberately fixed copy. A richer offline state with the last story
   entries would have to come from the page, while the bot is up but Bob is
   disconnected.
-- **More public thinking.** Prompt the model for a short spectator-facing
-  line with no numbers or places, instead of relaxing the filter, so the
-  bubble shows real reasoning more often.
 - **Durability bars** on the equipment hotbar. This needs a redacted durability
   field.
 - **Clips/highlights.** Cut clips automatically around event banners.

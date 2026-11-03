@@ -22,6 +22,27 @@ export const AgentDecisionSchema = z.object({
 
 export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
 
+/** Longest spectator line kept; a longer one ignored the "short sentence" instruction. */
+export const SPECTATOR_MAX_CHARS = 160;
+
+/** A usable spectator line, or undefined for anything else (absent, not text, blank, too long). */
+export function spectatorLine(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const line = value.replace(/\s+/g, " ").trim();
+  return line === "" || line.length > SPECTATOR_MAX_CHARS ? undefined : line;
+}
+
+/**
+ * The optional one-line, viewer-facing summary the director and goal driver
+ * add for the stream's thinking bubble. It never fails validation: junk is
+ * dropped to undefined, so a bad line can't cost a repair retry, and the
+ * bubble falls back to the rationale or a fixed phrase. The public filter
+ * (dashboard/public-thinking.ts) still judges every line that is kept.
+ * Owner-instruction decisions don't ask for one: their thoughts never go
+ * public.
+ */
+const SpectatorField = z.unknown().transform(spectatorLine).optional();
+
 /**
  * The dispatcher-capable background task vocabulary, shared by the director
  * (`NextTaskSchema`) and the goal driver (`NextGoalActionSchema`). Keep this
@@ -55,6 +76,7 @@ const DIRECTOR_TASK_DEFS = [
 export const NextTaskSchema = z.object({
   task: z.discriminatedUnion("type", [...DIRECTOR_TASK_DEFS]),
   rationale: z.string().max(300).optional(),
+  spectator: SpectatorField,
 });
 
 export type NextTaskDecision = z.infer<typeof NextTaskSchema>;
@@ -92,6 +114,7 @@ export const NextGoalActionSchema = z.object({
     z.object({ type: z.literal("abandon") }),
   ]),
   rationale: z.string().max(300).optional(),
+  spectator: SpectatorField,
 });
 
 export type NextGoalActionDecision = z.infer<typeof NextGoalActionSchema>;

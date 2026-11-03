@@ -3,10 +3,12 @@ import { stripCoordinates } from "./story.js";
 import type { LlmDecisionType } from "./types.js";
 
 /**
- * The public thinking bubble: the model's latest rationale, or a fixed
- * phrase. Policy (owner decision, 2026-11-02) is scrub + reject-on-doubt:
- * the whole rationale must pass every check below or it is replaced by the
- * fixed phrase for the task type. It is never partially scrubbed, because a
+ * The public thinking bubble: the model's latest spectator line, else its
+ * rationale, else a fixed phrase. Policy (owner decision, 2026-11-02) is
+ * scrub + reject-on-doubt: the whole line must pass every check below or the
+ * next candidate is tried, ending at the fixed phrase for the task type.
+ * The spectator line is a short sentence the model writes for viewers
+ * (llm/prompt.ts); it gets exactly the same checks as a rationale. It is never partially scrubbed, because a
  * scrubber that removes the one leak it knows about leaves the ones it
  * doesn't. Only cosmetic changes survive: whitespace, snake_case item and
  * tool names written with spaces, and the length cap.
@@ -141,16 +143,31 @@ export function capAtWord(text: string, max = THINKING_MAX_CHARS): string | null
 
 export interface ThoughtInput {
   rationale: string | null | undefined;
+  /** The model's viewer-facing line, preferred over the rationale when it passes. */
+  spectator?: string | null | undefined;
   tool: string | null | undefined;
   callType: LlmDecisionType | null | undefined;
   privateTerms: readonly string[];
 }
 
-/** The rationale if it passes every check, otherwise the fixed phrase for the task type. */
+/**
+ * The spectator line if it passes every check, else the rationale if it
+ * does, otherwise the fixed phrase for the task type. Owner-instruction
+ * thoughts are always the fixed phrase.
+ */
 export function publicThought(input: ThoughtInput): string {
   const fallback = fallbackThought(input.tool, input.callType);
-  if (input.callType === "owner_instruction" || typeof input.rationale !== "string") return fallback;
-  if (thinkingRejection(input.rationale, input.privateTerms) !== null) return fallback;
-  const display = normalize(input.rationale).replace(/[a-z]+(?:_[a-z]+)+/g, (token) => token.replace(/_/g, " "));
-  return capAtWord(display) ?? fallback;
+  if (input.callType === "owner_instruction") return fallback;
+  for (const candidate of [input.spectator, input.rationale]) {
+    const shown = displayable(candidate, input.privateTerms);
+    if (shown !== null) return shown;
+  }
+  return fallback;
+}
+
+/** The text as the bubble shows it, or null when any check doubts it or it can't be cut to fit. */
+function displayable(text: string | null | undefined, privateTerms: readonly string[]): string | null {
+  if (typeof text !== "string" || thinkingRejection(text, privateTerms) !== null) return null;
+  const display = normalize(text).replace(/[a-z]+(?:_[a-z]+)+/g, (token) => token.replace(/_/g, " "));
+  return capAtWord(display);
 }

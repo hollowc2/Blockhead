@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buildDirectorMessages, buildGoalDecisionMessages } from "../llm/prompt.js";
 import { loadPromptAssets } from "../llm/prompts.js";
 import { capAtWord, fallbackThought, publicThought, thinkingRejection, THINKING_MAX_CHARS, type ThinkingRejection } from "./public-thinking.js";
 
@@ -124,6 +125,41 @@ test("the shipped prompt examples' rationales pass", () => {
 test("owner-instruction rationales never go public: they paraphrase private chat", () => {
   assert.equal(think("Approach the owner.", "come_to_player", "owner_instruction"), "Working out what the owner asked for…");
   assert.equal(think(null, "respond", "owner_instruction"), "Working out what the owner asked for…");
+});
+
+const thinkWith = (spectator: string | null | undefined, rationale: string | null, callType: "background_director" | "goal_decision" | "owner_instruction" = "background_director"): string =>
+  publicThought({ spectator, rationale, tool: "collect_resource", callType, privateTerms: TERMS });
+/** The real rationale shape that fails the filter ~97% of the time. */
+const COUNTING = "The goal requires the torches stockpile to reach 128. The current state shows the stockpile is at 66.";
+
+test("a clean spectator line is shown in preference to the rationale", () => {
+  assert.equal(thinkWith("Chopping trees so I can make more torches.", COUNTING), "Chopping trees so I can make more torches.");
+  assert.equal(thinkWith("Chopping trees so I can make more torches.", "Gather logs and deposit them at home."), "Chopping trees so I can make more torches.");
+  assert.equal(thinkWith("  Smelting   some iron_ingot bars. ", null, "goal_decision"), "Smelting some iron ingot bars.");
+});
+
+test("a doubtful spectator line gets the same checks and falls back to the rationale, then the fixed phrase", () => {
+  for (const [line] of BAD) {
+    assert.equal(thinkWith(line, "Gather logs and deposit them at home."), "Gather logs and deposit them at home.", line);
+    assert.equal(thinkWith(line, COUNTING), "Deciding what to gather next…", line);
+    assert.equal(thinkWith(line, null), "Deciding what to gather next…", line);
+  }
+  // Absent spectator lines leave the old behavior unchanged.
+  assert.equal(thinkWith(undefined, "Gather logs and deposit them at home."), "Gather logs and deposit them at home.");
+  assert.equal(thinkWith(null, COUNTING), "Deciding what to gather next…");
+  assert.equal(thinkWith("x".repeat(200), "Gather wood."), "Gather wood.", "uncuttable line: next candidate");
+});
+
+test("owner-instruction thoughts stay the fixed phrase even with a clean spectator line", () => {
+  assert.equal(thinkWith("Fetching some wood for a friend.", "Approach the owner.", "owner_instruction"), "Working out what the owner asked for…");
+});
+
+test("the spectator examples the prompts teach pass the filter", () => {
+  const snapshot = {} as Parameters<typeof buildDirectorMessages>[0];
+  const prompts = [...buildDirectorMessages(snapshot, "idle"), ...buildGoalDecisionMessages(snapshot, "goal")].map((m) => m.content).join("\n");
+  const lines = [...prompts.matchAll(/"spectator":"([^"]+)"/g)].map((match) => match[1]!);
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.equal(thinkingRejection(line, TERMS), null, line);
 });
 
 test("the fixed phrase follows the task type", () => {

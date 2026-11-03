@@ -243,6 +243,25 @@ test("thinking passes a clean rationale whole and replaces any doubtful one with
   assert.deepEqual(toPublicViewerState(snapshot).vitals, []);
 });
 
+test("thinking prefers a clean spectator line and filters it exactly like a rationale", () => {
+  const snapshot = broadcastSnapshot();
+  const decision = snapshot.broadcast!.lastDecision!;
+  const think = (spectator: string | null | undefined, rationale: string | null = HOSTILE_RATIONALE, callType = decision.callType): string | undefined => {
+    snapshot.broadcast = { ...snapshot.broadcast!, lastDecision: { ...decision, rationale, spectator, callType } };
+    return toPublicViewerState(snapshot).thinking?.text;
+  };
+  assert.equal(think("Mining some iron for better tools."), "Mining some iron for better tools.");
+  assert.equal(think("Mining iron for better tools.", "Smelt the carried iron."), "Mining iron for better tools.");
+  for (const line of [HOSTILE_RATIONALE, "Mining iron for ownersecretname.", "Heading to the secret-host", "Going to the chest north of home.", "Digging down to 12 for diamonds.", "Waving at OwnerSecretName!"]) {
+    assert.equal(think(line), "Deciding what to gather next…", line);
+    assert.equal(think(line, "Smelt the carried iron."), "Smelt the carried iron.", line);
+    assertNoBroadcastLeak(toPublicViewerState(snapshot));
+  }
+  assert.equal(think("Mining some iron.", HOSTILE_RATIONALE, "owner_instruction"), "Working out what the owner asked for…");
+  snapshot.goal = { ...snapshot.goal!, source: "owner" as never };
+  assert.equal(think("Mining some iron.", HOSTILE_RATIONALE, "goal_decision"), "Working out what the owner asked for…");
+});
+
 test("vitals keep at most an hour of whole-number samples and nothing else", () => {
   const snapshot = broadcastSnapshot();
   const vitals = Array.from({ length: 75 }, (_, minute) => ({

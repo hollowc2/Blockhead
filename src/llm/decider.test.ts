@@ -142,3 +142,38 @@ test("a model failure publishes bounded background backoff; explicit resume clea
   maker.resume();
   equal(maker.backgroundRetryAt, 0);
 });
+
+test("the spectator line is read, normalized and recorded on the decision, never on lastCall", async () => {
+  const maker = decider(async () => JSON.stringify({ task: { type: "stockpile_maintenance", kind: "food" }, rationale: "Food is at 3 of 16.", spectator: "  Hunting for  some food. " }));
+  await maker.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle");
+  equal(maker.lastDecision?.spectator, "Hunting for some food.");
+  equal(maker.lastDecision?.rationale, "Food is at 3 of 16.");
+  equal(maker.lastCall !== null && "spectator" in maker.lastCall, false, "owner status copies lastCall whole");
+  const goal = decider(async () => JSON.stringify({ action: { type: "upgrade_equipment" }, spectator: "Making better tools." }));
+  await goal.decideGoalAction({ from: "system", instruction: "next" }, ctx, "goal");
+  equal(goal.lastDecision?.spectator, "Making better tools.");
+});
+
+test("a missing or junk spectator line never costs a retry and records null", async () => {
+  const junk: readonly unknown[] = [undefined, null, 42, { text: "hi" }, ["a"], "", "   ", "x ".repeat(120)];
+  for (const spectator of junk) {
+    let calls = 0;
+    const maker = decider(async () => { calls++; return JSON.stringify({ task: { type: "wait" }, rationale: "Nothing to do.", spectator }); });
+    equal((await maker.decideNextTask({ from: "system", instruction: "next" }, ctx, "idle")).task.type, "wait");
+    equal(calls, 1, JSON.stringify(spectator));
+    equal(maker.lastDecision?.spectator, null, JSON.stringify(spectator));
+    equal(maker.lastDecision?.rationale, "Nothing to do.");
+  }
+});
+
+test("other spellings and nested spectator lines are lifted, never mistaken for action arguments", async () => {
+  const { normalizeDecision } = await import("./decider.js");
+  const { NextGoalActionSchema, NextTaskSchema } = await import("./schemas.js");
+  const bare = NextGoalActionSchema.parse(normalizeDecision({ action: "ensure_item", item: "iron_pickaxe", quantity: 1, spectatorLine: "Making a pickaxe." }));
+  deepStrictEqual(bare, { action: { type: "ensure_item", item: "iron_pickaxe", quantity: 1 }, spectator: "Making a pickaxe." });
+  equal(NextTaskSchema.parse(normalizeDecision({ task: "wait", spectator_line: "Taking a break." })).spectator, "Taking a break.");
+  const nested = NextTaskSchema.parse(normalizeDecision({ task: { type: "collect_resource", parameters: { resource: "stone", quantity: 8 }, spectator: "Mining some stone." } }));
+  deepStrictEqual(nested, { task: { type: "collect_resource", resource: "stone", quantity: 8 }, spectator: "Mining some stone." });
+  // The top-level line wins over a nested one.
+  equal(NextTaskSchema.parse(normalizeDecision({ task: { type: "wait", spectator: "inner" }, spectator: "outer" })).spectator, "outer");
+});

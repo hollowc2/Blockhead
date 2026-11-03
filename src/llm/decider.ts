@@ -12,8 +12,12 @@ export type LlmRuntimeState = "READY" | "PAUSED" | "DEGRADED";
 const FEW_SHOT_FETCH = 8;
 export interface LlmActivity { thinking: boolean; callType: "owner_instruction" | "background_director" | "goal_decision" | null; startedAt: string | null; }
 export interface LlmCallRecord { at: number; latencyMs: number; tool: string; rationale: string | null; success: boolean; error: string | null; }
-/** A successful decision; failed calls never replace it, so the latest reasoning survives an outage. */
-export interface LlmDecisionRecord { at: number; latencyMs: number; tool: string; rationale: string | null; callType: NonNullable<LlmActivity["callType"]>; }
+/**
+ * A successful decision; failed calls never replace it, so the latest reasoning survives an outage.
+ * `spectator` is the model's optional viewer-facing line (director and goal calls only); it is
+ * kept off `lastCall`, which owner status surfaces copy whole.
+ */
+export interface LlmDecisionRecord { at: number; latencyMs: number; tool: string; rationale: string | null; spectator?: string | null; callType: NonNullable<LlmActivity["callType"]>; }
 /** Decision times kept for the hourly count; the director decides about once a minute. */
 const DECISION_WINDOW_MS = 3_600_000, MAX_DECISION_TIMES = 1_000;
 
@@ -67,7 +71,7 @@ export class DecisionMaker {
       const decision = result.decision as NextTaskDecision;
       this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
-      this.recordDecision("background_director", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale) });
+      this.recordDecision("background_director", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale), spectator: decision.spectator ?? null });
       return decision;
     });
   }
@@ -79,7 +83,7 @@ export class DecisionMaker {
       const decision = result.decision as NextGoalActionDecision;
       this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
-      this.recordDecision("goal_decision", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale) });
+      this.recordDecision("goal_decision", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale), spectator: decision.spectator ?? null });
       return decision;
     });
   }
@@ -137,7 +141,8 @@ export class DecisionMaker {
   private logResult(decision: unknown, raw: string, durationMs: number): void { this.debugLog.write({ event: "agent_decision_result", llm_response: raw, decision, duration_ms: durationMs }); }
   private recordLastCall(record: LlmCallRecord): void { this.lastCallRecord = record; }
   private recordDecision(callType: LlmDecisionRecord["callType"], call: Omit<LlmDecisionRecord, "callType">): void {
-    this.recordLastCall({ ...call, success: true, error: null });
+    const { spectator: _spectator, ...last } = call;
+    this.recordLastCall({ ...last, success: true, error: null });
     this.lastDecisionRecord = { ...call, callType };
     const now = Date.now();
     this.decisionTimes.push(now);
@@ -165,16 +170,19 @@ function repairMessages(messages: readonly LlmMessage[], raw: string, error: str
  * `"action": "upgrade_equipment"` for `"action": {"type": "upgrade_equipment"}`
  * (Qwen3.5-9B on its first goal decisions, 2026-10-05) and `reason` for
  * `rationale`. Arguments given beside a bare action name move into it.
+ * The spectator line is read under its camelCase/snake_case spellings too,
+ * and lifted out of the action when the model nests it there.
  */
 export function normalizeDecision(parsed: unknown): unknown {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
   const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  liftSpectator(out, out);
   for (const key of ["action", "task"]) {
     const value = out[key];
     if (typeof value !== "string") continue;
     const inner: Record<string, unknown> = { type: value };
     for (const [name, arg] of Object.entries(out)) {
-      if (name === key || name === "rationale" || name === "reason") continue;
+      if (name === key || name === "rationale" || name === "reason" || name === "spectator") continue;
       inner[name] = arg;
       delete out[name];
     }
@@ -193,12 +201,25 @@ export function normalizeDecision(parsed: unknown): unknown {
       delete inner[wrapper];
       for (const [name, arg] of Object.entries(nested as Record<string, unknown>)) if (inner[name] === undefined) inner[name] = arg;
     }
+    liftSpectator(inner, out);
     out[key] = inner;
   }
   if (out.rationale === undefined && typeof out.reason === "string") out.rationale = out.reason;
   delete out.reason;
   if (typeof out.rationale === "string" && out.rationale.length > 300) out.rationale = out.rationale.slice(0, 300);
   return out;
+}
+
+const SPECTATOR_KEYS = ["spectator", "spectatorLine", "spectator_line"] as const;
+
+/** Move any spelling of the spectator line from `from` to `to.spectator`; the first one found wins. */
+function liftSpectator(from: Record<string, unknown>, to: Record<string, unknown>): void {
+  for (const name of SPECTATOR_KEYS) {
+    if (!(name in from)) continue;
+    const value = from[name];
+    delete from[name];
+    if (to.spectator === undefined && value !== undefined) to.spectator = value;
+  }
 }
 
 export function extractJson(text: string): unknown {

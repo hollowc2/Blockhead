@@ -180,7 +180,7 @@ export class DashboardTelemetryCollector {
     return {
       vitals: this.source.broadcast?.vitals(now) ?? [],
       decisionsLastHour: decider?.decisionsSince?.(now - HOUR_MS) ?? 0,
-      lastDecision: decision === null ? null : { at: new Date(decision.at).toISOString(), latencyMs: decision.latencyMs, tool: decision.tool, callType: decision.callType, rationale: decision.rationale },
+      lastDecision: decision === null ? null : { at: new Date(decision.at).toISOString(), latencyMs: decision.latencyMs, tool: decision.tool, callType: decision.callType, rationale: decision.rationale, spectator: decision.spectator ?? null },
       privateTerms: dedupeTerms([...this.fixedTerms, ...online, ...(this.source.broadcast?.names() ?? [])]),
       modelLabel: this.source.config?.dashboard?.public_viewer.model_label ?? null,
     };

@@ -151,6 +151,24 @@ const DIRECTOR_TASK_DOC = [
 ].join("\n");
 
 /**
+ * The optional viewer-facing line for the stream's thinking bubble. Raw
+ * rationales rarely pass the public filter (they quote stockpile counts), so
+ * the model writes a separate short line for spectators. It is static text
+ * placed before the live state, so llama.cpp's prompt cache still covers
+ * it, and capped at a dozen words so it adds little to the reply.
+ */
+export function spectatorInstruction(example: string): string {
+  return [
+    'Also add "spectator": one short, friendly, present-tense sentence (at most 12 words) telling stream viewers what you are doing, in first person.',
+    "No numbers, coordinates, directions, distances, player names or place names. Keep the rationale as usual.",
+    `Example: ${example}`,
+  ].join("\n");
+}
+
+const DIRECTOR_SPECTATOR = spectatorInstruction(JSON.stringify({ task: { type: "stockpile_maintenance", kind: "food" }, rationale: "Food is below target.", spectator: "Hunting for some food before I get hungry." }));
+const GOAL_SPECTATOR = spectatorInstruction(JSON.stringify({ action: { type: "ensure_item", item: "iron_pickaxe", quantity: 1 }, rationale: "The goal needs an iron pickaxe.", spectator: "Making a sturdier pickaxe so I can dig deeper." }));
+
+/**
  * Assemble the director prompt (spec 4.3): strict task vocabulary plus the
  * curated situation summary. No raw world dumps — `situation` is the
  * high-signal opportunity digest the background loop already measured.
@@ -163,6 +181,8 @@ export function buildDirectorMessages(snapshot: StateSnapshot, situation: string
       content: [
         "Available tasks (choose exactly one):",
         DIRECTOR_TASK_DOC,
+        "",
+        DIRECTOR_SPECTATOR,
         "",
         "Situation:",
         situation,
@@ -211,6 +231,8 @@ export function buildGoalDecisionMessages(snapshot: StateSnapshot, context: stri
       content: [
         "Available actions (choose exactly one):",
         GOAL_ACTION_DOC,
+        "",
+        GOAL_SPECTATOR,
         "",
         "Goal:",
         context,

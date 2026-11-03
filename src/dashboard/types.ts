@@ -79,7 +79,8 @@ export interface LlmActivity {
 }
 /** One minute's vitals; null while disconnected. */
 export interface VitalsSample { at: string; health: number | null; hunger: number | null }
-export interface LlmDecisionSummary { at: string; latencyMs: number; tool: string; callType: LlmDecisionType; rationale: string | null }
+/** `spectator` is the model's optional viewer-facing line; raw model text like the rationale. */
+export interface LlmDecisionSummary { at: string; latencyMs: number; tool: string; callType: LlmDecisionType; rationale: string | null; spectator?: string | null }
 /**
  * Private inputs for the broadcast fields of the public state. They hold
  * player names and raw model text, so toPublicViewerState may read them only

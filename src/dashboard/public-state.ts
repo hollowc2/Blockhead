@@ -31,9 +31,9 @@ export interface PublicBrain {
   /** Fixed display name from config ("Qwen3.5 9B"); never the endpoint. */
   model: string | null;
 }
-/** The latest decision's rationale after the reject-on-doubt filter (public-thinking.ts). */
+/** The latest decision's spectator line or rationale after the reject-on-doubt filter (public-thinking.ts). */
 export interface PublicThinking {
-  /** At most 120 characters: the whole rationale, or a fixed phrase. Never a partial scrub. */
+  /** At most 120 characters: the whole spectator line or rationale, or a fixed phrase. Never a partial scrub. */
   text: string;
   /** When the decision was made; changes on every new decision. */
   at: string;
@@ -208,7 +208,7 @@ function publicThinking(snapshot: DashboardSnapshot, privateTerms: readonly stri
   // Goal decisions on an owner's goal paraphrase the owner's request, like owner instructions.
   const ownerGoal = snapshot.goal?.source === "owner" && snapshot.goal.status === "active";
   return {
-    text: publicThought({ rationale: decision.rationale, tool: decision.tool, callType: ownerGoal ? "owner_instruction" : decision.callType, privateTerms }),
+    text: publicThought({ rationale: decision.rationale, spectator: decision.spectator, tool: decision.tool, callType: ownerGoal ? "owner_instruction" : decision.callType, privateTerms }),
     at: new Date(Date.parse(decision.at)).toISOString(),
   };
 }
