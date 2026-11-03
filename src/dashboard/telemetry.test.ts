@@ -179,3 +179,42 @@ test("does not mutate source state while projecting", () => {
   deepStrictEqual(task, { id: "task-1", type: "wait", priority: 20, source: "system", objective: "Wait", parameters: {}, status: "active", createdAt: "2026-01-01T00:00:00.000Z" });
   ok(true);
 });
+
+test("gathers broadcast inputs: vitals, decisions, the config model label and every private term", () => {
+  const bot = { username: "CobbleBob", entity: { position: { x: 1, y: 64, z: -2 } }, players: { CobbleBob: {}, Visitor: {} }, inventory: { items: () => [] } } as unknown as Bot;
+  const config = {
+    agent: { name: "CobbleBob", owner: "Barnabyisbig" },
+    server: { host: "mc.secret-host.example", port: 25565, username: "CobbleBob" },
+    llm: { base_url: "http://llm-box.lan:8080" },
+    dashboard: { public_viewer: { model_label: "Qwen3.5 9B", interactions: { allowed_origin: "https://maia.tailceb694.ts.net", model_questions: { base_url: "http://127.0.0.1:8000" } } } },
+  } as never;
+  let since: number | null = null;
+  const snapshot = new DashboardTelemetryCollector(source({
+    config,
+    bot: () => bot,
+    nowMs: () => 7_200_000,
+    decider: {
+      activity: { thinking: false, callType: null, startedAt: null },
+      lastCall: { at: 1_000, latencyMs: 400, tool: "unknown", rationale: null, success: false, error: "down" },
+      lastDecision: { at: 500, latencyMs: 812, tool: "collect_resource", rationale: "Gather wood.", callType: "background_director" },
+      decisionsSince: (at: number) => { since = at; return 12; },
+    } as never,
+    broadcast: { vitals: () => [{ at: "2026-01-01T00:00:00.000Z", health: 20, hunger: 18 }], names: () => ["Barnabyisbig", "LeftEarlier"] },
+  })).snapshot();
+  const inputs = snapshot.broadcast!;
+  equal(since, 3_600_000);
+  equal(inputs.decisionsLastHour, 12);
+  deepStrictEqual(inputs.lastDecision, { at: "1970-01-01T00:00:00.500Z", latencyMs: 812, tool: "collect_resource", callType: "background_director", rationale: "Gather wood." });
+  equal(inputs.modelLabel, "Qwen3.5 9B");
+  deepStrictEqual(inputs.vitals, [{ at: "2026-01-01T00:00:00.000Z", health: 20, hunger: 18 }]);
+  const terms = inputs.privateTerms.map((term) => term.toLowerCase());
+  for (const term of ["barnabyisbig", "cobblebob", "visitor", "leftearlier", "mc.secret-host.example", "secret-host", "llm-box", "maia", "tailceb694", "maia.tailceb694.ts.net"]) ok(terms.includes(term), term);
+  // Short host labels would reject ordinary words ("net" in "nether").
+  for (const label of ["ts", "net", "mc", "lan"]) ok(!terms.includes(label), label);
+  equal(new Set(terms).size, terms.length, "terms are deduplicated");
+});
+
+test("broadcast inputs degrade to empty without a decider, tracker or config", () => {
+  const snapshot = new DashboardTelemetryCollector(source()).snapshot();
+  deepStrictEqual({ ...snapshot.broadcast, privateTerms: [] }, { vitals: [], decisionsLastHour: 0, lastDecision: null, privateTerms: [], modelLabel: null });
+});

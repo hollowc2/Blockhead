@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { parse } from "yaml";
+import { MinecraftConfigSchema } from "../config/schema.js";
 import type { DashboardSnapshot } from "./types.js";
 import { cachedPublicState, toPublicViewerState } from "./public-state.js";
 
@@ -36,6 +39,12 @@ test("public state is an allowlisted, redacted projection", () => {
     world: null,
     inventory: { items: [{ name: "diamond", count: 12 }], totalItems: 12 },
     equipment: null,
+    now: { label: "Taking a break between jobs.", step: null, progress: null },
+    build: null,
+    brain: { thinking: true, decisionsLastHour: 0, lastLatencyMs: null, model: null },
+    thinking: null,
+    vitals: [],
+    uptimeSeconds: 42,
   });
 });
 
@@ -93,4 +102,171 @@ test("a failed snapshot is not cached", async () => {
   await assert.rejects(state());
   fail = false;
   assert.equal((await state()).public, true);
+});
+
+/**
+ * The broadcast fields' inputs, every one of them hostile: coordinates in
+ * goal and task text, owner names in chat-derived names and build goals,
+ * hosts in errors and the model endpoint, digits in the rationale.
+ */
+const HOSTILE_RATIONALE = "Mine iron near OwnerSecretName's base at 1200 64 -950 via mc.secret-host.example";
+const broadcastSnapshot = (): DashboardSnapshot => {
+  const snapshot = secretSnapshot();
+  snapshot.goal = {
+    id: "g1", description: "Guard HomeBase at 1200 64 -950 for OwnerSecretName", source: "owner", status: "active" as never, createdAt: "2026-01-01T00:00:00.000Z",
+    currentStep: "walk to OwnerSecretName at 1200 64 -950", note: "OwnerSecretName asked", endedAt: null,
+    recentResults: [{ action: "collect_resource", outcome: "failed", message: "Error at /home/corey 1200 64 -950", at: "x" }],
+    successCriteria: [{ kind: "inventory", stockpile: null, item: "iron_ingot", min: 10, label: "carried iron_ingot >= 10 at 1200 64 -950" }],
+  };
+  snapshot.task = { id: "t2", type: "collect_resource", priority: 70, source: "owner", objective: "mine iron at 1200 64 -950 for OwnerSecretName", status: "active", createdAt: "x", startedAt: "2026-01-01T00:00:00.000Z", completedAt: null, phase: "walk to 1200 64 -950", attempts: 3, lastError: "mc.secret-host.example refused" } as never;
+  snapshot.inventory = { items: [{ name: "iron_ingot", count: 3 }], totalItems: 3 };
+  snapshot.buildProject = {
+    id: "b1", source: "user", userGoal: "Build OwnerSecretName a cottage at 1200 64 -950", origin: { x: 1200, y: 64, z: -950 }, structureType: "cottage", status: "active",
+    phase: { id: "p1", label: "walls at 1200 64 -950", status: "active", verifiedOperations: 2, totalOperations: 9 }, verifiedOperations: 42, totalOperations: 100,
+    currentShortage: { material: "glass", required: 18, available: 0 } as never, lastBlockingReason: "Need 18 glass from OwnerSecretName", blocker: "Need 18 glass; missing 18 sand at 1200 64 -950.", blueprintHash: "hash-SECRET",
+  };
+  snapshot.broadcast = {
+    vitals: [{ at: "2026-01-01T00:00:00.000Z", health: 19.6, hunger: 17.2 }, { at: "2026-01-01T00:01:00.000Z", health: null, hunger: null }],
+    decisionsLastHour: 37,
+    lastDecision: { at: "2026-01-01T00:02:00.000Z", latencyMs: 812.4, tool: "collect_resource", callType: "background_director", rationale: HOSTILE_RATIONALE },
+    privateTerms: ["OwnerSecretName", "mc.secret-host.example", "secret-host"],
+    modelLabel: "Qwen3.5 9B",
+  };
+  snapshot.process.uptimeSeconds = 4242.9;
+  return snapshot;
+};
+/** What may never appear anywhere in the public JSON built from broadcastSnapshot. */
+const BROADCAST_SECRETS = ["1200", "950", "1234", "987", "OwnerSecretName", "ownersecretname", "CobbleBob", "secret", "SECRET", "HomeBase", "/home", "10.0.0.5", "8080", "Need", "glass", "sand", "walk", "walls", "refused", "userGoal", "origin", "blocker", "endpoint", "objective", "description", "Guard"];
+const assertNoBroadcastLeak = (state: unknown): void => {
+  const body = JSON.stringify(state);
+  for (const secret of BROADCAST_SECRETS) assert.equal(body.includes(secret), false, `public state contains ${secret}`);
+};
+
+test("broadcast fields are built from templates, fixed phrases and filtered text only", () => {
+  const state = toPublicViewerState(broadcastSnapshot());
+  assert.deepEqual(state.now, { label: "Collect iron ingot · 3/10", step: "Gathering materials", progress: { done: 3, total: 10 } });
+  assert.deepEqual(state.build, { structure: "cottage", percent: 42, blocksPlaced: 42 });
+  assert.deepEqual(state.brain, { thinking: true, decisionsLastHour: 37, lastLatencyMs: 812, model: "Qwen3.5 9B" });
+  assert.deepEqual(state.thinking, { text: "Deciding what to gather next…", at: "2026-01-01T00:02:00.000Z" });
+  assert.deepEqual(state.vitals, [{ at: "2026-01-01T00:00:00.000Z", health: 20, hunger: 17 }, { at: "2026-01-01T00:01:00.000Z", health: null, hunger: null }]);
+  assert.equal(state.uptimeSeconds, 4242);
+  assertNoBroadcastLeak(state);
+});
+
+test("now never copies goal or task text and drops goal items that aren't plain registry names", () => {
+  const snapshot = broadcastSnapshot();
+  const criterion = snapshot.goal!.successCriteria[0]!;
+  for (const item of ["OwnerSecretName_gift", "ownersecretname_gift", "Dark_Knight", "diamond_1200", "mc.secret-host.example", "iron ingot at 1200 64 -950", "secret_host_loot", "village:cottage"]) {
+    snapshot.goal!.successCriteria = [{ ...criterion, item }];
+    const state = toPublicViewerState(snapshot);
+    // The unusable criterion is skipped; the build underway stands in.
+    assert.deepEqual(state.now, { label: "Build a cottage · 42%", step: "Gathering materials", progress: { done: 42, total: 100 } }, item);
+    assertNoBroadcastLeak(state);
+  }
+  snapshot.goal!.successCriteria = [
+    { kind: "inventory", stockpile: null, item: "iron_ingot", min: 3, label: "carried iron_ingot >= 3" },
+    { kind: "stockpile", stockpile: "torches", item: null, min: 128, label: "torches stockpile >= 128" },
+  ];
+  snapshot.stockpiles = { levels: { wood: 1, food: 2, fuel: 3, torches: 66 }, targets: { wood: 1, food: 1, fuel: 1, torches: 128 }, deficits: [] };
+  assert.deepEqual(toPublicViewerState(snapshot).now?.label, "Stock up torches · 66/128", "the first open criterion wins");
+  snapshot.goal!.successCriteria = [{ kind: "chest_contains", stockpile: null, item: "iron_ingot", min: 32, label: "chest at 1200,64,-950 (OwnerSecretName) holds iron_ingot >= 32" }];
+  assert.deepEqual(toPublicViewerState(snapshot).now, { label: "Store iron ingot", step: "Gathering materials", progress: null });
+  snapshot.goal!.successCriteria = [{ kind: "area_cleared", stockpile: null, item: null, min: 1, label: "area 10x10x4 at 1200,64,-950..1210,68,-940 fully cleared" }];
+  assert.equal(toPublicViewerState(snapshot).now?.label, "Clear an area");
+  // An unknown task type gets no step; no goal and no build falls back to the fixed status sentence.
+  snapshot.goal = null;
+  snapshot.buildProject = null;
+  snapshot.task = { ...snapshot.task!, type: "OwnerSecretName_custom" };
+  assert.deepEqual(toPublicViewerState(snapshot).now, { label: "Busy with chores around base.", step: null, progress: null });
+  assertNoBroadcastLeak(toPublicViewerState(snapshot));
+  snapshot.connection.connected = false;
+  assert.equal(toPublicViewerState(snapshot).now, null);
+});
+
+test("build exposes only a plain structure name, percent and blocks placed", () => {
+  const snapshot = broadcastSnapshot();
+  for (const structureType of ["OwnerSecretName's tower", "tower at 1200 64 -950", "mc.secret-host.example", "secret_host_hut", "x".repeat(40)]) {
+    snapshot.buildProject = { ...snapshot.buildProject!, structureType };
+    const state = toPublicViewerState(snapshot);
+    assert.equal(state.build?.structure, "structure", structureType);
+    assertNoBroadcastLeak(state);
+  }
+  snapshot.buildProject = { ...snapshot.buildProject!, structureType: "village:small_cottage", verifiedOperations: 140, totalOperations: 120 };
+  assert.deepEqual(toPublicViewerState(snapshot).build, { structure: "small cottage", percent: 100, blocksPlaced: 120 });
+  assert.deepEqual(Object.keys(toPublicViewerState(snapshot).build!).sort(), ["blocksPlaced", "percent", "structure"]);
+  snapshot.buildProject = { ...snapshot.buildProject!, totalOperations: 0, verifiedOperations: 0 };
+  assert.equal(toPublicViewerState(snapshot).build?.percent, 0);
+  for (const status of ["paused", "blocked", "completed", "failed", "cancelled"] as const) {
+    snapshot.buildProject = { ...snapshot.buildProject!, status };
+    assert.equal(toPublicViewerState(snapshot).build, null, status);
+  }
+  snapshot.buildProject = { ...snapshot.buildProject!, status: "active" };
+  snapshot.connection.connected = false;
+  assert.equal(toPublicViewerState(snapshot).build, null);
+});
+
+test("brain shows the configured model label only, never the endpoint or the server's model id", () => {
+  const snapshot = broadcastSnapshot();
+  for (const modelLabel of ["http://10.0.0.5:8080/v1", "secret-model@10.0.0.5", "mc.secret-host.example:8080", "a/b", "x".repeat(33), "", null]) {
+    snapshot.broadcast = { ...snapshot.broadcast!, modelLabel };
+    const state = toPublicViewerState(snapshot);
+    assert.equal(state.brain?.model, null, String(modelLabel));
+    assertNoBroadcastLeak(state);
+  }
+  snapshot.broadcast = { ...snapshot.broadcast!, lastDecision: null, decisionsLastHour: Number.NaN };
+  snapshot.llmActivity = { ...snapshot.llmActivity, thinking: false };
+  assert.deepEqual(toPublicViewerState(snapshot).brain, { thinking: false, decisionsLastHour: 0, lastLatencyMs: null, model: null });
+});
+
+test("thinking passes a clean rationale whole and replaces any doubtful one with a fixed phrase", () => {
+  const snapshot = broadcastSnapshot();
+  const decision = snapshot.broadcast!.lastDecision!;
+  const think = (rationale: string | null, callType = decision.callType, tool = decision.tool): string | undefined => {
+    snapshot.broadcast = { ...snapshot.broadcast!, lastDecision: { ...decision, rationale, callType, tool } };
+    return toPublicViewerState(snapshot).thinking?.text;
+  };
+  assert.equal(think("Smelt the carried iron into ingots using home furnace fuel."), "Smelt the carried iron into ingots using home furnace fuel.");
+  for (const rationale of [HOSTILE_RATIONALE, "Help ownersecretname", "Visit the secret-host", "Go to the chest north of home", "Return to base at 1200 64 -950", "Ask CobbleBob", "Meet xXOwnerXx", null]) {
+    assert.equal(think(rationale), "Deciding what to gather next…", String(rationale));
+  }
+  assert.equal(think("Smelt the carried iron.", "owner_instruction", "come_to_player"), "Working out what the owner asked for…", "owner requests paraphrase private chat");
+  assert.equal(think(HOSTILE_RATIONALE, "goal_decision", "build_design"), "Planning the next part of the build…");
+  assertNoBroadcastLeak(toPublicViewerState(snapshot));
+  snapshot.broadcast = { ...snapshot.broadcast!, lastDecision: { ...decision, at: "not a date" } };
+  assert.equal(toPublicViewerState(snapshot).thinking, null);
+  delete snapshot.broadcast;
+  assert.equal(toPublicViewerState(snapshot).thinking, null);
+  assert.deepEqual(toPublicViewerState(snapshot).vitals, []);
+});
+
+test("vitals keep at most an hour of whole-number samples and nothing else", () => {
+  const snapshot = broadcastSnapshot();
+  const vitals = Array.from({ length: 75 }, (_, minute) => ({
+    at: new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString(), health: 1200.4, hunger: -950, position: { x: 1200, y: 64, z: -950 }, player: "OwnerSecretName",
+  }));
+  snapshot.broadcast = { ...snapshot.broadcast!, vitals: [...vitals, { at: "OwnerSecretName", health: 1, hunger: 1 }] as never };
+  const state = toPublicViewerState(snapshot);
+  assert.equal(state.vitals?.length, 59, "the 60 most recent samples, minus the one with a bad time");
+  assert.deepEqual(state.vitals?.[0], { at: "2026-01-01T00:16:00.000Z", health: 1200, hunger: 0 });
+  assert.equal(JSON.stringify(state.vitals).includes("OwnerSecretName"), false);
+  assert.equal(JSON.stringify(state.vitals).includes("position"), false);
+});
+
+test("the model label is a short fixed display string in config, never a URL", () => {
+  const base = parse(readFileSync("config/minecraft.yaml", "utf8"));
+  assert.equal(MinecraftConfigSchema.parse(base).dashboard?.public_viewer.model_label, "Qwen3.5 9B");
+  for (const model_label of ["http://127.0.0.1:8080", "model@host", "a/b", "x".repeat(33), " leading space", ""]) {
+    base.dashboard.public_viewer.model_label = model_label;
+    assert.equal(MinecraftConfigSchema.safeParse(base).success, false, model_label);
+  }
+  delete base.dashboard.public_viewer.model_label;
+  assert.equal(MinecraftConfigSchema.parse(base).dashboard?.public_viewer.model_label, undefined);
+});
+
+test("uptime is whole, non-negative seconds", () => {
+  const snapshot = broadcastSnapshot();
+  snapshot.process.uptimeSeconds = -5;
+  assert.equal(toPublicViewerState(snapshot).uptimeSeconds, 0);
+  snapshot.process.uptimeSeconds = Number.NaN;
+  assert.equal(toPublicViewerState(snapshot).uptimeSeconds, 0);
 });

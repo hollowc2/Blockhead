@@ -73,6 +73,29 @@ export interface LlmActivity {
   lastLatencyMs: number | null;
   lastFailure: LlmFailureSummary | null;
 }
+/** One minute's vitals; null while disconnected. */
+export interface VitalsSample { at: string; health: number | null; hunger: number | null }
+export interface LlmDecisionSummary { at: string; latencyMs: number; tool: string; callType: LlmDecisionType; rationale: string | null }
+/**
+ * Private inputs for the broadcast fields of the public state. They hold
+ * player names and raw model text, so toPublicViewerState may read them only
+ * through its filters and never copies them.
+ */
+export interface BroadcastInputs {
+  /** Up to the last hour, oldest first, one sample a minute. */
+  vitals: readonly VitalsSample[];
+  decisionsLastHour: number;
+  /** The latest successful model decision; failed calls never replace it. */
+  lastDecision: LlmDecisionSummary | null;
+  /**
+   * Names and hosts public text must never contain: owner, bot, server
+   * players (whitelist, ops, usercache), the tab list, chat senders and the
+   * configured hosts. Matched case-insensitively by the public filters.
+   */
+  privateTerms: readonly string[];
+  /** Fixed display name of the model from config; never the endpoint. */
+  modelLabel: string | null;
+}
 export interface PathSummary { status: string; destination: Position | null; distance: number | null }
 export interface RecentEvent { at: string; kind: string; message: string }
 export interface RecentFailure { at: string; kind: string; message: string }
@@ -112,4 +135,6 @@ export interface DashboardSnapshot {
   jobs?: JobsSummary;
   /** Durability, enchantments, free slots and carried-versus-stored supplies. Private. */
   gear?: GearDetail | null;
+  /** Private inputs the public broadcast fields are filtered from. */
+  broadcast?: BroadcastInputs;
 }

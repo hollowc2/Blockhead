@@ -65,6 +65,21 @@ test("last-call success data is concise and complete", async () => {
   equal(typeof maker.lastCall?.latencyMs, "number");
 });
 
+test("the last decision and the hourly count survive a failed call", async () => {
+  let fail = false;
+  const maker = decider(async () => { if (fail) throw new Error("down"); return valid; }, 0);
+  equal(maker.lastDecision === null, true);
+  equal(maker.decisionsSince(0), 0);
+  await maker.decide({ from: "owner", instruction: "hello" }, ctx);
+  await maker.decide({ from: "owner", instruction: "hello" }, ctx);
+  fail = true;
+  await rejects(maker.decide({ from: "owner", instruction: "hello" }, ctx), /down/);
+  equal(maker.lastCall?.success, false);
+  deepStrictEqual(maker.lastDecision && { tool: maker.lastDecision.tool, rationale: maker.lastDecision.rationale, callType: maker.lastDecision.callType }, { tool: "respond", rationale: "concise answer", callType: "owner_instruction" });
+  equal(maker.decisionsSince(Date.now() - 3_600_000), 2, "failed calls are not decisions");
+  equal(maker.decisionsSince(Date.now() + 1), 0);
+});
+
 test("concurrent activity is preserved until the final request finishes", async () => {
   let firstRelease!: () => void;
   let secondRelease!: () => void;

@@ -99,6 +99,7 @@ import { createBuildPreview, createPreviewStart } from "./dashboard/build-previe
 import { readHistory, type UnresolvedProblem } from "./dashboard/history.js";
 import { TaskStatus } from "./agent/task.js";
 import { createWorldStatsReader } from "./dashboard/world-stats.js";
+import { BroadcastTracker, readServerPlayerNames, VITALS_INTERVAL_MS } from "./dashboard/broadcast-inputs.js";
 import type { DashboardSnapshot } from "./dashboard/types.js";
 import { enableCreativeFlight } from "./minecraft/mode.js";
 import { DestructiveAuthorizationRegistry } from "./policy/destructive-authorization.js";
@@ -381,8 +382,9 @@ let currentBootstrap: BootstrapRunner | null = null;
 // SELECT-only counts from SQLite.
 const countCompletedBuilds = db.sql.prepare("SELECT COUNT(*) AS n FROM build_projects WHERE status = 'completed'");
 const countDeaths = db.sql.prepare("SELECT COUNT(*) AS n FROM death_events WHERE world_id = ?");
+const minecraftServerDir = config.dashboard?.minecraft_server_dir?.replace(/^~(?=\/)/, homedir()) ?? null;
 const worldStats = createWorldStatsReader({
-  serverDir: config.dashboard?.minecraft_server_dir?.replace(/^~(?=\/)/, homedir()) ?? null,
+  serverDir: minecraftServerDir,
   username: config.server.username,
   dbCounts: () => ({
     buildsCompleted: (countCompletedBuilds.get() as { n: number }).n,
@@ -390,6 +392,24 @@ const worldStats = createWorldStatsReader({
   }),
   onError: (error) => logger.debug({ err: String(error) }, "world stats unavailable"),
 });
+// Broadcast inputs: a one-hour vitals ring sampled once a minute, and every
+// player name seen (server lists, tab list, chat), so the public thinking
+// filter keeps rejecting a name after that player leaves. Memory only.
+const broadcastTracker = new BroadcastTracker();
+function sampleBroadcast(): void {
+  try {
+    const bot = session?.bot;
+    const connected = bot !== undefined && bot.entity !== null && bot.entity !== undefined;
+    broadcastTracker.sampleVitals(Date.now(), connected ? state.self.health : null, connected ? state.self.food : null);
+    broadcastTracker.noteNames([...readServerPlayerNames(minecraftServerDir), ...(connected ? Object.keys(bot.players ?? {}) : [])]);
+  } catch (error) {
+    logger.debug({ err: String(error) }, "broadcast sample failed");
+  }
+}
+sampleBroadcast();
+const broadcastSampler = setInterval(sampleBroadcast, VITALS_INTERVAL_MS);
+broadcastSampler.unref();
+bus.on("chat.command", ({ from }) => broadcastTracker.noteNames([from]));
 const dashboardTelemetry = new DashboardTelemetryCollector({
   config,
   startedAtMs: processStartedAt,
@@ -407,6 +427,7 @@ const dashboardTelemetry = new DashboardTelemetryCollector({
   eventHistory,
   story: storyFeed,
   worldStats: worldStats.current,
+  broadcast: broadcastTracker,
   viewer: () => viewerManager.telemetry(),
   jobs: () => projectJobs({ scheduler, goals, projects: () => buildProjectManager.unfinishedProjects(), blockers: () => blockers.openBlockers() }, commandTracker.view()),
   gear: () => {
@@ -585,6 +606,7 @@ const shutdownCoordinator = new ShutdownCoordinator({
           // No new task may start while the active one drains: settling it
           // would otherwise claim the next queued task.
           publicInteractions.shutdown();
+          clearInterval(broadcastSampler);
           scheduler.halt();
           viewerManager.stop();
           viewerAdapter.close();

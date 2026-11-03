@@ -303,6 +303,12 @@ export const MinecraftConfigSchema = z.object({
             }).prefault({}),
           }).prefault({}).refine(value => !(value.questions_enabled || value.actions_enabled) || !!value.allowed_origin, "allowed_origin is required"),
           max_connections: z.number().int().positive().max(32).default(6),
+          /**
+           * Display name of the model on the public broadcast ("Qwen3.5 9B").
+           * A fixed label, never derived from llm.base_url or the server's
+           * model id; unset shows no model.
+           */
+          model_label: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 .-]{0,31}$/, "letters, digits, spaces, dots and dashes, at most 32").optional(),
         })
         .prefault({}),
     })

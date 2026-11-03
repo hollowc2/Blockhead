@@ -32,6 +32,8 @@ dashboard:
     enabled: true
     port: 3003
     max_connections: 6
+    # Shown on the broadcast's brain panel; already public on the landing page.
+    model_label: Qwen3.5 9B
     interactions:
       questions_enabled: true
       actions_enabled: false

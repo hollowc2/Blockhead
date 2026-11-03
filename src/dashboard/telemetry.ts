@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import type { Bot } from "mineflayer";
 import type { MinecraftConfig } from "../config/schema.js";
 import type { AgentState } from "../agent/state.js";
@@ -27,7 +28,7 @@ import {
   projectLlmLastCall,
   projectLlmActivity,
 } from "./projections.js";
-import type { DashboardSnapshot } from "./types.js";
+import type { BroadcastInputs, DashboardSnapshot, VitalsSample } from "./types.js";
 import { EQUIPMENT_SLOTS, type EquipmentSummary } from "./types.js";
 import type { ViewerTelemetry } from "./viewer.js";
 import type { JobsSummary } from "./jobs.js";
@@ -61,14 +62,21 @@ export interface DashboardTelemetrySource {
   jobs?: () => JobsSummary;
   /** Gear condition and supply readiness (private). */
   gear?: () => GearDetail | null;
+  /** Vitals history and every player name seen, for the broadcast fields (see broadcast-inputs.ts). */
+  broadcast?: { vitals(nowMs: number): readonly VitalsSample[]; names(): readonly string[] };
 }
+
+const HOUR_MS = 3_600_000;
 
 /** A process-lifetime, side-effect-free projection of live agent telemetry. */
 export class DashboardTelemetryCollector {
   private readonly source: DashboardTelemetrySource;
+  /** Config and host names never change while the process runs. */
+  private readonly fixedTerms: readonly string[];
 
   constructor(source: DashboardTelemetrySource) {
     this.source = source;
+    this.fixedTerms = fixedPrivateTerms(source.config);
   }
 
   snapshot(): DashboardSnapshot {
@@ -152,8 +160,22 @@ export class DashboardTelemetryCollector {
       recentChat: this.source.eventHistory.recentChat().map((event) => ({ at: event.at, sender: event.category, message: event.message })),
       story: this.source.story?.recent() ?? [],
       world: this.source.worldStats?.() ?? null,
+      broadcast: this.broadcastInputs(bot, connected, now),
       ...(this.source.jobs === undefined ? {} : { jobs: this.source.jobs() }),
       ...(this.source.gear === undefined ? {} : { gear: connected ? safely(() => this.gearForJob(this.source.gear!(), activeTask, buildProject !== null)) : null }),
+    };
+  }
+
+  private broadcastInputs(bot: Bot | null, connected: boolean, now: number): BroadcastInputs {
+    const decider = this.source.decider ?? null;
+    const decision = decider?.lastDecision ?? null;
+    const online = connected && bot !== null ? [bot.username, ...Object.keys(bot.players ?? {})] : [];
+    return {
+      vitals: this.source.broadcast?.vitals(now) ?? [],
+      decisionsLastHour: decider?.decisionsSince?.(now - HOUR_MS) ?? 0,
+      lastDecision: decision === null ? null : { at: new Date(decision.at).toISOString(), latencyMs: decision.latencyMs, tool: decision.tool, callType: decision.callType, rationale: decision.rationale },
+      privateTerms: dedupeTerms([...this.fixedTerms, ...online, ...(this.source.broadcast?.names() ?? [])]),
+      modelLabel: this.source.config?.dashboard?.public_viewer.model_label ?? null,
     };
   }
 
@@ -163,6 +185,30 @@ export class DashboardTelemetryCollector {
     const job = upcomingJob(active, this.source.scheduler.queued ?? [], building);
     return { ...gear, jobReadiness: job === null ? null : jobReadiness(job.job, gear.readiness, job.subject) };
   }
+}
+
+/**
+ * Names and hosts from config and this machine. Host names also go in by
+ * label ("maia" from maia.example.ts.net); short labels like "ts" or "net"
+ * would reject ordinary words, so only labels of four or more letters count.
+ */
+function fixedPrivateTerms(config: MinecraftConfig | undefined): string[] {
+  const hosts: string[] = [safely(() => hostname()) ?? ""];
+  const urlHost = (value: string | undefined): string => { try { return value === undefined ? "" : new URL(value).hostname; } catch { return ""; } };
+  if (config !== undefined) {
+    const interactions = config.dashboard?.public_viewer.interactions;
+    hosts.push(config.server.host, urlHost(config.llm?.base_url), urlHost(interactions?.model_questions.base_url), urlHost(interactions?.allowed_origin));
+  }
+  const labels = hosts.flatMap((host) => host.split(".")).filter((label) => label.length >= 4 && /[a-z]/i.test(label));
+  // The owner default mirrors the tools that read config.agent.owner.
+  const identity = config === undefined ? [] : [config.agent?.owner ?? "Corey", config.agent?.name ?? "CobbleBob", config.server.username];
+  return [...identity, ...hosts, ...labels].filter((term) => term !== "");
+}
+
+function dedupeTerms(terms: readonly string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const term of terms) if (typeof term === "string" && term.trim() !== "") seen.set(term.trim().toLowerCase(), term.trim());
+  return [...seen.values()];
 }
 
 /** A failing optional projection must not take the whole snapshot down. */

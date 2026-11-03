@@ -1,0 +1,109 @@
+import { publicActivityForTask, type PublicActivity } from "./public-status.js";
+import { stripCoordinates } from "./story.js";
+import type { LlmDecisionType } from "./types.js";
+
+/**
+ * The public thinking bubble: the model's latest rationale, or a fixed
+ * phrase. Policy (owner decision, 2026-11-02) is scrub + reject-on-doubt:
+ * the whole rationale must pass every check below or it is replaced by the
+ * fixed phrase for the task type. It is never partially scrubbed, because a
+ * scrubber that removes the one leak it knows about leaves the ones it
+ * doesn't. Only cosmetic changes survive: whitespace, snake_case item and
+ * tool names written with spaces, and the length cap.
+ */
+
+export const THINKING_MAX_CHARS = 120;
+
+export type ThinkingRejection = "empty" | "characters" | "digits" | "address" | "name" | "identifier" | "words" | "place" | "coordinates";
+
+/** Owner chat is private, and owner-instruction rationales paraphrase it. */
+const OWNER_PHRASE = "Working out what the owner asked for…";
+const ACTIVITY_PHRASE: Record<Exclude<PublicActivity, "offline">, string> = {
+  gathering: "Deciding what to gather next…",
+  building: "Planning the next part of the build…",
+  exploring: "Choosing where to head next…",
+  recovering: "Working out how to stay safe…",
+  resting: "Deciding it's a good time for a break…",
+  working: "Thinking about what to do next…",
+};
+const TOOL_PHRASE: Partial<Record<string, string>> = {
+  complete_goal: "Checking that the plan is finished…",
+  abandon_goal: "Rethinking the current plan…",
+};
+
+/** Network addresses and paths: `@`, URLs, slashes, and dotted names like `mc.example` or `e.g`. */
+const ADDRESS = /@|:\/\/|\bwww\b|[/\\]|\b[a-z0-9-]+\.[a-z][a-z0-9-]*\b|\b(?:localhost|tailscale|tailnet|ipv[46]|ip|port|host|hostname|endpoint|url|api|server address)\b/i;
+/** Words that only appear when the text is about coordinates or secrets. */
+const WORDS = /\b(?:coordinates?|coords?|xyz|seed|whitelist|password|token)\b/i;
+/** Private places become a location once paired with a direction, number or distance. */
+const PLACE = /\b(?:home|base|chests?|house|bed|shed|storage|spawn)\b/i;
+const DIRECTION = /\b(?:north|south|east|west|(?:north|south)(?:east|west)|northern|southern|eastern|western|(?:north|south|east|west)wards?|left|right|above|below|behind|beneath|underneath|uphill|downhill|blocks?|meters?|metres?|paces?)\b/i;
+const NUMBER_WORD = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|dozens?|half|first|second|third|fourth|fifth)\b/i;
+const SNAKE = /^[a-z]+(?:_[a-z]+)+$/;
+
+/** Lowercase letters and digits only, so `Dark_Knight` and `dark knight` compare equal. */
+const compact = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function normalize(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Why a text may not go public, or null when it passes every check. */
+export function thinkingRejection(text: string, privateTerms: readonly string[]): ThinkingRejection | null {
+  const value = normalize(text);
+  if (value === "") return "empty";
+  // Printable ASCII only: no control characters or look-alike letters that dodge the name check.
+  if (/[^\x20-\x7E]/.test(value)) return "characters";
+  if (/\d/.test(value)) return "digits";
+  if (ADDRESS.test(value)) return "address";
+  const flat = compact(value);
+  const lower = value.toLowerCase();
+  for (const term of privateTerms) {
+    const key = compact(term);
+    if (key === "") continue;
+    // Short terms would match inside ordinary words once spaces are gone; match them as words.
+    if (key.length >= 3 ? flat.includes(key) : new RegExp(`\\b${key}\\b`).test(lower)) return "name";
+  }
+  // Usernames hide in camelCase and mixed-case snake_case; registry names are lowercase snake_case.
+  if (/[a-z][A-Z]/.test(value)) return "identifier";
+  for (const token of value.match(/[A-Za-z_]*_[A-Za-z_]*/g) ?? []) if (!SNAKE.test(token)) return "identifier";
+  if (WORDS.test(value)) return "words";
+  if (PLACE.test(value) && (DIRECTION.test(value) || NUMBER_WORD.test(value))) return "place";
+  if (stripCoordinates(value) !== value) return "coordinates";
+  return null;
+}
+
+export function isPublicSafeText(text: string, privateTerms: readonly string[]): boolean {
+  return thinkingRejection(text, privateTerms) === null;
+}
+
+/** The fixed phrase shown instead of a rejected or missing rationale. */
+export function fallbackThought(tool: string | null | undefined, callType: LlmDecisionType | null | undefined): string {
+  if (callType === "owner_instruction") return OWNER_PHRASE;
+  const byTool = typeof tool === "string" && Object.hasOwn(TOOL_PHRASE, tool) ? TOOL_PHRASE[tool] : undefined;
+  return byTool ?? ACTIVITY_PHRASE[publicActivityForTask(tool) ?? "working"];
+}
+
+/** Cut at a word boundary within `max` characters, ending in an ellipsis; null if no boundary fits. */
+export function capAtWord(text: string, max = THINKING_MAX_CHARS): string | null {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max).lastIndexOf(" ");
+  if (cut <= 0) return null;
+  return `${text.slice(0, cut).replace(/[\s,;:.!?-]+$/, "")}…`;
+}
+
+export interface ThoughtInput {
+  rationale: string | null | undefined;
+  tool: string | null | undefined;
+  callType: LlmDecisionType | null | undefined;
+  privateTerms: readonly string[];
+}
+
+/** The rationale if it passes every check, otherwise the fixed phrase for the task type. */
+export function publicThought(input: ThoughtInput): string {
+  const fallback = fallbackThought(input.tool, input.callType);
+  if (input.callType === "owner_instruction" || typeof input.rationale !== "string") return fallback;
+  if (thinkingRejection(input.rationale, input.privateTerms) !== null) return fallback;
+  const display = normalize(input.rationale).replace(/[a-z]+(?:_[a-z]+)+/g, (token) => token.replace(/_/g, " "));
+  return capAtWord(display) ?? fallback;
+}

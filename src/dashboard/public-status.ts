@@ -33,6 +33,10 @@ const BY_TASK: Record<string, PublicActivity> = {
   travel_to: "exploring", explore: "exploring", expedition: "exploring", go_home: "exploring",
   sleep: "resting", night_shelter: "resting", wait: "resting",
 };
+/** The public activity for a task or tool type, if it maps to one. */
+export function publicActivityForTask(type: string | null | undefined): Exclude<PublicActivity, "offline"> | undefined {
+  return typeof type === "string" && Object.hasOwn(BY_TASK, type) ? BY_TASK[type] as Exclude<PublicActivity, "offline"> : undefined;
+}
 /** Retreat health and the hunger level below which he stops to eat. */
 const LOW_HEALTH = 8, LOW_HUNGER = 6;
 
@@ -40,7 +44,7 @@ export function publicStatus(snapshot: DashboardSnapshot): PublicStatus {
   const make = (activity: PublicActivity, since: string | null = null): PublicStatus => ({ activity, detail: DETAIL[activity], since });
   if (snapshot.connection.connected !== true) return make("offline");
   const task = snapshot.task !== null && ["active", "blocked"].includes(snapshot.task.status) ? snapshot.task : null;
-  const byTask = task ? BY_TASK[task.type] : undefined;
+  const byTask = task ? publicActivityForTask(task.type) : undefined;
   const { health, hunger } = snapshot.self;
   if (byTask === "recovering" || (typeof health === "number" && health <= LOW_HEALTH) || (typeof hunger === "number" && hunger <= LOW_HUNGER)) {
     return make("recovering", byTask === "recovering" ? task!.startedAt : null);

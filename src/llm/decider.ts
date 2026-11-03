@@ -12,6 +12,10 @@ export type LlmRuntimeState = "READY" | "PAUSED" | "DEGRADED";
 const FEW_SHOT_FETCH = 8;
 export interface LlmActivity { thinking: boolean; callType: "owner_instruction" | "background_director" | "goal_decision" | null; startedAt: string | null; }
 export interface LlmCallRecord { at: number; latencyMs: number; tool: string; rationale: string | null; success: boolean; error: string | null; }
+/** A successful decision; failed calls never replace it, so the latest reasoning survives an outage. */
+export interface LlmDecisionRecord { at: number; latencyMs: number; tool: string; rationale: string | null; callType: NonNullable<LlmActivity["callType"]>; }
+/** Decision times kept for the hourly count; the director decides about once a minute. */
+const DECISION_WINDOW_MS = 3_600_000, MAX_DECISION_TIMES = 1_000;
 
 type ParsedResult<T> = { decision: T; raw: string; startedAt: number };
 
@@ -22,12 +26,17 @@ export class DecisionMaker {
   private readonly maxRetries: number;
   private readonly skills?: SkillsRepository;
   private lastCallRecord: LlmCallRecord | null = null;
+  private lastDecisionRecord: LlmDecisionRecord | null = null;
+  private readonly decisionTimes: number[] = [];
   private readonly activeCalls = new Map<number, { callType: NonNullable<LlmActivity["callType"]>; startedAt: number }>();
   private nextActivityId = 0;
   private runtime: LlmRuntimeState = "READY";
   private retryAt = 0;
   constructor(options: DecisionMakerOptions) { this.client = options.client; this.registry = options.registry; this.debugLog = options.debugLog; this.maxRetries = options.maxRetries; this.skills = options.skills; }
   get lastCall(): LlmCallRecord | null { return this.lastCallRecord; }
+  get lastDecision(): LlmDecisionRecord | null { return this.lastDecisionRecord; }
+  /** Successful decisions completed at or after `sinceMs` (at most the last hour is kept). */
+  decisionsSince(sinceMs: number): number { return this.decisionTimes.filter((at) => at >= sinceMs).length; }
   get activity(): LlmActivity {
     const active = [...this.activeCalls.entries()].at(-1)?.[1];
     return active === undefined
@@ -46,7 +55,7 @@ export class DecisionMaker {
       const decision = result.decision as AgentDecision;
       this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
-      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: concise(decision.rationale), success: true, error: null });
+      this.recordDecision("owner_instruction", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.decision.type === "tool" ? decision.decision.tool : "respond", rationale: concise(decision.rationale) });
       return decision;
     });
   }
@@ -58,7 +67,7 @@ export class DecisionMaker {
       const decision = result.decision as NextTaskDecision;
       this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
-      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale), success: true, error: null });
+      this.recordDecision("background_director", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.task.type, rationale: concise(decision.rationale) });
       return decision;
     });
   }
@@ -70,7 +79,7 @@ export class DecisionMaker {
       const decision = result.decision as NextGoalActionDecision;
       this.resume();
       this.logResult(decision, result.raw, Date.now() - startedAt);
-      this.recordLastCall({ at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale), success: true, error: null });
+      this.recordDecision("goal_decision", { at: startedAt, latencyMs: Date.now() - startedAt, tool: decision.action.type === "complete" ? "complete_goal" : decision.action.type === "abandon" ? "abandon_goal" : decision.action.type, rationale: concise(decision.rationale) });
       return decision;
     });
   }
@@ -127,6 +136,13 @@ export class DecisionMaker {
   private logRequest(snapshot: StateSnapshot, extra: Record<string, unknown> = {}): void { this.debugLog.write({ event: "agent_decision", ...extra, from: snapshot.from, instruction: snapshot.instruction, state_snapshot: snapshot, tools: this.registry.names() }); }
   private logResult(decision: unknown, raw: string, durationMs: number): void { this.debugLog.write({ event: "agent_decision_result", llm_response: raw, decision, duration_ms: durationMs }); }
   private recordLastCall(record: LlmCallRecord): void { this.lastCallRecord = record; }
+  private recordDecision(callType: LlmDecisionRecord["callType"], call: Omit<LlmDecisionRecord, "callType">): void {
+    this.recordLastCall({ ...call, success: true, error: null });
+    this.lastDecisionRecord = { ...call, callType };
+    const now = Date.now();
+    this.decisionTimes.push(now);
+    while (this.decisionTimes.length > MAX_DECISION_TIMES || (this.decisionTimes[0] ?? now) < now - DECISION_WINDOW_MS) this.decisionTimes.shift();
+  }
 }
 
 function concise(value: string | null | undefined): string | null {
