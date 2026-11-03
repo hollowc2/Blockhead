@@ -24,8 +24,9 @@ const withTimeout = (promise, ms, label) => {
 };
 
 export class Renderer {
-  constructor({ chromium, pageUrl, width, height, log, now, onFrame, onGeneration, executablePath, ...options }) {
-    Object.assign(this, { chromium, pageUrl, width, height, log, now, onFrame, onGeneration, executablePath });
+  constructor({ chromium, pageUrl, width, height, log, now, onFrame, onGeneration, onBanner, executablePath, ...options }) {
+    Object.assign(this, { chromium, pageUrl, width, height, log, now, onFrame, onGeneration, onBanner, executablePath });
+    this.banner = null;   // the event banner on the page at the last probe ("kind|text"), or null
     this.o = { ...RENDERER_DEFAULTS, ...options };
     this.generation = 0;
     this.browser = null; this.context = null; this.page = null; this.cdp = null;
@@ -129,6 +130,7 @@ export class Renderer {
   }
 
   async openPage(page, cdp) {
+    this.banner = null;
     await page.goto(this.pageUrl, { waitUntil: "load", timeout: 30_000 });
     // /broadcast is made for the stream: it has no controls to hide, and it applies the follow camera
     // itself (again whenever the 3D frame reloads). Nothing here clicks, types into or restyles the page.
@@ -153,10 +155,19 @@ export class Renderer {
         let raf = null, gl = null;
         try { raf = frame?.contentWindow?.__cobblebobRaf ?? null; } catch {}
         try { gl = frame?.contentDocument?.querySelector("canvas") ? true : false; } catch {}
-        return { state: document.querySelector("#viewerStatus")?.textContent ?? null, raf, gl };
+        // The page's event banner (#banner.show, data-kind), for clips. Banners last 6 s; probes run every 2 s.
+        const node = document.querySelector("#banner");
+        const banner = node?.classList.contains("show") ? `${node.dataset.kind ?? ""}|${document.querySelector("#bannerText")?.textContent ?? ""}`.slice(0, 200) : null;
+        return { state: document.querySelector("#viewerStatus")?.textContent ?? null, raf, gl, banner };
       }), this.o.probeTimeoutMs, "probe");
       if (generation !== this.generation) return;
       this.probeOkAt = this.now();
+      const banner = typeof probe.banner === "string" ? probe.banner : null;
+      if (banner !== this.banner) {
+        this.banner = banner;
+        // Only the kind leaves the renderer; the banner text is never logged.
+        if (banner) this.onBanner?.(banner.slice(0, banner.indexOf("|")).replace(/[^a-z]/g, "").slice(0, 16));
+      }
       if (probe.state !== this.viewerState) { this.log("viewer state", { state: probe.state }); this.viewerState = probe.state; }
       if (typeof probe.raf === "number" && probe.raf !== this.raf) { this.raf = probe.raf; this.rafAdvancedAt = this.now(); }
       if (this.failures && this.openedAt !== null && now - this.openedAt > this.o.stableMs && this.viewerState === "connected") this.failures = 0;

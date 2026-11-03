@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { Encoder, progressParser } from "./encoder.mjs";
+import { Encoder, encoderArgs, progressParser, teeEscape } from "./encoder.mjs";
 
 class FakeProc extends EventEmitter {
   constructor() {
@@ -101,6 +101,54 @@ test("ffmpeg stderr is redacted before logging", async () => {
   const line = logs.find(l => l.msg === "ffmpeg")?.line ?? "";
   assert.ok(line.includes("I/O error"));
   assert.ok(!line.includes("ijkl") && !line.includes("youtube"), line);
+});
+
+const base = { fps: 30, width: 1280, height: 720, bitrateK: 3000, video: ["-c:v", "libx264"], output: { format: "flv", target: "rtmp://a.rtmp.youtube.com/live2/abcd-efgh-ijkl-mnop-qrst" } };
+
+test("without music or clips the encode is the plain silent-AAC stream with the progress pipe", () => {
+  const args = encoderArgs(base);
+  assert.deepEqual(args.slice(0, 8), ["-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:3", "-stats_period", "2"]);
+  assert.ok(args.join(" ").includes("-f image2pipe -framerate 30 -c:v mjpeg -i - -f lavfi -i anullsrc=r=44100:cl=stereo -map 0:v -map 1:a"));
+  assert.deepEqual(args.slice(-3), ["-f", "flv", base.output.target]);
+  assert.ok(!args.includes("tee") && !args.includes("-filter_complex") && !args.includes("-y"));
+  assert.ok(args.includes("-shortest"));
+});
+
+test("music is mixed quietly onto the silent track, which outlives it", () => {
+  const args = encoderArgs({ ...base, music: { list: "/state/music.ffconcat", volume: 0.15 } });
+  const s = args.join(" ");
+  assert.ok(s.includes("-f lavfi -i anullsrc=r=44100:cl=stereo -f concat -safe 0 -i /state/music.ffconcat"));
+  assert.ok(!args.includes("-stream_loop"), "ffmpeg can't loop a concat input; the playlist repeats instead");
+  const graph = args[args.indexOf("-filter_complex") + 1];
+  assert.match(graph, /^\[2:a\]volume=0\.300,/, "amix halves each input");
+  assert.ok(graph.endsWith("[1:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]"), "the silent input sets the length");
+  assert.ok(!graph.includes("apad"));
+  assert.ok(s.includes("-map 0:v -map [aout]"));
+});
+
+test("clips add a tee with the stream as the aborting main slave and global headers", () => {
+  const args = encoderArgs({ ...base, segments: "[f=segment:onfail=ignore]/s/seg%03d.ts" });
+  assert.deepEqual(args.slice(-7), ["-flags:v", "+global_header", "-flags:a", "+global_header", "-f", "tee", `[f=flv]${base.output.target}|[f=segment:onfail=ignore]/s/seg%03d.ts`]);
+  assert.ok(args.includes("pipe:3"), "health still reads -progress");
+  const file = encoderArgs({ ...base, output: { format: "mpegts", target: "/tmp/a|b.ts", overwrite: true }, segments: "[f=segment]/s/x.ts" });
+  assert.equal(file.at(-1), "[f=mpegts]/tmp/a\\|b.ts|[f=segment]/s/x.ts");
+  assert.ok(file.includes("-y"));
+  assert.equal(teeEscape("a'b[c]\\"), "a\\'b\\[c\\]\\\\");
+});
+
+test("args() learns how the previous generation went", async () => {
+  const seen = [];
+  const { enc, procs, advance } = harness({ args: run => { seen.push(run); return ["-i", "-"]; } });
+  enc.start();
+  procs[0].report(10); await flush();
+  advance(5_000);
+  procs[0].emit("exit", 1);
+  advance(2_000);
+  assert.deepEqual(seen[0], { generation: 1, previous: null });
+  assert.deepEqual(seen[1], { generation: 2, previous: { generation: 1, ranMs: 5_000, progressed: true } });
+  enc.restart("encoder-stalled");
+  advance(4_000);
+  assert.deepEqual(seen[2].previous, { generation: 2, ranMs: 0, progressed: false });
 });
 
 test("stop ends stdin and does not schedule a restart", async () => {

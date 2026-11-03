@@ -15,7 +15,9 @@ cobblebob-stream.service (one node process, Nice=10, MemoryMax=2500M, Restart=al
    ├─ BotHealth  polls /health, keeps only booleans + reason codes
    ├─ BroadcastState  STARTING / LIVE / RECOVERING / HOLDING / MAINTENANCE
    ├─ Publisher  30 fps pacing of the live frame or a holding card     (bounded, latest-only)
-   └─ Encoder    one ffmpeg: MJPEG pipe + silent AAC → RTMP           (restart w/ backoff, budget)
+   ├─ Encoder    one ffmpeg: MJPEG pipe + silent AAC (+ music) → RTMP  (restart w/ backoff, budget)
+   │             optional tee slave: rolling clip segments              (STREAM_CLIPS=on; off by default)
+   └─ Clips      banner on the live page → joins segments into an MP4   (local only, capped)
                  ▼
 YouTube ingest ─► YouTube player (verified only by a person watching; status says "unknown")
 ```
@@ -107,6 +109,137 @@ To go back to the old page, roll the runtime back (see below). Setting
 `STREAM_PAGE=http://127.0.0.1:3003/` on the new runtime would stream the
 interactive page with its question box and view toggles showing, and the
 camera in orbit mode.
+
+## Background music
+
+`music.mjs`. On by default, and a no-op until there are tracks: with none,
+the encoder args are the old silent-AAC ones.
+
+| Env | Default | |
+|---|---|---|
+| `STREAM_MUSIC` | on | `off` keeps the silent track whatever is in the directory |
+| `STREAM_MUSIC_DIR` | `~/.local/share/cobblebob-stream/music` | flat directory of tracks (`install.sh` creates it) |
+| `STREAM_MUSIC_VOLUME` | `0.15` | linear gain per track (0–1); quiet under the picture |
+
+How it works. At start-up (bounded to 5 s, before the first encoder start)
+and every 10 min, the streamer lists the directory (`.mp3 .ogg .oga .opus
+.flac .m4a .aac .wav`, ≤ 200 MB each, ≤ 500 files) and runs `ffprobe` once
+per new or changed file. Files that don't probe as audio, or are shorter
+than 5 s, are skipped and counted as `rejected`. ffmpeg's concat demuxer
+feeds one decoder, so only the largest group sharing codec, sample rate,
+channel count and stream lineup is used; the rest count as `incompatible`
+(a cover-art MP3 has a different lineup from a plain one). **Keep all
+tracks in one format**, e.g. all MP3 44.1 kHz stereo without cover art. Each
+encoder start writes a fresh shuffled playlist (`music.ffconcat` in the
+state directory), repeated to cover 7 days, because ffmpeg 9 can't
+`-stream_loop` a concat input. ffmpeg mixes it onto the silent `anullsrc`
+input with `amix=duration=first`, so the silent track sets the length. A
+playlist that ends, or a track that fails mid-way, leaves the stream
+running with silence until the next encoder start. (The concat demuxer
+stops at a file it can't open rather than skipping it, which is why tracks
+are probed first.)
+
+A bad file can't take the stream down or burn the restart budget. A music
+generation that ends without progress or inside 60 s is treated as a music
+failure, and the following encoder starts run silent for 30 min (doubling
+per repeat, up to 6 h). That way music costs at most one of the 6
+restarts per 10 min. A pad-based design (`apad`) failed this way in testing
+(ffmpeg 9: `ENOSPC` from the filter graph within 7 s), and the breaker
+caught it: the stream went on silent after one restart.
+
+New tracks are picked up at the next encoder start. To start one now:
+`streamctl reconnect-encoder` (a short interruption). `streamctl status`
+shows `music: { tracks, rejected, incompatible, playing, pausedMinutes }`;
+the journal logs `music library` when the usable set changes.
+
+Adding tracks (owner):
+
+```sh
+ssh maia 'mkdir -p ~/.local/share/cobblebob-stream/music'
+scp *.mp3 maia:.local/share/cobblebob-stream/music/
+ssh maia 'node ~/.local/share/cobblebob-stream/streamctl.mjs reconnect-encoder'
+```
+
+**Licensing is the owner's call.** Nothing is downloaded or committed here.
+Only use tracks whose license allows use in a 24/7 YouTube live stream:
+CC0, or a license whose attribution you put in the channel or stream
+description. Many "royalty-free"
+tracks are registered with Content ID, and a match on a live stream can
+mute, block or strike it. Prefer sources that state they are not in
+Content ID, keep each track's license text with it, and if YouTube flags a
+track, delete the file and reconnect the encoder. Rollback copies made with
+`cp -a ~/.local/share/cobblebob-stream …` also copy the music directory.
+
+Measured locally (holding card fed at 30 fps, 50 s windows, ffmpeg 9): the
+encoder went from 53 % to 58 % of a core and from 116 to 124 MB RSS with
+music. Over the full 200 s fixture run with music there was one ffmpeg, 0
+interruptions and 30.6 fps.
+
+## Clips
+
+`clips.mjs`. **Off by default** (`STREAM_CLIPS=on` to enable), because it
+changes the encoder's output topology.
+
+| Env | Default | |
+|---|---|---|
+| `STREAM_CLIPS` | off | `on` adds the segment slave and cuts clips |
+| `STREAM_CLIPS_DIR` | `<state dir>/clips` | saved MP4s (0700 directory) |
+| `STREAM_CLIPS_MAX_COUNT` | 30 | retention: newest clips kept |
+| `STREAM_CLIPS_MAX_MB` | 600 | retention: total size; a clip over it alone is deleted too |
+
+Recording, without re-encoding. With clips on, the encoder's output becomes
+`-f tee "[f=flv]rtmp://…|[f=segment:onfail=ignore:use_fifo=1:…]…/seg%03d.ts"`
+plus `-flags +global_header` (the tee can't ask the encoders for the
+headers FLV needs). The stream slave keeps tee's default `onfail=abort`, so
+losing YouTube still ends ffmpeg and the supervisor restarts it as before.
+The segment slave writes 4 s MPEG-TS segments (stream copy) into
+`<state dir>/clip-segments/g<generation>/`. `segment_wrap=30` bounds that to
+30 files (about 2 min, about 38 MB at 3 Mbit/s), and the previous
+generation's directory is removed at each encoder start. It runs behind a
+fifo that drops packets when full (`queue_size=600`, about 8 s), so a slow
+disk loses segments, not stream frames. `onfail=ignore` means a write error
+(disk full, directory gone) drops only that slave. Encoder health is
+unchanged: one output, the same `-progress` frame counter and stdin
+backpressure.
+
+Triggers. The renderer's 2 s page probe also reads the page's event banner
+(`#banner.show` with `data-kind`: `death`, `tier`, `build`, `milestone`;
+banners last 6 s). Each new banner seen **while the stream shows the live
+picture** (not a holding card) is a moment. Only the kind leaves the
+renderer; banner text is never logged. The page contract is `#banner`,
+its `show` class and `data-kind`, and `#bannerText`. If the page renames
+them, clips just stop triggering.
+
+Cutting. A moment makes a window from 20 s before to 15 s after. Another
+banner inside a pending window extends it (up to 75 s). Seven seconds after
+the window ends, the closed segments overlapping it (by file mtime) are
+joined with `ffmpeg -f concat -c copy -movflags +faststart` into
+`clip-<UTC time>-<kinds>.mp4`, written as `.partial.mp4` and then renamed.
+Caps: 12 moments an hour, no cut with less than 2 GB free, a 60 s timeout on
+the join, then retention. Nothing is uploaded. `streamctl status` shows
+`clips: { recording, pending, clips, megabytes, saved, failed, skipped,
+lastResult }`.
+
+Costs and caveats: about 1 % of a core and 3 MB RSS more for ffmpeg
+(measured as for music), plus about 0.4 MB/s of continuous disk writes
+(about 35 GB/day, mostly overwritten in place). The segment files' page
+cache is charged to the unit's memory cgroup. It can be reclaimed, but it
+raises `MemoryCurrent`; watch it against `MemoryMax=2500M` on Maia before
+leaving clips on. Clips start and end on 4 s segment boundaries.
+
+Local evidence (Zeus, 2026-11-03; real Chromium + the fixture `/broadcast`
++ ffmpeg 9 to a local MPEG-TS file, 200 s, music from synthetic test tones):
+one ffmpeg throughout (generation 1, 0 interruptions, 30.6 fps). Segments
+rotated at 30 files and about 37 MB. A `death` banner and a `tier` banner
+10 s later made one 48 s clip (`…-death+tier.mp4`, H.264 + AAC, the death
+banner visible at 23 s). A `milestone` banner made a 40 s clip. Separately,
+`encoderArgs` with clips streamed 40 s to a loopback RTMP listener. The
+segment directory was deleted at 15 s: `Slave muxer #1 failed … continuing
+with 1/2 slaves`, frames kept advancing, and the listener received the full
+40 s with audio. In that run the playlist held a truncated and a corrupt
+track, so music stopped early while the stream continued.
+A streamer run with only corrupt files in the music directory reported
+`tracks: 0, rejected: 2` and sent silence (−91 dB) with no restart.
 
 ## The holding screen
 
@@ -365,6 +498,28 @@ Rollback: `systemctl --user stop cobblebob-stream`, copy
 runtime, `git show <pre-P6 commit>:tools/stream/cobblebob-stream.service` into
 `~/.config/systemd/user/`, daemon-reload, start. The bot doesn't need rolling
 back, because `/` is unchanged and `/broadcast` is only an addition.
+
+### Deploying music and clips (not deployed yet)
+
+Stream runtime only; the bot is unchanged. Two new runtime modules, and
+three changed ones. `package.json` is unchanged, so there's no npm install.
+
+```sh
+ssh maia 'cp -a ~/.local/share/cobblebob-stream ~/.local/share/cobblebob-stream.rollback-pre-music'
+cd tools/stream && scp stream.mjs encoder.mjs renderer.mjs music.mjs clips.mjs maia:.local/share/cobblebob-stream/
+ssh maia 'mkdir -p ~/.local/share/cobblebob-stream/music && command -v ffprobe'   # ffprobe ships with ffmpeg; without it music stays silent
+ssh maia 'systemctl --user restart cobblebob-stream'
+```
+
+With an empty music directory and clips off, the ffmpeg command is the old
+one plus explicit `-map 0:v -map 1:a`. To try clips, add a drop-in
+(`systemctl --user edit cobblebob-stream`: `[Service]`
+`Environment=STREAM_CLIPS=on`). Restart, then watch `streamctl status`
+(`encoder`, `clips`) and `MemoryCurrent` for a while. Remove the drop-in to
+turn clips off. Maia's ffmpeg version was not checked from here. The tee
+`onfail`/`use_fifo` slave options, `amix` `duration=first` and `-flags
++global_header` are all old (ffmpeg ≥ 4), but run one local check of
+`ffmpeg -h muxer=tee` on Maia first.
 
 ## 24-hour qualification
 

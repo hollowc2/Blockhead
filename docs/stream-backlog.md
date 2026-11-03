@@ -50,6 +50,24 @@ What we learned on Maia:
   the bubble usually shows a fixed phrase per task type.
 - With the daylight cycle frozen, the dial shows "Daytime" with no countdown.
 
+## Done: background music and clips (2026-11-03, built locally, not deployed)
+
+See [stream-resilience.md](stream-resilience.md#background-music).
+
+- **Background music** (`music.mjs`). On by default and a no-op without
+  tracks. Tracks go in `~/.local/share/cobblebob-stream/music/`; choosing
+  them and checking their licenses and Content ID is the owner's call. They
+  are probed with ffprobe, kept to one compatible format, shuffled into a
+  repeated concat playlist (ffmpeg 9 can't `-stream_loop` a concat input)
+  and mixed quietly (0.15) onto the silent track. A bad file is skipped, and
+  if an encoder generation with music fails early, music pauses for a
+  cool-off.
+- **Clips** (`clips.mjs`). Off by default (`STREAM_CLIPS=on`). A tee slave
+  writes a bounded rolling window of copy-codec segments with
+  `onfail=ignore` behind a dropping fifo. Each event banner on the live
+  picture becomes a 35–75 s MP4 in `~/.local/state/cobblebob-stream/clips/`,
+  capped at 30 clips / 600 MB and 12 an hour. Nothing is uploaded.
+
 ## Backlog
 
 - **Picture-in-picture.** A small second camera: an overhead view of home,
@@ -71,10 +89,6 @@ What we learned on Maia:
   bubble shows real reasoning more often.
 - **Durability bars** on the equipment hotbar. This needs a redacted durability
   field.
-- **Clips/highlights.** Cut clips automatically around event banners.
-- **Background music.** Mix quiet royalty-free/CC0 tracks into the
-  currently silent audio track (ffmpeg `-stream_loop` over a playlist).
-  Check the licenses for YouTube Content ID.
 - **Health checks.** Send an alert (push notification) if the stream service
   restarts repeatedly or YouTube ingest drops for more than about 10
   minutes. Add a daily frame snapshot to catch a frozen or black picture.

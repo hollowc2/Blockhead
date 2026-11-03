@@ -65,3 +65,21 @@ test("the probe reads #viewerStatus and the 3D frame's rAF counter; a frozen cou
     assert.deepEqual(r.viewerHealthSignal(), { ok: true });
   } finally { await r.stop(); }
 });
+
+test("each new event banner on the page is reported once, by kind only", async () => {
+  let banner = null;
+  const fake = fakeChromium({ probe: () => ({ state: "connected", raf: 1, gl: true, banner }) });
+  const clock = { t: 0 };
+  const kinds = [];
+  const r = new Renderer({ chromium: fake.chromium, pageUrl: "http://127.0.0.1:3003/broadcast", width: 1280, height: 720, log: () => {}, now: () => clock.t, onFrame: () => {}, onGeneration: () => {}, onBanner: kind => kinds.push(kind) });
+  await r.launch();
+  try {
+    fake.cdp.emit("Page.screencastFrame", { data: "", sessionId: 1 });
+    await r.check();
+    banner = "death|Fell from a high place"; await r.check(); await r.check(); await r.check();
+    banner = "tier|Iron Pickaxe"; await r.check();      // the next banner straight after
+    banner = null; await r.check();
+    banner = "mile<stone>|x"; await r.check();      // only [a-z] of the kind survives
+    assert.deepEqual(kinds, ["death", "tier", "milestone"]);
+  } finally { await r.stop(); }
+});
